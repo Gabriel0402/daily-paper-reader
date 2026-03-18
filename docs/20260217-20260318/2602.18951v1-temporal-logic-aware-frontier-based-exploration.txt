@@ -1,0 +1,463 @@
+Title: Temporal-Logic-Aware Frontier-Based Exploration
+
+URL Source: https://arxiv.org/pdf/2602.18951v1
+
+Published Time: Tue, 24 Feb 2026 01:40:35 GMT
+
+Number of Pages: 8
+
+Markdown Content:
+# Temporal-Logic-Aware Frontier-Based Exploration 
+
+Azizollah Taheri and Derya Aksaray 
+
+Abstract — This paper addresses the problem of temporal logic motion planning for an autonomous robot operating in an unknown environment. The objective is to enable the robot to satisfy a syntactically co-safe Linear Temporal Logic (scLTL) specification when the exact locations of the desired labels are not known a priori. We introduce a new type of automaton state, referred to as commit states . These states capture intermediate task progress resulting from actions whose consequences are irreversible. In other words, certain future paths to satisfaction become not feasible after taking those actions that lead to the commit states. By leveraging commit states, we propose a sound and complete frontier-based exploration algorithm that strategically guides the robot to make progress toward the task while preserving all possible ways of satisfying it. The efficacy of the proposed method is validated through simulations. 
+
+I. I NTRODUCTION 
+
+Exploration is a fundamental problem that is concerned with efficiently guiding a mobile robot through an unknown environment to construct a map [1], [2]. A widely adopted strategy to address this problem is frontier-based exploration, where the robot selects boundaries between known and unknown regions (frontiers) as candidate targets for explo-ration [3]. Beyond the frontier-based exploration approach, the problem has been addressed using alternative methods, which include information-theoretic techniques (e.g., [4]) and reinforcement learning (e.g., [5]). The case of satisfying a task while exploring the en-vironment is more challenging, as it requires guiding the exploration under the task’s constraints [6], [7]. Existing methods rely on an implicit assumption that any progress toward task satisfaction is beneficial. This is not always true. Some tasks offer multiple possible paths to satisfaction, but committing early to one option may preclude the possibility of satisfying the task through the other, which could lead to failure. Consider a scenario where a search-and-rescue robot is deployed in a post-disaster environment with the mission of locating survivors, identifying safe exits, and determining viable exit routes. The terrain is unknown, hazardous, and non-reversible in some areas (e.g., the robot may be able to traverse downhill slopes but not climb back up due to debris, unstable structures, or slippery inclines). One strategy is to fully explore the disaster zone before initiating any rescues, which ensures complete knowledge of survivor locations and safe exits. While this helps planning with certainty, it will not be suitable for time critical missions. An alternative is to 
+
+> A. Taheri is a PhD student in the Department of Electrical and Computer Engineering at Northeastern University. D. Aksaray is an Assistant Professor in the Department of Electrical and Computer Engineering at Northeastern University.
+
+begin rescues as soon as sufficient local information becomes available, such as moving toward the survivor once it is observed (as in existing works). While this may potentially lead to faster mission success, premature commitments may have undesirable consequences. For example, if the robot proceeds toward a survivor via a one-way downhill path without first confirming the presence of a safe exit beyond it, it may become trapped. Therefore, the robot must distinguish between actions that cause irreversible consequences and those that carry no long-term effects. Such distinction enables the robot to balance timely progress with the preservation of future options. There are other scenarios where completing a subtask may influence the feasibility of completing other subtasks. These observations highlight the need for more sophisticated planning strategies, rather than simply avoiding task violations and treating all progress as beneficial. In this paper, we address the problem of satisfying a syntactically co-safe Linear Temporal Logic (scLTL) spec-ification in an unknown discrete environment without any prior information about the location of desired regions. Our method uses a frontier-based exploration strategy. Unlike existing approaches, it computes paths to frontiers in the product space instead of the physical space. Computing the paths over the product space enables the robot to strategically assess which forms of progress are beneficial for task satisfaction and which may be risky or lead to negative consequences in the future. As a result, our approach offers improved performance along with guarantees for task satisfaction and safety, even in cases where state-of-the-art methods fail. II. R ELATED WORK 
+
+The problem of planning in unknown environments can be broadly categorized into two groups. The first group in-cludes cases where some prior information about the location of desired regions or objects is available (e.g., [8]–[10]). These works leverage available information to generate an optimized plan for accomplishing the mission. The second group addresses scenarios where no prior knowledge of the location of desired regions is available (e.g., [11]–[14]). In [11] and [12], the authors focus on tasks modeled using the Planning Domain Definition Language (PDDL). In [11], the authors propose a method in which the robot first explores the environment to gather sufficient information and then generates a plan to achieve the goal. In contrast, [12] argues that this sequential approach is inefficient, as it may cause the robot to revisit previously explored areas. They suggest that once some relevant information is discovered, the robot should begin progressing toward the goal, even if a complete 
+
+> arXiv:2602.18951v1 [cs.RO] 21 Feb 2026
+
+path is not yet known, since this can improve the overall cost of the resulting plan. In [13] and [14], the authors address planning in unknown environments, where the task is specified as an scLTL formula. The most related work to our paper is [13], which proposes a frontier-based exploration strategy for discrete environments. In their approach, the robot computes the shortest path to the frontier over the physical space and checks whether following that path would violate the task. If so, the frontier is discarded. However, this approach prioritizes immediate progress and overlook longer alterna-tive paths that do not violate the specification. In contrast, our method computes paths over the product space, which directly incorporates task constraints and allows the robot to anticipate potential future limitations while planning. In [14], a sampling-based method is used to solve the same prob-lem in continuous spaces. It similarly promotes incremen-tal task progress and demonstrates improved performance compared to strategies that fully explore the environment before planning. Nevertheless, a critical gap remains: current methods cannot simultaneously (1) make progress toward task completion during exploration and (2) assess the long-term consequences of such progress. Without this capability, premature commitments may lead to dead ends, which result in wasted resources and potential deadlocks in accomplishing the task. III. P RELIMINARIES 
+
+A. Transition System 
+
+We define a transition system (TS) to model the robot’s motion in an unknown environment as follows: 
+
+Definition 1 (Weighted Deterministic Transition System) . Aweighted deterministic transition system (TS) is a tuple T =(X, Σ, δ, O, L, w ), where:  
+
+> •
+
+X is a finite set of states,  
+
+> •
+
+Σ is a finite set of actions,  
+
+> •
+
+δ : X × Σ → X is a deterministic transition function,  
+
+> •
+
+O is a finite set of observations,  
+
+> •
+
+L : X → 2O is a labeling function that assigns a subset of observations to each state,  
+
+> •
+
+w : X × Σ → N is the weight function, which assigns a positive value to each state–action pair. 
+
+Given an TS T , a finite action sequence is denoted by σ[0: n] = σ(0) σ(1) . . . σ (n), where σ(i) ∈ Σ for all 
+
+i ∈ { 0, 1, . . . , n }. A finite trajectory induced by σ[0: n]
+
+is represented as xσ[0: n] = x(0) x(1) . . . x (n + 1) , where 
+
+x(i + 1) ∈ δ(x(i), σ (i)) . The corresponding word is given by l(xσ[0: n]) = l(0) l(1) . . . l (n + 1) , where l(i) = L(x(i)) .The total weight of the trajectory xσ[0: n] is defined as 
+
+W (xσ[0: n]) = Pni=0 w(x(i), σ (i)) .
+
+B. Temporal logic 
+
+Temporal Logic (TL) is a formal language for specify-ing the temporal properties of dynamical systems. Among its variants, Linear Temporal Logic (LTL) is widely used to express properties over infinite-length words l =
+
+l(0) l(1) l(2) . . . , where l(i) ∈ 2O for all i ≥ 0. LTL’s expressive capabilities have led to its widespread use in domains like control synthesis and system verification for complex tasks (e.g., [15], [16]). We concentrate on a subset of LTL called scLTL in this paper. 
+
+Definition 2 (scLTL \next ). A formula ϕ in syntactically co-safe Linear Temporal Logic (scLTL \next ), defined on the observation set O, is generated recursively as follows: 
+
+ϕ = ⊤ | o | ¬ o | ϕ1 ∧ ϕ2 | ϕ1 ∨ ϕ2 | ϕ1Uϕ2 | ♢ϕ1
+
+where o ∈ O denotes an observation, and ϕ, ϕ1 and 
+
+ϕ2 represent scLTL \next formulae. The Boolean operators used are ⊤ (true), ¬ (negation), ∧ (conjunction) and ∨
+
+(disjunction). The temporal operators include U (until) and 
+
+♢ (eventually). 
+
+This language does not support the globally operator, as scLTL \next restricts negation to observations. As a result, formulae such as ¬♢¬ϕ are not part of scLTL \next . The next 
+
+operator is omitted from the syntax (e.g., [17]) because speci-fying objectives such as locating an object with an unknown position within t ∈ N steps could impose constraints that are too restrictive in unknown environments. For brevity, we refer to scLTL \next simply as scLTL throughout the paper. The evaluation of the semantics of scLTL formulae is done over infinite words where each element in the word is from 2O . The language of a formula ϕ is denoted by Lϕ,which is the set of infinite words satisfying ϕ. Despite being interpreted over infinite words (i.e., (2 O )ω 1), the satisfaction of scLTL formulae can always be decided in finite time. Specifically, for any infinite word l = l(0) l(1) l(2) · · · ∈ Lϕ,there exists a finite good prefix l(0) l(1) . . . l (n) such that any infinite extension of this prefix, l(0) l(1) . . . l (n)l′ with l′ ∈
+
+(2 O )ω , also satisfies ϕ [18]. The set of all such good prefixes is denoted by Lpref ,ϕ . For every scLTL formula, there exists a corresponding deterministic finite state automaton (DFA) that compactly encodes all words satisfying the formula. 
+
+Definition 3 (DFA) . We define a deterministic finite state automaton as the tuple A = ( S, s 0, 2O , δ a, F a), where:  
+
+> •
+
+S denotes a finite set of states,  
+
+> •
+
+s0 ∈ S represents the initial state,  
+
+> •
+
+2O is the input alphabet,  
+
+> •
+
+δa : S × 2O → S defines the transition function,  
+
+> •
+
+Fa ⊆ S denotes the set of accepting states. 
+
+The semantics of a DFA are interpreted on finite words over the alphabet 2O . For a DFA A, a run on a word 
+
+l = l(0) l(1) . . . l (n) is a sequence of states s =
+
+s(0) s(1) . . . s (n + 1) such that s(0) = s0, s(i) ∈ S, and 
+
+s(i + 1) = δa(s(i), l (i)) for each i ≥ 0. A word l is accepted if the final state of the run is in the accepting set, i.e., s(n + 1) ∈ Fa. The collection of all such words forms the language of A, denoted by LA. Every scLTL formula 
+
+ϕ over O can be translated into a DFA Aϕ with alphabet     
+
+> 1(2 O)ωdenotes the set of infinite words defined over 2O.
+
+2O , which accepts precisely the language of good prefixes of ϕ (i.e., LAϕ = Lpref ,ϕ ) [18]. While this DFA encodes accepting prefixes, an extended version can be built to also capture violations. 
+
+Definition 4 (Total DFA) . A DFA is said to be total if, for every state s ∈ S and every input l ∈ 2O , the transition function satisfies δa(s, l )̸ = ∅ [19]. 
+
+Given any DFA A, it is always possible to obtain a language-equivalent total DFA by adding a trash state st and defining δa(s, l ) = st for every pair (s, l ) such that δa(s, l ) is undefined. Throughout the remainder of this paper, the term DFA refers to a total DFA. 
+
+C. Graph Theory 
+
+A directed graph is represented as a tuple G = ( X, ∆) ,where X is the node set and ∆ ⊆ X × X specifies directed edges. If (xi, x j ) ∈ ∆, then xj is called an out-neighbor of 
+
+xi. The set of all out-neighbors of xi is written as Nxi ,referred to as “neighbors” in this paper. Moreover, N hxi
+
+denotes the set of nodes that are reachable from xi in at most h hops. IV. P ROBLEM FORMULATION 
+
+We consider a mobile robot operating in an unknown discrete environment. Initially, the robot only knows its initial state and the set of labels it may encounter, but it is unaware of the exact label of each state of the environment. Its objective is to accomplish an scLTL task. The robot is assumed to have perfect localization capabilities, which means it always knows its current state. Additionally, it is equipped with sensors that allow it to reveal the labels of previously unknown states. By exploring the environment, the robot can uncover and maintain a history of the labels associated with each state. Based on this setting, we consider the following problem: 
+
+Problem 1. Given a mobile robot operating in an unknown discrete environment as a TS T = ( X, Σ, δ, O, L, w ), where the labeling function L is initially unknown, the objective is to compute a finite trajectory xσ[0: n] that satisfies a desired scLTL specification ϕ over O, if such a trajectory exists; otherwise, determine that the specification is unsatisfiable. 
+
+V. S OLUTION APPROACH 
+
+Our proposed solution to Problem 1 consists of online and offline phases. In the offline phase, we identify states that allow progress toward task satisfaction without negative consequences. In the online phase, we use this information within a frontier-based exploration algorithm. This strategy ensures decision-making that accounts for the long-term effects of progress and gradually guides the robot to satisfy the task. 
+
+A. Offline 
+
+As motivated in Section I, not every mission progression is necessarily beneficial. In some cases, certain progress steps could restrict the ability to satisfy the task through alternative paths. In other words, a robot may commit to a progress that limits future options, whereas avoiding that progress could have enabled the task satisfaction. In this phase, our objective is to identify such progress steps that carry these consequences. To formalize this notion, we first define the concept of a DFA with an altered initial state [13]: 
+
+Definition 5 (DFA with altered initial state) . For a DFA A
+
+and a state s ∈ S, A(s) denotes a version of A where the initial state is set to s0 = s.
+
+Now we formally introduce a new type of DFA state called 
+
+commit state as follows: 
+
+Definition 6 (Commit state) . A non-trash and non-accepting state s ∈ S \ ({st} ∪ Fa) is defined as a commit state if 
+
+LA ⊈ LA(s). We denote the set of all commit states as Sc.
+
+Definition 6 implies that there exists an accepting word 
+
+l ∈ LA such that the word l is not accepting when started from the commit state s, i.e., l /∈ LA(s).
+
+Example. Figure 1 illustrates the DFA corresponding to the specification ϕ0 = ( ¬b U a) ∨ (¬a U b ∧ ♢c), which means “not observing b before a or not observing a before b and eventually observing c”. Now, consider the word l = a.Starting from the initial state s0 = 3 and following l, the run ends in the accepting state s = 0 implying l ∈ LA.In contrast, when starting from s = 1 and following l,the run does not reach an accepting state, i.e., l /∈ LA(1) .Consequently, we have LA ⊈ LA(1) , and s = 1 is a commit state according to Def. 6. Overall, this would mean that while observing a would suffice to satisfy the task, making mission progress towards s = 1 eliminates this possibility. 3¬𝗮 ∧ ¬𝗯 ∧ ¬𝗰                 
+
+> 0
+> 𝗮 ∨(𝗯 ∧𝗰 )1¬𝗮 ∧𝗯 ∧¬𝗰
+> 2¬𝗮 ∧¬𝗯 ∧𝗰
+> ⊤
+> 𝗰
+> ¬𝗰 𝗮 ∨𝗯
+> ¬𝗮 ∧¬𝗯
+
+Fig. 1: The DFA A corresponding to formula ϕ0.
+
+To determine whether there exists a word that A accepts while A(s) does not, one must evaluate every word accepted by A on A(s) to verify acceptance. To address this, we propose to create a special product automaton obtained by computing the product of the DFA A with itself. This au-tomaton allows the behaviors of A and A(s) to be analyzed in parallel over all words accepted by A. By constructing this special product automaton, the problem of exhaustively checking all possible words (brute force) is transformed into a reachability analysis problem. 
+
+Definition 7 (Product Automaton (DFA-DFA)) . Given a DFA A constructed from the specification ϕ, we define the product automaton as a tuple ¯A = A × A =( ¯S, ¯S0, 2O , ¯δ, G), where:  
+
+> •
+
+¯S = S × S is the state space,  
+
+> •
+
+¯S0 = s0 × (S \ ({st} ∪ Fa)) is the set of initial states, • 2O is the alphabet,  
+
+> •
+
+¯δ : ¯S × 2O → ¯S is the transition function such that 
+
+¯δ (s, s ′), l  =  δa(s, l ), δ a(s′, l ) where s, s ′ ∈ S. 
+
+> •
+
+G = Fa × (S \ Fa) is the target set. 
+
+Consider the sequence ¯s = ¯ s(0) . . . ¯s(n + 1) with ¯s(0) ∈
+
+¯S0 and ¯s(n + 1) ∈ G , which is the run of ¯A over a word 
+
+l = l(0) . . . l (n). Since each ¯s = ( s, s ′) ∈ ¯S consists of two components, with s, s ′ ∈ S, the run can be viewed as two parallel sequences of DFA states: the sequence of first components s(0) . . . s (n + 1) with s(0) = s0 and s(n + 1) ∈
+
+Fa, and the sequence of second components s′(0) . . . s ′(n +1) with s′(0) = s and s′(n + 1) ∈ S \ Fa. This implies that 
+
+l ∈ LA while l /∈ LA(s). Hence, by Def. 6, state s ∈ S is classified as a commit state. To determine the set of commit states, we proceed as follows. For each initial state (s0, s ) ∈
+
+¯S0, we examine whether there exists a path in ¯A leading to some state in G. If such a path exists, then s is identified as a commit state, i.e., s ∈ Sc.
+
+Example. (cont.) Consider the product automaton ¯A = A× A constructed from the DFA A in Fig. 1. We will illustrate two portions of ¯A in Figs. 2 and 3, which are restricted to the states reachable from ¯s0 = (3 , 1) and ¯s′ 
+
+> 0
+
+= (3 , 2) ,respectively. Note that G = {(0 , 1) , (0 , 2) , (0 , 3) } according to Def. 7. In Fig. 2, a state ¯s = (0 , 1) ∈ G is reachable from the initial state ¯s0 = (3 , 1) , indicating that state s = 1 is a commit state as discussed earlier. In Fig. 3, none of the states in G are reachable from the initial state ¯s′ 
+
+> 0
+
+= (3 , 2) .This demonstrates that state s = 2 is not a commit state. 
+
+Fig. 2: A portion of ¯A showing all states reachable from the initial state ¯s0 =(3 , 1) .
+
+Fig. 3: A portion of ¯A showing all states reachable from the initial state ¯s′  
+
+> 0=(3 ,2) .
+
+B. Online 
+
+We construct a product automaton from the TS T and the DFA A to jointly capture both the physical state evo-lution and the task progress. This product automaton forms the basis of our planning approach. Unlike the traditional product automaton construction, which is performed in a single step, our framework constructs the product automaton incrementally by using the set of known TS states. 
+
+Assumption 1. Suppose that the robot is located in state 
+
+x ∈ X. The robot’s sensors, with sensing range h ≥ 1,provide the labels L(x) as well as L(x′) for all x′ ∈ N hx .
+
+Assumption 1 is a mild assumption, as modern sensing technologies typically provide precise environmental mea-surements, which enables the robot to accurately determine state labels within its sensing range. The set of all TS states whose labels have been revealed under Assumption 1 is referred to as the set of known states and is denoted by 
+
+Xk ⊆ X.
+
+Definition 8 (Product Automaton (TS-DFA)) . Given aTS T = (Xk, Σ, δ, O, L, w ) and a DFA A =(S, s 0, 2O , δ a, F a, {st}), we define their product automaton as the tuple P = T × A = ( Sp, S p0 , Σ, δ p, p p, Fa, Ft),where:  
+
+> •
+
+Sp = Xk × S denotes the set of product states,  
+
+> •
+
+Sp0 = Xk × { s0} ⊆ Sp represents the set of initial states,  
+
+> •
+
+Σ is the finite set of actions,  
+
+> •
+
+δp : Sp × Σ → Sp is the transition function defined as follows: for any (x, s ) ∈ Sp and σ ∈ Σ, δp(( x, s ), σ ) = (x′, s ′), where δ(x, σ ) = x′, l = L(x′), and δa(s, l ) = 
+
+s′. 
+
+> •
+
+Fa = Xk × Fa is the set of accepting states,  
+
+> •
+
+Ft = Xk × { st} is the set of trash states. 
+
+Reaching an accepting state over the product automaton ensures the satisfaction of ϕ, whereas entering a trash state indicates a violation. Our objective is to compute a trajectory in P that enables the robot to reach an accepting state. However, achieving this requires knowledge of the labeling function L, which is unknown a priori as stated in Problem 1. As the robot explores the environment, new labels are gradually revealed according to Assumption 1. Consequently, additional states are added to the set of known states Xk ⊆
+
+X, which leads to the incremental expansion of the product automaton with new states and edges determined by the labeling function L and the transition function δp.Throughout the mission, at each time step, the robot evaluates reachability to an accepting state over P. If no such state is reachable, the robot employs a frontier-based exploration strategy that prioritizes information gain while promoting task progress toward satisfaction without adverse consequences whenever possible, and consistently avoiding task violations. 
+
+1) TL-Aware Frontier-Based Exploration: In our ap-proach, frontier-based exploration is executed when no ac-cepting state in the product automaton P is reachable. We define a frontier state as a known TS state, i.e., x ∈ Xk,that is adjacent to at least one unknown state x′ ∈ X \ Xk.To reach a frontier state, the robot computes its trajectory using the product automaton P. A finite trajectory over P
+
+generated by an action sequence σ[0: f −1] is represented as a sequence sσ[0: f −1]  
+
+> p
+
+= sp(0) sp(2) . . . s p(f ), where 
+
+δp(sp(i), σ (i)) = sp(i + 1) for all i ∈ { 0, 1, . . . , f − 1}.For simplicity, we use sp to denote sσ[0: f −1]  
+
+> p
+
+throughout the paper, except in cases where clarification is required. We denote the i-th element of the sequence sp by sp[i] and the final element by sp[f], where sp[i] = ( x(i), s (i)) and 
+
+sp[f] = ( x(f), s (f)) . We define the total weight of a product automaton trajectory sp as Wp(sp) = Pf −1 
+
+> i=0
+
+w(x(i), σ (i)) .
+
+In order to reach a frontier x ∈ Xk, the robot must reach a product automaton state (x, s ) that shares the same TS state 
+
+x. Since the product automaton may contain multiple states corresponding to the same TS state x but with different DFA states, the robot can approach the same frontier via different trajectories. Each trajectory may have different implications for the task, such as no progress, partial progress, task violation, or task satisfaction, depending on the associated DFA state. By planning through the product automaton, the robot gains the ability to evaluate alternative ways of reaching a frontier while considering the impact on task progression. This approach contrasts with [13], where the method selects the shortest path in the TS to a frontier and disregards that frontier if the path results in a task violation. The objective of our frontier-based exploration is to select, among all frontier states, the one that maximizes information gain, minimizes travel distance, and promotes progress toward task satisfaction without introducing adverse consequences. 
+
+a) Information gain: When the robot reaches a frontier, it uncovers the labels of certain states that were previously unknown. We define the information gain associated with a frontier state x, denoted by I(x), as the number of states whose labels are revealed upon visiting x, given the robot’s sensing range h. Formally, 
+
+I(x) = N hx ∩  X \ Xk
+
+ . (1) 
+
+b) Task progress metric: We introduce a task progress metric Ω( sp) that is computed as: 
+
+Ω( sp) = 
+
+
+
+−∞ if s(f) = st
+
+− α1·| X| 
+
+> α2
+
+if s(f) ∈ Sc
+
+∆ϕ(s(0) , s (f )) otherwise 
+
+ , (2) 
+
+where s(f) denotes the final DFA state in the trajectory sp,
+
+st is the trash state, and Sc is the set of commit states. The parameters α1, α 2 > 0 are user-defined weighting factors that indicate the importance of information gain and task progress metric, respectively. Here, ∆ϕ : S × S → Z is a function that quantifies progress toward task satisfaction by comparing the initial and final DFA states. In the literature, this computation is performed by finding the shortest path (in terms of hops) on a pruned version of the DFA. In this pruned DFA, transitions requiring more than one observation to hold simultaneously are removed [8]. This function computes how much closer the final state is to an accepting state. A higher value of ∆ϕ indicates that the trajectory brings the robot closer to an accepting state. By leveraging these criteria, we introduce an overall value that is assigned to each frontier: 
+
+V (x) = max 
+
+> sp
+
+α1 · I (x) + α2 · Ω( sp)
+
+Wp(sp)α3 , (3) where I(x) denotes the information gain associated with frontier x, Ω( sp) represents the task progress metric along the product automaton trajectory sp, and Wp(sp) is the corresponding total weight of that trajectory. The parameters 
+
+α1, α 2, and α3 are positive weighting factors that balance the contribution of each term. The value function is designed to ensure that any trajectory leading to task violation is never selected ( Ω( sp) = −∞ ), thereby guaranteeing safety. Furthermore, if all trajectories to a given frontier lead the robot into a commit state, the resulting value for that frontier becomes negative, since |X| > I(x) for all x ∈ X. In contrast, other frontiers retain positive values. Consequently, this formulation forces the robot to avoid entering a commit state whenever alternative exploration options exist, while promoting task progress that has no consequences. An out-line of the proposed method is illustrated in Fig. 4. Inputs:    
+
+> Transition system
+> Specification
+> Construct
+> DFA
+> Construct
+> Product automaton (DFA-DFA)
+> Find the set
+> of commit states
+> Construct Product
+> automaton
+> with initial
+> (TS-DFA)
+> Return
+> the satisfying trajectory
+> Is there a
+> path to an
+> accepting
+> state?
+> Yes
+> No
+> Choose the best
+> frontier and move
+> toward it
+> Update the product
+> automaton with
+> the new information
+> (Updated )
+> Is there a
+> safe
+> frontier?
+> No Return
+> Task cannot be satisfied
+> Yes
+
+Fig. 4: Summary of the proposed method. 
+
+2) Algorithm: We present our algorithm for solving Prob-lem 1. In line 1, the set of commit states Sc is computed based on the specification ϕ. Using the set of known states, the initial product automaton is then constructed. Lines 4–16 
+
+Algorithm 1: TL-Aware Frontier-Based Exploration                                                                                                             
+
+> Input: M= ( X, Σ, δ, O, L, c ), initial state x0, set of commit states Sc,
+> Xk,A= ( S, s 0,2O, δ a, F a,{st}),
+> Output: A trajectory xσ[0: n]satisfying ϕ
+> 1Construct ¯A=A × A and calculate Scas per Def. 6
+> 2Construct P= ( Sp, S p0,Σ, δ p, p p,Fa,Ft)as per Def. 8
+> 3xσ[0: n]= [ ] ,spcurrent = ( x0, s 0)
+> 4while Fais not reachable from spcurrent do
+> 5Set Fas the current set of all frontiers
+> 6if F=∅then
+> 7return Task cannot be satisfied
+> 8V∗=−∞ and s∗
+> p= [ ]
+> 9foreach x∈Fdo
+> 10 calculate V(x)and spas per (3)
+> 11 if V(x)> V ∗then
+> 12 V∗=V(x)and s∗
+> p=sp
+> 13 Vmax =V∗
+> 14 if Vmax =−∞ then
+> 15 return Task cannot be satisfied
+> 16 Follow s∗
+> p, updating Xk,L,P,xσ[0: n]and spcurrent
+> 17 Compute path to Faminimizing total weight, updating xσ[0: n]
+> 18 return xσ[0: n]
+
+implement the frontier-based exploration procedure, which is triggered whenever no path to an accepting state exists in the current product automaton. Specifically, the set of all frontiers is first collected in F , and the frontier with the highest value is selected. If no frontiers remain, or if all remaining frontiers lead to task violation, the algorithm concludes that the task is unsatisfiable. Otherwise, the robot follows the trajectory to the selected frontier and updates the product automaton with the newly discovered information. This process continues until a path to an accepting state is found, at which point the algorithm returns the traversed sequence of states xσ[0: n].
+
+Assumption 2. If −∞ < V max < 0 at anytime during the execution of Alg. 1, then from every state sp ∈ Sp \ F t there exists a path to some accepting state in Fp.
+
+Assumption 2 excludes scenarios where a satisfying path exists but can only be found by taking a risk. In other words, if the robot has explored part of the map without finding an accepting path, and the only remaining way to explore the rest of the map is by entering a commit state ( −∞ <Vmax < 0), then entering that commit state will not eliminate the reachability to the set of accepting states. Next, we establish through the following theorem that Alg. 1 satisfies the properties of soundness and completeness. 
+
+Theorem 1. Let Assumptions 1 and 2 hold. Then, Alg. 1 is sound and complete. Proof. At any time during the execution of Alg. 1, one of the following two cases occurs: 1) From the current state spcurrent , no accepting state is reachable in P (while-loop, line 4). In this case, there are two sub-cases regarding the existence of frontiers: 1.a) F = ∅: The robot has explored the entire envi-ronment but has not found a satisfying path. From line 7, the algorithm terminates and returns that the task cannot be satisfied. 1.b) F̸ = ∅: Three further subcases arise after line 12: (i) Vmax ≥ 0: The robot selects a frontier that does not lead to a commit state. As the robot moves towards that frontier, Assumption 1 ensures that the size of the known state set Xk increases (line 16). (ii) −∞ < V max < 0: This means that the robot has already explored part of the environment, and all remaining frontiers lead to commit states. In this case, the size of the known state set Xk also increases (line 16). Moreover, by Assumption 2, a satisfying path to an accepting state exists from every state sp ∈ Sp\F t. Hence, entering a commit state under these conditions does not eliminate reachability to the set of accepting states. (iii) Vmax = −∞ : No safe frontier is reachable, and from line 15 the algorithm terminates, which returns that the task cannot be satisfied. Overall, in subcases (i) and (ii), where F̸ = ∅, the size of the known state set Xk increases, while preserving the reachability to the set of accepting states. Since T
+
+contains a finite number of states, eventually Xk =
+
+X, which implies F = ∅, unless some frontiers are unreachable due to potential task violations. In that event, Vmax = −∞ , which leads to termination of the algorithm as in subcase (iii). Thus, in Case 1 the robot either explores a safe frontier or terminates when no safe frontiers are left, by returning that the task cannot be satisfied. 2) From spcurrent , there exists a path to an accepting state in P.This is the only case where the algorithm returns a trajectory. The trajectory produced at line 18 leads the robot to an accepting state in P, which directly implies satisfaction of the scLTL specification ϕ.In conclusion, if the algorithm outputs a trajectory, that tra-jectory satisfies the specification ( soundness ). Furthermore, if a satisfying path exists, the robot will eventually find it by exhaustively visiting all safe frontiers ( completeness ). VI. C ASE STUDIES 
+
+Simulation: We consider a robot operating in a 20 ×
+
+20 grid environment, equipped with an action set Σ =
+
+{Up , Down , Right , Left , Stay } and a sensing range of h = 3 .The scLTL formula ϕ is translated into its corresponding DFA using the Spot library [20]. The parameters in (3) are set to α1 = 1 , α2 = 20 , and α3 = 1 . All computations are performed on an Intel Core i7 laptop (2.3 GHz, 16 GB RAM). 
+
+A. Search and Rescue 
+
+In this scenario, the robot is tasked with locating both a person and a safe exit within the environment, and subse-quently rescuing the person by transporting them to the safe exit. In the environment, some regions may have slippery inclines. Once the robot enters such a region, it may descend to a lower level and be unable to return, which restricts its movement to that level. These regions are referred to as lower-level regions. This mission is specified by the scLTL formula: 
+
+ϕ1 = ( ¬L U (L U (P U ( ( L ∨ P) U S)))) ∧ ♢S ∧ (¬S U P),
+
+(4) where P denotes the person, S the safe exit, and L the lower-level region. As in Fig. 5, the robot begins its mission from the initial cell, marked with a red circle. Due to its limited sensing range, the robot can only observe the true labels of nearby cells, while cells with unknown labels are depicted in shaded grey. The robot proceeds to explore the environment in order to gather the information required to satisfy the specified task. In Fig. 5(b), although the objective is to rescue the person and transport them to a safe exit, the robot does not immediately approach the person upon detection. This is because the person is located in a lower-level region, which Start  Lower-level  Person  Safe-exit     
+
+> (a) (b) (c) (d) (e)
+
+Fig. 5: Snapshots from a video, starting at (a) and ending at (e), illustrating the robot executing our algorithm to satisfy the task ϕ1. The robot’s starting position is marked by a red circle in the top-left corner, while the lower-level region, person, and safe exit are represented by yellow, green, and blue squares, respectively. The robot’s traversed trajectory is shown by black arrows. 
+
+is a one-way area from which the robot cannot return if no safe exit is available. Entering such a region is considered as a commit state in our planning algorithm; the robot avoids committing to that progress unless it can identify a satisfying trajectory beyond that point. Consequently, it prioritizes exploring other areas to seek alternative solutions. In Fig. 5(d), the robot discovers that a safe exit exists within the lower-level region containing the person, thereby identifying a satisfying trajectory in the product automaton. Finally, as in Fig. 5(e), the robot executes this trajectory and successfully completes the task. Note that our algorithm can be re-executed after each termination until every person, who can be saved, has been rescued. 
+
+Fig. 6: Trajectory traversed by the robot when following the method in [13], which shows that it gets stuck and fails to satisfy the task. 
+
+Figure 6 depicts the same scenario and map as in Fig. 5. But, it illustrates the outcome when the planning approach [13] is employed. In this case, there is no mechanism to prevent the robot from entering the lower-level region. Once inside, it detects the person but the robot becomes trapped as no safe exit is available. Although the specification is not violated at this point, it becomes impossible to complete, which renders the mission unsatisfiable. This highlights the importance of incorporating commit states into the planning process. Figure 7 presents the final traversed trajectories for the same specification under different map configurations by using our algorithm. In Fig. 7(a), during the early stage of exploration, the robot discovers a safe exit located near the person in the lower-level area. It immediately terminates the frontier-based exploration and follows the path to satisfy the task. In Fig. 7(b), the robot first identifies a safe exit and later encounters the person. When this happens, it stops the frontier-based exploration and follows a trajectory that first reaches the person and then proceeds to the safe exit. Finally, in Fig. 7 (c), the robot encounters the person midway through the mission and moves toward them, since this progress carries no future consequences (i.e., it does not correspond to a commit state). The robot then rescues the person by transporting them to the first safe exit it locates. Overall, as long as there exists a feasible path to satisfy the specification, our algorithm eventually guarantees satisfaction (Theorem 1), whereas other existing methods may fail in such scenarios, as in Fig. 6. 
+
+B. Benchmark analysis 
+
+We compare our method with the approach proposed in [13] in terms of satisfaction rate and average trajectory length under the same task ϕ1. For map generation, we conduct a Monte Carlo simulation by generating 500 random grid maps of size 20 × 20 . Labels are assigned by placing n randomly positioned blocks of size 5 × 5, each designated with the label L. In addition, two cells are labeled as P and two cells as S. To satisfy Assumption 2, we ensure that at least one 
+
+P cell and one S cell are located outside the L blocks and remain reachable without traversing the L regions. As shown in Table I, when we set the value of n = 0 ,there are no L regions in the environment. Therefore, product automaton states that have a commit state as their DFA state are not reachable. This follows from the specification, since the only way to reach a commit state is by observing L.
+
+(a) (b) (c) 
+
+Fig. 7: Trajectories generated by our algorithm that satisfy ϕ1 under different maps. In this case, both our algorithm and the method in [13] satisfy the specification in all 500 maps, which results in a 100% satisfaction rate. In terms of average trajectory length, our algorithm with 46 .20 steps outperforms [13] with 
+
+56 .47 steps. This is because our frontier-based exploration incorporates information gain, which enables more efficient exploration and faster discovery of the desired labels. When we set n = 5 , our algorithm again outperforms [13]. It achieves a 100% satisfaction rate, whereas their method achieves only 35% . This performance gap arises because their approach lacks a mechanism to prevent entering a commit state, which causes the robot to move into an L
+
+region and become trapped without a reachable S and P.Note that the lower average trajectory length reported for [13] occurs because, once the robot becomes trapped in an 
+
+L region with no safe frontier, the algorithm is terminated and the trajectory length is recorded. Thus, their average trajectory length reflects both successful and deadlock cases.              
+
+> nMethod Avg. Trajectory Length Satisfaction Rate
+> 0Our Algorithm 46.20 100.0 % [13] 56.47 100.0 %
+> 5Our Algorithm 48.07 100.0 % [13] 31.43 35.00 %
+
+TABLE I: Comparison between [13] and our proposed algorithm with respect to average trajectory length and success rate, evaluated over 500 maps. 
+
+VII. C ONCLUSION 
+
+In this paper, we present a framework for motion planning in unknown environments under syntactically co-safe Linear Temporal Logic (scLTL) tasks. The proposed algorithm encourages progress toward task satisfaction while avoiding commit states, which are states that restrict satisfaction to a limited set of paths. Our method combines frontier-based exploration with an automata-theoretic approach, which en-ables the selection of frontiers that balance information gain, travel distance, and progress toward task satisfaction. We demonstrate that if a satisfying path exists, our algorithm eventually finds it, and otherwise it correctly determines that the task is unsatisfiable. Through direct comparison with a state-of-the-art method, we show that our approach achieves better performance and succeeds in cases where the baseline method fails. For future work, we focus on extending this framework to continuous spaces and exploring collaborative strategies involving multiple robots. REFERENCES [1] C. Stachniss, Robotic mapping and exploration . Springer Science & Business Media, 2009, vol. 55. [2] W. Burgard, M. Moors, C. Stachniss, and F. E. Schneider, “Coordi-nated multi-robot exploration,” IEEE Transactions on robotics , vol. 21, no. 3, pp. 376–386, 2005. [3] B. Yamauchi, “A frontier-based approach for autonomous exploration,” in Proceedings 1997 IEEE International Symposium on Computational Intelligence in Robotics and Automation CIRA’97.’Towards New Com-putational Principles for Robotics and Automation’ . IEEE, 1997, pp. 146–151. [4] F. Bourgault, A. A. Makarenko, S. B. Williams, B. Grocholsky, and H. F. Durrant-Whyte, “Information based adaptive robotic explo-ration,” in IEEE/RSJ international conference on intelligent robots and systems , vol. 1. IEEE, 2002, pp. 540–545. [5] H. Li, Q. Zhang, and D. Zhao, “Deep reinforcement learning-based automatic exploration for navigation in unknown environment,” IEEE transactions on neural networks and learning systems , vol. 31, no. 6, pp. 2064–2076, 2019. [6] H. Guo, F. Wu, Y. Qin, R. Li, K. Li, and K. Li, “Recent trends in task and motion planning for robotics: A survey,” ACM Computing Surveys , vol. 55, no. 13s, pp. 1–36, 2023. [7] J. Zhao, K. Zhu, S. Li, and X. Yin, “To explore or not to explore: Regret-based ltl planning in partially-known environments,” IFAC-PapersOnLine , vol. 56, no. 2, pp. 11 337–11 343, 2023. [8] Y. Kantaros, S. Kalluraya, Q. Jin, and G. J. Pappas, “Perception-based temporal logic planning in uncertain semantic maps,” IEEE Transactions on Robotics , vol. 38, no. 4, pp. 2536–2556, 2022. [9] A. Taheri and D. Aksaray, “Motion planning under temporal logic specifications in semantically unknown environments,” 2025. [Online]. Available: https://arxiv.org/abs/2511.03652 [10] A. Taheri, Y. M. Phalle, and D. Aksaray, “Temporal logic motion planning of a uav-ugv team in semantically unknown environments,” in AIAA SCITECH 2026 Forum , 2026, p. 0566. [11] L. Lamanna, L. Serafini, A. Saetti, A. Gerevini, and P. Traverso, “Online grounding of symbolic planning domains in unknown envi-ronments,” arXiv preprint arXiv:2112.10007 , 2021. [12] Y. Xu, Z. Zhang, J. Yu, Y. Shen, and Y. Wang, “A framework to co-optimize robot exploration and task planning in unknown envi-ronments,” IEEE Robotics and Automation Letters , vol. 7, no. 4, pp. 12 283–12 290, 2022. [13] A. M. Ayala, S. B. Andersson, and C. Belta, “Temporal logic motion planning in unknown environments,” in 2013 IEEE/RSJ International Conference on Intelligent Robots and Systems . IEEE, 2013, pp. 5279– 5284. [14] K. Grover, F. S. Barbosa, J. Tumova, and J. Kretınsky, “Semantic abstraction-guided motion planningfor scltl missions in unknown environments,” in Robotics: Science and Systems , 2021. [15] M. Kloetzer and C. Belta, “A fully automated framework for control of linear systems from temporal logic specifications,” IEEE Transactions on Automatic Control , vol. 53, no. 1, pp. 287–297, 2008. [16] E. Plaku and S. Karaman, “Motion planning with temporal-logic specifications: Progress and challenges,” AI communications , vol. 29, no. 1, pp. 151–162, 2015. [17] Y. Kantaros, M. Malencia, V. Kumar, and G. J. Pappas, “Reactive temporal logic planning for multiple robots in unknown environments,” in IEEE International Conference on Robotics and Automation (ICRA) ,2020, pp. 11 479–11 485. [18] C. Belta, B. Yordanov, and E. A. Gol, Formal methods for discrete-time dynamical systems . Springer, 2017, vol. 15. [19] H. Lin and P. J. Antsaklis, “Hybrid dynamical systems,” 2015. [20] A. Duret-Lutz, A. Lewkowicz, A. Fauchille, T. Michaud, E. Renault, and L. Xu, “Spot 2.0—a framework for ltl and-automata manip-ulation,” in International Symposium on Automated Technology for Verification and Analysis . Springer, 2016, pp. 122–129.

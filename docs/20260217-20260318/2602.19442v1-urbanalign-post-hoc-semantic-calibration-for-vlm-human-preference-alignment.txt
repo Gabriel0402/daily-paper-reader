@@ -1,0 +1,964 @@
+Title: UrbanAlign: Post-hoc Semantic Calibration for VLM-Human Preference Alignment
+
+URL Source: https://arxiv.org/pdf/2602.19442v1
+
+Published Time: Tue, 24 Feb 2026 02:19:32 GMT
+
+Number of Pages: 26
+
+Markdown Content:
+# URBAN ALIGN : P OST -HOC SEMANTIC CALIBRATION FOR 
+
+# VLM-H UMAN PREFERENCE ALIGNMENT 
+
+A P REPRINT 
+
+Yecheng Zhang 1∗ Rong Zhao 2∗ Zhizhou Sha 1 Yong Li 3 Lei Wang 4 Ce Hou 3 Wen Ji 5
+
+Hao Huang 1 Yunshan Wan 6 Jian Yu 7 Junhao Xia 1 Yuru Zhang 8 Chunlei Shi 9∗
+
+> 1
+
+Tsinghua University 2University College London 3Hong Kong University of Science and Technology 
+
+> 4
+
+Peking University 5Southwest Jiaotong University 6Zhejiang University 
+
+> 7
+
+University of Texas at Austin 8Renmin University of China 9Southeast University February 24, 2026 
+
+# ABSTRACT 
+
+Aligning vision-language model (VLM) outputs with human preferences in domain-specific tasks typically requires fine-tuning or reinforcement learning, both of which demand labelled data and GPU compute. We show that for subjective perception tasks, this alignment can be achieved without any model training : VLMs are already strong concept extractors but poor decision calibrators , and the gap can be closed externally. We propose a training-free post-hoc concept-bottleneck pipeline consisting of three tightly coupled stages: concept mining , multi-agent structured scoring , and 
+
+geometric calibration , unified by an end-to-end dimension optimization loop. Interpretable evaluation dimensions are mined from a handful of human annotations; an Observer–Debater–Judge chain extracts robust continuous concept scores from a frozen VLM; and locally-weighted ridge regression on a hybrid visual–semantic manifold calibrates these scores against human ratings. Applied to urban perception as UrbanAlign , the framework achieves 72.2% accuracy ( κ=0 .45 ) on Place Pulse 2.0 across six categories, outperforming the best supervised baseline by +15.1 pp and uncalibrated VLM scoring by +16.3 pp, with full dimension-level interpretability and zero model-weight modification. 
+
+Keywords Human Preference Alignment · Post-hoc Concept Bottleneck · Vision-Language Model · Training-Free Calibration · Urban Perception 
+
+# 1 Introduction 
+
+Large vision-language models (VLMs) excel at describing visual scenes but consistently fail to produce reliable preference labels for domain-specific tasks. This VLM–human preference alignment gap appears across domains, from urban perception [Zhang et al., 2025] to aesthetic quality [Murray et al., 2012], and the standard remedy is model adaptation: fine-tuning, LoRA, or RLHF [Ouyang et al., 2022], all of which modify model weights and require domain-specific training data and non-trivial compute. We ask a different question: can a frozen VLM be aligned with human preferences in a new domain, without any model training? 
+
+We answer affirmatively by observing that VLMs are already strong concept extractors that can describe façade quality, vegetation condition, pavement integrity, and other mid-level attributes, but poor decision calibrators : their mapping from rich internal features to discrete comparison labels is poorly aligned with human judgement boundaries. This mirrors the finding of Concept Bottleneck Models (CBMs) [Koh et al., 2020] that routing predictions through interpretable concept scores and then a calibrated linear layer dramatically outperforms end-to-end classification. Yuksekgonul et al. [2023] showed that such a concept bottleneck can be retrofitted post-hoc onto any frozen backbone. 
+
+> ∗
+
+Corresponding: zhangyec23@mails.tsinghua.edu.cn (Y. Zhang), rong.zhao.25@ucl.ac.uk (R. Zhao), 
+
+230238514@seu.edu.cn (C. Shi) 
+
+> arXiv:2602.19442v1 [cs.CV] 23 Feb 2026
+
+UrbanAlign: Post-hoc Semantic Calibration for VLM-Human Preference Alignment A P REPRINT End-to-End    
+
+> Zero-Shot VLM
+> ?
+> Black Box
+> Processing
+> "Image A looks
+> more wealthy"
+> (No explanation)
+> Low-Level
+> Feature Extraction
+> Pixel Counting
+> Segmentation
+> (DeepLab / NDVI)
+> Greenery: 30%
+> Building: 45%
+> Acc. 59.1%
+> UrbanAlign
+> (Ours)
+> Mid-Level
+> Semantic Decoding
+> VLM + Multi-Agent
+> Low
+> Interpretability
+> (a)
+> Limited
+> Semantic Depth
+> (b)
+> Facade: 8.2
+> Pavement: 6.5
+> Cleanliness: 4.2
+> Acc. 72.3%
+> Accurate &
+> Interpretable
+> (c)
+> Human Perception
+> of Urban Environment
+
+Figure 1: Conceptual comparison of three approaches to urban perception. (a) End-to-end / zero-shot VLM methods map directly from pixels to abstract judgments with no interpretable intermediates. (b) Low-level objective methods (segmentation-based regression) extract hand-crafted features but lack semantic depth (56.2% avg. accuracy). (c) Ur-banAlign routes predictions through mid-level semantic dimensions discovered by the VLM ( e.g. , Façade Quality, Pavement Integrity), achieving 72.2% average accuracy with actionable, per-dimension interpretability. We operationalise this principle as a training-free pipeline with three tightly coupled stages (Fig. 2): (i) concept mining ,where interpretable evaluation dimensions are discovered from a handful of human annotations; (ii) structured scoring ,where an Observer–Debater–Judge multi-agent chain extracts robust continuous concept scores from the frozen VLM; 
+
+(iii) geometric calibration , where locally-weighted ridge regression (LWRR) on a hybrid visual–semantic manifold aligns concept scores to human ratings. An end-to-end optimization loop unifies these stages by automatically selecting the dimension set that maximises calibrated accuracy via temperature-scheduled trials with elite seeding (convergence probability ≥ 1−(1 −p∗)T ). 
+
+Urban perception as testbed. We instantiate this framework as UrbanAlign and evaluate on Place Pulse 2.0 [Salesses et al., 2013], which provides 1.17M pairwise comparisons across 110K street-view images and six perception categories (safety, beautiful, lively, wealthy, boring, depressing). Zero-shot GPT-4o achieves only 56.7% accuracy ( κ=0 .15 )— comparable to supervised baselines but far from human inter-rater consistency ( κ≈0.6). UrbanAlign reaches 72.2% (κ=0 .45 ), a +15.1 pp gain over the best supervised baseline and +16.3 pp over uncalibrated scoring, with full dimension-level interpretability, requiring no gradient, no weight update, and no GPU training. 
+
+Contribution. Our core contribution is a training-free post-hoc concept-bottleneck framework for aligning VLM outputs with human preferences in domain-specific tasks. The three-stage pipeline (concept mining, multi-agent structured scoring, and geometric calibration) forms a single unified method whose components are jointly optimised by the end-to-end dimension loop. A 2×2 factorial ablation reveals that pairwise context and multi-agent reasoning interact synergistically (+18.6 pp combined on wealthy ); VLM-mined dimensions achieve up to 71.2% individual discriminative power; and LWRR calibration provides a per-sample R2 interpretability audit. 
+
+# 2 Related Work 
+
+Urban perception and crowdsourcing. Salesses et al. [2013] created Place Pulse, collecting pairwise comparisons of urban scenes across six dimensions. Dubey et al. [2016] trained Siamese networks on these labels. Zhang et al. [2018] used multi-task learning; Naik et al. [2014] predicted continuous safety scores. All these methods map directly from pixels to abstract percepts, bypassing interpretable mid-level representations. 
+
+VLMs for urban understanding. Zhang et al. [2025] systematically evaluated GenAI models on urban perception tasks, finding that VLMs capture broad perceptual trends but oversimplify the multi-dimensional complexity of human judgements. These studies position VLMs as end-to-end classifiers. We reposition VLMs as structured semantic decoders whose outputs require post-hoc calibration. 
+
+Concept Bottleneck Models. Koh et al. [2020] introduced CBMs: predictions are routed through interpretable concept scores, enabling human-auditable reasoning. Yuksekgonul et al. [2023] proposed post-hoc CBMs that retrofit concept layers onto any backbone. Oikarinen et al. [2023] showed concepts can be discovered from language models without manual labels. Yang et al. [2023] further explored language-in-a-bottle concept extraction. Our semantic dimensions serve as an analogous interpretable bottleneck, but operate externally on VLM-synthesised data rather than as an internal network layer. 2UrbanAlign: Post-hoc Semantic Calibration for VLM-Human Preference Alignment A P REPRINT 
+
+Multi-agent LLM reasoning. Wang et al. [2023] showed self-consistency (sampling diverse reasoning paths) improves chain-of-thought reliability. Du et al. [2024] and Liang et al. [2024] extended this to multi-agent debate. We instantiate this as an Observer–Debater–Judge pipeline for visual perception. 
+
+Locally-weighted regression. Cleveland [1979] introduced LOESS for robust local fitting; Atkeson et al. [1997] generalised it. Ruppert and Wand [1994] analysed the multivariate case. We adapt locally-weighted ridge regression to a hybrid visual–semantic differential space for perception calibration. 
+
+Human preference alignment. Aligning model outputs to human preferences is a broad challenge. RLHF [Ouyang et al., 2022] addresses it by training reward models on pairwise comparisons and fine-tuning via reinforcement learning, which is effective but compute-intensive. Pairwise human-preference datasets extend well beyond Place Pulse: SPECS [Quintana et al., 2025] adds 10 perception dimensions with demographic metadata, ScenicOrNot covers 200K+ UK locations, and AVA [Murray et al., 2012] collects aesthetic ratings for 250K photographs. UrbanAlign addresses the same alignment problem through a fundamentally different mechanism: post-hoc concept mining and geometric calibration, requiring no model training. 
+
+Few-shot data synthesis. Ye et al. [2022] and Meng et al. [2023] generated training data from language models. UrbanAlign differs by operating on visual pairwise comparisons and introducing post-hoc calibration of VLM concept scores. 
+
+# 3 Method 
+
+3.1 Problem Formulation 
+
+Given an urban image set X ={x1, . . . , x N } and a perception category d (e.g. , wealthy), we aim to predict human pairwise preferences: 
+
+yij =
+
+
+
+left if xi ≻ xj on dimension d, 
+
+right if xi ≺ xj ,
+
+equal if xi ≈ xj .
+
+(1) The labelled pool DL={(xi, x j , y ij )} contains crowdsourced pairwise comparisons (from Place Pulse 2.0). We split 
+
+DL into a reference set Dref (with human labels and TrueSkill ratings) and a pool set Dpool (to be calibrated), with strict isolation: Dref ∩ D pool = ∅.
+
+Notation. ϕ: X → R768 denotes a pre-trained CLIP encoder (ViT-L/14). TrueSkill [Herbrich et al., 2006] converts pairwise comparisons to continuous ratings μi per image. 
+
+3.2 Stage 1: Semantic Dimension Extraction Motivation. Instead of asking a VLM “Which image looks more wealthy?” (a poorly calibrated end-to-end query), we first decompose the abstract percept into interpretable, continuously scorable sub-dimensions. This is analogous to defining the concept set in a CBM [Koh et al., 2020]: the dimensions form an interpretable bottleneck through which all subsequent predictions must pass. 
+
+TrueSkill consensus sampling. We convert pairwise comparisons to continuous scores via TrueSkill ( μ=25 , σ=8 .33 ,draw probability 0.10). We sample high-consensus (μ>τ h, σ<σ med ) and low-consensus (μ<τ l, σ<σ med ) exemplars, where τh and τl are the 75th and 25th percentiles. Five images per group form the consensus set Sconsensus (10 total). 
+
+Dimension extraction. A structured prompt presents the high/low exemplars with their TrueSkill scores and PCA-compressed CLIP embeddings (8D). The VLM outputs n ∈ [5 , 10] dimensions in JSON, each containing a name, description, and high/low indicators. For the wealthy category, the extracted dimensions are: Façade Quality , Vegetation Maintenance , Pavement Integrity , Vehicle Quality , Building Modernity , Infrastructure Condition , Street Cleanliness ,and Lighting Quality .These dimensions satisfy three requirements: visual observability (scorable from street-view images), measurability 
+
+(1–10 continuous scale), and universality (applicable across cities). 3UrbanAlign: Post-hoc Semantic Calibration for VLM-Human Preference Alignment A P REPRINT Stage 1                     
+
+> Semantic Dimension
+> Extraction
+> Consensus Samples
+> (-high / -low)
+> VLM Dimension
+> Generator
+> c: Facade Quality,
+> Vegetation, Pavement,
+> Vehicle, Modernity,
+> Infrastructure, Cleanliness
+> Stage 2
+> Multi-Agent Feature
+> Distillation
+> Image Pair
+> (xA,xB)
+> Observer
+> =0.3
+> Debater
+> =0.5
+> Judge
+> =0.1
+> S(x)[1, 10] 7
+> Semantic Scores
+> c
+> Frozen CLIP
+> ViT-L/14
+> (x)768
+> Visual Embedding
+> Hybrid Vector Fusion
+> h= [ , (1 )S]
+> Stage 3
+> Local Manifold
+> Calibration (LWRR)
+> ref
+> Human Labels
+> + TrueSkill
+> pool
+> To Calibrate
+> ref pool =
+> hybrid (A,B)
+> Differential Space
+> K-NN ( K=20) +
+> Weighted Ridge Regression
+> w= ( XWX +I)1XWy
+> y: Calibrated
+> Prediction
+> +R2Audit
+
+Figure 2: Overview of the UrbanAlign framework. Stage 1 discovers interpretable semantic dimensions from high/low-consensus exemplars via a VLM. Stage 2 distils VLM knowledge into continuous dimension scores via the Observer–Debater–Judge chain and fuses them with CLIP embeddings into hybrid vectors ( α=0 .3). Stage 3 
+
+calibrates predictions by locally-weighted ridge regression (LWRR) on the hybrid differential manifold, with R2 as an interpretability audit. Data isolation: Dref ∩ D pool = ∅.
+
+3.3 Stage 2: Multi-Agent Feature Distillation From classification to feature extraction. Rather than querying a VLM for a one-shot discrete label, we extract a 
+
+hybrid feature vector :
+
+h(x) = [ ϕCLIP (x), S (x)] , (2) where S(x) ∈ [1 , 10] n is the vector of semantic dimension scores produced by the VLM. This hybrid representation fuses low-level visual patterns (CLIP) with high-level domain-specific semantics, analogous to augmenting a neural backbone with concept scores in a post-hoc CBM [Yuksekgonul et al., 2023]. 
+
+2×2 factorial design. To systematically evaluate component contributions, we define four synthesis modes: 
+
+Single-Shot Multi-Agent Single-Image Mode 1 Mode 3 Pairwise Mode 2 Mode 4 
+
+Factor 1 (Pairwise context): Modes 2/4 present both images simultaneously, enabling relative comparison. Factor 2 (Multi-agent reasoning): Modes 3/4 employ the deliberation chain below. 
+
+Observer–Debater–Judge deliberation. Inspired by multi-agent debate [Du et al., 2024, Liang et al., 2024] and self-consistency [Wang et al., 2023], we decompose reasoning into three agents (all powered by GPT-4o with different temperatures): 4UrbanAlign: Post-hoc Semantic Calibration for VLM-Human Preference Alignment A P REPRINT 
+
+• Observer (τ =0 .3): describes visually observable details per dimension without judgement, thereby suppress-ing confirmation bias. • Debater (τ =0 .5): argues both for HIGH and LOW scores on each dimension, exploring opposing perspectives. • Judge (τ =0 .1): synthesises descriptions and arguments to produce final scores S(x) ∈ [1 , 10] n.
+
+Intensity-based winner determination. For each pair (xA, x B ), we also record the intensity : I=|S(xA) − S(xB )|
+
+summed across dimensions. Pairs with intensity below a threshold σI are labelled “equal”; otherwise the VLM’s predicted winner is retained. 
+
+3.4 Stage 3: Local Manifold Calibration (LWRR) 
+
+This stage is the core algorithmic contribution: a post-hoc calibration layer analogous to the linear predictor in a CBM [Koh et al., 2020], but locally adaptive to account for heterogeneous perception patterns across the visual-semantic manifold. 
+
+3.4.1 Hybrid Differential Space. 
+
+CLIP, pre-trained on web-scale image-text pairs, provides strong general features but exhibits distribution shift on street-view scenes. We augment it with semantic dimension scores to form the hybrid differential encoding: 
+
+∆hybrid (A, B ) = α · ∆CLIP (A, B ), (1 −α) · ∆Sem (A, B ), (3) where ∆CLIP uses L2-normalised CLIP embeddings, ∆Sem =S(A)−S(B) is normalised to [0 , 1] by dividing by 10, and 
+
+α ∈ [0 , 1] balances visual and semantic components. We find α=0 .3 optimal (70% semantic weight), consistent with the expectation that domain-specific VLM concepts carry more perception-relevant signal than generic CLIP features. 
+
+3.4.2 LWRR Algorithm. Step 1: Build reference manifold. From Dref , compute hybrid differential vectors and TrueSkill score differences 
+
+yTS  
+
+> i
+
+=μA−μB . Mirror augmentation doubles the reference set: for each (A, B, y ), add (B, A, −y).
+
+Step 2: Neighbourhood search. For query ∆hybrid  
+
+> q
+
+∈ D pool , compute cosine similarities to all reference points and select the K nearest neighbours NK (K=20 ). 
+
+Step 3: Kernel weighting. wi = exp( si/τ ) for i ∈ N K , where si is cosine similarity and τ =1 .0 is kernel bandwidth. 
+
+Step 4: Local ridge regression. Solve for local dimension weights: 
+
+ˆw = arg min 
+
+> w
+
+X
+
+> i∈N K
+
+wi
+
+ yTS  
+
+> i
+
+− w⊤∆Sem ,i 
+
+2 + λ∥w∥2, (4) where λ=1 .0 is the ridge penalty. The solution is ˆw = ( X⊤W X + λI )−1X⊤W y , where W =diag( w1, . . . , w K ) and 
+
+X stacks the semantic differentials. 
+
+Step 5: Prediction and audit. 
+
+ˆδq = ˆ w⊤∆q
+
+> Sem
+
+, R2 = 1 −
+
+P 
+
+> i
+
+wi(yTS  
+
+> i
+
+− ˆyi)2
+
+P 
+
+> i
+
+wi(yTS  
+
+> i
+
+− ¯y)2 . (5) When R2 is high, abstract perception in this neighbourhood is linearly explainable by the mid-level dimensions. 
+
+Step 6: Statistical re-inference. 
+
+ˆy =
+
+
+
+equal if |ˆδ| < ε or ceq > θ, 
+
+left if ˆδ > 0,
+
+right otherwise ,
+
+(6) where ε=0 .8 is the score-difference threshold and ceq =|{ i ∈ N K : li=equal }| /K measures local equal-consensus. 
+
+3.4.3 Why Post-hoc Calibration Works. 
+
+The theoretical motivation is straightforward. VLMs are powerful feature extractors: their dimension scores S(x)
+
+capture genuine perceptual signals (we show up to 71.2% discriminative power per dimension). However, the VLM’s 5UrbanAlign: Post-hoc Semantic Calibration for VLM-Human Preference Alignment A P REPRINT 
+
+own mapping from S to discrete labels is poorly calibrated, as it lacks exposure to this specific population’s decision boundaries. LWRR learns these boundaries locally from a small reference set. The procedure is analogous to a post-hoc CBM [Yuksekgonul et al., 2023]: concept activations (our dimension scores) are extracted from a frozen backbone (our VLM), then a lightweight predictor (our LWRR) is trained on labelled data. The key advantage of LWRR over a single global linear layer is local adaptivity : different regions of the perception manifold may weight dimensions differently (e.g. , “vegetation maintenance” may matter more in suburban neighbourhoods than in downtown areas). 
+
+3.5 Stage 4: End-to-End Dimension Optimization 
+
+The semantic dimensions discovered in Stage 1 depend on the VLM’s sampling temperature and the particular consensus exemplars presented. We close the loop with an automated search over dimension sets, optimising each perception category independently. 
+
+Formulation. Let D(t) 
+
+> c
+
+denote the dimension set generated at trial t for category c. Each trial runs the full pipeline (dimension extraction → multi-agent pairwise scoring (Mode 4) → LWRR calibration) on a fixed evaluation sample. The per-category optimal set is: 
+
+D∗ 
+
+> c
+
+= arg max   
+
+> t∈{ 1,...,T }
+
+Acc c
+
+ LWRR  Score (Dc
+
+> pool
+
+, D(t) 
+
+> c
+
+), Dc
+
+> ref
+
+ . (7) 
+
+Two-phase strategy: explore → converge. The search proceeds in two phases over T =15 trials (with patience-based early stopping after 5 consecutive non-improving trials): Explore (first 40%, τgen =0 .85 →1.0): higher temperatures produce diverse, independently generated dimension sets; each category accumulates its best. Converge (remaining 60%, τgen =0 .7→0.5): lower temperatures with mutation mode , where the per-category best dimensions are preserved except for 1–2 targeted replacements, enabling local refinement. 
+
+Per-category assembly and elite seeding. After the initial trial, each category’s current best D∗ 
+
+> c
+
+is provided as a soft reference in the generation prompt, converting the search from independent sampling into guided refinement. Since categories may peak at different trials, the final output assembles per-category optima: {D ∗ 
+
+> c
+
+}Cc=1 , potentially sourced from different trials. 
+
+Convergence. If each trial draws independently from the VLM’s distribution over an effective dimension-set space 
+
+Feff , the probability of missing D∗ 
+
+> c
+
+after T trials satisfies: 
+
+Pr D∗ 
+
+> c
+
+/∈ {D (1)  
+
+> c
+
+, . . . , D(T ) 
+
+> c
+
+} ≤ (1 − p∗)T , (8) where p∗ is the single-trial probability of generating the optimal set. The two-phase temperature schedule traverses the VLM’s generative distribution from moderate entropy (exploration) to its mode (exploitation via mutation), analogous to random search with a guided prior [Bergstra and Bengio, 2012]. Full theoretical analysis (information-bottleneck interpretation, sample complexity, and connection to LWRR convergence) is provided in the supplementary material. 
+
+Complete algorithm. The full pseudocode is provided in the supplementary material. In summary: Stage 1 extracts n
+
+semantic dimensions; Stage 2 scores all pairs via Observer–Debater–Judge; Stage 3 calibrates via LWRR; and Stage 4 optimizes the dimension set end-to-end. 
+
+# 4 Experiments 
+
+4.1 Setup Dataset. Place Pulse 2.0 [Salesses et al., 2013]: 110,688 street-view images from 56 cities with 1,169,078 pairwise comparisons across six perception categories (safety, lively, beautiful, wealthy, depressing, boring). We report results across all six categories , with detailed ablation on wealthy . Per category, we sample ∼256–288 pairs; after Stage 3 alignment on the pool split, 43–50 pairs remain (after excluding human “equal” labels) for evaluation. 
+
+Data protocol. Dref (70% of sampled pairs) provides human labels and TrueSkill ratings for LWRR calibration; Dpool 
+
+(30%) is calibrated and evaluated. Dref ∩ D pool = ∅ (random split, seed = 42). 
+
+Implementation. CLIP ViT-L/14 (768-d) for visual features. GPT-4o ( gpt-4o ) for all VLM calls. Stage 2: Observer 
+
+τ =0 .3, Debater τ =0 .5, Judge τ =0 .1; single-shot modes τ =0 .0. Stage 3 defaults: K=20 , τkernel =1 .0, λ=1 .0, ε=0 .8,
+
+θ=0 .6, α=0 .3. The main results (Table 1) use per-category optimised hyperparameters from a combined random search 6UrbanAlign: Post-hoc Semantic Calibration for VLM-Human Preference Alignment A P REPRINT 
+
+Table 1: Comparison on Place Pulse 2.0 across all six perception categories. Accuracy and κ reported as excl-equal (incl-equal). UrbanAlign (Mode 4 + LWRR) outperforms all baselines on average (72.2% vs. 57.1% for best baseline). 
+
+Safety Beautiful Lively Method Acc. (%) κ Acc. (%) κ Acc. (%) κ
+
+ResNet50 Siamese 27.3 (26.1) −0.30 ( −0.32) 58.6 (56.0) 0.18 (0.19) 45.7 (42.5) −0.07 ( −0.06) CLIP Siamese 66.7 (64.4) 0.34 (0.31) 61.4 (57.3) 0.23 (0.20) 48.2 (44.8) −0.01 ( −0.01) Seg. Regression 50.0 (47.8) 0.03 (0.01) 57.1 (53.3) 0.15 (0.13) 51.9 (48.3) 0.04 (0.04) GPT-4o zero-shot 61.9 (59.8) 0.23 (0.21) 62.9 (58.7) 0.25 (0.21) 49.4 (46.0) 0.01 (0.01) UrbanAlign (Ours) 81.6 (76.9) 0.64 (0.57) 69.8 (66.7) 0.38 (0.35) 69.4 (65.4) 0.40 (0.36) 
+
+Wealthy Boring Depressing Method Acc. (%) κ Acc. (%) κ Acc. (%) κ
+
+ResNet50 Siamese 47.0 (44.8) 0.01 (0.00) 48.7 (45.0) −0.00 ( −0.02) 53.3 (50.0) 0.06 (0.05) CLIP Siamese 57.8 (55.2) 0.19 (0.17) 50.0 (47.5) 0.06 (0.07) 58.7 (55.0) 0.19 (0.16) Seg. Regression 61.5 (58.6) 0.26 (0.23) 62.2 (57.5) 0.22 (0.19) 54.7 (52.5) 0.09 (0.11) GPT-4o zero-shot 60.2 (57.5) 0.21 (0.19) 48.7 (45.0) 0.06 (0.05) 57.3 (53.8) 0.14 (0.12) UrbanAlign (Ours) 74.0 (71.2) 0.48 (0.44) 70.2 (68.8) 0.41 (0.40) 68.2 (62.5) 0.37 (0.31) 
+
+> *Excl-equal excludes pairs with human “equal” label; model “equal” predictions count as errors. Aligned modes evaluated on disjoint pool subset (43–50 pairs per category). Baselines evaluated on the same pool split. UrbanAlign uses the same GPT-4o backbone as the zero-shot baseline, demonstrating the value of structured multi-agent prompting over naïve querying.
+
+(N =50 ,000 configurations; supplementary Section C), as the optimal K (10–50) and α (0.2–0.7) vary substantially across categories. 
+
+Baselines. (C0) ResNet-50 Siamese : twin-tower network on frozen ResNet-50 features (2048-d → 512 → 128-d projection), concatenating [zL, zR, |zL−zR|] for 3-way classification [Koch et al., 2015]; (C1) CLIP Siamese : same twin-tower architecture on frozen CLIP ViT-L/14 features (768-d), representing a modern visual backbone; (C2) Seg. + CLIP Regression : SegFormer semantic segmentation (19 Cityscapes classes → 7 urban-element groups) pixel proportions concatenated with PCA-reduced CLIP features, difference vectors classified by Gradient Boosting [Chen et al., 2018]; (C3) Zero-shot VLM : GPT-4o with a forced binary-choice prompt “Which looks more <category> ?” (no “equal” option), without semantic dimensions or multi-agent reasoning. All supervised baselines (C0–C2) are trained on the reference split with mirror augmentation (swapping left/right with flipped labels) and evaluated on the disjoint pool split. 
+
+Metrics. Accuracy (Acc), Cohen’s κ (chance-corrected agreement), F1 (macro). We report metrics both including and excluding pairs where the human label is “equal” (as these are inherently ambiguous). 
+
+4.2 Main Results 
+
+Table 1 and Fig. 1 present the main comparison. Key findings: (1) UrbanAlign (Mode 4 + LWRR) achieves 72.2% accuracy ( κ=0 .45 ) on average across all six categories, with 81.6% accuracy ( κ=0 .64 ) on safety perception being the strongest. This represents a +15.1 pp gain over the best supervised baseline (CLIP Siamese: 57.1%) and +15.5 pp over zero-shot VLM (C3: 56.7%). (2) All four baselines cluster in the 47–57% accuracy range. Even the zero-shot VLM (C3: 56.7%), which shares the same GPT-4o backbone as UrbanAlign, cannot exceed supervised methods, confirming that without structured concept extraction and local calibration, neither visual features nor VLM reasoning alone captures the multi-dimensional semantics of urban perception. (3) LWRR calibration provides a +16.3 pp average boost over Mode 4 Raw (55.9% →72.2%). 
+
+4.3 Ablation: 2×2 Factorial Design 
+
+Table 2 shows the post-alignment 2×2 factorial results: 7UrbanAlign: Post-hoc Semantic Calibration for VLM-Human Preference Alignment A P REPRINT 
+
+Table 2: 2×2 factorial ablation on wealthy (accuracy % / κ, post-LWRR alignment). Multi-agent reasoning consistently improves accuracy; the largest gain occurs in the pairwise setting (+31.8 pp).               
+
+> Single-Shot Multi-Agent Multi-Agent Gain Single-Image 55.4 / 0.16 63.9 / 0.31 +8.5 Pairwise 42.2 / −0.04 74.0 /0.48 +31.8 Pairwise Gain −13.2 +10.1 —
+
+Table 3: LWRR calibration gain (Mode 4, accuracy % excl. “equal”) across all six categories. LWRR improves all six categories; the largest gain is on boring (+31.3 pp). Average gain: +16.3 pp.                                                     
+
+> Safety Beaut. Lively Wealthy Boring Depress. Avg Raw Acc. (%) 68.4 63.9 58.5 62.9 38.9 42.9 55.9 Aligned Acc. (%) 81.6 69.8 69.4 74.0 70.2 68.2 72.2
+> ∆(pp) +13.3 +5.9 +10.9 +11.1 +31.3 +25.3 +16.3
+> Raw κ0.38 0.29 0.17 0.26 −0.22 −0.13 0.13 Aligned κ0.64 0.38 0.40 0.48 0.41 0.37 0.45
+> n(pool pairs) 49 43 49 50 47 44 —
+
+Multi-agent reasoning (Modes 3/4 vs. 1/2). Multi-agent reasoning consistently improves accuracy: +8.5 pp in the single-image setting (Mode 1 →3) and +31.8 pp in the pairwise setting (Mode 2 →4). This is a key finding: the Observer–Debater–Judge chain is effective in both contexts but yields dramatically larger gains when combined with pairwise input. 
+
+Pairwise context (Modes 2/4 vs. 1/3). Pairwise input hurts in the single-shot setting ( −13.2 pp, Mode 1 →2) but helps substantially with multi-agent reasoning (+10.1 pp, Mode 3 →4). Without multi-agent deliberation, pairwise presentation introduces noise; with it, comparative anchors enable constructive debate. 
+
+Synergy. The two factors interact synergistically rather than additively: Mode 4 gains +18.6 pp over Mode 1, far more than the sum of individual effects ( −13.2 pairwise + 8.5 multi-agent = −4.7). This synergy arises because multi-agent debate is amplified by pairwise comparison: arguing about relative merits with both items present produces dramatically richer deliberation than single-image scoring. 
+
+LWRR alignment gain. Table 3 shows LWRR calibration gain across all six categories for Mode 4. LWRR yields a +16.3 pp average improvement (55.9% →72.2%), with the most dramatic effect on boring (+31.3 pp) and depressing 
+
+(+25.3 pp), i.e. categories where the VLM’s raw predictions perform near chance (38.9% and 42.9%). LWRR improves all six categories, confirming that post-hoc geometric calibration is consistently beneficial across diverse perception tasks (full per-mode breakdown in supplementary material). 
+
+4.4 Dimension-Level Discriminability 
+
+Table 4 reports per-dimension discriminative power for Mode 4 across all six categories. Performance varies substan-tially: wealthy (avg. 68.0%) and safety (avg. 64.7%) achieve the highest discriminability, indicating that the VLM discovers dimensions well-aligned with human perception for these categories. Depressing (avg. 42.1%) is the weakest, suggesting that “depressingness” is harder to decompose into visually scorable sub-dimensions. For wealthy , Façade Quality , Street Cleanliness , and Pavement Integrity all achieve 71.2% discriminative power, consistent with urban planning theory that building maintenance and streetscape quality signal neighbourhood af-fluence [Wilson and Kelling, 1982]. The aggregate combination via LWRR (74.0%) exceeds any single dimension, validating the multi-dimensional bottleneck. 
+
+Interpretability example. For a pair scored by LWRR with high R2, the local weights ˆw reveal: Building Modernity (w=2 .30 ), Vegetation Maintenance ( w=1 .72 ), Street Cleanliness ( w=1 .35 ) as the top contributors. This is directly actionable: planners can target building modernisation and vegetation upkeep in areas perceived as least wealthy. 8UrbanAlign: Post-hoc Semantic Calibration for VLM-Human Preference Alignment A P REPRINT 
+
+Table 4: Per-dimension discriminative power across all six categories (Mode 4, all dimensions). Power is the fraction of pool pairs where the dimension score difference correctly predicts the human winner (50% = chance). Dimensions ranked by power within each category.                                                                   
+
+> Safety (n=52 , avg 64.7%) Beautiful (n=45 , avg 56.7%) Greenery & Landscaping 71.2 Greenery & Nat. Elem. 64.4 Lighting Adequacy 71.2 Color Coordination 62.2 Building Maintenance 69.2 Pedestrian Amenities 55.6 Pedestrian Infrastructure 65.4 Street Cleanliness 55.6 Street Activity 57.7 Architectural Coherence 55.6 Visibility Clarity 53.8 Visual Complexity 46.7
+> Lively (n=52 , avg 53.0%) Wealthy (n=52 , avg 68.0%) Human Presence 59.6 Façade Quality 71.2 Building Diversity 57.7 Street Cleanliness 71.2 Street Furniture 57.7 Pavement Integrity 71.2 Color & Lighting 53.8 Vegetation Maintenance 69.2 Commercial Activity 53.8 Lighting Quality 67.3 Public Art & Signage 46.2 Infrastructure Condition 67.3 Vegetation & Greenery 42.3 Vehicle Quality 65.4 Building Modernity 61.5
+> Boring (n=48 , avg 43.8%) Depressing (n=48 , avg 42.1%) Activity Presence 52.1 Street Cleanliness 47.9 Color Vibrancy 50.0 Visual Clutter 45.8 Street Furn. Presence 47.9 Façade Condition 43.8 Architectural Diversity 43.8 Lighting Quality 39.6 Visual Complexity 39.6 Greenery Presence 33.3 Spatial Enclosure 37.5 Vegetation Variety 35.4 Stage 1 generates 5–10 dimensions per category via concept mining. The E2E optimization loop (Section 3.5) explores alternative dimension sets across this range over 15 trials (12 completed before early stopping).
+
+4.5 Sensitivity Analysis 
+
+We study the sensitivity of Stage 3 to key hyperparameters (full per-parameter sweep grids are provided in supplementary Section C). All experiments vary one parameter while holding others at default. 
+
+SELECTION_RATIO shows moderate impact: reducing from 1.0 to 0.6 yields a +0.6 pp average gain (58.4% →59.0%), with safety showing the largest individual improvement (+8.8 pp to 75.5%). The effect is category-dependent, confirming that confidence-based filtering benefits categories with higher raw signal quality. 
+
+Kmax is the most sensitive parameter: K=10 collapses the average to 54.1% while K=20 achieves 58.4%, a +4.3 pp gap. Per-category variation reveals that K=20 is best on average, though individual categories sometimes favour other values ( e.g. , safety peaks at K=30 with 70.3%). 
+
+α (CLIP vs. semantic weight) shows a clear average optimum at α=0 .3 (70% semantic weight), though per-category optima differ: beautiful and depressing favour α=0 .7 (60.3% and 62.5% respectively), suggesting that CLIP features carry more useful information for aesthetics-related categories. This parallels the CBM finding that concept-based predictions can match or exceed end-to-end models when concepts are well-chosen [Koh et al., 2020]. 
+
+τkernel and λridge have limited effect ( <2.5 pp variation). This is theoretically expected: for locally-weighted ridge regression with K neighbours in n dimensions, the excess risk scales as O(λ + n/ (Kλ )) [Caponnetto and De Vito, 2007], which becomes insensitive to λ when K ≫ n (here K=20 , n=5 –8). 
+
+Dimension optimization. As described in Section 3.5, we automate dimension-set selection via the two-phase E2E optimization loop (Eq. (7)). With T =15 trials across all six categories (12 completed before early stopping at patience =5 ), per-category independent assembly yields 69.3% average accuracy ( κ=0 .454 ) using default calibration hyperparameters, a +10.7 pp gain over the single best trial (58.6%). Wealthy (77.8%, κ=0 .579 ) and safety (76.5%, 
+
+κ=0 .534 ) benefit most from optimization; lively (58.8%, κ=0 .308 ) remains the most challenging. The explore phase ( τgen =0 .85 –1.0) discovers optimal dimensions for 4/6 categories (safety, beautiful, wealthy, depressing); the converge phase ( τgen =0 .7–0.5) refines lively and boring via targeted mutation, confirming that both phases contribute 9UrbanAlign: Post-hoc Semantic Calibration for VLM-Human Preference Alignment A P REPRINT 
+
+complementary value. The +10.7 pp assembly gain over the single-trial best demonstrates that different categories have distinct optimal dimension sets, vindicating per-category independent optimization. The main pipeline result (72.2%) uses per-category optimised calibration hyperparameters (supplementary Section C) with the original dimension set, while E2E achieves 69.3% through dimension selection alone; the two optimisation axes are complementary. Full trial-by-trial results and per-category dimension lists are reported in the supplementary material. 
+
+# 5 Discussion 
+
+Why does post-hoc calibration work? 
+
+The central finding is that VLMs are strong concept extractors but poor decision calibrators for urban perception. Mode 4 raw dimension scores already contain substantial perceptual information (individual dimensions at 53–71% dis-criminative power), yet the VLM’s own label predictions are only marginally above the zero-shot baseline. LWRR solves a simple and intuitive problem: given that dimension scores S(x) are informative, learn the locally-optimal linear map-ping from score differences to TrueSkill rating differences. This is precisely the post-hoc CBM paradigm [Yuksekgonul et al., 2023]: extract concepts from a frozen backbone, then train a lightweight predictor on those concepts. 
+
+Why local rather than global calibration? Urban perception is heterogeneous: the visual cues that signal wealth in a suburban neighbourhood (vegetation, vehicle quality) may differ from those in an urban core (building modernity, infrastructure). A single global linear model would average over these distinct regimes. LWRR, by fitting independent weights per neighbourhood, naturally adapts to local manifold geometry. The sensitivity analysis confirms this: Kmax is the most sensitive single parameter (+4.3 pp range), reflecting the tension between local adaptivity and statistical stability. Theoretically, the LWRR excess risk at optimal regularisation decays as O(( n/K )1/2) [Caponnetto and De Vito, 2007], explaining why larger K improves accuracy when K ≫ n; the per-pair weight analysis in the supplementary material confirms that dimension importances vary substantially across the manifold, validating the need for local fitting. 
+
+Connection to the information bottleneck. Our pipeline implements a form of information bottleneck [Tishby et al., 2000]: Stage 2 compresses visual input X into dimension scores S=fDc (X) ∈ Rn (a compact bottleneck), and Stage 3 maximises the downstream mutual information I( ˆY ; Y ) via LWRR. The R2 metric quantifies concept completeness, 
+
+i.e. , how much of the TrueSkill variance is explainable by the bottleneck representation. The end-to-end dimension optimization (Eq. (7)) formalises this further: selecting the bottleneck that maximises I( ˆY ; Y ) is equivalent to choosing the dimension set with highest alignment accuracy. Elite seeding biases subsequent trials toward the current-best bottleneck, converting the search from independent sampling into a guided refinement with exponential convergence guarantee. 
+
+Why Place Pulse and scope of evaluation. We evaluate on Place Pulse 2.0 because it provides pairwise annotations across six diverse perception categories, each representing a distinct subjective judgement task with different visual cues. This internal diversity, spanning concrete attributes ( safety : infrastructure, lighting) to abstract ones ( boring :monotony, stimulation deficit), already tests the framework’s adaptivity across heterogeneous concept spaces. The underlying concept-mining–calibration paradigm requires only (i) a VLM that can describe domain-relevant attributes and (ii) a small set of pairwise human preferences; we note that this structure is shared by preference tasks in other domains ( e.g. , aesthetic quality [Murray et al., 2012], extended urban perception with demographic metadata [Quintana et al., 2025]), which we leave for future work. 
+
+Limitations. While we evaluate across all six Place Pulse 2.0 categories, performance varies substantially: safety 
+
+(81.6%) far exceeds depressing (68.2%) and lively (69.4%). The per-category sample sizes are modest (43–50 pool pairs after filtering). The current approach assumes static street-view images; temporal and cultural variation remain unexplored. 
+
+Ethical considerations. Automated perception mapping could inform equitable infrastructure investment but also risks reinforcing neighbourhood stereotypes if applied without community engagement. We recommend use for improvement-oriented planning (identifying streets needing façade repair, pavement maintenance) rather than discriminatory rankings. 
+
+Computational cost. The entire pipeline requires only VLM inference calls with no GPU training. At measured token usage of 778 input + 278 output tokens per GPT-4o call ($2.50 / $10.00 per 1M tokens), each call costs $0.0047. The primary method (Mode 4, Observer–Debater–Judge) requires 3 calls per pair: for our 1,643-pair experimental dataset across six categories, this totals 4,929 calls ( $23 ). The full 4-mode ablation costs $93 (19,716 calls); end-to-end dimension optimization adds $17 ( ∼3,700 calls), for a total experimental budget of ∼$133 . At production scale with the full Place Pulse 2.0 filtered dataset ( ∼164K pairs, Mode 4 only), projected cost is ∼$2,300 , representing a 98.6% 
+
+10 UrbanAlign: Post-hoc Semantic Calibration for VLM-Human Preference Alignment A P REPRINT 
+
+reduction compared to traditional crowdsourcing at comparable scale ( ∼$167K for 1.17M pairwise annotations at $0.14/comparison [Salesses et al., 2013]). 
+
+# 6 Conclusion 
+
+We presented UrbanAlign , a training-free post-hoc calibration framework that transforms VLMs from unreliable annotators (56.7% zero-shot accuracy) into structured perception decoders (72.2% accuracy, κ=0 .45 ) by routing predictions through interpretable semantic dimensions and locally-adaptive calibration, all without modifying a single model weight. The framework demonstrates that domain-specific VLM capabilities can be unlocked through semantic concept mining and geometric truth alignment , a post-hoc concept-bottleneck approach that requires no model training, no fine-tuning, and no GPU compute beyond inference. Our 2×2 factorial ablation reveals that pairwise context and multi-agent reasoning interact synergistically (+18.6 pp combined gain on wealthy ), providing guidance for future VLM-based annotation systems. The per-dimension discriminability analysis confirms that VLM-derived concepts capture genuine perceptual signals (up to 71.2% per dimension), and the LWRR R2 metric provides an interpretability audit that makes each prediction explainable in terms of mid-level semantic dimensions. The concept-mining–calibration paradigm generalises beyond urban perception: any pairwise-preference domain where a VLM can describe relevant attributes is a candidate, including aesthetic quality assessment, landscape evaluation, and multimodal preference alignment. Future work will validate this transferability on diverse human-preference benchmarks and explore cross-city and cross-cultural adaptation. 
+
+# Acknowledgements 
+
+This work was supported in part by [funding details to be added]. 11 UrbanAlign: Post-hoc Semantic Calibration for VLM-Human Preference Alignment A P REPRINT 
+
+# Supplementary Material 
+
+This supplementary material provides additional details that support the main paper. Section A describes the dataset filtering protocol and data-split statistics. Section B presents per-pair LWRR weight variation analysis. Section C reports full parameter-sweep grids expanding on the main-text sensitivity analysis. Section D reproduces the exact prompt templates used for multi-agent feature distillation. Section E details the end-to-end dimension optimization procedure with trial-by-trial results across all six categories and a full API cost breakdown. Section F reports per-mode LWRR alignment gains. Section G provides the complete algorithm pseudocode. Section H surveys related human preference datasets for potential transfer. 
+
+# A Dataset and Filtering Protocol 
+
+A.1 Place Pulse 2.0 Overview 
+
+Place Pulse 2.0 [Salesses et al., 2013] contains 1,169,078 pairwise comparisons over 110,688 Google Street View images from 56 cities worldwide. Each comparison asks: “Which place looks more <category> ?” for six perception categories: safety , lively , beautiful , wealthy , depressing , and boring . Each comparison yields one of three outcomes: 
+
+left , right , or equal .
+
+A.2 Consensus Filtering ( N ≥ 3)
+
+Raw Place Pulse data contains many image pairs with only one or two votes, which carry high individual noise. We apply a consensus threshold: only pairs with N ≥ 3 independent votes and a strict majority ( > 50% agreement on the winning label) are retained. Table 5 reports the full filtering statistics across all six categories. Table 5: Dataset filtering pipeline across all six perception categories. Raw pairs are unique image comparisons in Place Pulse 2.0. N ≥3 retains only pairs with at least three independent votes. Consensus (%) is the average majority-vote agreement among retained pairs. The sampled column reflects pairs used in our experiments (capped at 288 per category). Label distribution is by majority vote.                                                          
+
+> Category Raw Pairs N≥3Cons. (%) Sampled Left Right Equal Safety 360,095 792 87.6 288 139 133 16 Beautiful 171,858 249 91.4 249 131 107 11 Lively 260,428 719 85.4 288 133 137 18 Wealthy 148,739 288 88.7 288 131 136 21 Boring 124,371 266 88.2 266 125 122 19 Depressing 129,229 264 88.8 264 125 129 10
+> Total 1,194,720 2,578 88.4 1,643 784 764 95
+
+A.3 TrueSkill Rating Computation 
+
+We convert the filtered pairwise votes into continuous per-image ratings using TrueSkill [Herbrich et al., 2006] with priors ( μ0=25 , σ0=8 .33 , β=4 .17 , draw prob. = 0 .10 ). After convergence, images are ranked by μ; the resulting values serve two purposes: (1) Stage 1 consensus sampling : selecting high-μ and low-μ exemplars for dimension extraction; (2) Stage 3 supervision : providing continuous TrueSkill score differences yTS  
+
+> ij
+
+=μi−μj as regression targets for LWRR. 
+
+A.4 Data Split Protocol 
+
+From the filtered pairs, we randomly sample 288 pairs (sampling ratio 0.01 of the full filtered pool). These 288 pairs are then split into: • Reference set Dref (70%, ≈201 pairs): provides human labels and TrueSkill supervision for LWRR calibration. Mirror augmentation doubles the effective reference size to ≈402 points. • Pool set Dpool (30%, ≈87 pairs): calibrated by Stage 3 and evaluated against held-out human labels. The split uses a fixed random seed (42) for reproducibility. Dref ∩ D pool = ∅ by construction. After Stage 3 alignment with confidence-based filtering (selection ratio 0.15 applied to pool), 45–52 pairs remain. Excluding human “equal” labels yields 43–50 evaluation pairs. 12 UrbanAlign: Post-hoc Semantic Calibration for VLM-Human Preference Alignment A P REPRINT 
+
+A.5 Dataset Distribution 
+
+Figure 3 shows the distribution of image pairs across vote thresholds for all six categories. The count decreases roughly log-linearly as the threshold increases, confirming that most pairs receive only one or two votes; our N ≥3 consensus filter retains the most reliable subset. Figure 4 shows the individual image appearance frequency: most images appear in fewer than 5 comparisons, while a heavy tail of frequently compared images provides stable TrueSkill estimates. >=1 >=2 >=3 >=4 >=5 
+
+> Vote Threshold (>= N votes)
+> 10 2
+> 10 3
+> 10 4
+> 10 5
+> Number of Pairs (Log Scale)
+> Image Pairs Distribution (Threshold 1-5)
+> wealthy
+> safety
+> lively
+> beautiful
+> boring
+> depressing
+
+Figure 3: Distribution of image pairs across vote thresholds ( ≥1 to ≥5 votes) for all six perception categories. The 
+
+y-axis is log-scaled. Our consensus filter retains pairs with N ≥3 votes. 13 UrbanAlign: Post-hoc Semantic Calibration for VLM-Human Preference Alignment A P REPRINT >=1 >=5 >=10 >=15 >=20 
+
+> Appearance Threshold (>= N times)
+> 10 1
+> 10 2
+> 10 3
+> 10 4
+> 10 5
+> Number of Images (Log Scale)
+> Individual Image Frequency Distribution
+> wealthy
+> safety
+> lively
+> beautiful
+> boring
+> depressing
+
+Figure 4: Individual image appearance frequency distribution across thresholds ( ≥1 to ≥20 appearances) for all six categories. The heavy-tailed distribution indicates a core set of frequently compared images that anchor TrueSkill rating estimates. 
+
+# B LWRR Per-Pair Weight Analysis 
+
+A key feature of LWRR is that each pool pair receives its own locally-fitted weight vector ˆw ∈ Rn (n=8 for wealthy ), reflecting the dimension importances in its particular neighbourhood of the hybrid manifold. This contrasts with a global linear model where all pairs share the same weights. 
+
+B.1 Weight Variation Across the Manifold 
+
+Table 6 reports the mean and standard deviation of each dimension’s local weight across all 52 aligned pool pairs. High standard deviation indicates that the dimension’s importance varies substantially across different regions of the perception manifold—precisely the heterogeneity that motivates local rather than global calibration. Table 6: LWRR local weight statistics across 52 aligned pool pairs ( wealthy category, Mode 4).                              
+
+> Dimension Mean wStd wCV Building Modernity 2.305 2.676 1.16 Infrastructure Condition −1.858 2.074 1.12 Vegetation Maintenance 1.722 1.996 1.16 Street Cleanliness 1.355 1.318 0.97 Pavement Integrity −1.068 2.387 2.23 Vehicle Quality −1.043 1.763 1.69 Façade Quality −0.921 1.663 1.81 Lighting Quality 0.241 1.464 6.08 CV = Coefficient of Variation ( Std /|Mean |). Higher CV indicates greater spatial heterogeneity of dimension importance. Sorted by
+> |Mean |.
+
+Table 7 extends this analysis to all six categories. 14 UrbanAlign: Post-hoc Semantic Calibration for VLM-Human Preference Alignment A P REPRINT 
+
+Table 7: Top-3 LWRR local weights by |Mean | for each perception category (Mode 4). High Std relative to Mean confirms that dimension importance varies substantially across the manifold.                                                             
+
+> Category Dimension Mean wStd wCV Safety ( n=52 )Visibility Clarity −0.421 1.702 4.04 Lighting Adequacy 0.291 1.401 4.81 Building Maintenance 0.280 1.311 4.67 Beautiful ( n=45 )Arch. Coherence 1.471 4.825 3.28 Visual Complexity 1.193 10.960 9.19 Pedestrian Amenities 0.887 4.901 5.53 Lively ( n=52 )Commercial Activity −0.518 0.413 0.80 Color & Lighting 0.263 0.404 1.53 Street Furniture 0.115 0.296 2.58 Wealthy ( n=52 )Building Modernity 2.305 2.676 1.16 Infrastructure Cond. −1.858 2.074 1.12 Vegetation Maint. 1.722 1.996 1.16 Boring ( n=48 )Color Vibrancy −1.068 1.680 1.57 Visual Complexity 0.531 1.438 2.71 Arch. Diversity 0.347 1.103 3.18 Depressing ( n=48 )Greenery Presence 0.649 1.260 1.94 Lighting Quality −0.503 1.555 3.09 Façade Condition 0.213 1.329 6.24
+
+B.2 Illustrative Examples 
+
+We select three representative pool pairs from different regions of the manifold to illustrate how LWRR adapts its weight profile. 
+
+Example 1: Vegetation-driven pair. In the suburban portion of the manifold, LWRR assigns dominant weights to Vegetation Maintenance ( w=3 .38 ) and Building Modernity ( w=1 .17 ), while Façade Quality receives near-zero weight (w≈ − 0.94 ). This reflects the perceptual pattern that in residential areas, landscaping quality is the primary cue for perceived wealth. 
+
+Example 2: Infrastructure-driven pair. In the dense urban core, the local weight profile shifts: Infrastructure Condition ( w=1 .01 ) and Vehicle Quality ( w= − 1.18 ) dominate, while Vegetation drops. The sign reversal on Vehicle Quality indicates contextual inversion: in downtown areas, the presence of high-end vehicles may signal commercial rather than residential wealth. 
+
+Example 3: Balanced transitional pair. Pairs in mixed-use zones show relatively uniform weight magnitude across all seven dimensions (std of |w| across dims <0.5), confirming that these regions lack a single dominant perceptual cue. The high CV (Coefficient of Variation >3) for Lighting Quality (6.08) in Table 6 is driven precisely by these transitional pairs. These examples confirm the theoretical motivation for local calibration: the dimensions that matter most for perceiving “wealth” depend on the visual context. A single global weight vector would average over these distinct regimes, losing the nuance that LWRR captures. 
+
+# C Detailed Sensitivity Analysis 
+
+This section reports the full parameter-sweep grids referenced in the main text’s sensitivity analysis. Each experiment varies one parameter at a time while holding others at their defaults ( K=20 , α=0 .3, τkernel =1 .0, λ=1 .0, ε=0 .8,
+
+θ=0 .6). All results are Mode 4, accuracy excluding “equal” human labels. 15 UrbanAlign: Post-hoc Semantic Calibration for VLM-Human Preference Alignment A P REPRINT 
+
+C.1 Neighbourhood Size Kmax 
+
+Table 8: Full Kmax sweep (Mode 4, all categories, accuracy % excl. equal).                                    
+
+> Kmax Safety Beaut. Lively Wealthy Boring Depress. Avg 10 59.2 50.7 51.3 55.7 53.6 54.1 54.1 20 66.7 53.8 61.3 57.1 52.8 58.6 58.4
+> 30 70.3 52.2 61.6 49.3 50.7 55.6 56.6 50 66.7 54.4 55.6 52.6 58.6 57.4 57.6
+
+Analysis. Small K (= 10 ) leads to high-variance local fits (each ridge regression uses very few reference points). 
+
+K=20 achieves the best average (58.4%). However, the optimal K varies per category: safety favours K=30 (70.3%), while boring favours K=50 (58.6%), reflecting different local densities of the reference manifold across categories. 
+
+C.2 Hybrid Weight α
+
+Table 9: Full α sweep (Mode 4, all categories, accuracy % excl. equal).                                                 
+
+> αSem. Wt. Safety Beaut. Lively Wealthy Boring Depress. Avg 0.1 90% 61.3 52.9 57.9 55.6 50.0 57.8 55.9 0.2 80% 64.6 54.5 57.3 56.4 52.9 58.8 57.4 0.3 70% 66.7 53.8 61.3 57.1 52.8 58.6 58.4
+> 0.5 50% 62.0 56.1 49.3 56.8 52.1 56.9 55.5 0.7 30% 62.0 60.3 51.4 54.4 58.0 62.5 58.1
+
+Analysis. α=0 .3 (70% semantic weight) is optimal on average, but per-category optima differ notably: beautiful favours 
+
+α=0 .7 (60.3%) and depressing also favours α=0 .7 (62.5%), suggesting that CLIP features carry more discriminative signal for aesthetics-related categories. Pure CLIP ( α=1 .0) performs poorly because CLIP’s pre-training distribution (web images of objects) is mismatched with street-view perception tasks. This empirically validates our hybrid design while highlighting category-specific tuning opportunities. 
+
+C.3 Kernel Bandwidth τkernel 
+
+Table 10: Full τkernel sweep (Mode 4, wealthy ).                   
+
+> τkernel Acc (%) κNaligned
+> 0.1 54.9 0.09 87 0.3 56.1 0.12 87 0.5 56.8 0.13 87 0.8 57.0 0.13 87 1.0 57.1 0.13 87
+
+Analysis. Smaller τ concentrates weight on the nearest neighbours (sharper kernel); larger τ approaches uniform weighting within the K-neighbourhood. The relatively flat response across the tested range ( <2.2 pp variation) suggests that the K-NN pre-selection already isolates relevant neighbours, making the exact kernel bandwidth less critical. 16 UrbanAlign: Post-hoc Semantic Calibration for VLM-Human Preference Alignment A P REPRINT 
+
+C.4 Ridge Penalty λridge 
+
+Table 11: Full λridge sweep (Mode 4, wealthy ).                   
+
+> λAcc (%) κNaligned
+> 0.01 56.1 0.12 87 0.05 56.1 0.12 87 0.1 56.1 0.12 87 0.5 56.8 0.13 87 1.0 57.1 0.13 87
+
+Analysis. The ridge penalty λ has minimal impact across several orders of magnitude ( <1.6 pp variation). This is expected: with K=20 neighbours and n=8 dimensions, the system is well-overdetermined ( K ≫ n), so regularisation has little effect. 
+
+C.5 Equal Threshold ε (EQUAL_EPS) 
+
+Table 12: Full ε (EQUAL_EPS) sweep (Mode 4, all categories, accuracy % excl. equal).                                           
+
+> εSafety Beaut. Lively Wealthy Boring Depress. Avg 0.3 66.3 56.5 57.5 72.3 59.7 52.8 60.9 0.5 66.3 56.5 56.4 72.3 59.4 52.8 60.6 0.8 66.3 56.5 57.1 72.3 61.5 54.3 61.3 1.2 66.2 57.4 56.6 72.8 63.5 54.4 61.8 2.0 67.1 59.7 59.1 72.4 63.3 56.2 63.0
+
+Analysis. The equal threshold ε shows a mild but consistent trend: larger ε (more permissive equal classification) improves accuracy across most categories, with the average rising from 60.9% ( ε=0 .3) to 63.0% ( ε=2 .0). This suggests that many borderline pairs are better classified as non-equal, potentially because the VLM’s score differences carry marginal but genuine signal even for close pairs. 
+
+C.6 Combined Search 
+
+In addition to the one-at-a-time sweeps above, we performed a random search over the combined parameter space (N =50 ,000 configurations) to check for interactions. Table 13 reports the per-category best configurations found. Table 13: Best per-category configurations from combined random search (Mode 4, accuracy % excl. equal).                               
+
+> Category Acc. (%) κKey Parameters Safety 81.6 0.636 K=30 ,α=0 .2, sel =0 .6
+> Beautiful 69.8 0.384 K=10 ,α=0 .5, sel =0 .6
+> Lively 69.4 0.404 K=50 ,α=0 .7, sel =0 .6
+> Wealthy 74.0 0.480 K=50 ,α=0 .7, sel =0 .6
+> Boring 70.2 0.414 K=30 ,α=0 .7, sel =0 .6
+> Depressing 68.2 0.370 K=20 ,α=0 .2, sel =0 .6
+> Average 72.2 0.448 —
+
+The combined search yields 72.2% average accuracy ( κ=0 .448 ), a +13.8 pp gain over the default configuration (58.4%), demonstrating significant headroom from per-category hyperparameter tuning. The most consistent finding is sel =0 .6
+
+across all categories, while the optimal K (10–50) and α (0.2–0.7) vary by category. 17 UrbanAlign: Post-hoc Semantic Calibration for VLM-Human Preference Alignment A P REPRINT 
+
+# D Prompt Templates 
+
+This section reproduces the exact prompt templates used in Stage 2 multi-agent feature distillation (Mode 4: pairwise + multi-agent). All three agents receive the image pair and the Stage 1–extracted dimension definitions as input. Temperature values: Observer τ =0 .3, Debater τ =0 .5, Judge τ =0 .1.
+
+D.1 Stage 1: Dimension Extraction Prompt 
+
+Listing 1: Dimension extraction prompt (Stage 1). 
+
+You are an expert urban perception researcher . I will show you street - view images that have been rated by crowdsourced participants on the perception dimension : "{ category }". HIGH - rated images ( TrueSkill mu > 75 th percentile ) : { high_image_descriptions } LOW - rated images ( TrueSkill mu < 25 th percentile ) : { low_image_descriptions } Based on the visual differences between HIGH and LOW images , identify 5 -10 specific , visually observable dimensions that explain why some scenes are perceived as more "{ category }" than others . Output JSON format : {" dimensions ": [{" name ": " Dimension Name " , " description ": " What this dimension measures " , " high_indicator ": " Visual cues for high scores " , " low_indicator ": " Visual cues for low scores " }]}Requirements : - Each dimension must be visually observable from a street view image - Each dimension must be continuously scorable (1 -10 scale ) - Dimensions should be universally applicable across cities 
+
+D.2 Observer Prompt 
+
+Listing 2: Observer agent prompt (Stage 2, Mode 4). 
+
+You are an objective Observer . Examine two street - view images and describe what you see along each evaluation dimension . Do NOT make judgments or comparisons -- only describe observable visual details . Category : { category } Dimensions : { dimension_definitions } For each dimension , describe what you observe in : - Image A : [ visual details ] - Image B : [ visual details ] Output JSON : {" observations ": {
+
+18 UrbanAlign: Post-hoc Semantic Calibration for VLM-Human Preference Alignment A P REPRINT 
+
+" dimension_name ": {" image_a ": " description of what you see " , " image_b ": " description of what you see " }}}
+
+D.3 Debater Prompt 
+
+Listing 3: Debater agent prompt (Stage 2, Mode 4). 
+
+You are a Debater . Given the Observer ’ s descriptions of two street - view images , argue BOTH sides for each dimension -- why Image A might score higher AND why Image B might score higher . Observer ’ s descriptions : { observer_output } Category : { category } Dimensions : { dimension_definitions } For each dimension , provide : - Argument for Image A scoring higher - Argument for Image B scoring higher - Key uncertainties or ambiguities Output JSON : {" debates ": {" dimension_name ": {" argument_for_a ": " why A might score higher " , " argument_for_b ": " why B might score higher " , " uncertainties ": " what is ambiguous " }}}
+
+D.4 Judge Prompt 
+
+Listing 4: Judge agent prompt (Stage 2, Mode 4). 
+
+You are the final Judge . Given the Observer ’ s descriptions and Debater ’ s arguments , produce final scores for both images on each dimension . Observer ’ s descriptions : { observer_output } Debater ’ s arguments : { debater_output } Category : { category } Dimensions : { dimension_definitions } Score each image on each dimension from 1 ( lowest ) to 10 ( highest ) . Also determine the overall winner . Output JSON : {" image_a_scores ": {
+
+19 UrbanAlign: Post-hoc Semantic Calibration for VLM-Human Preference Alignment A P REPRINT                
+
+> " dimension_name ": score (1 -10) } , " image_b_scores ": {" dimension_name ": score (1 -10) } , " overall_intensity_a ": weighted_sum , " overall_intensity_b ": weighted_sum , " winner ": " left " |" right " |" equal " , " ai_dimension_weights ": {" dimension_name ": weight (0 -1) }}
+
+# E End-to-End Dimension Optimization 
+
+The semantic dimensions discovered in Stage 1 depend on the VLM’s sampling temperature and the particular consensus exemplars presented. A natural question is: can we automatically find the dimension set that maximises end-to-end alignment accuracy? 
+
+Formulation. Let D(t) 
+
+> c
+
+denote the dimension set generated at trial t for category c. Each trial runs the full pipeline: dimension extraction (Stage 1) → multi-agent pairwise scoring (Stage 2, Mode 4) → LWRR alignment (Stage 3) →
+
+accuracy evaluation. The per-category optimal dimension set is: 
+
+D∗ 
+
+> c
+
+= arg max   
+
+> t∈{ 1,...,T }
+
+Acc c
+
+ LWRR  Score (Dc
+
+> pool
+
+, D(t) 
+
+> c
+
+), Dc
+
+> ref
+
+ . (9) 
+
+Two-phase search strategy. Rather than monotonic temperature increase, we employ an explore → converge schedule over T =15 trials (with patience-based early stopping after 5 consecutive trials without any per-category improvement): • Explore phase (trials 0–5, τgen =0 .85 → 1.0): Higher temperatures produce diverse, largely independent dimension sets. Each category independently accumulates its best. The current per-category best is provided as a reference but large deviations are encouraged. • Converge phase (trials 6+, τgen =0 .7 → 0.5): Lower temperatures with mutation mode : per-category best dimensions are preserved except for 1–2 targeted replacements, enabling local refinement. Since categories may peak at different trials, the final output assembles per-category optima: {D ∗ 
+
+> c
+
+}6
+
+> c=1
+
+, potentially sourced from different trials. 
+
+Cost analysis. Table 14 summarises the full API cost breakdown. All VLM calls use GPT-4o with measured per-call token usage of 778 input + 278 output tokens, yielding a cost of $0.0047/call at OpenAI’s published rates ($2.50 / $10.00 per 1M input/output tokens). 20 UrbanAlign: Post-hoc Semantic Calibration for VLM-Human Preference Alignment A P REPRINT 
+
+Table 14: API cost breakdown for the full experimental pipeline (1,643 pairs across 6 categories, GPT-4o pricing). Stage 3 LWRR is purely local computation with zero API cost. 
+
+Component Calls/pair Total calls Tokens (M) Cost (USD) 
+
+Main pipeline (1,643 pairs × 6 categories) 
+
+Mode 1 (Single-Image Direct) 2 3,286 3.5 $15.53 Mode 2 (Pairwise Direct) 1 1,643 1.7 $7.76 Mode 3 (Single-Image Multi-Agent) 6 9,858 10.4 $46.58 Mode 4 (Pairwise Multi-Agent) 3 4,929 5.2 $23.29 
+
+End-to-end dimension optimization (20% subsample, Mode 2, 12 trials) 
+
+Stage 1 dimension generation — 72 0.1 $0.34 Stage 2 scoring 1 ∼3,600 3.8 $17.01 
+
+Total (all 4 modes + E2E) 23,388 24.7 $110.51 
+
+Mode 4 only + E2E 8,601 9.1 $40.64 
+
+Production projection (full dataset ∼164K pairs, Mode 4) 
+
+Mode 4 at scale 3 492,900 520.6 ∼$2,329 Per-call: 778 input + 278 output = 1,056 tokens. Input: $2.50/1M, Output: $10.00/1M ⇒ $0.0047/call. Traditional crowdsourcing comparison: Place Pulse 2.0 collected 1.17M annotations at ∼$0.14/comparison ≈ $167K, yielding a 98.6% cost reduction at production scale. 
+
+Table 15: E2E dimension optimization: per-category accuracy (%, excluding “equal”) across 12 trials (all six categories, Mode 4). Bold marks the per-category best. Trials 0–5 are explore phase; 6–11 are converge phase. 
+
+Trial Phase τ Safety Beaut. Lively Wealthy Boring Depress. Avg 0 Explore 0.85 58.8 61.5 47.1 55.6 47.1 50.0 53.3 1 Explore 0.88 76.5 46.2 47.1 77.8 35.3 68.8 58.6 2 Explore 0.91 70.6 69.2 35.3 61.1 35.3 56.3 54.6 3 Explore 0.94 64.7 53.8 47.1 50.0 35.3 62.5 52.2 4 Explore 0.97 35.3 53.8 52.9 72.2 47.1 31.3 48.8 5 Explore 1.00 58.8 46.2 52.9 55.6 47.1 56.3 52.8 6 Converge 0.70 70.6 46.2 52.9 44.4 35.3 37.5 47.8 7 Converge 0.68 52.9 53.8 58.8 72.2 52.9 50.0 56.8 8 Converge 0.65 58.8 61.5 41.2 77.8 17.6 50.0 51.2 9 Converge 0.63 58.8 53.8 47.1 44.4 47.1 43.8 49.2 10 Converge 0.60 52.9 46.2 52.9 44.4 64.7 50.0 51.9 11 † Converge 0.58 41.2 50.0 — — — — 45.6 
+
+Assembled best 76.5 69.2 58.8 77.8 64.7 68.8 69.3 
+
+> †
+
+Trial 11 scored only 2/6 categories (early stopping triggered). Assembled best: per-category maximum across all trials. — = category not scored. 
+
+21 UrbanAlign: Post-hoc Semantic Calibration for VLM-Human Preference Alignment A P REPRINT 
+
+Table 16: Per-category assembled best dimensions from E2E optimization (default calibration hyperparameters: 
+
+K=20 , α=0 .3, sel =1 .0). Each category’s optimal dimensions may come from a different trial, enabling independent specialisation. Note: these results differ from Table 1, which uses per-category optimised hyperparameters with original dimensions (72.2% avg); here only the dimension set is optimised (69.3% avg). The two optimisation axes are complementary.                                       
+
+> Category Trial Phase Acc (%) κOptimised Dimensions Safety 1Explore 76.5 0.534 Lighting Adequacy, Pedestrian Infrastructure, Building Maint., Street Activity, Visibility Clarity, Greenery & Landscaping Beautiful 2Explore 69.2 0.458 Greenery & Nat. Elements, Street Cleanli-ness, Arch. Coherence, Color Coordination, Pedestrian Amenities, Visual Complexity Lively 7Converge 58.8 0.308 Human Presence, Vegetation & Greenery, Building Diversity, Street Furniture, Com-mercial Activity, Color & Lighting, Public Art & Signage Wealthy 1Explore 77.8 0.579 Façade Quality, Vegetation Maint., Pavement Integrity, Vehicle Quality, Building Moder-nity, Infrastructure Cond., Street Cleanliness, Lighting Quality Boring 10 Converge 64.7 0.407 Visual Complexity, Activity Presence, Arch. Diversity, Vegetation Variety, Color Vibrancy, Street Furniture Presence, Spatial Enclosure Depressing 1Explore 68.8 0.437 Façade Condition, Street Cleanliness, Green-ery Presence, Lighting Quality, Visual Clutter
+> Average 69.3 0.454 —
+
+Results. Table 15 reports trial-by-trial accuracy for all six categories. The single best trial (Trial 1, explore phase, 
+
+τgen =0 .88 ) achieves 58.6% average accuracy, but per-category assembly (Table 16) raises this to 69.3% (κ=0 .454 ), a +10.7 pp gain that demonstrates categories have distinct optimal dimension sets. Three key findings emerge: (1) Explore phase dominates : 4/6 categories (safety, beautiful, wealthy, depressing) find their best dimensions during exploration (trials 0–5). Trial 1 ( τ =0 .88 ) is particularly productive, contributing optima for three categories. (2) Converge phase is complementary : Lively peaks at trial 7 and boring at trial 10, both in the converge phase. For these categories, the explore phase produced dimensions below 53%, while targeted mutation in the converge phase lifted accuracy to 58.8% and 64.7% respectively. (3) High variance across trials : Per-category accuracy fluctuates substantially across trials (e.g., safety : 35.3%–76.5%; 
+
+boring : 17.6%–64.7%), confirming that dimension set quality is a first-order determinant of alignment performance and justifying the automated search. The assembled average of 69.3% represents a +10.9 pp gain over the default pipeline (58.4%) reported in the main text, achieved without changing any algorithmic hyperparameter; only the semantic dimensions are optimised. 
+
+E.1 Theoretical Analysis Information-bottleneck interpretation. Each dimension set D(t) 
+
+> c
+
+defines a different compression of the visual input through the lens of the information bottleneck [Tishby et al., 2000]. Let X denote the raw visual input and Y the human label. Stage 2 compresses X into dimension scores S(t) = fD(t)
+
+> c
+
+(X), and Stage 3 maps S(t) to prediction 
+
+ˆY . The optimal dimension set maximises I( ˆY ; Y ) subject to the constraint that the bottleneck representation S(t)
+
+remains compact ( n ∈ [5 , 10] dimensions). Equation (9) selects the compression that maximises this downstream mutual information empirically. 
+
+Convergence guarantee. Let F denote the (finite) set of dimension sets reachable by the VLM at any temperature in 
+
+[τmin , τ max ]. Although |F| is large (combinatorially many possible dimension names and descriptions), the VLM’s generative distribution concentrates probability mass on a much smaller effective set Feff ⊂ F of semantically coherent dimension sets. If we model each trial as drawing independently from the VLM’s distribution over Feff , then after T
+
+22 UrbanAlign: Post-hoc Semantic Calibration for VLM-Human Preference Alignment A P REPRINT 
+
+trials the probability of missing the optimal set D∗ 
+
+> c
+
+satisfies: 
+
+Pr D∗ 
+
+> c
+
+/∈ {D (1)  
+
+> c
+
+, . . . , D(T ) 
+
+> c
+
+} ≤ (1 − p∗)T , (10) where p∗ = Pr VLM [D(t) 
+
+> c
+
+= D∗ 
+
+> c
+
+] is the probability of generating the optimal set in a single trial. For a near-optimal set (within ϵ accuracy of the best), this probability is typically higher. Concretely, if the top-k dimension sets are each generated with probability ≥ pmin , then T ≥ ⌈ ln(1 /δ )/ ln(1 /(1 − k · pmin )) ⌉ trials suffice to find at least one with probability ≥ 1 − δ.
+
+Search strategy: explore → converge as exploration–exploitation. The two-phase temperature schedule implements a structured search that balances two objectives: • Exploration (explore phase, τ =0 .85 → 1.0): higher temperatures increase sampling entropy, producing diverse dimension sets that broadly cover the VLM’s generative distribution. Each category independently accumulates its best set, with the current best provided as a soft reference. • Exploitation (converge phase, τ =0 .7 → 0.5): lower temperatures with mutation mode (retain all but 1–2 dimensions from the per-category best) concentrate the search around known-good dimension sets, refining them locally. This is analogous to random search with a guided prior [Bergstra and Bengio, 2012]: rather than sampling uniformly from the combinatorial space of possible dimensions, we leverage the VLM’s own generative distribution as an implicit prior over useful dimension sets. The two-phase schedule ensures that exploration (diverse sampling) precedes exploitation (targeted refinement), and per-category assembly allows each category to benefit from the phase that suits it best. Unlike Bayesian optimisation [Snoek et al., 2012], which would require a surrogate model over the discrete, variable-length dimension space, our approach avoids the need for a surrogate entirely. 
+
+Sample complexity for evaluation. Each trial evaluates alignment accuracy on a fixed sample of m pairs per category. By Hoeffding’s inequality, the empirical accuracy dAcc satisfies |dAcc − Acc | ≤ pln(2 T /δ )/(2 m) uniformly over all 
+
+T trials with probability ≥ 1 − δ. For T =12 and m≈55 pool pairs per category, this gives a confidence interval of 
+
+±13 .7% at δ=0 .05 . While wider than ideal, the observed accuracy gaps between trials are substantial (e.g., safety: 35.3%–76.5%, a 41.2 pp range), confirming that the evaluation sample is sufficient to distinguish meaningfully different dimension sets. 
+
+Connection to LWRR convergence. The end-to-end accuracy depends not only on the dimension set but also on the LWRR calibration quality. For regularised least-squares with K local neighbours in n dimensions, the excess risk decays as O(λ + n/ (Kλ )) [Caponnetto and De Vito, 2007, Hoerl and Kennard, 1970], which is minimised at 
+
+λ∗ ∝ (n/K )1/2. In our setting ( n=5 –8, K=20 ), the system is well-overdetermined ( K ≫ n), so the LWRR calibration error is small regardless of the dimension set, confirming that the E2E accuracy variation across trials is driven primarily by the quality of the dimension-level representation, not by the calibration algorithm. 
+
+# F LWRR Alignment Gain Per Mode 
+
+Table 17 reports the accuracy change from raw VLM output to post-LWRR calibration for each of the four factorial modes on wealthy . The all-category Mode 4 LWRR gain is reported in Table 2b. Table 17: LWRR alignment gain (accuracy % excluding “equal”) per mode, wealthy category. Mode 4 shows the largest calibration gain (+11.1 pp).                                
+
+> Mode 1 Mode 2 Mode 3 Mode 4 Raw Acc. (%) 48.7 63.3 58.8 62.9 Aligned Acc. (%) 55.4 42.2 63.9 74.0
+> ∆(pp) +6.7 −21.1 +5.1 +11.1
+> Raw κ0.208 0.263 0.266 0.256 Aligned κ0.159 −0.037 0.313 0.480
+> n(pool pairs) 83 83 83 50
+
+Notably, only Mode 4 benefits substantially from LWRR on wealthy (+11.1 pp). Mode 3 gains modestly (+5.1 pp), Mode 1 gains slightly (+6.7 pp), and Mode 2 drops sharply ( −21.1 pp), indicating that the combination of pairwise context and multi-agent deliberation is critical for LWRR to learn effective local mappings. 23 UrbanAlign: Post-hoc Semantic Calibration for VLM-Human Preference Alignment A P REPRINT 
+
+# G Complete Algorithm Pseudocode 
+
+Algorithm 1 UrbanAlign: Post-hoc VLM Calibration for Urban Perception 
+
+Require: DL: labelled pairs; ϕCLIP : CLIP encoder; VLM; K, τ, λ, α, ε, θ 
+
+Ensure: Daligned : calibrated dataset 1: // Stage 1: Semantic Dimension Extraction 
+
+2: Compute TrueSkill ratings {(μi, σ i)} from DL
+
+3: Sample Shigh , Slow via consensus criteria 4: Dc ← VLM (Shigh ∪ S low ) {n dimensions} 5: // Stage 2: Multi-Agent Feature Distillation 
+
+6: Sample Dsample ⊂ D L; split into Dref , Dpool 
+
+7: for each image pair (xA, x B ) ∈ D sample do 
+
+8: obs ← VLM Obs (xA, x B , Dc)
+
+9: debate ← VLM Deb (xA, x B , obs , Dc)
+
+10: S(xA), S (xB ) ← VLM Judge (xA, x B , obs , debate , Dc)
+
+11: end for 
+
+12: // Stage 3: LWRR Calibration 
+
+13: Build reference manifold R from Dref with mirror augment 14: for each (xA, x B ) ∈ D pool do 
+
+15: Compute ∆hybrid  
+
+> q
+
+; find K-NN NK in R
+
+16: Solve LWRR (Eq. (4)); compute ˆδ, R 2
+
+17: Re-infer ˆy via Eq. (6) 18: end for 
+
+19: return Daligned 
+
+# H Related Human Preference Datasets 
+
+For reference, we survey publicly available human preference datasets that share the pairwise comparison structure used in this work. Table 18 organises these datasets by domain. This survey is intended as contextual background rather than a claim of demonstrated generalisability; validating the concept-mining–calibration paradigm on additional domains remains future work. 
+
+Urban & scene perception. Place Pulse 2.0 [Salesses et al., 2013], used in this work, collects pairwise comparisons across six urban perception dimensions. SPECS [Quintana et al., 2025] extends the paradigm to 10 perception dimensions and records annotator demographics and personality traits. ScenicOrNot collects absolute scenicness ratings for 200K+ locations across Great Britain. 
+
+Image generation & aesthetic quality. HPD v2 (798K pairs) and Pick-a-Pic (500K+ pairs) collect pairwise pref-erences on text-to-image outputs; ImageReward adds expert-annotated alignment/fidelity/harmlessness dimensions. AVA [Murray et al., 2012] provides crowd-sourced aesthetic ratings for 250K photographs. 
+
+Image quality assessment (IQA). KonIQ-10k and PIPAL provide mean opinion scores and pairwise comparisons for natural image quality. AGIQA-3K focuses on AI-generated image quality with multi-attribute annotations. 
+
+Text & multimodal preference (for context). HH-RLHF, SHP, and Chatbot Arena represent the RLHF paradigm, which aligns model outputs to human preferences by training reward models on pairwise comparisons. These methods use the same data structure but take a fundamentally different (training-based) approach. 24 UrbanAlign: Post-hoc Semantic Calibration for VLM-Human Preference Alignment A P REPRINT 
+
+Table 18: Public human preference datasets. “Pairwise” indicates the native annotation format uses pairwise comparisons (the same format as UrbanAlign). Datasets marked with ⋆ are the most direct candidates for UrbanAlign transfer experiments.                                                                 
+
+> Dataset Domain Scale Format Access
+> Urban & Scene Perception
+> Place Pulse 2.0 ⋆Urban 6-dim 1.17M pairs Pairwise pulse.media.mit.edu
+> SPECS ⋆Urban 10-dim 10 dims + demo. Pairwise ual.sg/project/specs
+> ScenicOrNot ⋆Scenicness 200K+ locs Rating scenic.mysociety.org
+> Streetscore Safety Boston/NYC Rating MIT Media Lab
+> Image Generation Quality
+> HPD v2 T2I pref. 798K pairs Pairwise github.com/tgxs002/HPSv2
+> Pick-a-Pic T2I pref. 500K+ pairs Pairwise HuggingFace ImageReward T2I expert 137K pairs Pairwise github.com/zai-org/ImageReward
+> RichHF-18K T2I regions 18K images Multi-attr. Google Research
+> Aesthetic & Image Quality
+> AVA Photo aesth. 250K images Rating github.com/mtobeiyf/ava_downloader
+> KonIQ-10k Natural IQA 10K images MOS database.mmsp-kn.de
+> PIPAL Perceptual IQA 29K pairs Pairwise ECCV 2020 AGIQA-3K AI-gen. IQA 3K images Multi-attr. NeurIPS 2024
+> Text & Multimodal (RLHF, for context)
+> HH-RLHF Text pref. 170K pairs Pairwise github.com/anthropics/hh-rlhf
+> SHP Reddit pref. 385K pairs Pairwise HuggingFace Chatbot Arena LLM pref. Ongoing ELO rank LMSYS
+
+# References 
+
+Yecheng Zhang, Rong Zhao, Zimu Huang, Xinyu Wang, Yue Ma, and Ying Long. GenAI models capture urban science but oversimplify complexity. arXiv preprint arXiv:2505.13803 , 2025. Naila Murray, Luca Marchesotti, and Florent Perronnin. AVA: A large-scale database for aesthetic visual analysis. 
+
+CVPR , pages 2408–2415, 2012. Long Ouyang, Jeffrey Wu, Xu Jiang, Diogo Almeida, Carroll Wainwright, Pamela Mishkin, Chong Zhang, Sandhini Agarwal, Katarina Slama, Alex Ray, et al. Training language models to follow instructions with human feedback. In 
+
+NeurIPS , pages 27730–27744, 2022. Pang Wei Koh, Thao Nguyen, Yew Siang Tang, Stephen Mussmann, Emma Pierson, Been Kim, and Percy Liang. Concept bottleneck models. In ICML , pages 5338–5348, 2020. Mert Yuksekgonul, Maggie Wang, and James Zou. Post-hoc concept bottleneck models. In ICLR , 2023. Philip Salesses, Katja Schechtner, and César A. Hidalgo. The collaborative image of the city: Mapping the inequality of urban perception. PLoS ONE , 8(7):e68400, 2013. Abhimanyu Dubey, Nikhil Naik, Devi Parikh, Ramesh Raskar, and César A. Hidalgo. Deep learning the city: Quantifying urban perception at a global scale. In ECCV , pages 196–212, 2016. Fan Zhang, Bolei Zhou, Liu Liu, Yu Liu, Helene H. Fung, Hui Lin, and Carlo Ratti. Measuring human perceptions of a large-scale urban region using machine learning. Landscape and Urban Planning , 180:148–160, 2018. Nikhil Naik, Jade Philipoom, Ramesh Raskar, and César A. Hidalgo. Streetscore—predicting the perceived safety of one million streetscapes. CVPR Workshop on Web-scale Vision and Social Media , 2014. Tuomas Oikarinen, Subhro Das, Lam M. Nguyen, and Tsui-Wei Weng. Label-free concept bottleneck models. In ICLR ,2023. Yue Yang, Artemis Panagopoulou, Qing Lian, Xin Eric Wang, and Mark Yatskar. Language in a bottle: Language model guided concept bottlenecks for interpretable image classification. In CVPR , 2023. Xuezhi Wang, Jason Wei, Dale Schuurmans, Quoc Le, Ed Chi, Sharan Narang, Aakanksha Chowdhery, and Denny Zhou. Self-consistency improves chain of thought reasoning in language models. In ICLR , 2023. Yilun Du, Shuang Li, Antonio Torralba, Joshua B. Tenenbaum, and Igor Mordatch. Improving factuality and reasoning in language models through multiagent debate. In ICML , 2024. 25 UrbanAlign: Post-hoc Semantic Calibration for VLM-Human Preference Alignment A P REPRINT 
+
+Tian Liang, Zhiwei He, Wenxiang Jiao, Xing Wang, Yan Wang, Rui Wang, Yujiu Yang, Zhaopeng Tu, and Shum-ing Shi. Encouraging divergent thinking in large language models through multi-agent debate. arXiv preprint arXiv:2305.19118 , 2024. William S. Cleveland. Robust locally weighted regression and smoothing scatterplots. Journal of the American Statistical Association , 74(368):829–836, 1979. Christopher G. Atkeson, Andrew W. Moore, and Stefan Schaal. Locally weighted learning. Artificial Intelligence Review , 11:11–73, 1997. David Ruppert and Matthew P. Wand. Multivariate locally weighted least squares regression. The Annals of Statistics ,22(3):1346–1370, 1994. Matias Quintana, Tianhui Huang, Xianjing Han, Maxim Khomiakov, Winston Yap, and Filip Biljecki. Global urban visual perception varies across demographics and personalities. arXiv preprint arXiv:2505.12758 , 2025. Jiacheng Ye, Jiahui Gao, Qintong Li, Hang Xu, Jiangtao Feng, Zhiyong Wu, Tao Yu, and Lingpeng Kong. ZeroGen: Efficient zero-shot learning via dataset generation. In EMNLP , 2022. Yu Meng, Martin Michalski, Jiaxin Huang, Yu Zhang, Tarek Abdelzaher, and Jiawei Han. Tuning language models as training data generators for augmentation-enhanced few-shot learning. In ICML , 2023. Ralf Herbrich, Tom Minka, and Thore Graepel. TrueSkill: A Bayesian skill rating system. In NeurIPS , pages 569–576, 2006. James Bergstra and Yoshua Bengio. Random search for hyper-parameter optimization. In JMLR , volume 13, pages 281–305, 2012. Gregory Koch, Richard Zemel, and Ruslan Salakhutdinov. Siamese neural networks for one-shot image recognition. In 
+
+ICML Deep Learning Workshop , 2015. Liang-Chieh Chen, Yukun Zhu, George Papandreou, Florian Schroff, and Hartwig Adam. Encoder-decoder with atrous separable convolution for semantic image segmentation. In ECCV , pages 801–818, 2018. James Q. Wilson and George L. Kelling. Broken windows: The police and neighborhood safety. Atlantic Monthly , 249 (3):29–38, 1982. Andrea Caponnetto and Ernesto De Vito. Optimal rates for the regularized least-squares algorithm. Foundations of Computational Mathematics , 7(3):331–368, 2007. Naftali Tishby, Fernando C. Pereira, and William Bialek. The information bottleneck method. arXiv preprint physics/0004057 , 2000. Jasper Snoek, Hugo Larochelle, and Ryan P. Adams. Practical bayesian optimization of machine learning algorithms. In NeurIPS , pages 2951–2959, 2012. Arthur E. Hoerl and Robert W. Kennard. Ridge regression: Biased estimation for nonorthogonal problems. Technomet-rics , 12(1):55–67, 1970. 26

@@ -1,0 +1,1910 @@
+Title: Safe Continuous-time Multi-Agent Reinforcement Learning via Epigraph Form
+
+URL Source: https://arxiv.org/pdf/2602.17078v1
+
+Published Time: Fri, 20 Feb 2026 01:25:45 GMT
+
+Number of Pages: 27
+
+Markdown Content:
+# SAFE CONTINUOUS -TIME MULTI -A GENT REINFORCE -
+
+# MENT LEARNING VIA EPIGRAPH FORM 
+
+Xuefeng Wang 1∗
+
+, Lei Zhang 1∗
+
+, Henglin Pu 1, Husheng Li 1†
+
+, Ahmed H. Qureshi 1†
+
+> 1
+
+Purdue University 
+
+## ABSTRACT 
+
+Multi-agent reinforcement learning (MARL) has made significant progress in re-cent years, but most algorithms still rely on a discrete-time Markov Decision Pro-cess (MDP) with fixed decision intervals. This formulation is often ill-suited for complex multi-agent dynamics, particularly in high-frequency or irregular time-interval settings, leading to degraded performance and motivating the de-velopment of continuous-time MARL (CT-MARL). Existing CT-MARL methods are mainly built on Hamilton–Jacobi–Bellman (HJB) equations. However, they rarely account for safety constraints such as collision penalties, since these intro-duce discontinuities that make HJB-based learning difficult. To address this chal-lenge, we propose a continuous-time constrained MDP (CT-CMDP) formulation and a novel MARL framework that transforms discrete MDPs into CT-CMDPs via an epigraph-based reformulation. We then solve this by proposing a novel physics-informed neural network (PINN)-based actor–critic method that enables stable and efficient optimization in continuous time. We evaluate our approach on continuous-time safe multi-particle environments (MPE) and safe multi-agent MuJoCo benchmarks. Results demonstrate smoother value approximations, more stable training, and improved performance over safe MARL baselines, validating the effectiveness and robustness of our method. Code is available at this link. 
+
+## 1 INTRODUCTION 
+
+MARL has achieved remarkable success in diverse domains, ranging from strategic games (Samvelyan et al., 2019; Vinyals et al., 2019), multi-robot coordination (Haydari & Yılmaz, 2020; Kuyer et al., 2008), and wireless communication (Wang et al., 2023). These advances demonstrate the potential of MARL as a powerful framework for solving complex cooperative and competitive decision-making problems. Despite these achievements, most existing MARL algorithms are for-mulated in discrete time and fundamentally rely on the Bellman equation (Bellman, 1966). This formulation often assumes fixed time intervals between decision steps, which is adequate in set-tings where the decisions naturally occur at uniform time intervals. However, this assumption is not well-suited for complex high-frequency domains such as autonomous driving (Kiran et al., 2021; Chen et al., 2021), financial trading (Shavandi & Khedmati, 2022), where decision-making requires continuous-time control. In such cases, discrete-time RL often struggles to learn accurate policy (Doya, 2000; Mukherjee & Liu), as fixed-step discretization fails to represent non-uniform temporal dynamics, resulting in degraded performance and unstable learning (Tallec et al., 2019; Park et al., 2021; De Asis & Sutton, 2024). These limitations highlight the necessity of developing an alterna-tive framework beyond discrete-time Bellman equations, which is compatible with CT-MARL. Recent studies (Wang et al., 2025) have explored the HJB equations to solve CT-MARL problems. The HJB can be viewed as the continuous-time analogue of the Bellman recursion, where the value function is characterized as the viscosity solution of a nonlinear Partial Differential Equation (PDE) (Shilova et al., 2024). In practice, PINNs have emerged as a common approach to approximate HJB solutions: they train neural networks to minimize HJB PDE residuals and leverage gradient-consistent signals for policy improvement (Mukherjee & Liu; Meng et al., 2024). This formulation eliminates the need for fixed time discretization and enables MARL to operate in continuous-time 
+
+> ∗
+
+Equal contribution. 
+
+> †
+
+Corresponding author. 
+
+1
+
+> arXiv:2602.17078v1 [cs.MA] 19 Feb 2026
+
+domains. However, in safety CT-MARL settings, state constraints (e.g., when they are treated as collision penalties) introduce value discontinuities, making it difficult for HJB-based PINNs to ap-proximate the value functions accurately (Zhang et al., 2024). To address these challenges, we first cast safe CT-MARL as a CT-CMDP with explicit state con-straints. We then introduce a revised epigraph reformulation that augments the system with an aux-iliary state z, transforming the discontinuous constrained values into a continuous form suitable for PDE-based learning. On top of this reformulation, we adopt an actor–critic framework to learn val-ues and policies under continuous-time state constraints. Specifically, we improve epigraph-based training by integrating the inner and outer optimization into a unified scheme. At each rollout, we compute the optimal auxiliary state z∗ and uses it directly for training, while keeping all networks 
+
+z-independent. This design avoids the noise of random z sampling, yields more accurate policy updates, and eliminates costly root-finding at execution. Our main contributions are summarized as follows. (1) To the best of our knowledge, this is the first work to explicitly incorporate state constraints into the formulation of CT-MARL. We introduce an epigraph-based reformulation to bounds discounted cumulative cost and state constraints within a unified objective, effectively transforming discontinuous values into continuous ones. (2) We design an improved epigraph training scheme that integrates inner and outer optimization, providing more stable learning signals and removing the need for costly root-finding algorithms. (3) We prove the existence and uniqueness of viscosity solutions for epigraph-based HJB PDEs, providing theoretical support for our method. Extensive experiments on adapted continuous-time safe MPE and multi-agent MuJoCo benchmarks further demonstrate that our approach consistently outperforms current safe MARL methods. 
+
+## 2 RELATED WORK 
+
+2.1 CONTINUOUS -T IME REINFORCEMENT LEARNING 
+
+Discrete-time reinforcement learning (DTRL) often performs poorly in continuous-time environ-ments, particularly when decision intervals are irregular (Tallec et al., 2019; Park et al., 2021; De Asis & Sutton, 2024). Consequently, continuous-time reinforcement learning (CTRL) has re-ceived growing attention as a more suitable framework for such problems (Doya, 2000; Yildiz et al., 2021; Wang et al., 2020; Bradtke & Duff, 1994; Jia & Zhou, 2022a;b). Most existing studies focus on the single-agent setting, proposing various approaches for value function approximation (Mukherjee & Liu; Wallace & Si, 2023; Lee & Sutton, 2021). For example, Mukherjee & Liu employ PINNs to approximate the value function and guide a PPO-based policy update, while Jia & Zhou (2022b) address stochastic dynamics through a Martingale loss designed for stochastic differential equations. In contrast, research on CT-MARL remains limited. Prior works (Luviano & Yu, 2017; Jiang et al., 2023) have considered multi-agent problems in continuous time, but largely in application-specific contexts rather than as general-purpose algorithms. The study in Wang et al. (2025) represents the first systematic attempt to design CT-MARL methods, combining PINNs with value gradient itera-tion to improve value approximation and performance. However, these approaches still inherit the limitations of PINNs that they can only approximate smooth value functions and therefore neglect safety constraints. 2.2 MULTI -AGENT SYSTEMS WITH SAFETY CONCERNS 
+
+Multi-agent scenarios often raise critical safety concerns, and directly learning under combined reward and safety signals poses significant challenges. A number of studies have explored safe MARL frameworks to address these issues (Gu et al., 2023b; ElSayed-Aly et al., 2021; Gu et al., 2024; Shalev-Shwartz et al., 2016). For instance, Chow et al. (2018) employ primal–dual methods to enforce safety constraints, while Althoff et al. (2019) adopt a trust-region approach. Gu et al. (2021) introduce MACPO and MAPPO-Lagrange, which provide theoretical guarantees for both monotonic reward improvement and safety constraint satisfaction. In addition, Zhang et al. (2025b) leverage epigraph forms to formulate multi-agent safe optimal control problems, improving stability during training. However, these approaches are primarily developed in discrete-time settings, which limits their ability to capture continuous-time dynamics. Some efforts have incorporated safety into continuous-time multi-agent systems (e.g., Tayal et al. (2025)), but they assume fully known system 2dynamics and rely on optimal control algorithms, significantly restricting applicability. In more realistic scenarios, where dynamics are only partially known or highly complex, such methods fail to provide practical solutions. Existing methods remain limited in handling discontinuities and safety constraints in CT-MARL. Discrete-time safe MARL algorithms provide theoretical guarantees but do not naturally extend to continuous dynamics, while continuous-time approaches struggle with discontinuous value func-tions. To address these challenges, we propose an epigraph-based reformulation that unifies safety constraints and standard cost functions within a single objective, enabling principled and stable learning in CT-MARL. 
+
+## 3 METHODOLOGY 
+
+In this section, we present our epigraph-based PINN actor–critic iteration (EPI) for solving CT-MARL with state constraints. 1) We first formalize the learning problem as CT-CMDP . Sec-ondly, 2) we reformulate the CT-CMDP using an epigraph form . By introducing an auxiliary state z to augment system states, this reformulation converts discontinuous value functions into con-tinuous ones. Building on this reformulation, 3) we develop an actor-critic learning architecture that aligns with the epigraph inner-outer optimization scheme . Specifically, the outer optimiza-tion computes the optimal auxiliary state z∗ along the rollout, ensuring that the critic captures the tightest feasible trade-off between return and safety. Based on this, the inner optimization trains the critic using PINNs, which jointly update the return and constraint networks together with z∗ to approximate the epigraph-based value function. This stabilized critic then serves as the foundation for actor training: we derive an advantage function consistent with the epigraph-based HJB PDEs, which provides the key learning signal for policy improvement. 3.1 PROBLEM FORMULATION 
+
+3.1.1 CONTINUOUS -TIME CONSTRAINED MARKOV DECISION PROCESS 
+
+We consider a CT-CMDP problem, formally defined by the tuple 
+
+M = X , {U i}Ni=1 , N, f, {li}Ni=1 , c, {tk}k≥0, γ , (1) where X ⊆ Rn is the global state space, and U = U1 × · · · × U N ⊆ Rm is the joint control space for N agents. The system evolves according to time-invariant nonlinear dynamics ˙x(t) = 
+
+f (x(t), u (t)) with x(0) = x0, where f : X × U → X . Each agent i applies a decentralized policy 
+
+πi : X × [0 , ∞) → U i, and the joint policy is denoted as π = ( π1, . . . , π N ). All agents share the non-negative cost function l = PNi=1 li, where li : X × U i → R is the independent cost function of agent i. The system is further subject to state-dependent safety constraints specified by a function 
+
+c : X → R, with the feasible set defined as F = {x ∈ X | c(x) ≤ 0}. Control actions are updated at irregular decision times {tk}k≥0, with strictly positive intervals τk = tk+1 − tk. γ ∈ (0 , 1] is the discount factor. Throughout the paper, we assume that Ui is compact and convex, f and c are Lipschitz continuous, and li is Lipschitz continuous and bounded. The joint objective is to minimize the cumulative cost under joint control input u = ( u1, . . . , u N ) subject to state constraints c(x):
+
+v(x) = min 
+
+> u∈U
+
+Z ∞
+
+> t
+
+γτ −t l(x(τ ), u (τ )) dτ 
+
+s.t. c(x(τ )) ≤ 0, ∀τ ≥ t. 
+
+(2) 3.1.2 EPIGRAPH REFORMULATION 
+
+The value becomes discontinuous (Altarovici et al., 2013) when state constraints are violated in Eq. 2, which hinders the convergence of HJB-based PINN training. To address this, we leverage an epigraph reformulation that converts value in Eq. 2 into a continuous representation. 
+
+Definition 1 (Epigraph Reformulation) . We introduce an auxiliary state variable z(t) ∈ R to refor-mulate Eq. 2 using the epigraph forms. Here, z follows the dynamic ˙z(t) = −l(x(t), u (t)) − ln γ ·
+
+z(t). Therefore, the auxiliary value function is defined as 
+
+V (x, z ) = min  
+
+> u∈U
+
+max 
+
+
+
+max   
+
+> τ∈[t, ∞]
+
+c(x(τ )) ,
+
+Z ∞
+
+> t
+
+γτ −tl(x(τ ), u (τ )) dτ − z
+
+
+
+, (3) 3Lemma 3.1 (Value Equivalence) . Suppose the assumptions in Sec. 3.1.1 hold. For all (t, x, z ) ∈
+
+[0 , ∞) × X × R, the constrained value v and auxiliary value V are related by 
+
+v(x) = min {z ∈ R | V (x, z ) ≤ 0}. (4) Here, the sub-zero level set of auxiliary value V becomes the epigraph of the constrained value v.The proof is listed in Appendix A.1. 
+
+Lemma 3.2 (Optimality Condition) . For all (t, x, z ) ∈ [0 , ∞) × X × R, consider a small enough 
+
+h > 0, the auxiliary value function V satisfies 
+
+V (x, z ) = min  
+
+> u∈U
+
+max 
+
+
+
+max   
+
+> τ∈[t,t +h]
+
+c(x(τ )) , γ hV (x(t + h), z (t + h)) 
+
+
+
+. (5) The proof is listed in Appendix A.2. 
+
+Theorem 3.3 (Epigraph-based HJB PDE) . Let V : X × R → R be the auxiliary value function defined in Eq. 3. Then V is the unique viscosity solution of the following HJB PDE for all (t, x, z ) ∈
+
+[0 , ∞) × X × R.
+
+max 
+
+
+
+max   
+
+> τ∈[t, ∞]
+
+c(x) − V (x, z ), min  
+
+> u∈U
+
+H(x, z, ∇xV, ∂ z V )
+
+
+
+= 0 , (6) where H(x, z, ∇xV, ∂ z V ) is Hamiltonian and satisfies H = ∇xV · f (x, u ) − ∂z V · l(x, u ) + ln γ · V
+
+and optimal control u∗ = arg min u∈U H. The derivation proof is provided in Appendix A.3. 3.2 EPIGRAPH LEARNING FRAMEWORK Outer Optimization 
+
+> Inner Optimization
+> Data Collection
+> Critic Learning
+> Actor Learning
+
+Figure 1: Overview of the proposed epigraph-based CT-MARL framework. The pipeline begins with data collection, where individual agent rollouts are aggregated into a centralized rollout XR
+
+for the training; the outer optimization computes optimal z∗ to balance discounted cumulative cost and safety constraints; the inner optimization corresponds to critic learning, where return networks 
+
+V ret  
+
+> ψ
+
+(x) and constraint value networks V cons  
+
+> ϕ
+
+(x) are optimized jointly with the optimal auxiliary state 
+
+z∗; and actor learning leverages the advantage function to improve policies. ‘As illustrated in Fig. 1, our framework integrates the epigraph-based inner-outer optimization (Zhang et al., 2025b) into the actor-critic paradigm. The outer loop updates z∗ along the rollout by solving Eq. 7, ensuring that the critic is trained with the minimal z that simultaneously satisfies both costs and safety constraints. 
+
+min  
+
+> z∈R
+
+z s.t. min  
+
+> π
+
+max 
+
+n
+
+sup  
+
+> τ≥t
+
+c(x(τ )) ,
+
+Z ∞
+
+> t
+
+γτ −t l(x(τ ), π (τ )) dτ − z
+
+o
+
+≤ 0. (7) In the inner loop, the critic is trained as follows: the return and constraint value networks ( V ret  
+
+> ψ
+
+(x)
+
+and V cons  
+
+> ϕ
+
+(x)) are optimized using z∗ to approximate the auxiliary value function ˜V (x, z ∗). This stabilized critic subsequently supplies the learning signals for decentralized actors, which map lo-cal observations to continuous-time policies under the standard centralized training decentralized execution setup (Foerster et al., 2018; Lowe et al., 2017). We next describe the revised outer opti-mization in detail, focusing on solving the optimal auxiliary state z∗ that trades off discounted cost against safety violations without costly root-finding algorithms (So & Fan, 2023; So et al., 2024; Zhang et al., 2025b). 43.2.1 REVISED OUTER OPTIMIZATION 
+
+We seek the minimal z such that the epigraph-based value V remains non-positive, as defined in Eq. 4. Using the return and constraint value network learned by the critic, the optimal auxiliary state 
+
+z∗ can be found by solving for the minimal feasible solution: 
+
+z∗ = min 
+
+n
+
+z ∈ R | max {V cons  
+
+> ϕ
+
+(x), V ret  
+
+> ψ
+
+(x) − z} ≤ 0
+
+o
+
+, (8) where return value network V ret  
+
+> ψ
+
+(x) that approximates the discounted cumulative cost 
+
+R ∞ 
+
+> t
+
+γτ −t l(x(τ ), π (τ )) dτ , and constraint value network V cons  
+
+> ϕ
+
+(x) represents the violation for worst-case future constraints sup τ ≥t c(x(τ )) .In previous epigraph formulations (Tayal et al., 2025; Zhang et al., 2025b), the outer problem is solved during the execution phase: z is sampled along the rollouts during training, and z∗ is com-puted at execution time via root-finding (Stoer et al., 1980). This design has two drawbacks in CT-MARL: (1) the random sampling of z introduces nonstationary noise that destabilizes the up-dates of actor and critic and further leads to poor convergence; (2) at execution, root-finding must be performed at every step, which is computationally expensive and often incompatible with real-time requirements. In contrast, we design the return and constraint value networks as functions of the states x solely. We then integrate the outer optimization into actor-critic training: for each episode, 
+
+z∗ is computed using the current learned value ˜V along the predicted rollout. The actor is then trained against a z-independent critic, yielding a z-independent policy π(x). This design ensures stable actor training, and enables real-time deployment by eliminating the need for root-finding during execution. Since the critic’s value networks are z-independent, the outer optimization is simplified to a scalar search for z∗, which adds negligible cost to model training. 3.2.2 INNER OPTIMIZATION WITH CRITIC LEARNING 
+
+The inner optimization is responsible for updating the PINN-based critic networks. Given a task-dependent range [zmin , z max ], the outer optimization computes z∗, which is then clipped to this range (i.e., z∗ ← min {max {z∗, z min }, z max }) before being used to train the critic module. The critic consists of two value networks: a return value network V ret  
+
+> ψ
+
+(x), and a constraint value network 
+
+V cons  
+
+> ϕ
+
+(x). Together with the computed z∗ from Eq. 8, these define the composite epigraph-based value function: ˜V (x, z ∗) = max 
+
+n
+
+V cons  
+
+> ϕ
+
+(x), V ret  
+
+> ψ
+
+(x) − z∗o
+
+. (9) To ensure stable and accurate training, we employ three complementary losses: 
+
+(i) Residual Loss. We use PINN architecture (Mukherjee & Liu) to approximate the value function governed by epigraph-based HJB PDEs, and introduce a residual loss that penalizes violations of the corresponding PDEs: 
+
+LResidual =
+
+
+
+max 
+
+n
+
+c(x) − ˜V , min 
+
+> u∈U
+
+∇x ˜V · f (x, u ) − ∂z ˜V · l(x, u ) + ln γ · ˜V o 2
+
+. (10) 
+
+(ii) Target Loss. In standard PINNs, a boundary loss is combined with the PDE residual to ap-proximate PDE solutions (Cai et al., 2021; Raissi et al., 2019). In the infinite-horizon setting, however, no boundary condition is available, and training the critic only on residuals is insuffi-cient: optimization may converge, but to incorrect PDE solutions (Wang et al., 2022). To address this, we add a rollout-based target loss that measures the discrepancy between the epigraph-based value approximation with a numerical target defined by Eq. 3. For each episode, the current value 
+
+˜V generates a closed-loop trajectory {x(τ ), u (τ )}∞ 
+
+> τ=t
+
+; from this trajectory we construct the tar-get Vtgt (x, z ) = max max τ ∈[t, ∞] c(x(τ )) , R ∞ 
+
+> t
+
+γτ −t l(x(τ ), u (τ )) dτ − z∗ and minimize the squared error: 
+
+LTarget =
+
+
+
+Vtgt (x, z ∗) − max { V cons  
+
+> ϕ
+
+(x), V ret  
+
+> ψ
+
+(x) − z∗ }
+
+2
+
+. (11) 
+
+(iii) Value Gradient Iterations. Standard PINN training in multi-agent settings often struggles to approximate accurate value functions, primarily because the learned value gradients are inaccurate or unstable (Wang et al., 2025; Zhang et al., 2024). The VGI techniques (Eberhard et al., 2025; Wang et al., 2025) are designed to enhance the quality of learned value gradients. In our frame-work, accurate gradients ∇xV (x) are crucial for precise value approximations, which in turn affect 5actor learning and ultimately determine the quality of the resulting policies. To establish the the-oretical basis of this module, we follow Theorem 3.4 in Bokanowski et al. (2021) and Theorem 2 in Hermosilla & Zidani (2023): 
+
+∇xt
+
+˜V (xt) = ∇xt (χ(xt)l(xt, u t) + (1 − χ(xt)) c(xt))∆ t + γ∆t∇xt+∆ t
+
+˜V (xt+∆ t) · ∇ xt f (xt, u t),
+
+(12) where the χ(xt) := 1{ V ret  
+
+> ψ
+
+(xt) − zt ≥ V cons  
+
+> ϕ
+
+(xt)}. As shown in Eq. 12, the value gradient satisfies a recursive relation coupling the local cost gradient with the backpropagated dynamics term. The overall critic objective is a weighted sum of the three losses as: 
+
+LCritic = λres LResidual + λtgt LTarget + λvgi LVGI , (13) where the weights (λres , λ tgt , λ vgi ) are selected to keep the losses on comparable scales and are determined via grid search. 3.2.3 ACTOR LEARNING 
+
+After introducing the inner-outer optimization for critic learning, we turn to the actor learning. We first define the epigraph-based Q-function, which is used for deriving policy update rules. 
+
+Definition 2 (Epigraph-based Q-function) . Following the definition in (So & Fan, 2023), for any state-action pair (xt, u t) and auxiliary state zt, the epigraph-based Q-function is defined 
+
+Q(xt, z ∗ 
+
+> t
+
+, u t) = max 
+
+n
+
+c(xt) , γ hV (xt+h, z ∗
+
+> t+h
+
+)
+
+o
+
+. (14) where xt+h and z∗ 
+
+> t+h
+
+are the states and optimal auxiliary state at t + h, respectively. h is a short time interval. 
+
+Lemma 3.4 (Epigraph-based advantage function) . The epigraph-based advantage function 
+
+A(xt, z ∗ 
+
+> t
+
+, u t) = Q(xt, z ∗ 
+
+> t
+
+, u t) − V (xt, z ∗ 
+
+> t
+
+) (15) is equivalent to epigraph-based HJB PDE when h → 0
+
+A(xt, z ∗ 
+
+> t
+
+, u t) = max {c(xt) − V (xt, z ∗ 
+
+> t
+
+), ∇xt V · f (xt, u t) − ∂zt V · l(xt, u t) + ln γ · V }. (16) In practice, evaluating the epigraph-based advantage in Eq. 16 requires knowledge of the true dy-namics f (x, u ) and cost function l(x, u ). Since these quantities are generally unknown in model-free reinforcement learning, we replace them with neural networks that are jointly trained alongside the actor. The derivation of the epigraph-based advantage function is listed at Appendix A.4. 
+
+Dynamics and Cost Networks. To assist with the policy training, we employ two neural networks: a dynamics network fξ (x, u, ∆t) that predicts the next state x′ given the current state–action pair, and a cost network lϕ(x, u, ∆t) that estimates the instantaneous stage cost. Both models are trained via supervised regression using observed transitions (x, u, x ′, l ) from the environment. Specifically, the training losses are 
+
+Ldyn (ξ) = fξ (x, u, ∆t) − x′ 2, Lrew (ϕ) =  lϕ(x, u, ∆t) − l(x, u )2, (17) where x′ is the observed next state and l(x, u ) is the empirical cost signal. Equivalently, the dynamics learning can be interpreted as approximating the continuous-time derivative dynamics 
+
+(fξ (x, u, ∆t) − x)/∆t.
+
+Actor Update with Learned Models. By substituting ˜V (x, z ∗), fξ and lϕ into the epigraph advan-tage expression Eq. 16, we obtain a differentiable surrogate 
+
+Aθ (x, z ∗, u ) = max {c(x) − ˜V , ∇x ˜V · fξ − ∂z ˜V · lϕ + ln γ · ˜V }. (18) The actor πθ (u | x) is updated by minimizing the expected surrogate advantage: 
+
+Lactor (θ) = Ex∼X R,u ∼πθ (·| x)
+
+ Aθ (x, z ∗, u ) , (19) where XR is the sampled data along the rollout. Specifically, we adopt a centralized-training decentralized-execution structure: each agent’s actor 
+
+πi(oi, ∆t) takes its local observation oi as input, while the training signal is derived from the state 
+
+x. The overall training pipeline is summarized in Algorithm 1 in Appendix B. 60 5000 10000                
+
+> Episode
+> −500
+> −400
+> −300
+> −200
+> −100
+> 0
+> Cumulative Reward  Cooperative Navigation
+> 05000 10000
+> Episode
+> −400
+> −300
+> −200
+> −100
+> 0
+> Cumulative Reward  Cooperative Predator Prey
+> 05000 10000
+> Episode
+> −1000
+> −800
+> −600
+> −400
+> −200
+> Cumulative Reward  Corridor
+> 05000 10000
+> Episode
+> −400
+> −300
+> −200
+> −100
+> 0
+> Cumulative Reward  Formation
+> 05000 10000
+> Episode
+> −600
+> −400
+> −200
+> 0
+> Cumulative Reward  Line
+> 05000 10000
+> Episode
+> −250
+> −200
+> −150
+> −100
+> −50
+> 0
+> Cumulative Reward  Target
+> EPI EPPO SAC-Lag PPO-Lag MACPO CBF
+
+Figure 2: Overall results for adapted MPE environments. 
+
+## 4 EXPERIMENTAL RESULTS 
+
+We organize our empirical study around the following research questions: Q1. How well does our method balance discounted cumulative cost and constraint satisfaction compared to state-of-the-art baselines? Q2. How does the different loss component in critic learning contribute to stable training and accurate value approximations? Q3. How does performance change when training with versus without the epigraph reformulation? Q4. How sensitive is the epigraph formulation to the choice of the auxiliary variable z during training? Q5. How robust is the method under stochastic disturbances, and how does performance degrade under model-mismatch noise? Q6. How does the performance change under different discretization resolutions ∆t?4.1 BENCHMARKS AND BASELINES .To evaluate our approach under continuous-time environments with safety constraints, we con-sider two adapted benchmarks: the safe continuous-time MPE (Lowe et al., 2017; Wang et al., 2025) and continuous-time Safe MA-MuJoCo (Gu et al., 2023a; Wang et al., 2025). In MPE, we design several scenarios including Corridor , Formation , Line , Target , Simple Spread , and 
+
+Cooperative Predator–Prey . These tasks typically place agents in environments with obsta-cles and require them to avoid both collisions with obstacles and collisions with other agents while navigating or pursuing their objectives. In MuJoCo, we adapt several scenarios such as Half Cheetah and Ant into continuous-time versions and introduce randomly placed walls as ob-stacles. The agents must coordinate to move forward efficiently while avoiding crashing into walls, ensuring that the learned policies account for both locomotion and safety considerations. 0 1 2 3 4          
+
+> Cost
+> 0
+> 10
+> 20
+> 30
+> Constraint Violation Rate  Corridor
+> 012
+> Cost
+> 0
+> 5
+> 10
+> Cooperative Predator–Prey
+> 0123
+> Cost
+> 0
+> 5
+> 10
+> Cooperative Navigation
+> EPI EPPO SAC-Lag PPO-Lag MACPO CBF
+
+Figure 3: Performance of constraints and cost over MPE settings. Lastly, we design a di-dactic example based on a constrained coupled oscilla-tor, which admits an analyt-ical ground-truth solution for both value functions and ac-tions. This example provides a transparent testbed to di-rectly validate the correctness of our learned critics against exact solutions. Full details of the agent setups, metrics, state and action spaces, and cost specifications are provided in the Appendix C. We compare our approach EPI with MACPO (Gu et al., 2021), MAPPO-Lag (Gu et al., 2021), SAC-Lag (Haarnoja et al., 2018), EPPO (Zhang et al., 2025b) and CBF (Zhang et al., 2025a). The first three represent 70 2500 5000 7500 10000 
+
+Episode     
+
+> −20
+> 0
+> 20
+> Cumulative Reward  HalfCheetah-2x3
+> 02500 5000 7500 10000
+
+Episode     
+
+> −20
+> 0
+> 20
+> Cumulative Reward  HalfCheetah-3x2
+> 02500 5000 7500 10000
+
+Episode     
+
+> −20
+> 0
+> 20
+> Cumulative Reward  HalfCheetah-6x1
+> 02500 5000 7500 10000
+
+Episode     
+
+> −20
+> 0
+> Cumulative Reward  Ant-2x4
+> 02500 5000 7500 10000
+
+Episode     
+
+> −20
+> 0
+> 20
+> Cumulative Reward  Ant-2x4d
+> 02500 5000 7500 10000
+
+Episode 
+
+> −20
+> −10
+> 0
+> 10
+> 20
+> Cumulative Reward  Ant-8x1
+
+EPI EPPO SAC-Lag PPO-Lag MACPO CBF Figure 4: Overall results for adapted multi-agent MuJoCo environments. the most widely used families of safe MARL algorithms: trust-region based methods (MACPO) and Lagrangian based methods (MAPPO-Lag, SAC-Lag), covering both on-policy and off-policy learning. We also include EPPO as an epigraph-based baseline that follows the traditional epigraph optimization framework. We additionally include a control barrier function (CBF) baseline, which enforces safety through model-based barrier certificates and is commonly used in safe multi-agent control. Although these algorithms were originally developed in the discrete-time setting, we adapt them to continuous time by equipping their critics with the same PDE residual loss used in our method. Since the performance gap between discrete-time and continuous-time algorithms has al-ready been well studied (Tallec et al., 2019; De Asis & Sutton, 2024), our baselines focus only on isolating the effect of different safety mechanisms (trust-region, Lagrangian, or epigraph). 0 5000 10000 
+
+Episode   
+
+> −500
+> −400
+> −300
+> −200
+> −100
+> 0
+> Cumulative Reward  Cooperative Navigation
+> 05000 10000
+
+Episode   
+
+> −250
+> −200
+> −150
+> −100
+> −50
+> Cumulative Reward  Cooperative Predator Prey
+> 05000 10000
+
+Episode   
+
+> −300
+> −250
+> −200
+> −150
+> −100
+> Cumulative Reward  Corridor
+> 05000 10000
+
+Episode   
+
+> −400
+> −300
+> −200
+> −100
+> 0
+> Cumulative Reward  Formation
+> 05000 10000
+
+Episode   
+
+> −600
+> −400
+> −200
+> 0
+> Cumulative Reward  Line
+> 05000 10000
+
+Episode 
+
+> −200
+> −150
+> −100
+> −50
+> 0
+> Cumulative Reward  Target
+
+EPI w/o Residual w/o VGI w/o Target 
+
+Figure 5: Ablation study of different loss terms in critic network over MPE. 4.2 RESULTS ANALYSIS 
+
+In this section, we present a systematic analysis of the results, addressing each research ques-tion in turn. Q1. Our method consistently outperforms all baselines across both adapted MPE and MuJoCo environments in Fig. 2 and Fig. 4. We adopt the same reward design commonly used in prior safe MARL works such as MACPO (Gu et al., 2021). Specifically, the reward is the combination of the task cost provided by the environment (e.g., distance to the target 8in MPE) and the safety penalty provided by the environment (e.g., collision penalty between agents or with obstacles), as detailed in Appendix C, which directly reflects performance un-der both objectives. In Fig. 3 and 6, each point corresponds to the average performance of one algorithm, with horizontal and vertical bars denoting standard deviations. Since the goal is to minimize both cost and constraint violations, the lower-left corner of each panel repre-sents the desirable region. These results show that our algorithm EPI achieves nearly the low-est cost and constraint violation in every scenarios. Specifically, EPPO often remains stuck at suboptimal solutions because it randomly samples the auxiliary state z instead of using z∗ for model training, introducing noise that disrupts policy updates and prevents stable convergence. 0.5 1.0 1.5         
+
+> Cost
+> 5
+> 10
+> Constraint Violation Rate
+> HalfCheetah-2x3
+> 1.0 1.5 2.0
+> Cost
+> 5
+> 10
+> 15
+> HalfCheetah-6x1
+> 1.0 1.5 2.0
+> Cost
+> 1
+> 2
+> Ant-2x4
+> EPI EPPO SAC-Lag PPO-Lag MACPO
+
+Figure 6: Performance of constraints and cost over MuJoCo settings. MACPO enforces constraints through a hard trust-region style update, which yields strong violation rejection but tends to be overly conserva-tive. SAC-Lag and MAPPO-Lag rely on Lagrangian re-laxation, which is known to suffer from instability when balancing objectives under tight safety require-ments (Zhang et al., 2025b). CBF achieves reasonable constraint-violation levels but tends to be conservative. The CBF condition relies on the gradient of a learned barrier function ∇B(x), approximation errors in this component can distort the effective safe set and degrade the overall performance. 
+
+Q2. The ablation results in Fig. 5 clearly demonstrate the importance of each loss com-ponent in critic learning. It presents the cumulative reward performance of our full method compared with its ablation variants across representative continuous-time MPE tasks. Formation Line Target 
+
+> 0.0
+> 0.5
+> 1.0
+> 1.5
+> 2.0
+> 2.5
+> 3.0
+> 3.5
+> Average Distance to Target  EPI
+> High Target Loss Weight
+> High Residual Loss Weight
+> High VGI Loss Weight
+
+Figure 7: Weighted loss performance. Removing the target loss or the VGI loss significantly degrades performance, whereas removing the residual loss has only a mi-nor effect. This difference stems from the fact that, unlike existing HJ-based PINN methods (Zhang et al., 2024; Tayal et al., 2025; Cai et al., 2021) that address finite-horizon problems with boundary conditions, our framework targets the infinite-horizon setting where no such boundary conditions are available. In this case, the target loss serves as an anchor to stabilize value approx-imations, ensuring that value function V (x)
+
+does not drift arbitrarily, while the VGI loss enforces consistency of the learned value gra-dients, which are crucial for both accurate value approximations and policy improvement. In con-trast, the HJB residual loss mainly regularizes the PDE structure, but its role becomes less critical once the value gradients are optimized by VGI. As a result, the removal of VGI has a severe im-pact, since inaccurate value gradients directly harm both critic accuracy and actor updates, while the residual loss contributes less critically to overall training stability. The grouped bars in Fig. 7 report the average distance to the target (lower is better) for three MPE tasks (Formation, Line, and Target) under different loss weightings. The balanced setting (EPI) attains the smallest distance in all tasks and shows the tightest variability. Over-emphasizing any single component degrades performance: increasing the target loss weight is particularly harmful on Line (large increase in distance), while overweighting ( ×20 ) the residual or the VGI loss also worsens results relative to EPI, though to a lesser extent. These ablations support using the balanced weighting adopted by EPI. 
+
+Q3. We generate one trajectory using EPI and collect the visited states. On these same states, we compare the value and policy from three methods: EPI, Ground Truth via the LQR method (details 9in the Appendix C), and an ablation without the epigraph reformulation, where the state constraint is treated as a collision penalty added to the cost function l, making the value function discontinuous. 0 10 20 30       
+
+> Step
+> 0.00
+> 0.05
+> 0.10
+> Value
+> Value Comparison
+> EPI
+> Ground Truth
+> w/o Epigraph (/20)
+> 010 20 30
+> Step
+> −1.0
+> −0.5
+> 0.0
+> 0.5
+> Action (Agent1)  Agent1 Action Comparison
+> EPI
+> Ground Truth
+> w/o Epigraph
+> 010 20 30
+> Step
+> −0.50
+> −0.25
+> 0.00
+> 0.25
+> 0.50
+> Action (Agent2)  Agent2 Action Comparison
+> EPI
+> Ground Truth
+> w/o Epigraph
+
+Figure 8: Performance with and without epigraph reformulation. For Ground Truth, the value is com-puted as the dis-counted cumulative cost. While for the EPI and ablation without the epigraph form, the value is predicted through the trained value network. EPI closely tracks the Ground Truth in both value and actions for both agents, indicating accurate value ap-proximation and stable control policies. In contrast, the ablation without the epigraph form exhibits severely mis-scaled value predictions (we plot it after a × 120 scaling to share the same y-axis) and noticeably unstable actions, which in practice are more likely to violate constraints because the discontinuous value function is not addressed by the epigraph form. The poor performance of the ablation without epigraph stems from the discontinuity of the value function when state constraints are directly encoded as hard penalties. Such discontinuities are notoriously difficult to approximate with neural networks, leading to severely mis-scaled value predictions and unstable gradients for policy updates. By contrast, the epigraph reformulation converts the discontinuous penalty into a continuous and smooth upper-bound optimization, which stabilizes critic learning and yields reliable policies. 
+
+Q4. To better understand how model performance depends on z, we test two MPE tasks (Formation and Line) under different values of z. Specifically, we train the EPI model with 
+
+z ∈ {z∗ − 0.5zmax , z ∗ − 0.2zmax , z ∗, z ∗ + 0 .2zmax , z ∗ + 0 .5zmax }. Fig. 9 reports the re-sults, where the x-axis indicates cost and the y-axis denotes the constraint violation rate. 0.6 0.8 1.0 1.2 1.4 1.6                   
+
+> Cost
+> 0
+> 20
+> 40
+> 60
+> 80
+> 100
+> Constraint Violation Rate  Formation
+> 1.2 1.4 1.6 1.8 2.0 2.2
+> Cost
+> 0
+> 20
+> 40
+> 60
+> 80
+> 100 Line
+> z∗− 0.5 zmax z∗− 0.2 zmax z∗z∗+ 0.2 zmax z∗+ 0.5 zmax
+
+Figure 9: Sensitivity test of different z choices. Compared with the opti-mal auxiliary state z∗, us-ing a suboptimal z shifts the trade-off between cost and constraint satisfaction, often resulting in either much higher violation rates or larger costs. Specif-ically, a smaller z (e.g., 
+
+z∗ −0.2zmax , z∗ −0.5zmax )significantly increases the violation rate while only slightly reducing cost. Getting back to the epigraph form max {V cons  
+
+> ϕ
+
+(x), V ret  
+
+> ψ
+
+(x, z ) − z}, a smaller 
+
+z makes V ret (x, z ) − z lager than V cons  
+
+> ϕ
+
+(x), so the return term dominates in the epigraph form. As a result, the optimization prioritizes reward improvement while neglecting constraint satisfac-tion, leading to frequent violations. In constrast, when z is larger than z∗ (e.g., z∗ + 0 .2zmax ,
+
+z∗ + 0 .5zmax ), the term V ret (x, z ) − z becomes smaller than V cons  
+
+> ϕ
+
+(x), making constraint value dominate in the epigraph form. This forces the critic and actor to emphasize constraint satisfaction, which reduces violations but increases cost. 
+
+## 5 CONCLUSION 
+
+In this paper, we propose an epigraph-based framework for CT-MARL that addresses the chal-lenges of balancing reward maximization with constraint satisfaction. By reformulating the prob-lem through the epigraph forms, we introduced an inner–outer optimization procedure that enables stable critic learning and effective policy updates. Our design further integrates different losses in critic learning, including target, residual, and VGI losses, to anchor value approximations and improve gradient accuracy in the infinite-horizon setting. Through extensive experiments in both adapted MPE and MuJoCo benchmarks, we demonstrated that our method consistently outperforms state-of-the-art baselines in terms of both cost reduction and constraint satisfaction. 10 ACKNOWLEDGEMENT 
+
+This material is based upon work supported by the Air Force Office of Scientific Research under award number FA9550-24-1-0233. Any opinions, findings, and conclusions or recommendations expressed in this material are those of the author(s) and do not necessarily reflect the views of the United States Air Force. 
+
+## ETHICS STATEMENT 
+
+This work focuses on decision-making for the continuous-time constrained MDP problems. All experiments are conducted entirely in simulation and do not involve human subjects or personal data. 
+
+## REFERENCES 
+
+Albert Altarovici, Olivier Bokanowski, and Hasnaa Zidani. A general Hamilton-Jacobi framework for non-linear state-constrained control problems. ESAIM: Control, Optimisation and Calculus of Variations , 19(2):337–357, 2013. Matthias Althoff, Andrea Giusti, Stefan B Liu, and Aaron Pereira. Effortless creation of safe robots from modules through self-programming and self-verification. Science Robotics , 4(31): eaaw1924, 2019. Richard Bellman. Dynamic programming. science , 153(3731):34–37, 1966. Olivier Bokanowski, Anya D´ esilles, and Hasnaa Zidani. Relationship between maximum princi-ple and dynamic programming in presence of intermediate and final state constraints. ESAIM: Control, Optimisation and Calculus of Variations , 27:91, 2021. Steven Bradtke and Michael Duff. Reinforcement learning methods for continuous-time markov decision problems. Advances in neural information processing systems , 7, 1994. Shengze Cai, Zhiping Mao, Zhicheng Wang, Minglang Yin, and George Em Karniadakis. Physics-informed neural networks (PINNs) for fluid mechanics: A review. Acta Mechanica Sinica , 37 (12):1727–1738, 2021. Jianyu Chen, Shengbo Eben Li, and Masayoshi Tomizuka. Interpretable end-to-end urban au-tonomous driving with latent deep reinforcement learning. IEEE Transactions on Intelligent Transportation Systems , 23(6):5068–5078, 2021. Yinlam Chow, Mohammad Ghavamzadeh, Lucas Janson, and Marco Pavone. Risk-constrained rein-forcement learning with percentile risk criteria. Journal of Machine Learning Research , 18(167): 1–51, 2018. Kris De Asis and Richard S Sutton. An idiosyncrasy of time-discretization in reinforcement learning. 
+
+arXiv preprint arXiv:2406.14951 , 2024. Kenji Doya. Reinforcement learning in continuous time and space. Neural computation , 12(1): 219–245, 2000. Onno Eberhard, Claire Vernade, and Michael Muehlebach. A Pontryagin perspective on reinforce-ment learning. In 7th Annual Learning for Dynamics & Control Conference , pp. 233–244. PMLR, 2025. Ingy ElSayed-Aly, Suda Bharadwaj, Christopher Amato, R¨ udiger Ehlers, Ufuk Topcu, and Lu Feng. Safe multi-agent reinforcement learning via shielding. arXiv preprint arXiv:2101.11196 , 2021. Lawrence C Evans. Partial differential equations , volume 19. American mathematical society, 2022. Jakob Foerster, Gregory Farquhar, Triantafyllos Afouras, Nantas Nardelli, and Shimon Whiteson. Counterfactual multi-agent policy gradients. In Proceedings of the AAAI conference on artificial intelligence , volume 32, 2018. 11 Shangding Gu, Jakub Grudzien Kuba, Munning Wen, Ruiqing Chen, Ziyan Wang, Zheng Tian, Jun Wang, Alois Knoll, and Yaodong Yang. Multi-agent constrained policy optimisation. arXiv preprint arXiv:2110.02793 , 2021. Shangding Gu, Jakub Grudzien Kuba, Yuanpei Chen, Yali Du, Long Yang, Alois Knoll, and Yaodong Yang. Safe multi-agent reinforcement learning for multi-robot control. Artificial In-telligence , pp. 103905, 2023a. Shangding Gu, Jakub Grudzien Kuba, Yuanpei Chen, Yali Du, Long Yang, Alois Knoll, and Yaodong Yang. Safe multi-agent reinforcement learning for multi-robot control. Artificial In-telligence , 319:103905, 2023b. Shangding Gu, Long Yang, Yali Du, Guang Chen, Florian Walter, Jun Wang, and Alois Knoll. A review of safe reinforcement learning: Methods, theories and applications. IEEE Transactions on Pattern Analysis and Machine Intelligence , 2024. Tuomas Haarnoja, Aurick Zhou, Pieter Abbeel, and Sergey Levine. Soft actor-critic: Off-policy maximum entropy deep reinforcement learning with a stochastic actor. In International confer-ence on machine learning , pp. 1861–1870. Pmlr, 2018. Ammar Haydari and Yasin Yılmaz. Deep reinforcement learning for intelligent transportation sys-tems: A survey. IEEE Transactions on Intelligent Transportation Systems , 23(1):11–32, 2020. Cristopher Hermosilla and Hasnaa Zidani. Relationship between the maximum principle and dy-namic programming for minimax problems. Applied Mathematics & Optimization , 87(2):34, 2023. Yanwei Jia and Xun Yu Zhou. Policy gradient and actor-critic learning in continuous time and space: Theory and algorithms. Journal of Machine Learning Research , 23(275):1–50, 2022a. Yanwei Jia and Xun Yu Zhou. Policy evaluation and temporal-difference learning in continuous time and space: A martingale approach. Journal of Machine Learning Research , 23(154):1–55, 2022b. Yi Jiang, Weinan Gao, Jin Wu, Tianyou Chai, and Frank L Lewis. Reinforcement learning and cooperative H ∞ output regulation of linear continuous-time multi-agent systems. Automatica ,148:110768, 2023. B Ravi Kiran, Ibrahim Sobh, Victor Talpaert, Patrick Mannion, Ahmad A Al Sallab, Senthil Yoga-mani, and Patrick P´ erez. Deep reinforcement learning for autonomous driving: A survey. IEEE transactions on intelligent transportation systems , 23(6):4909–4926, 2021. Lior Kuyer, Shimon Whiteson, Bram Bakker, and Nikos Vlassis. Multiagent reinforcement learning for urban traffic control using coordination graphs. In Machine Learning and Knowledge Dis-covery in Databases: European Conference, ECML PKDD 2008, Antwerp, Belgium, September 15-19, 2008, Proceedings, Part I 19 , pp. 656–671. Springer, 2008. Donggun Lee. Safety-guaranteed autonomy under uncertainty . PhD thesis, University of California, Berkeley, 2022. Jaeyoung Lee and Richard S Sutton. Policy iterations for reinforcement learning problems in con-tinuous time and space—fundamental theory and methods. Automatica , 126:109421, 2021. Ryan Lowe, Yi I Wu, Aviv Tamar, Jean Harb, OpenAI Pieter Abbeel, and Igor Mordatch. Multi-agent actor-critic for mixed cooperative-competitive environments. Advances in neural informa-tion processing systems , 30, 2017. David Luviano and Wen Yu. Continuous-time path planning for multi-agents with fuzzy reinforce-ment learning. Journal of Intelligent & Fuzzy Systems , 33(1):491–501, 2017. Yiming Meng, Ruikun Zhou, Amartya Mukherjee, Maxwell Fitzsimmons, Christopher Song, and Jun Liu. Physics-informed neural network policy iteration: Algorithms, convergence, and verifi-cation. arXiv preprint arXiv:2402.10119 , 2024. 12 Amartya Mukherjee and Jun Liu. Bridging Physics-Informed Neural Networks with Reinforcement Learning: Hamilton-Jacobi-Bellman Proximal Policy Optimization (HJBPPO). In ICML Work-shop on New Frontiers in Learning, Control, and Dynamical Systems .Seohong Park, Jaekyeom Kim, and Gunhee Kim. Time discretization-invariant safe action repetition for policy gradient methods. Advances in Neural Information Processing Systems , 34:267–279, 2021. Maziar Raissi, Paris Perdikaris, and George E Karniadakis. Physics-informed neural networks: A deep learning framework for solving forward and inverse problems involving nonlinear partial differential equations. Journal of Computational physics , 378:686–707, 2019. Mikayel Samvelyan, Tabish Rashid, Christian Schroeder De Witt, Gregory Farquhar, Nantas Nardelli, Tim GJ Rudner, Chia-Man Hung, Philip HS Torr, Jakob Foerster, and Shimon Whiteson. The starcraft multi-agent challenge. arXiv preprint arXiv:1902.04043 , 2019. Shai Shalev-Shwartz, Shaked Shammah, and Amnon Shashua. Safe, multi-agent, reinforcement learning for autonomous driving. arXiv preprint arXiv:1610.03295 , 2016. Ali Shavandi and Majid Khedmati. A multi-agent deep reinforcement learning framework for algo-rithmic trading in financial markets. Expert Systems with Applications , 208:118124, 2022. Alena Shilova, Thomas Delliaux, Philippe Preux, and Bruno Raffin. Learning HJB viscosity solu-tions with PINNs for continuous-time reinforcement learning. In ICML 2024 Workshop: Foun-dations of Reinforcement Learning and Control–Connections and Perspectives , 2024. Oswin So and Chuchu Fan. Solving stabilize-avoid optimal control via epigraph form and deep reinforcement learning. arXiv preprint arXiv:2305.14154 , 2023. Oswin So, Cheng Ge, and Chuchu Fan. Solving minimum-cost reach avoid using reinforcement learning. Advances in Neural Information Processing Systems , 37:30951–30984, 2024. Josef Stoer, Roland Bulirsch, R Bartels, Walter Gautschi, and Christoph Witzgall. Introduction to numerical analysis , volume 1993. Springer, 1980. Corentin Tallec, L´ eonard Blier, and Yann Ollivier. Making deep q-learning methods robust to time discretization. In International Conference on Machine Learning , pp. 6096–6104. PMLR, 2019. Manan Tayal, Aditya Singh, Shishir Kolathaya, and Somil Bansal. A physics-informed ma-chine learning framework for safe and optimal control of autonomous systems. arXiv preprint arXiv:2502.11057 , 2025. Oriol Vinyals, Igor Babuschkin, Wojciech M Czarnecki, Micha¨ el Mathieu, Andrew Dudzik, Juny-oung Chung, David H Choi, Richard Powell, Timo Ewalds, Petko Georgiev, et al. Grandmaster level in StarCraft II using multi-agent reinforcement learning. nature , 575(7782):350–354, 2019. Brent A Wallace and Jennie Si. Continuous-time reinforcement learning control: A review of theo-retical results, insights on performance, and needs for new designs. IEEE Transactions on Neural Networks and Learning Systems , 2023. Haoran Wang, Thaleia Zariphopoulou, and Xun Yu Zhou. Reinforcement learning in continuous time and space: A stochastic control approach. Journal of Machine Learning Research , 21(198): 1–34, 2020. Sifan Wang, Xinling Yu, and Paris Perdikaris. When and why PINNs fail to train: A neural tangent kernel perspective. Journal of Computational Physics , 449:110768, 2022. Xuefeng Wang, Xinran Li, Jiawei Shao, and Jun Zhang. Ac2c: Adaptively controlled two-hop communication for multi-agent reinforcement learning. arXiv preprint arXiv:2302.12515 , 2023. Xuefeng Wang, Lei Zhang, Henglin Pu, Ahmed H Qureshi, and Husheng Li. Continuous-time value iteration for multi-agent reinforcement learning. arXiv preprint arXiv:2509.09135 , 2025. 13 Cagatay Yildiz, Markus Heinonen, and Harri L¨ ahdesm¨ aki. Continuous-time model-based reinforce-ment learning. In International Conference on Machine Learning , pp. 12009–12018. PMLR, 2021. Lei Zhang, Mukesh Ghimire, Wenlong Zhang, Zhe Xu, and Yi Ren. Value approximation for two-player general-sum differential games with state constraints. IEEE Transactions on Robotics , 40: 4631–4649, 2024. Songyuan Zhang, Oswin So, Mitchell Black, and Chuchu Fan. Discrete gcbf proximal policy opti-mization for multi-agent safe optimal control. arXiv preprint arXiv:2502.03640 , 2025a. Songyuan Zhang, Oswin So, Mitchell Black, Zachary Serlin, and Chuchu Fan. Solving multi-agent safe optimal control with distributed epigraph form marl. arXiv preprint arXiv:2504.15425 ,2025b. 14 A MATHEMATICAL PROOF 
+
+A.1 LEMMA 3.1: E QUIVALENCE OF TWO VALUE FUNCTIONS 
+
+Proof. Following proofs in (Lee, 2022; Zhang et al., 2024)), Eq. 4 implies the following equivalence 
+
+v(x) − z ≤ 0 ⇐⇒ V (x, z ) ≤ 0
+
+To prove the above relation, we first start from v(x) − z ≤ 0, which implies that there exists a joint control input u ∈ U such that 
+
+Z ∞
+
+> t
+
+γτ −tl(x(τ ), u (τ )) dτ − z ≤ 0,
+
+with c(x(τ )) ≤ 0 for ∀τ ≥ t. Thus, there will exist a joint control u such that V (x, z ) ≤ 0.Second, when V (x, z ) ≤ 0 and c(x(τ )) ≤ 0 for ∀τ ≥ t hold, it implies that there exists u ∈ U such that Z ∞
+
+> t
+
+γτ −tl(x(τ ), u (τ )) dτ − z ≤ 0,
+
+which concludes v(x) − z ≤ 0. Therefore, the Lemma 3.1 is proved. A.2 LEMMA 3.2: O PTIMALITY CONDITION 
+
+Proof. Following proofs in (Lee, 2022; Zhang et al., 2024; Evans, 2022), given all (t, x, z ) ∈
+
+[0 , ∞) × X × R and select a enough small h > 0. There exist two different joint control inputs 
+
+(u1(·), u 2(·)) ∈ U such that 
+
+u(τ ) = 
+
+u1(τ ), τ ∈ [t, t + h],u2(τ ), τ ∈ (t + h, ∞).
+
+Then we have the following transformation for Eq. 3 
+
+V (x, z ) = min  
+
+> u1∈U ,u 2∈U
+
+max 
+
+n
+
+max   
+
+> τ∈[t,t +h]
+
+c(x(τ )) , max   
+
+> τ∈[t+h, ∞)
+
+c(x(τ )) ,
+
+Z ∞
+
+> t
+
+γτ −tl(x(τ ), u (τ )) dτ − z(t)
+
+o
+
+= min  
+
+> u1∈U
+
+max 
+
+n
+
+max   
+
+> τ∈[t,t +h]
+
+c x(τ ), min  
+
+> u2∈U
+
+max  max   
+
+> τ∈[t+h, ∞)
+
+c x(τ ),
+
+Z t+ht
+
+γτ −tl(x(τ ), u (τ )) dτ 
+
++
+
+Z ∞
+
+> t+h
+
+γτ −tl(x(τ ), u (τ )) dτ −  z(t + h) + 
+
+Z t+ht
+
+γτ −tl(x(τ ), u (τ )) dτ  o
+
+= min  
+
+> u1∈U
+
+max 
+
+n
+
+max   
+
+> τ∈[t,t +h]
+
+c(x(τ )) , min  
+
+> u2∈U
+
+max  max   
+
+> τ∈[t+h, ∞)
+
+c x(τ ),
+
+Z ∞
+
+> t+h
+
+γτ −tl(x(τ ), u (τ )) dτ − z(t + h)
+
+o
+
+≈ min  
+
+> u1∈U
+
+max 
+
+n
+
+max   
+
+> τ∈[t,t +h]
+
+c(x(τ )) , min  
+
+> u2∈U
+
+max  max   
+
+> τ∈[t+h, ∞)
+
+c x(τ ),γh Z ∞
+
+> t+h
+
+γτ −(t+h)l(x(τ ), u (τ )) dτ − z(t + h) o
+
+= min  
+
+> u1∈U
+
+max 
+
+n
+
+max   
+
+> τ∈[t,t +h]
+
+c(x(τ )) , γ hV (x(t + h), z (t + h)) 
+
+o
+
+= min  
+
+> u∈U
+
+max 
+
+n
+
+max   
+
+> τ∈[t,t +h]
+
+c(x(τ )) , γ hV (x(t + h), z (t + h)) 
+
+o
+
+Therefore, the Lemma 3.2 is proved. 15 A.3 THEOREM 3.3: E PIGRAPH -BASED HJB PDE 
+
+Proof. Following proofs in (Lee, 2022; Zhang et al., 2024; Evans, 2022), given all all (t, x, z ) ∈
+
+[0 , ∞) × X × R with a small horizon ∆t > 0, we apply Lemma 3.2 and Taylor expansion to derive the epigraph-based HJB PDE as follows 
+
+V (x, z ) = min  
+
+> u∈U
+
+max 
+
+n
+
+max   
+
+> τ∈[t,t +∆ t]
+
+c(x(τ )) , γ hV (x(t + ∆ t), z (t + ∆ t)) 
+
+o
+
+≈ min  
+
+> u∈U
+
+max 
+
+n
+
+c(x), (1 + ln γ∆t)( V (x, z ) + ∇xV · f (x, u )∆ t − ∂z V · l(x, u )∆ t + o(∆ t)) 
+
+o
+
+= max 
+
+n
+
+c(x), (1 + ln γ∆t) min  
+
+> u∈U
+
+(V (x, z ) + ∇xV · f (x, u )∆ t − ∂z V · l(x, u )∆ t + o(∆ t)) 
+
+o
+
+Subtracting V (x, z ) from both sides of above equality, dividing by ∆t, and letting ∆t → 0 yields the following HJB PDE, where V (x, z ) is the optimal solution to such PDE. 
+
+max 
+
+n
+
+c(x) − V (x, z ), min 
+
+> u∈U
+
+∇xV · f (x, u ) − ∂z V · l(x, u ) + ln γ · V o
+
+= 0 .
+
+Here H = ∇xV · f (x, u ) − ∂z V · l(x, u ) + ln γ · V is Hamiltonian and optimal control u∗ =arg min u∈U H.Next we prove that V (x, z ) is the unique viscosity solution to the epigraph-based HJB PDE using the contradiction technique. First, for U ∈ C∞(X × R) such that V − U has local maximum at 
+
+(x0, z 0) ∈ X × R and (V − U )( x0, z 0) = 0 , we will prove 
+
+max 
+
+n
+
+c(x0)−U (x0, z 0), min 
+
+> u∈U
+
+∇xU (x0, z 0)·f (x0, u )−∂z U (x0, z 0)·l(x0, u )+ln γ·U (x0, z 0)o
+
+≥ 0.
+
+Suppose the above inequality is not correct. We consider that there exists θ > 0 and ˜u ∈ U such that 
+
+c(x) − U (x0, z 0) ≤ − θ, 
+
+∇xU · f (x, ˜u) − ∂z U · l(x, ˜u) + ln γ · U ≤ − θ. 
+
+for all points (x, z ) sufficiently close to (x0, z 0): ∥x(s) − x0∥ + |z(s) − z0| < h for small enough 
+
+h > 0, where s ∈ [t0, t 0 + h]. Under the assumptions in Sec. 3.1.1, and given state trajectories x and 
+
+z evolved from the initial conditions x = x0 and z = z0 according to the corresponding dynamics, the following inequality holds 
+
+c(x(s)) − U (x0, z 0) ≤ − θ, 
+
+∇xU (x(s), z (s)) · f (x(s), ˜u) − ∂z U (x(s), z (s)) · l(x(s), ˜u) + ln γ · U (x(s), z (s)) ≤ − θ. 
+
+Since V − U has a local maximum at (x0, z 0), we can have that 
+
+min 
+
+> u∈U
+
+γhV (x(t0 + h), z (t0 + h)) − V (x0, z 0)
+
+≤ min 
+
+> u∈U
+
+γhU (x(t0 + h), z (t0 + h)) − U (x0, z 0)
+
+= min 
+
+> u∈U
+
+(∇xU (x(t0), z (t0)) · f (x(t0), u ) − ∂z U (x(t0), z (t0)) · l(x(t0), u ) + ln γ · U (x(t0), z (t0))) h
+
+≤ − θh 
+
+We know that Lemma 2 implies 
+
+V (x0, z 0) = min  
+
+> u∈U
+
+max 
+
+n
+
+max   
+
+> sτ ∈[t0,t 0+h]
+
+c(x(s)) , γ hV (x(t0 + h), z (t0 + h)) 
+
+o
+
+.
+
+By subtracting U (x0, z 0) on both side, we have 
+
+(V − U )( x0, z 0) = min  
+
+> u∈U
+
+max 
+
+n
+
+c(x(s)) − U (x0, z 0), γ hV (x(t0 + h), z (t0 + h)) − U (x0, z 0)
+
+o
+
+.
+
+Since (V − U )( x0, z 0) = 0 holds such that V (x0, z 0) = U (x0, z 0), then we will have that 
+
+min  
+
+> u∈U
+
+max 
+
+n
+
+c(x(s)) − V (x0, z 0), γ hV (x(t0 + h), z (t0 + h)) − V (x0, z 0)
+
+o
+
+= min  
+
+> u∈U
+
+max {θ, θh } > 0,
+
+16 which has a contradiction with (V − U )( x0, z 0) = 0 . Thus we prove that 
+
+max 
+
+n
+
+c(x0)−U (x0, z 0), min 
+
+> u∈U
+
+∇xU (x0, z 0)·f (x0, u 0)−∂z U (x0, z 0)·l(x0, u 0)+ln γ·U (x0, z 0)o
+
+≥ 0.
+
+Second, for U ∈ C∞(X × R) such that V − U has local minimum at (x0, z 0) ∈ X × R and 
+
+(V − U )( x0, z 0) = 0 , we will prove 
+
+max 
+
+n
+
+c(x0)−U (x0, z 0), min 
+
+> u∈U
+
+∇xU (x0, z 0)·f (x0, u 0)−∂z U (x0, z 0)·l(x0, u 0)+ln γ·U (x0, z 0)o
+
+≤ 0.
+
+The definition of auxiliary value V (x, z ) shows that 
+
+V (x, z ) = min  
+
+> u∈U
+
+max 
+
+
+
+max   
+
+> τ∈[t, ∞]
+
+c(x(τ )) ,
+
+Z ∞
+
+> t
+
+γτ −tl(x(τ ), u (τ )) dτ − z
+
+
+
+≥ min  
+
+> u∈U
+
+max 
+
+
+
+c(x0),
+
+Z ∞
+
+> t
+
+γτ −tl(x(τ ), u (τ )) dτ − z
+
+
+
+for all u ∈ U . By subtracting U (x0, z 0) on both sides, we have 
+
+0 = ( V − U )( x0, z 0) ≥ max {c(x0) − U (x0, z 0),
+
+Z ∞
+
+> t
+
+γτ −tl(x, u )dτ − z0 − U (x0, z 0)}.
+
+The rest of the proof is to show 
+
+min 
+
+> u∈U
+
+∇xU (x0, z 0) · f (x0, u ) − ∂z U (x0, z 0) · l(x0, u ) + ln γ · U (x0, z 0) ≤ 0.
+
+Suppose the above inequality is not correct. We consider that there exists θ > 0 such that 
+
+min 
+
+> u∈U
+
+∇xU (x, z ) · f (x, u ) − ∂z U (x, z ) · l(x, u ) + ln γ · U (x, z ) ≥ θ, 
+
+for all points (x, z ) sufficiently close to (x0, z 0): ∥x − x0∥ + |z − z0| < h for small enough h > 0,where s ∈ [t0, t 0 + h]. Given state trajectories x and z that evolve from the initial conditions x = x0
+
+and z = z0 under the corresponding dynamics with any control ˜u ∈ U , where 
+
+˜u(s) = arg min 
+
+> ˜u∈U
+
+∇xU (x(s), z (s)) · f (x(s), ˜u) − ∂z U (x(s), z (s)) · l(x(s), ˜u)+ ln γ · U (x(s), z (s)) .
+
+Then we have the following condition that holds 
+
+∇xU (x(s), z (s)) · f (x(s), ˜u) − ∂z U (x(s), z (s)) · l(x(s), ˜u) + ln γ · U (x(s), z (s)) ≥ θ. 
+
+Consider V − U has a local minimum at (x0, z 0), we will have that 
+
+min 
+
+> ˜u∈U
+
+γhV (x(t0 + h), z (t0 + h)) − V (x0, z 0)
+
+≥ min 
+
+> ˜u∈U
+
+γhU (x(t0 + h), z (t0 + h)) − U (x0, z 0)
+
+= min 
+
+> ˜u∈U
+
+(∇xU (x(t0), z (t0)) · f (x(t0), ˜u) − ∂z U (x(t0), z (t0)) · l(x(t0), ˜u) + ln γ · U (x(t0), z (t0))) h
+
+≥θh 
+
+Based on this derivation, we finally have that 
+
+min  
+
+> ˜u∈U
+
+γhV (x(t0 + h), z (t0 + h)) ≥ V (x0, z 0) + θh > V (x0, z 0).
+
+However, we know that Lemma 3.2 implies that 
+
+min  
+
+> ˜u∈U
+
+γhV (x(t0 + h), z (t0 + h)) ≤ V (x0, z 0),
+
+which is a contradiction. Thus, we prove that 
+
+max 
+
+n
+
+c(x0)−U (x0, z 0), min 
+
+> u∈U
+
+∇xU (x0, z 0)·f (x0, u 0)−∂z U (x0, z 0)·l(x0, u 0)+ln γ·U (x0, z 0)o
+
+≤ 0.
+
+Hence, we prove that V (x, z ) is the viscosity solution to the epigraph-based HJB PDE. The unique-ness follows Theorem 1 of Chapter 10 in Evans (2022). 17 A.4 ADVANTAGE FUNCTION 
+
+We define the Q(xt, z t, u t) = max {c(xt), r hV (xt+h, z t+h} over a short time interval h > 0 and compute 
+
+Q(xt, z t, u t) − V (xt, z t) = max {c(xt), r hV (xt+h, z t+h)} − V (xt, z t)= max {c(xt) − V (xt, z t), (1 + ln γh )( V (xt, z t) + ∇xt V · f (xt, u t)h
+
+− ∂zt V · l(xt, u t)h − V (xt, z t) + o(h)}
+
+= max {c(xt) − V (xt, z t), (∇xt V · f (xt, u t) − ∂zt V · l(xt, u t) + ln γ · V )h}
+
+We divide h on both sides of the above equation and let h → 0 to compute the advantage function as 
+
+A(xt, z t, u t) = lim 
+
+> h→0
+
+Q(xt, z t, u t) − V (xt, z t)
+
+h
+
+= max {c(xt) − V (xt, z t), ∇xt V · f (xt, u t) − ∂zt V · l(xt, u t) + ln γ · V }
+
+A.5 CONVERGENCE OF EPIGRAPH VALUE FUNCTION 
+
+Consider the augmented state (x, z ) with state constraint c(x) and non-negative cost l(x, u ). Define the discounted epigraph-Bellman operator over a short step ∆t > 0:
+
+(T V )( xt, z t) := (1 − γ∆t)c(xt) + γ∆t min 
+
+> u∈U
+
+n
+
+max c(xt), V (xt+∆ t, z t+∆ t)
+
+o
+
+,
+
+for V : X × R → R bounded. Then the value iteration Vk+1 = T Vk converges uniformly to the unique fixed point of T .
+
+Proof. (i) Contraction. For any c(xt) and bounded functions V, W , we have the following condition satisfying the contraction. 
+
+| max {c(xt), V (xt+∆ t, z t+∆ t)} − max {c(xt), W (xt+∆ t, z t+∆ t)}| ≤| V (xt+∆ t, z t+∆ t) − W (xt+∆ t, z t+∆ t)|≤∥ V − W ∥∞
+
+(ii) Existence and uniqueness. By Banach’s fixed-point theorem, T admits a unique fixed point V ,and for value iteration Vk+1 = T Vk we have that 
+
+∥Vk − V ∥∞ ≤ γk∥V0 − V ∥∞ → 0,
+
+(iii) Approximate evaluation. If each iteration uses an approximate operator eT satisfying ∥ eT V −T V ∥∞ ≤ ε, then 
+
+lim sup 
+
+> k→∞
+
+∥Vk − V ∥∞ ≤ ε
+
+1 − γ∆t .
+
+## B TRAINING ALGORITHMS 
+
+In this part, we provide additional details on the overall algorithmic pipeline and clarify the key implementation choices. 18 Algorithm 1 Epigraph-Based Continuous-Time MARL  
+
+> 1:
+
+Initialize actor πθ , return critic V ret  
+
+> ψ
+
+, constraint critic V cons  
+
+> ϕ
+
+, dynamics network fξ , reward net-work lφ, and local rollout R. 
+
+> 2:
+
+for l = 1 , . . . , T do  
+
+> 3:
+
+▷ Collect one rollout:  
+
+> 4:
+
+x ← env .reset()  
+
+> 5:
+
+for k = 1 , . . . , K do  
+
+> 6:
+
+sample arbitrary decision time t ∼ T  
+
+> 7:
+
+for each agent i = 1 , . . . , N do  
+
+> 8:
+
+ui ∼ πθi (ui | x) 
+
+> 9:
+
+end for  
+
+> 10:
+
+set joint action u = ( u1, . . . , u N ) 
+
+> 11:
+
+(x′, r ) ← env .step( u) 
+
+> 12:
+
+append (x, u, r, x ′) to local rollout R 
+
+> 13:
+
+x ← x′ 
+
+> 14:
+
+end for  
+
+> 15:
+
+▷ Outer optimization: epigraph update  
+
+> 16:
+
+find z∗ = inf {z ∈ R : max {V cons  
+
+> ϕ
+
+(x), V ret  
+
+> ψ
+
+(x, z ) − z} ≤ 0} 
+
+> 17:
+
+▷ Dynamics and Cost Model learning on R 
+
+> 18:
+
+update ξ, φ as per the Eq. 17.  
+
+> 19:
+
+▷ Inner optimization given z∗: Critic update on XR 
+
+> 20:
+
+update ψ, ϕ by losses Lcons , Lret , LHJB and LVGI as per the Eq. 11, Eq. 10 and Eq. 12.  
+
+> 21:
+
+▷ Actor update for each agent  
+
+> 22:
+
+for i = 1 , . . . , N do  
+
+> 23:
+
+compute A(x, u, z ∗) for all (x, u, z ∗) ∈ X R and update the θ as the Eq. 18.  
+
+> 24:
+
+end for  
+
+> 25:
+
+end for 
+
+## C ENVIRONMENTAL SETTINGS 
+
+We provide detailed descriptions of all benchmark environments used in our experiments. For each scenario, we list the number of agents, the number of obstacles, the safety constraints imposed, and the specific task objective with metrics. 
+
+Metrics. We report two primary metrics—one reward-style training score that aggregates task cost and constraint penalty, and one violation rate measured over held-out rollouts. (1) Cumulative penalty / reward-style training score. In many standard environments (e.g., MPE and multi-agent MuJoCo), the task reward often consists of two independent components: (i) a task term such as distance-to-target or velocity tracking, and (ii) a safety penalty that is activated only when constraint-relevant events occur (e.g., collisions or proximity violations). This design is also used in prior safe MARL methods such as MACPO and Lagrangian baselines (Gu et al., 2021). For clarity of notation, we write the task cost as ℓt ≥ 0 (derived from the negative reward of the task term) and denote the constraint penalty as κt ≥ 0. The environment therefore provides a composite instantaneous cost 
+
+ψt := ℓt + κt,
+
+which simply aggregates the task objective and the constraint penalty already defined in the envi-ronment. For a trajectory τ with horizon T (τ ), we define the total episode cost as 
+
+J(τ ) :=   
+
+> T(τ)−1
+
+X
+
+> t=0
+
+ψt, S(τ ) := −J(τ ),
+
+where S(τ ) is the cumulative reward used for performance plots. 
+
+(2) Violation rate (evaluation). Given Neval episodes (we use Neval = 100 by default), define the episode-level violation indicator 
+
+v(τ ) := 1{ ∃ t s.t. κt > 0 } ,
+
+19 i.e., an episode is counted as violating if it ever incurs a positive state-constraint penalty. 1 The violation rate is then Viol. Rate = 1
+
+Neval 
+
+> Neval
+
+X
+
+> i=1
+
+v(τi).
+
+C.1 SAFE MPE In the MPE, we setup the details as follows: Action. Continuous 2-D acceleration for x and y axis. 
+
+Reward and costs. Each agent is assigned a per-agent target gi. The dense goal reward is 
+
+rgoal  
+
+> i
+
+(t) = −∥ xi(t) − gi∥2.
+
+A discrete collision cost with obstacles or other agents applies: 
+
+cdisc  
+
+> i
+
+(t) = 
+
+10 , if agent–obstacle overlap 
+
+0, otherwise .
+
+We also record a continuous proximity/penetration cost (not added into the dense goal reward): 
+
+ccont  
+
+> i
+
+(t) = 12
+
+X
+
+> o∈O
+
+ϕ (ri + ro) − ∥ xi − xo∥, ϕ(δ) = 
+
+20 δ, δ > 0 ( overlap )0.5 δ, δ ≤ 0
+
+where ri, r o are radius (sizes). 
+
+Difference from the original discrete-time MPE. The standard MPE environment uses a fixed and discrete integration step ∆t, where each simulation step updates the agent states according to 
+
+pt+1 = pt + vt∆t and vt+1 = vt + ft∆t with a fixed time increment. In contrast, our continuous-time MPE adapts the physical integration step to an arbitrary ∆t provided by the learning algorithm. The state evolution follows 
+
+˙p(t) = v(t), ˙v(t) = f (t)
+
+m − damping · v(t),
+
+and is numerically integrated via 
+
+p ← p + v · ∆t, v ← v + fm ∆t, 
+
+using the user-specified ∆t. For clarity, the update used in the original environment is: 
+
+step (F ) : 
+
+p = p + v · 0.1 (fixed as 0.1),v = v + Fm · 0.1 (fixed as 0.1).
+
+Our continuous-time version introduces: 
+
+step continuous (F, ∆t) : 
+
+p = p + v · ∆t (depend on the input ∆t),v = v + Fm · ∆t (depend on the input ∆t).
+
+so that the state update depends directly on the argument ∆t rather than a fixed constant. 
+
+Corridor. This scenario contains 3 agents with 2 large corridor walls. Agents must avoid collisions with the corridor walls and with each other while navigating from their starting positions to reach the assigned target locations on the opposite side.        
+
+> 1If κtis an indicator of hard violations, this coincides with “any violation.” If κtis a continuous hinge, we use the same criterion κt>0.
+
+20 Formation. This scenario also involves 3 agents and 2 obstacles. The agents are required to bypass obstacles and then coordinate to form a triangular formation at the designated region, under the constraint of avoiding collisions with both obstacles and other agents. 
+
+Line. In this task, 3 agents operate in an environment with 2 obstacles. After avoiding the obstacles, the agents must position themselves to form a straight line. The safety constraints enforce that no agent collides with obstacles or with other agents during navigation. 
+
+Target. This scenario uses 2 agents with 1 obstacle placed in the environment. Each agent is assigned a fixed target position, and the agents must navigate to their respective goals while avoiding collisions with the obstacle and with each other. 
+
+Cooperative Navigation. This is a cooperative navigation task with 3 agents and no obstacles. The agents must spread out to cover multiple target landmarks while avoiding collisions among themselves. Specifically, the agents’ goals are the one closest to them rather than fixed ones. 
+
+Cooperative Predator–Prey. This task includes 3 controllable predator agents and 1 prey that moves randomly. There are no obstacles, but predators must avoid colliding with each other. The predators’ objective is to coordinate their movements to capture the prey. C.2 SAFE MULTI -AGENT MUJOCO
+
+Half Cheetah. We adapt the Half Cheetah environment into three multi-agent variants: Half Cheetah-2x3, Half Cheetah-3x2, and Half Cheetah-6x1. In each case, the body is partitioned into joints agents with different grouping configurations. For example, Half Cheetah-3x2 is three agents with 2 moving joints for each agent. Randomly placed walls are introduced into the environment, requiring the agents not only to coordinate efficient forward locomotion but also to avoid collisions with obstacles. 
+
+Reward. r = rrun = xt+1 −xt 
+
+> ∆t
+
+.
+
+Safety cost. A binary proximity cost to the wall: 
+
+ct = 1{ | xwall − xagent | < 9 } ∈ { 0, 1}.
+
+Observation augments the usual state with wall velocity, wall force proxy, and clipped distance to the wall; the environment also recolors the wall when unsafe. 
+
+Difference from the original MuJoCo environment. In standard MuJoCo control tasks, the sim-ulation uses a fixed micro time step 0.01 (each frame takes 0.01 ), and each environment step cor-responds to a fixed number of internal physics frames (e.g., frame skip = 5 ), resulting in a fixed control interval ∆t = 0 .05 . Our continuous-time MuJoCo variant removes this fixed control interval. For any desired ∆t, we execute 
+
+do simulation (a, N ), N = ∆t
+
+0.01 ,
+
+i.e., the number of internal physics frames is chosen dynamically according to the requested in-tegration step. Thus the effective control interval is no longer fixed but fully determined by ∆t,enabling variable-resolution continuous-time rollouts. The reward terms (forward velocity, control cost, contact cost) are normalized by the actual ∆t, ensuring consistency across different temporal resolutions. The original update is: 
+
+step (u) : N = 5 , do simulate (u, N ).
+
+Our continuous-time version becomes: 
+
+step continuous (u, ∆t) : N = ∆ t/ 0.01 , do simulate (u, N ).
+
+Ant. We construct four multi-agent variants of the Ant: Ant-2x4, Ant-4x2, Ant-8x1, and Ant-2x4d. In all cases, the body is controlled by joints agents arranged in different groupings across the legs. As with Half Cheetah, walls are introduced as obstacles, and the agents must coordinate locomotion while ensuring safety by avoiding collisions with these obstacles. The reward is set same as the Half Cheetah 
+
+Safety shaping. Identical piecewise-slant corridor: compute yoff from (x, y ) and define 
+
+cobj  
+
+> t
+
+= 1{| yoff | < 1.8}.
+
+21 C.3 CONSTRAINED COUPLED OSCILLATOR ENVIRONMENT 
+
+We consider a two–agent coupled spring–damper system. The state and control are 
+
+x = [ x1 v1 x2 v2]⊤ , u = [ u1 u2]⊤ .
+
+Each agent i ∈ { 1, 2} controls one mass with continuous–time dynamics 
+
+˙xi = vi,
+
+˙vi = −k x i − b v i + ui,
+
+with spring constant k = 1 .0 and damping coefficient b = 0 .5. Stacking the states gives ˙x =
+
+Ax + Bu with 
+
+A =
+
+
+
+0 1 0 0
+
+−k −b 0 00 0 0 10 0 −k −b
+
+ , B =
+
+
+
+0 01 00 00 1
+
+ .
+
+Control limits and discretization. 
+
+Actions are normalized ˜ui ∈ [−1, 1] and mapped to physical inputs by ui = umax ˜ui with umax = 10 
+
+(component–wise box constraint). 
+
+vt+1  
+
+> i
+
+= vti +   − k x ti − b v ti + uti
+
+∆t, xt+1  
+
+> i
+
+= xti + vt+1  
+
+> i
+
+∆t, 
+
+for a horizon of N = 30 steps. 
+
+Stage cost. The per–step quadratic cost is 
+
+ℓ(x, u ) = x21 + x22 + λc (x1 − x2)2 + β (u21 + u22),
+
+with coupling strength λc = 2 .0 and control penalty β = 0 .01 . Equivalently, ℓ(x, u ) = x⊤Qx +
+
+u⊤Ru where 
+
+Q =
+
+
+
+1 + λc 0 −λc 00 0 0 0
+
+−λc 0 1 + λc 00 0 0 0
+
+ , R = βI 2.
+
+For training we use a shaped reward 
+
+rt = − 130 ℓ(xt, u t).
+
+Hard state constraint. We impose an ordering constraint between the two positions, 
+
+x1 ≤ x2 + 0 .02 ,
+
+and record an additional penalty 
+
+pt = −10 · 1{ x1,t > x 2,t + 0 .02 } ,
+
+returned alongside rt.
+
+Smooth violation signal (for logging). We also log a smooth surrogate of the constraint violation, 
+
+ϕ(x) = 2 σ s (x1 − x2 + 0 .02)  − 1, σ(z) = 11 + e−z , s = 20 ,
+
+which maps to (−1, 1) and grows monotonically with the amount of violation. 
+
+Unconstrained LQR. The continuous-time algebraic Riccati equation (CARE) 
+
+A⊤P + P A − P BR −1B⊤P + Q = 0 
+
+is solved for the unique positive semidefinite matrix P . The unconstrained optimal linear feedback is 
+
+K = R−1B⊤P, uLQR (x) = −Kx. 
+
+22 Hard state constraint and CBF condition. We impose the safety constraint 
+
+x1 − x2 − 0.02 ≤ 0 ⇐⇒ h(x) := 0 .02 − (x1 − x2) ≥ 0.
+
+Let ∇h(x) = [ −1 0 1 0] ⊤. A (first-order) control barrier function (CBF) condition enforces forward invariance of the safe set C = {x : h(x) ≥ 0} by requiring 
+
+˙h(x, u ) = ∇h(x)⊤(Ax + Bu ) ≥ − α h (x),
+
+with a user-chosen class-K parameter α > 0. Defining 
+
+a(x) := ∇h(x)⊤B ∈ R2, b(x) := − ∇ h(x)⊤Ax − α h (x) ∈ R,
+
+the CBF condition Eq. C.3 is the single affine-in-u half-space constraint 
+
+a(x)⊤u ≥ b(x).
+
+Closed-form safety projection. To obtain a safe control with minimal distortion from uLQR , we solve the weighted projection 
+
+min  
+
+> u∈R2
+> 12
+
+(u − uLQR )⊤W (u − uLQR ) s.t. a(x)⊤u ≥ b(x),
+
+with W = R (“ R-metric”; Euclidean W = I is also possible). Because Eq. C.3 has a single linear constraint, it admits a closed form: 
+
+u⋆(x) = 
+
+
+
+uLQR (x), if a⊤uLQR ≥ b, uLQR (x) + τ W −1a, otherwise, with τ = b − a⊤uLQR 
+
+a⊤W −1a .
+
+Finally we saturate to the actuator limits umax > 0:
+
+uGT (x) = clip( u⋆(x), −umax , u max ) .
+
+## D ADDITIONAL ENVIRONMENTAL RESULTS 
+
+D.1 VISIUAL TRAJECTORIES 
+
+The trajectory demonstrations in Fig. 10 highlight clear behavioral differences across algorithms in Formation scenario. Our proposed method EPI learns smooth trajectories that avoid obstacles while consistently reaching the target, demonstrating both constraint satisfaction and goal achievement. In contrast, EPPO occasionally captures the avoidance behavior but often gets stuck at suboptimal solutions. This is because during training, its randomized sampling of the auxiliary state z prevents stable policy convergence in continuous-time settings; even if outer optimization is applied at execu-tion, the learned policy lacks accurate control signals. On the other hand, MACPO, which enforces hard constraints via a trust-region style update, tends to overestimate the obstacle region. As a re-sult, agents often exhibit overly conservative behaviors—such as retreating toward corners to avoid violations—rather than efficiently pursuing their targets. Together, these comparisons confirm that EPI achieves the most balanced and effective behavior among the three approaches. D.2 PERFORMANCE UNDER STOCHASTIC SETTINGS 
+
+To evaluate robustness under stochastic dynamics, we perturb the continuous-time transition model as xt+∆ t = f (xt, u t) ∆ t + εt, ε t ∼ N (0 , σ 2I). in Fig.11. We consider three noise magnitudes: 
+
+Low Noise: σ2 = 0 .1 Mid Noise: σ2 = 0 .5 and High Noise: σ2 = 1 .0. We observe that No Noise and Low Noise yield similar identical cost and constraint-violation behavior across all three tasks. Because the PINN-based value approximation are inherently robust to small local perturbations, as long as the injected disturbance is within a moderate range, the learned dynamics model, cost model, and value gradients remain accurate. In contrast, Mid Noise and High Noise introduce much larger deviations in the state propagation. These disturbances accumulate over time, causing the PINN to receive significantly deviated training signals. Since our method does not incorporate explicit uncertainty modeling or stochastic HJB formulations, the serious noise directly degrades the learned critic and value gradients, eventually leading to unstable or even failed policies. 23 (a) EPI-1 (b) EPI-2 (c) EPI-3 (d) EPI-4 (e) EPI-5 
+
+(f) EPPO-1 (g) EPPO-2 (h) EPPO-3 (i) EPPO-4 (j) EPPO-5 
+
+(k) MACPO-1 (l) MACPO-2 (m) MACPO-3 (n) MACPO-4 (o) MACPO-5 
+
+Figure 10: Trajectory demonstrations (key frames) across methods in Formation. Row 1: EPI re-sults, Row 2: EPPO results, Row 3: MACPO results. 1 2
+
+> Cost
+
+0
+
+20 
+
+40 
+
+60 
+
+> Constraint Violation Rate
+
+Corridor 
+
+1 2
+
+> Cost
+
+0
+
+10 
+
+20 
+
+Cooperative Predator–Prey 
+
+1 2 3
+
+> Cost
+
+0
+
+10 
+
+20 Cooperative Navigation    
+
+> No Noise Low Noise Mid Noise High Noise
+
+Figure 11: Performance under Different Noise Levels. Formation Line Target     
+
+> 0.00
+> 0.25
+> 0.50
+> 0.75
+> 1.00
+> 1.25
+> 1.50
+> 1.75
+> Average Distance to Target  Δt= 0.03
+> Δt= 0.05
+> Δt= 0.1
+> Δt= 0.15
+
+Figure 12: Average Distance to the Target under Different ∆t.24 D.3 EFFECT OF THE DISCRETIZATION INTERVAL .Figure 12 evaluates how the choice of discretization interval ∆t affects the performance of EPI. For each fixed ∆t, we roll out complete trajectories using the learned policy and measure the average distance to the target over the entire trajectory. Across all three scenarios, we observe a consistent trend: the average distance to the target increases as ∆t becomes larger . This behavior is expected in continuous-time control. When ∆t is small, the temporal resolution is high and the policy is up-dated frequently, allowing the learned value gradients to provide fine-grained control corrections. In contrast, larger ∆t leads to coarser control updates , reducing the precision of the policy’s response to the evolving system dynamics. Moreover, both the HJB residual and the VGI update rely on local differential information. As ∆t grows, the mismatch between the continuous-time formulation and the discrete rollout increases, which in turn amplifies approximation errors in the learned value gra-dients. These errors accumulate along the trajectory and result in the observed degradation in task accuracy. D.4 TRAJECTORY OF z∗ THROUGH THE TRAINING 
+
+Figure 13: z∗ Trajectory through the Training in Target. Figure 13 illustrates the evolution of the optimal epigraph variable z∗ 
+
+> t
+
+and the active branch ( return 
+
+vs. constraint ) at three representative stages of training. In early training (Episode 1000), the policy frequently visits infeasible states, causing Vcons (xt) > 0 and forcing the epigraph to select the constraint branch; consequently z∗ 
+
+> t
+
+remains at the clipped upper bound zmax . By mid training (Episode 12000), the critic starts to maintain Vcons (xt) ≤ 0 for part of the trajectory, producing intermittent switching and a decreasing z∗ 
+
+> t
+
+. In late training (Episode 23000), the trajectory remains feasible, the return branch is consistently selected, and z∗ 
+
+> t
+
+decreases smoothly along the rollout. These behaviors align with the expected epigraph semantics: infeasible states produce zmax , while improved policies yield stable return-dominated gradually decreasing z∗ 
+
+> t
+
+.D.5 COMPARE EPI WITH TRADITIONAL EPIGRAPH METHOD 0 2500 5000 7500 10000          
+
+> Episode
+> −300
+> −200
+> −100
+> 0
+> Cumulative Reward  Formation
+> 02500 5000 7500 10000
+> Episode
+> −600
+> −500
+> −400
+> −300
+> −200
+> −100
+> 0
+> Cumulative Reward  Line
+> 02500 5000 7500 10000
+> Episode
+> −250
+> −200
+> −150
+> −100
+> −50
+> 0
+> Cumulative Reward  Target
+> EPI Original Epigraph
+
+Figure 14: Performance of EPI and Traditional Epigraph under MPE settings. Figure 14 compares our z-independent epigraph formulation (EPI) with the traditional z-dependent epigraph used in EPPO-like methods on the F ORMATION , L INE , and T ARGET tasks. In the tradi-tional design, a scalar z is randomly sampled at the initial state of each episode and then propagated 25 through its auxiliary dynamics, so that both critic and actor are conditioned on this randomly chosen epigraph level. As shown in Fig. 14, converges to a lower cumulative reward, and exhibits substan-tially larger variance across seeds. In contrast, EPI learns z-independent critics  V cons (x), V ret (x)
+
+and computes z∗ via a one-dimensional search during training, while the actor depends only on the physical state x. This removes the nonstationary noise introduced by random z sampling: for a fixed 
+
+x, the policy gradient under EPI is unique, whereas in the traditional epigraph it fluctuates with the sampled z even when the critic has already converged. In continuous-time settings this issue is am-plified, since small changes in z shift the switching time between the constraint and return branches and thereby alter the entire rollout. D.6 COMPARISON BETWEEN EPI AND DISCRETE -TIME BASELINES Line Target   
+
+> 0.0
+> 0.5
+> 1.0
+> 1.5
+> Mean Distance to Target
+> EPI DT-CBF DT-MAPPO-LAG
+
+Figure 15: Performance of EPI and Discrete-time Baselines under MPE settings. To validate the performance of traditional discrete-time based methods in continuous-time settings, the Fig 15 compares EPI with two discrete-time baselines (DT-CBF and DT-MAPPO-LAG) on the 
+
+Line and Target tasks in the continuous-time MPE environment. All baselines are adapted to the discrete-time setting by removing their residual-loss components. Apart from this modification, all implementation details follow their original published versions (Zhang et al., 2025a). Across both tasks, EPI consistently achieves lower mean distance to the target and smaller variance, demonstrat-ing the performance gain from the modules that designed for the continuous-time settings. Table 1: Hyperparameter settings used. 
+
+Parameter Value 
+
+Episode length for MPE 50 Episode length for MuJoCo 100 Episode length for Didactic 50 Total number of episode for MPE 30000 Total number of episode for MuJoCo 30000 Total number of episode for Didactic 3000 z range for MPE 0-10 z range for MuJoCo 0-5 z range for Didactic 0-2 Discount factor γ 0.99 Actor learning rate 0.0001 Critic (Return) learning rate 0.001 Critic (Constraint)learning rate 0.001 Dynamics model learning rate 0.001 Reward model learning rate 0.001 Exploration steps 1000 Model save interval 1000 Random seed 113-120 26 E HYPERPARAMETERS AND NEURAL NETWORK STRUCTURES 
+
+Experiments were conducted on hardware comprising an Intel(R) Xeon(R) Gold 6254 CPU @ 3.10GHz, four NVIDIA A5000 GPUs and eight NVIDIA A6000 GPUs. This setup ensures the computational efficiency and precision required for the demanding simulations involved in multi-agent reinforcement learning and safety evaluations. Table 1 lists the defaults used in all experiments. Episode lengths are chosen so that a single rollout covers a full interaction cycle (50 steps for MPE and the didactic environment, 100 for MuJoCo). We train for 30000 episodes in MPE and MuJoCo and for 3000 episodes in the didactic setting, reflecting simulator cost and convergence speed. The z range controls epigraph sampling for the VGI updates and is set wider in MPE (0–10), moderate in MuJoCo (0–5), and narrow in the didactic task (0–2). The actor uses a conservative learning rate (1e-4) for stable policy updates; the critics and the dynamics/reward models use 1e-3 to accelerate value/model fitting. Training is warm-started with 1000 exploration steps, checkpoints are saved every 1000 episodes, and reported results are averaged over seeds 113–120. Table 2: Summary of neural network architectures used in our framework.                                        
+
+> Network Input Dimension Architecture and Activation Return Value Network State ( d)FC(128) →FC(128) →FC(1), ReLU or Tanh
+> Constraint Value Network State ( d)FC(128) →FC(128) →FC(1), ReLU or Tanh
+> Dynamics Network State + Joint Action ( d+na )FC(128) →FC(128) →FC( d), ReLU
+> Reward Network State + Joint Action ( d+na )FC(128) →FC(128) →FC(1), ReLU
+> PolicyNet Observation + Time Interval ( o+ 1 )FC(128) →FC(128) →FC(64) →FC( a), ReLU
+
+Table 2 summarizes the five multilayer perceptrons used in our framework. Two scalar critics map the state x ∈ Rd to the return value and the constraint value, each with two hidden layers of width 128 and ReLU or Tanh activations. The dynamics and reward models take the concate-nated state–action input (x, u ) ∈ Rd+na and output, respectively, a d-dimensional state deriva-tive/increment and a scalar reward; both use two 128-width hidden layers with ReLU. The policy network consumes the observation o ∈ R o augmented with a scalar time-interval feature ∆t to condition actions on continuous-time step size, and produces an a-dimensional action through a 128–128–64 hidden stack with ReLU. Notation: d = state dimension, o = observation dimension, a = per-agent action dimension, n =number of agents, so the joint action has dimension na . The value heads output scalars; the dynamics head outputs Rd; the policy head outputs Ra. Action squashing or clipping to environment bounds (if used) is applied after the final linear layer. 
+
+## F THE USE OF LARGE LANGUAGE MODELS (LLM S)
+
+We employed LLMs as a writing assistant to polish the paper. 27

@@ -1,0 +1,1721 @@
+Title: RRT$^\eta$: Sampling-based Motion Planning and Control from STL Specifications using Arithmetic-Geometric Mean Robustness
+
+URL Source: https://arxiv.org/pdf/2602.16825v1
+
+Published Time: Fri, 20 Feb 2026 01:05:33 GMT
+
+Number of Pages: 17
+
+Markdown Content:
+> IEEE TRANSACTIONS ON ROBOTICS, VOL. , NO. , JANUARY 2026 1
+
+# RRT η: Sampling-based Motion Planning and Control from STL Specifications using Arithmetic-Geometric Mean Robustness 
+
+Ahmad Ahmad Member, IEEE , Shuo Liu Member, IEEE , Roberto Tron Member, IEEE , Calin Belta Fellow, IEEE 
+
+Abstract —Sampling-based motion planning has emerged as a powerful approach for robotics, enabling exploration of complex, high-dimensional configuration spaces. When combined with Signal Temporal Logic (STL)—a temporal logic widely used for formalizing interpretable robotic tasks—these methods can address complex spatiotemporal constraints. However, traditional approaches rely on min-max robustness measures that focus only on critical time points and subformulae, creating non-smooth optimization landscapes with sharp decision boundaries that hinder efficient tree exploration. We propose RRT η , a sampling-based planning framework that integrates the Arithmetic-Geometric Mean (AGM) robustness measure to evaluate satisfaction across all time points and subformulae. Our key contributions include: (1) AGM robust-ness interval semantics for reasoning about partial trajectories during tree construction, (2) an efficient incremental monitoring algorithm computing these intervals, and (3) enhanced Direction of Increasing Satisfaction vectors leveraging Fulfillment Priority Logic (FPL) for principled objective composition. Our framework synthesizes dynamically feasible control sequences satisfying STL specifications with high robustness while maintaining the probabilistic completeness and asymptotic optimality of RRT ∗.We validate our approach on three robotic systems. A double integrator point robot, a unicycle mobile robot, and a 7-DOF robot arm, demonstrating superior performance over traditional STL robustness-based planners in multi-constraint scenarios with limited guidance signals. 
+
+Index Terms —Motion Planning, Formal Methods, Temporal Logic, Manipulators, Mobile Robots 
+
+I. I NTRODUCTION 
+
+# SAmpling-based methods have significantly advanced mo-tion planning and control synthesis for robotic systems in complex, high-dimensional environments. Algorithms such as Rapidly-exploring Random Trees (RRT) [1] and variants [2]–[7] efficiently explore configuration spaces without ex-plicit discretization, particularly useful for nonlinear dynamics. RRT ∗ [5] extends RRT with rewiring to ensure asymptotic convergence to optimal paths. Recently, Temporal Logics (TLs) [8] have become powerful tools for specifying com-plex robotic tasks [9]–[12]. Signal Temporal Logic (STL) [13] offers an expressive formalism for interpretable temporal 
+
+A. Ahmad, and R. Tron are with the Division of Systems Engineering, Boston University, Boston, MA, USA. R. Tron and S. Liu are with the Department of Mechanical Engineering, Boston University, Boston, MA, USA. C. Belta is with the Department of Electrical and Computer Engineering and the Department of Computer Science at the University of Maryland, College Park, MD, USA. 
+
+properties, enabling rich constraints with explicit timing such as ”Visit region A between times t1 and t2, then visit region B within t3 time units while always avoiding region C.” Synthesizing motion plans under STL specifications presents computational challenges favoring sampling-based approaches. Grid-based methods suffer from dimensionality curse while trajectory optimization struggles with non-convex landscapes from discrete temporal operators. Sampling-based methods circumvent these issues by avoiding explicit state space discretization. However, effective integration requires maximizing robustness to specification satisfaction throughout trajectories. Traditional min-max robustness metrics focus solely on critical time points and subformulae, creating non-smooth optimization landscapes with sharp decision bound-aries. This brittleness, observed across domains including reinforcement learning [14], causes small trajectory changes to produce abrupt shifts in critical constraints, providing in-consistent planner guidance. Moreover, principled composition of competing temporal objectives remains open. These issues intensify in applications requiring high-confidence autonomy with time-sensitive goals and strict safety requirements. Researchers have increasingly integrated sampling-based algorithms with formal specifications to address complex plan-ning problems. These specifications range from basic safety properties to rich spatiotemporal constraints. For safety specifi-cations, approaches combining Control Barrier Functions with sampling-based planners [6], [7], [15] synthesize controllers guaranteeing set invariance while eliminating explicit collision checking. Temporal logic specifications, however, enable more general spatiotemporal task descriptions, encoding complex sequences of goals with explicit timing constraints. For such specifications, two main paradigms have emerged. Automata-based approaches [16]–[18] leverage finite-state abstractions to guide tree construction toward specification satisfaction, but provide only binary guarantees without quantitative robustness measures. Robustness-based methods instead use quantitative semantics to both verify satisfaction strength and guide synthe-sis. Within this paradigm, optimization-based approaches [19], [20] formulate the problem as Mixed-Integer Linear Programs (MILP) or nonlinear optimization, while sampling-based meth-ods like STL-RRT ∗ [21] guide tree exploration through the Direction of Increasing Satisfaction (DIS) vector. However, both optimization and sampling-based robustness methods typically rely on traditional min-max metrics that evaluate satisfaction based solely on the most critical time points and  
+
+> arXiv:2602.16825v1 [cs.RO] 18 Feb 2026 IEEE TRANSACTIONS ON ROBOTICS, VOL. , NO. , JANUARY 2026 2
+
+subformulae. This creates two key limitations: first, the result-ing non-smooth optimization landscape provides inconsistent gradient information, and second, when composing objectives from multiple subformulae, simple selection mechanisms fail to balance competing requirements adequately. The challenge of principled objective composition extends beyond temporal logic, where recent work in Fulfillment Priority Logic (FPL) [22] has demonstrated nuanced decision-making frameworks that prioritize less-fulfilled objectives. We address these challenges through RRT η , integrating Arithmetic-Geometric Mean (AGM) [23] robustness into RRT ∗. Unlike min-max robustness focusing on critical points, AGM evaluates satisfaction holistically across all time points and subformulae, creating smoother optimization landscapes with consistent gradient information while maintaining prob-abilistic completeness and asymptotic optimality. Our contributions are threefold. First, we develop AGM ro-bustness interval semantics for partial trajectories with efficient incremental monitoring (Section IV), enabling informed explo-ration before complete paths are formed. Second, we introduce enhanced Direction of Increasing Satisfaction vectors that leverage AGM’s smooth gradients and integrate Fulfillment Priority Logic [22] for principled multi-objective composition (Section V). Third, we prove that RRT η maintains the prob-abilistic completeness and asymptotic optimality guarantees of RRT ∗ (Section V-F). We validate our approach on double integrator, unicycle, and 7-DOF robot arm systems (Section VI), demonstrating higher robustness and smoother explo-ration behavior than min-max approaches while synthesizing dynamically feasible control sequences for high-confidence autonomy applications. II. P RELIMINARIES 
+
+Signal Temporal Logic . STL was introduced in [13] to specify and monitor properties of signals over time. In this work, we consider discrete-time signals where signal valua-tions st ∈ R are sampled at discrete time points t ∈ Z≥0.We denote a finite signal segment from time t1 to t2 as 
+
+st1,t 2 := st1 st1+1 . . . s t2 . An STL formula ϕ is defined recursively as: 
+
+ϕ ::= μ | ¬ ϕ | ϕ1 ∧ ϕ2 | ϕ1 ∨ ϕ2 | G[a,b ]ϕ1 | F[a,b ]ϕ1 (1) where μ is a predicate in the form of h(st) > ς , ς ∈ R,
+
+h : R → R is a linear function; G and F represent the Globally (Always) and Finally (Eventually) operators, respectively, where a, b ∈ Z≥0 and a < b . We denote the set of all possible STL formulae as Φ.STL admits both Boolean and quantitative semantics. Under 
+
+Boolean semantics , a signal either satisfies or violates aformula. The temporal operators have intuitive interpretations: 
+
+G[a,b ]ϕ means that ϕ must hold at all time points in the interval 
+
+[a, b ], while F[a,b ]ϕ requires ϕ to hold at some time point in 
+
+[a, b ]. Conjunction ϕ1 ∧ ϕ2 requires both subformulae to hold, while disjunction ϕ1 ∨ ϕ2 requires at least one to hold. The formal Boolean semantics are detailed in [13]. Beyond Boolean satisfaction, STL admits quantitative ro-bustness semantics that measure how strongly a signal sat-isfies a specification. The traditional robustness [24] uses min-max operations: for conjunction, it takes the minimum robustness of subformulae; for disjunction, the maximum; for 
+
+G[a,b ], the minimum over all time points; and for F[a,b ],the maximum. This focuses on the most critical time points and subformulae. In contrast, AGM robustness [23] evaluates satisfaction holistically across all time points and subformulae through arithmetic and geometric means, producing smoother landscapes for optimization-based planning. 
+
+STL AGM robustness semantics . Given F : R → R,let [F ]+ := 
+
+(
+
+F, F > 0,
+
+0, otherwise , [F ]− := −[−F ]+, where 
+
+F = [ F ]+ + [ F ]−. We define AGM operators for disjunction and conjunction that aggregate robustness values. Given N
+
+robustness values ri ∈ R, i = 1 , . . . , N , where N represents either the number of subformulae (for Boolean operators) or the number of time points in an interval (for temporal operators), the AGM aggregation operators are defined as follows. 
+
+AGM ∨(r1, . . . , r N ) := 
+
+          
+
+> −N
+> sNQ
+> i=1
+> (1 −ri) + 1;
+> if ∀i∈ { 1, . . . , N }, r i<0
+> 1
+> NNP
+> i=1
+> [ri]+;otherwise
+
+(2) 
+
+AGM ∧(r1, . . . , r N ) := 
+
+          
+
+> N
+> sNQ
+> i=1
+> (1 + ri)−1;
+> if ∀i∈ { 1, . . . , N }, r i>0
+> 1
+> NNP
+> i=1
+> [ri]−;otherwise
+
+(3) When all robustness values have the same sign, AGM uses geometric mean (capturing the compound effect); otherwise, it uses arithmetic mean of the relevant parts. The STL AGM robustness semantics of signal st1,t 2 := st1 st1+1 . . . s t2 are defined recursively as follows [23]. 
+
+η(st1,t 2 , ⊤) := 1; η(st1,t 2 , ⊥) := −1; 
+
+η(st, μ ) := 12 (h(st) − ς)
+
+η(st1,t 2 , ∨mi=1 ϕi) := AGM ∨(η(st1,t 2 , ϕ 1) . . . , η (st1,t 2 , ϕ m)) 
+
+η(st1,t 2 , ∧mi=1 ϕi) := AGM ∧(η(st1,t 2 , ϕ 1) . . . , η (st1,t 2 , ϕ m)) 
+
+η(st1,t 2 , G[a, b ]ϕ) := AGM ∧(η(st1,t , ϕ )|t ∈ [t + a, t + b]) 
+
+η(st1,t 2 , F[a, b ]ϕ) := AGM ∨(η(st1,t , ϕ |t ∈ [t + a, t + b]) 
+
+(4) Values η(st1,t 2 , ϕ ) > 0 (respectively < 0) indicate satisfac-tion (respectively dissatisfaction) ϕ, with magnitude reflecting the strength of satisfaction. Satisfaction is indifferent when 
+
+η(st1,t 2 , ϕ ) = 0 .
+
+Example II.1 (Illustrative Example) . Consider a simple 2D navigation task where a robot must visit a target region while avoiding an obstacle. Let st = ( xt, y t) represent the robot’s position at time t, and consider the specification: 
+
+ϕnav = F[0 ,10] (μtarget ) ∧ G[0 ,10] (μsafe )
+
+where μtarget := ( x − 5) 2 + ( y − 5) 2 ≤ 1 (reach a goal region) and μsafe := ( x − 3) 2 + ( y − 3) 2 ≥ 4 (avoid an obstacle). IEEE TRANSACTIONS ON ROBOTICS, VOL. , NO. , JANUARY 2026 3
+
+For a trajectory that briefly passes near the obstacle bound-ary at t = 3 (with low robustness ≈ 0.1) but achieves high robustness in the target region at t = 8 (robustness ≈ 0.9), traditional min-max robustness would report the overall ro-bustness as min(0 .1, 0.9) = 0 .1, focusing solely on the critical constraint. In contrast, AGM robustness aggregates across all time points using arithmetic and geometric means, yielding a value closer to 0.5 that reflects the balanced satisfaction across the entire trajectory. This holistic evaluation provides smoother guidance for optimization-based planners, as small improvements anywhere along the trajectory contribute to the overall robustness rather than being ignored unless they affect the critical constraint. 
+
+III. P ROBLEM FORMULATION AND APPROACH 
+
+System Model. Consider a robot with state q ∈ Q ⊂ Rn,where Q is the state space 1. Let the robot dynamics be modeled as the following discrete-time system, 
+
+qk+1 = f (qk, uk), (5) where uk ∈ U ⊂ Rm is the control input at time step k, U is the allowable control set, and f : Q×U → Q is assumed to be a Lipschitz continuous function in its arguments; i.e., there is a constant L ≥ 0 such that for all (q1, u1), (q2, u2) ∈ Q × U 
+
+the following holds: 
+
+|| f (q1, u1) − f (q2, u2)|| 2 ≤ L
+
+q
+
+|| q1 − q2|| 22 + || u1 − u2|| 22
+
+(6) where || · || 2 is the Euclidean norm. 
+
+Trajectories and Specifications. In this work, the signal 
+
+st corresponds to the robot state qt, so STL specifications are evaluated directly over state trajectories q0,T .For a given time horizon T ∈ Z>0, a control sequence u0,T −1 := 
+
+u0u1 . . . uT −1 generates state trajectory q0,T = q0q1 . . . qT
+
+satisfies system (5). We denote the control-trajectory pair as 
+
+φ = (u0,T −1, q0,T ). Given an STL formula ϕ specifying temporal requirements on q0,T , we evaluate satisfaction us-ing AGM robustness η(q0,T , ϕ ) ∈ [−1, 1] from (4), which provides comprehensive assessment across all time points and subformulae. For an STL formula ϕ, its time horizon || ϕ|| is defined recursively as: 
+
+∥ϕ∥ := 
+
+
+
+0, if ϕ = μ, 
+
+max( ∥ϕ1∥, ∥ϕ2∥), if ϕ ∈ { ϕ1 ∧ ϕ2, ϕ 1 ∨ ϕ2},
+
+∥ϕ1∥, if ϕ = ¬ϕ1,b + ∥ϕ1∥, if ϕ ∈ { G[a,b ]ϕ1, F[a,b ]ϕ1}.
+
+(7) 
+
+Problem Statement. Given initial state qinit and STL formula ϕ, we define the set G := {φ | q0 =
+
+qinit , η(q0,T −1, ϕ ) > 0, T ≤ || ϕ||} containing control-trajectory pairs with positive AGM robustness. 
+
+Problem III.1 (Robust Planning Problem (RPP)) . Given a robot with system dynamics (5), an initial state q0 ∈ Q , and 
+
+> 1We consider the state space in our motion planning problem.
+
+an STL specification ϕ, find φ∗ ∈ G that maximizes the AGM robustness i.e., φ∗ = arg max  
+
+> φ∈G , T ∈Z>0
+
+η(q0,T −1, ϕ ).
+
+RPP can be viewed as a search in the set G, seeking control sequences that maximize specification satisfaction strength. The AGM robustness objective creates a non-convex opti-mization landscape, but one that is significantly smoother than traditional min-max robustness due to its holistic aggregation across time points and subformulae (see Example II.1). 
+
+Approach Overview. We address RPP through RRT η ,which integrates AGM robustness into the RRT ∗ framework. Our algorithm adapts the Direction of Increasing Satisfaction (DIS) from STL-RRT ∗ [21] to leverage AGM’s gradient infor-mation across all time points and subformulae. Additionally, we develop interval semantics for AGM robustness to reason about partial trajectories during tree construction, enabling informed exploration even before complete paths are formed. These innovations maintain RRT ∗’s asymptotic optimality while providing more consistent guidance through the non-convex landscape. IV. O NLINE ROBUSTNESS EVALUATION FOR 
+
+SAMPLING -B ASED PLANNING 
+
+A critical challenge in our sampling-based planning ap-proach is that RRT η builds trajectories incrementally, produc-ing partial trajectories whose time horizons are typically less than || ϕ|| . To effectively guide tree expansion with partial tra-jectories, we need a method to evaluate the potential robustness of incomplete trajectories. We adopt the interval-based approach from [25], [26] to construct AGM robustness [η]st′ ,ϕ ∈ I, where I := 
+
+{[η, η ] |η, η ∈ [−1, 1] , η ≤ η}, that bound all possible robustness values for any completion of a partial trajectory at time t′. Our AGM robustness interval specializes the TWTL AGM robustness interval from [26] for STL specifications in motion planning. 
+
+Definition IV.1 (Arithmetics on interval semantics) . Consider the set of intervals {Ii}Ni=1 ⊆ I . We define following arith-metics over I := {Ii}Ni=1 
+
+AGM ∨(I) := [AGM ∨(I1, . . . , I N ), AGM ∨(I1, . . . , I N )] ,
+
+AGM ∧(I) := [AGM ∧(I1, . . . , I N ), AGM ∧(I1, . . . , I N )] .
+
+(8) These intervals enable RRT η , as we detail in the next section, to make informed decisions during tree expansion even with incomplete trajectories. We introduce an incremental, recursive AGM robustness monitor function IRTM : Φ × I × I × R × Z>0 × Z>0 → I ,implemented in Algorithm 1. This function computes the updated robustness interval at time t′ given the previous interval [η]st′−1,ϕ , the current trajectory observation st′ , and the starting time ts. Rather than recomputing the entire interval at each time step, IRTM uses incremental modification func-tions (Definition IV.2) to efficiently update only components affected by new observations. IEEE TRANSACTIONS ON ROBOTICS, VOL. , NO. , JANUARY 2026 4
+
+Definition IV.2 (Incremental Modification Functions) . To efficiently compute the incremental AGM robustness inter-val, we define helper functions mdf_AGM ∨, mdf_AGM ∧ :[−1, 1] × Z>0 × [−1, 1] → [−1, 1] that update existing AGM robustness values when new observations become available. When monitoring AGM robustness for a formula with N time points or subformulae, these functions efficiently incorporate the N th observation by applying arithmetic or geometric mean operations incrementally. For disjunction ( ∨), we define: 
+
+mdf_AGM ∨(η, N, η ′) :=                          
+
+> 
+> −N
+> p(1 −η)N−1·(1 −η′) + 1;
+> if η < 0∧η′<0
+> [η′]+
+> N;if η < 0∧η′>0
+> (N·η−[η]+)+[ η′]+
+> N;otherwise
+> (9)
+
+For conjunction ( ∧), we define: 
+
+mdf_AGM ∧(η, N, η ′) :=                         
+
+> 
+> N
+> p(1 + η)N−1·(1 + η′)−1;
+> if η > 0∧η′>0
+> [η′]−
+> N;if η > 0∧η′<0
+> (N·η+[ η]−)+[ η′]−
+> N;otherwise
+> (10)
+
+Lemma IV.1 (Correctness of Incremental Modification Func-tions) . Let η = AGM ◦(r1, . . . , r N −1) be the AGM robustness computed from N − 1 values, where ◦ ∈ {∨ , ∧} . For any new observation η′, the incremental modification functions produce identical results to full AGM recomputation: 
+
+mdf_AGM ◦(η, N, η ′) = AGM ◦(r1, . . . , r N −1, η ′) (11) 
+
+Sketch. The proof proceeds by case analysis on the signs of η
+
+and η′, corresponding to the three cases in equations (9) and (10). 
+
+Geometric Mean Case ( η < 0, η ′ < 0 for ∨; η > 0, η ′ > 0
+
+for ∧): Since η resulted from geometric mean aggregation, we have (1 ∓ η)N −1 = QN −1 
+
+> i=1
+
+(1 ∓ ri) (where ∓ is − for disjunc-tion, + for conjunction). Incorporating the new value η′ yields 
+
+AGM ◦(r1, . . . , r N −1, η ′) = ± N
+
+p(1 ∓ η)N −1(1 ∓ η′) ± 1,which exactly matches the first case of each modification function. 
+
+Transition Case ( η < 0, η ′ > 0 for ∨; η > 0, η ′ < 0 for 
+
+∧): When all previous values had one sign and the new value has the opposite sign, the AGM switches from geometric to arithmetic mean. Since all previous contributions were zero in the arithmetic formulation ( [ri]± = 0 when signs differ from required), only the new value contributes: AGM ◦(. . . , η ′) =  
+
+> [η′]±
+> N
+
+.
+
+Arithmetic Mean Case (otherwise): When at least one previous value had the appropriate sign for arithmetic aggrega-tion, we have (N −1) η = PN −1 
+
+> i=1
+
+[ri]±. However, [η]± captures the result rather than the sum of inputs, so the correct update is (N ·η−[η]±)+[ η′]± 
+
+> N
+
+.The full proof with detailed algebraic manipulations is provided in Appendix A. The AGM robustness monitor efficiently tracks interval evo-lution as partial signals extend. Algorithm 1 handles general STL operators, while Algorithm 2 addresses temporal oper-ators requiring complex interval reasoning. The incremental approach avoids redundant computations while maintaining sound bounds, providing critical guidance for tree growth by identifying promising directions likely to improve specification satisfaction. 
+
+A. Theoretical Analysis 
+
+We begin by establishing the soundness of our AGM robustness interval calculation. 
+
+Definition IV.3 (Prefix, Completions) . Consider the time horizon || ϕ|| and trajectories st1,t ′ and st1,t 2 , where t′ < || ϕ|| 
+
+and t2 ≥ || ϕ|| . We denote st1,t ′ as a prefix of st1,t 2 if ∀t ∈
+
+[t1, t ′], st1,t 2 (t) = st1,t ′ (t). The set of all possible completions of a prefix st1,t ′ is C := {st1,t 2 | st1,t ′ is a prefix of st1,t 2 }
+
+Lemma IV.2 (AGM Robustness Interval Soundness) .
+
+For any STL formula ϕ, the valuation [η]st′ ,ϕ ←
+
+IRTM (ϕ, [η]st′ ,ϕ , ∅, st′ , t ′, t 0) defines the AGM robust satis-faction interval for the formula ϕ over the partial trajectory 
+
+st0,t ′ at time t0. For any completion s ∈ C(st0,t ′ ), the AGM robustness value is contained in the computed interval, i.e., 
+
+η(s, ϕ ) ∈ [η]st′ ,ϕ .Sketch. The proof follows by structural induction over STL formulae, leveraging properties of arithmetic and geometric means in the AGM robustness definition. The full proof is provided in Appendix B. Building on soundness, we establish the relationship be-tween robustness intervals as partial trajectories grow: 
+
+Theorem IV.1 (AGM Robustness Interval Chain Inclusion) .
+
+Given a partial signal st0,t ′ , STL formula ϕ, and t ≤ t′, we have [η]st′ ,ϕ ⊆ [η]st,ϕ .Sketch. Since st0,t ′ contains more information than st0,t 
+
+when t′ > t, the set of possible completions reduces to 
+
+C(st0,t ′ ) ⊆ C(st0,t ). By Lemma IV.2, the AGM robustness interval contains all possible robustness values of completions. Fewer possible completions yield narrower robustness value ranges, resulting in the inclusion property. The full proof is in Appendix C. A natural consequence is interval convergence as trajectories extend: 
+
+Corollary IV.1 (AGM Robustness Interval Convergence) . As the partial trajectory extends through additional time steps, AGM robustness bounds shrink. When the trajectory horizon equals or exceeds the formula horizon || ϕ|| , the interval converges to a singleton containing the exact AGM robustness value: [η]st′ ,ϕ = {η(st0,t ′ , ϕ, t 0)} for t′ ≥ || ϕ|| .Sketch. This follows directly from the chain inclusion prop-erty. Once t′ ≥ || ϕ|| , the formula can be fully evaluated on the available trajectory, leaving no uncertainty about the robustness value. These properties ensure that our AGM robustness monitor provides sound, increasingly precise estimates of specification satisfaction as trajectories evolve, making it ideal for incre-mental motion planning. IEEE TRANSACTIONS ON ROBOTICS, VOL. , NO. , JANUARY 2026 5
+
+Algorithm 1: IRTM (ϕ, [η], [η]aux , st′ , t ′, t s)                                                                                                   
+
+> Input: ϕ,[η],[η]aux ,st′,t′,ts
+> Output: [η]′(ϕ)
+> 1if [η]aux ̸=∅then
+> 2return [η]ϕ
+> 3else if ϕ=μthen
+> 4[η]aux ←[h(st′), h (st′)]
+> 5else if ϕ∈ { Vϕi,Wϕi}then
+> 6E← ∅
+> 7foreach i∈ { 1, . . . , N }do
+> 8E←E∪ { IRTM (ϕi,[η],[η]aux ,st′, t ′, t s)}
+> 9if AND then
+> 10 [η]aux (ϕ)←AGM ∧(E)
+> 11 else
+> 12 [η]aux (ϕ)←AGM ∨(E)
+> 13 else if ϕ=G[a,b ]ϕ1then
+> 14 [η]aux ←IRTM (ϕ1,[η],∅,st′, t ′, t s)
+> 15 [η]aux ←IRTM T([ η],[η]aux , t ′, t s, a, b, || ϕ|| ,G)▷Algorithm 2
+> 16 else if ϕ=F[a,b ]ϕ1then
+> 17 [η]aux ←IRTM (ϕ1,[η],∅,st′, t ′, t s)
+> 18 [η]aux ←IRTM T([ η],[η]aux , t ′, t s, a, b, || ϕ|| ,F)▷Algorithm 2
+> 19 return [η]aux (ϕ)
+
+Algorithm 2: IRTM T([ η], [η]aux , t s, t ′, a, b, || ϕ|| , type ) 
+
+> 1
+
+Input: [η, η ] ← [η], [η′, η ′] ← [η]aux , ts, t′, a, b 
+
+> 2
+
+Output: [η, η ] 
+
+> 3
+
+if t′ < t s + a then  
+
+> 4
+
+return ∅ 
+
+> 5
+
+if η = η then  
+
+> 6
+
+return [η, η ] 
+
+> 7
+
+if [η] = ∅ then  
+
+> 8
+
+I− ← { η′, −1, . . . , −1}, I+ ← { η′, 1, . . . , 1}; where 
+
+|I−| = |I+| = || ϕ||  
+
+> 9
+
+if type =G then  
+
+> 10
+
+η′ ← AGM ∧(I−) 
+
+> 11
+
+η′ ← AGM ∧(I+) 
+
+> 12
+
+if type =F then  
+
+> 13
+
+η′ ← AGM ∨(I−) 
+
+> 14
+
+η′ ← AGM ∨(I+) 
+
+> 15
+
+return [η′, η ′] 
+
+> 16
+
+if t′ ≥ ts + b then  
+
+> 17
+
+if type =G then  
+
+> 18
+
+η′ ← mdf_AGM ∧(η, N, η ′) 
+
+> 19
+
+if type =F then  
+
+> 20
+
+η′ ← mdf_AGM ∨(η, N, η ′) 
+
+> 21
+
+return [η′, η ′] 
+
+> 22
+
+else  
+
+> 23
+
+if type =G then  
+
+> 24
+
+η′ ← mdf_AGM ∧(η, N, η ′) 
+
+> 25
+
+η′ ← mdf_AGM ∧(η, N, η ′) 
+
+> 26
+
+if type =F then  
+
+> 27
+
+η′ ← mdf_AGM ∨(η, N, η ′) 
+
+> 28
+
+η′ ← mdf_AGM ∨(η, N, η ′) 
+
+> 29
+
+return [η′, η ′]
+
+B. Complexity Analysis 
+
+For an STL formula ϕ with |ϕ| operators and predicates, each call to IRTM (Algorithm 1) processes a single new observation by performing a recursive traversal of the for-mula’s abstract syntax tree. The algorithm visits each node exactly once: predicates evaluate h(st′ ) in O(1) time (Line 4), Boolean operators with m subformulae recursively evaluate each subformula then aggregate results in O(m) time (Lines 5-12), and temporal operators invoke IRTM T after evaluating the subformula (Lines 13-18). The subroutine IRTM T (Algo-rithm 2) executes in O(1) time, performing only conditional checks and calls to mdf_AGM ∧ or mdf_AGM ∨, which require constant-time arithmetic by Lemma IV.1. Thus, each IRTM 
+
+invocation has complexity O(|ϕ|).In contrast, a non-incremental implementation that recom-putes the entire robustness interval from scratch at each time step must evaluate the formula over the complete partial trajec-tory st0,t ′ , requiring O(|st0,t ′ |·| ϕ|) operations per update. Over a complete trajectory of length |s|, the incremental approach requires O(|s| · | ϕ|) total operations while non-incremental methods require O(|s|2 ·| ϕ|), providing a linear speedup factor of O(|s|). For typical planning scenarios with |s| ≈ 20 -50 and 
+
+|ϕ| ≈ 10 -20 , this reduces monitoring overhead from thousands to hundreds of operations per trajectory evaluation. V. RRT η MOTION PLANNING ALGORITHM 
+
+In this section, we detail the algorithmic formulation of RRT η , which extends the sampling-based planning approach of STL-RRT ∗ [21] to incorporate AGM robustness for STL specifications. 
+
+A. Overview 
+
+RRT η enhances sampling-based motion planning through integration of AGM robustness for STL specifications. The algorithm operates through two key components working together to efficiently find robust solutions. The main planning loop (Algorithm 3) constructs a tree of states that progressively explores the state space while guided by AGM robustness considerations. The algorithm balances exploration and exploitation by sampling with STL-guided bias and steering toward configurations maximizing AGM robustness. For each potential connection, the algorithm com-putes the Direction of Increasing AGM Satisfaction (DIAS), which guides steering toward regions with higher specification satisfaction. Supporting this process, an update procedure (Algorithm 4) maintains and propagates AGM robustness intervals through-out the tree. This procedure incrementally processes trajectory segments, evaluating them against the STL specification using our IRTM function. Importantly, this allows informed deci-sions about node additions and rewiring operations based on partial trajectories before complete paths are established. The synergy between efficient tree construction and incre-mental robustness evaluation enables RRT η to identify solu-tions that not only satisfy STL specifications but do so with maximum robustness across all aspects of the specification. The synergy between efficient tree construction and in-cremental robustness evaluation enables RRT η to identify solutions that not only satisfy STL specifications but do so with maximum robustness across all specification aspects. 
+
+B. Direction of Increasing AGM Satisfaction 
+
+Our RRT η algorithm leverages a modified version of the DIS concept introduced by Vasile et al. [21]. The key inno-vation is integration of AGM robustness intervals [η]st′ ,ϕ to guide tree expansion and steering processes. IEEE TRANSACTIONS ON ROBOTICS, VOL. , NO. , JANUARY 2026 6
+
+The DIS provides gradient-like information guiding explo-ration toward regions that improve specification satisfaction. We define the Direction of Increasing AGM Satisfaction (DIAS) as a function χη : Rn ×Φ → Rn that takes a trajectory, an STL formula, and a time point, then computes a vector pointing in the direction of increasing AGM robustness. 
+
+1) Base Cases and Temporal Operators: For base cases and temporal operators, the DIAS computation follows the established structure. Considering state qt of system (5), we define: 
+
+χη (qt, ⊤) := 0n
+
+χη (qt, μ ) := 
+
+
+
+∇q η(qt, μ )T · Jf (qt, ut); 
+
+if ∇q η(qt, μ )T · Jf (qt, ut) · ut > 0
+
+0n; otherwise 
+
+χη (qt, G[a,b ]ϕ1) = χη (qt, F[a,b ]ϕ1) := χη (qt, ϕ 1)
+
+(12) where Jf (qt, ut) = [ ∂f ∂q 1 . . . ∂f ∂q n ] is the Jacobian matrix of dynamics function f evaluated at state qt and control input 
+
+ut. The dot product in χη (qt, μ ) indicates whether system dynamics will naturally increase the predicate’s satisfaction measure at the current state. 
+
+Example V.1 (DIAS of Fixed Control Action) . Consider a 2D discrete-time dynamical system with state q = [ x, y ]⊤ ∈ R2
+
+and control input u ∈ R2. The system dynamics are given by qk+1 = qk + u. The Jacobian with respect to the state is 
+
+Jf = I2, where I2 ∈ R2×2 is the identity matrix. Let the spatial predicate be μ = {q | ∥ q − c∥2 ≤ r2}
+
+with center c = [3 .5, 3.5] ⊤ and radius r = 1 . The robustness is η(q, μ ) = r − ∥ q − c∥, normalized to range [−1, 1] . The gradient is ∇q η(q, μ ) = − q−c 
+
+> ∥q−c∥
+
+, which points toward the center c with unit magnitude. For a fixed control input u = [0 .5, 0.5] ⊤, the DIAS is 
+
+χη (q, μ ) = ∇η(q, μ )⊤.However, χη (q, μ ) is nonzero only where the condition 
+
+∇η(q, μ )⊤ · (qk+1 − qk) > 0 is satisfied, i.e., where the state transition aligns with the direction of increasing satisfaction. Figure 1 visualizes this: the DIAS field (d) is active only in regions where the gradient field (b) and the state transition direction (c) point in similar directions, ensuring that the control action moves the system toward higher robustness. 2) Boolean Operators: The Composition Challenge: For Boolean operators ϕ1◦ϕ2 where ◦ ∈ {∧ , ∨} , we must compose DIAS vectors from multiple subformulae. This composition is critical as it determines how the planner balances competing objectives. We define: 
+
+χη (qt, ϕ 1 ◦ ϕ2) := compose (χη (qt, ϕ 1),χη (qt, ϕ 2), [η]qt,ϕ 1 , [η]qt,ϕ 2 ) (13) The choice of composition function significantly impacts planning performance. We present two approaches: a stochas-tic baseline adapted from prior work, and our principled FPL-based method. 0                              
+
+> 1
+> 2
+> 3
+> 4
+> 5
+> 6
+> x
+> 0123456
+> y
+> 1.00
+> 0.75
+> 0.50
+> 0.25
+> 0.00
+> 0.25
+> 0.50
+> 0.75
+> 1.00
+> (q, )
+> (a) Robustness Landscape
+> 1.0
+> 0.5
+> 0.0
+> 0.5
+> 1.0
+> 0123456
+> x
+> 0
+> 1
+> 2
+> 3
+> 4
+> 5
+> 6
+> y
+> (b) Gradient Field: q
+> 0123456
+> x
+> 0
+> 1
+> 2
+> 3
+> 4
+> 5
+> 6
+> y
+> u= [0.5, 0.5]
+> (c) Jf(q)u
+> 0123456
+> x
+> 0
+> 1
+> 2
+> 3
+> 4
+> 5
+> 6
+> y
+> (d) DIAS: =Jf
+
+Figure 1. Illustration of the Direction of Increasing Satisfaction (DIAS) for a spatial predicate μ = {q | ∥ q − c∥2 ≤ r2} with center c = [3 .5, 3.5] ⊤ and radius r = 1 . (a) The robustness landscape η(q, μ ) showing the satisfaction region (red circle) where η > 0. (b) The gradient field ∇q η(q, μ ) pointing toward the direction of increasing satisfaction. (c) The state transition field 
+
+Jf (q) · u resulting from the control input u = [0 .5, 0.5] ⊤ and discrete-time dynamics with Jacobian Jf = I2. (d) The DIAS field χη (q, μ ) = 
+
+∇η(q, μ )⊤ ·Jf , which is nonzero only in regions where ∇η(q, μ )⊤ ·(qk+1 −
+
+qk ) > 0 (condition satisfied). 
+
+C. Composition Approaches for Boolean Operators 1) Stochastic Composition: We first adapt the stochastic composition approach from Vasile et al. [21] to work with AGM robustness intervals. While their approach was designed for traditional min-max robustness, we extend it to handle AGM intervals by defining: 
+
+compose stoch (χ1, χ 2, [η]1, [η]2) := blend η (χc, χ ¬c) (14) where (c, ¬c) = choose η ([ η]1, [η]2) with the stochastic choice function: 
+
+choose η ([ η]qt,ϕ 1 , [η]qt,ϕ 2 ) := 
+
+
+
+(1 , 2) if η1 < η 2 ∧ η1 < η 2
+
+(2 , 1) if η1 > η 2 ∧ η1 > η 2
+
+(1 + Ber (p), 2 − Ber (p)) otherwise (15) where p = 0 .5+ (η1+η1)−(η2+η2)8 , and [ηi, η i] = [ η]qt,ϕ i for 
+
+i ∈ { 1, 2}.This stochastic choice mechanism is crucial for preserving asymptotic optimality of RRT ∗. By introducing randomness when the dominance relationship between robustness intervals is ambiguous, we ensure the algorithm maintains non-zero probability of exploring all possible directions. This random-ized decision-making, while biased toward more promising options, prevents the algorithm from permanently excluding any potentially optimal regions of the state space. The geometric blending function combines the selected directions: 
+
+blend η (χc, χ ¬c) := 
+
+(
+
+χc + χ¬c if χc ⊥ χ¬c
+
+χc otherwise (16) IEEE TRANSACTIONS ON ROBOTICS, VOL. , NO. , JANUARY 2026 7
+
+The intuition behind this blend function is to maximize use-ful gradient information while avoiding conflicting guidance. When DIAS vectors from two subformulae are orthogonal, they provide complementary information that doesn’t conflict. In such cases, the blend function adds them together, allow-ing the algorithm to simultaneously improve satisfaction of both subformulae. When vectors aren’t orthogonal, potential conflicts arise where improving one subformula might worsen another. In these cases, the blend function prioritizes the direction chosen by the choice function, preventing oscillatory behavior or poor progress from conflicting guidance. 
+
+2) FPL-Based Principled Composition: To provide more principled composition that explicitly balances competing sub-formulae based on their fulfillment levels, we introduce an FPL-based approach leveraging the mathematical framework from Fulfillment Priority Logic [22]. 
+
+a) Fulfillment Values and Power Means.: FPL provides a family of aggregation operators based on power means that unify minimum and maximum operations. We derive fulfillment values f ∈ [0 , 1] from AGM robustness intervals by mapping from [−1, 1] to [0 , 1] :
+
+fi = (ηi + ηi + 2) 4 (17) where [ηi, η i] is the AGM robustness interval for subformula 
+
+ϕi.The power mean operator μp provides a continuous family of aggregation operations: 
+
+μp(⃗ f ) = 1
+
+n
+
+> n
+
+X
+
+> i=1
+
+f pi
+
+! 1
+
+> p
+
+(18) The parameter p controls composition behavior: p → −∞ 
+
+approaches minimum (conservative/conjunctive), p = 1 gives arithmetic mean, and p → ∞ approaches maximum (opti-mistic/disjunctive). This provides a principled way to interpo-late between worst-case and best-case aggregation. 
+
+b) FPL-Based Direction Composition: We define a uni-fied FPL-based composition function for DIAS vectors: 
+
+compose FPL ({(χi, [η]i)}mi=1 , ◦) := 
+
+
+
+> m
+
+P
+
+> i=1
+
+χi if χi ⊥ χj , ∀i̸ = j
+
+> m
+
+P
+
+> i=1
+
+wi · χi otherwise (19) where the weights wi are computed using derivatives of the power mean: 
+
+wi = f pi · ∂μ p(⃗f )
+
+> ∂f i
+
+Pmj=1 f pj · ∂μ p(⃗f )
+
+> ∂f j
+
++ αi (20) Here, p = −1 for conjunction ( ◦ = ∧) and p = 1 for disjunction ( ◦ = ∨). The term αi adds controlled randomness to preserve asymptotic optimality: 
+
+αi = β · ri · (1 − max   
+
+> j̸=i
+
+|fi − fj |) (21) where β is a small scaling factor (typically 0.1), ri ∈ [−1, 1] is randomly sampled, and the term (1 −max j̸ =i |fi −fj |) ensures randomness diminishes as fulfillment differences increase. This formulation preserves the orthogonality consideration from the stochastic blend function while providing more nuanced weighting based on fulfillment contributions. The gradient-based weights naturally prioritize less-fulfilled ob-jectives, providing principled balancing. The randomization term maintains probabilistic completeness and asymptotic op-timality of RRT ∗ while producing more principled direction compositions than purely stochastic selection. 
+
+c) Minimum Fulfillment Guarantees: A key advantage of using FPL is the power mean’s minimum fulfillment bound: 
+
+∀p ∈ R,⃗ f ∈ [0 , 1] n, min( ⃗f ) ≥ p
+
+q
+
+n(( μp(⃗ f )) p − 1) + 1 (22) This bound guarantees that when a power mean outputs value y, every input component must have at least fulfillment 
+
+> p
+
+pn(yp − 1) + 1 . For conjunction operations, more negative 
+
+p values provide stronger guarantees on minimum fulfillment, ensuring all subformulae are adequately satisfied rather than focusing predominantly on the most critical one. 
+
+D. Algorithm Details 
+
+The RRT η algorithm, outlined in Algorithm 3, constructs a tree T = (V, E) where V represents the set of nodes and E = V × V denotes the set of edges. Each node 
+
+v ∈ V contains several important attributes: (i) v. q rep-resenting the system configuration; (ii) v.ϕ capturing the active STL specification; (iii) v.t indicating when the state is reached; (iv) v. control_StateTraj showing control in-puts and resulting system trajectory from root node to this state with v. control_StateTraj .u0,v.t −1 = u0u1 . . . uv.t −1
+
+and v. control_StateTraj .q0,v.t = q1q2 . . . qv.t ; (v) 
+
+v. parent identifying the parent node; (vi) v. ch listing chil-dren nodes; (vii) v. [η] the AGM robustness interval. The algorithm initializes the tree with the initial state and STL specification (Line 2). Each iteration of the main loop (Lines 6-28) expands the tree toward satisfying the specifica-tion with maximum AGM robustness. Our algorithm leverages the established sampling procedure from Vasile et al. [21], which identifies active STL predicates at a sampled time and generates configurations within these active predicate regions. At each iteration, we invoke the 
+
+sample function (Line 7), which returns a time-state pair 
+
+(tr , qr ) biased toward regions relevant to the STL specification 
+
+ϕ. The algorithm then determines nearby nodes N respecting causality constraints (Line 8) and generates a random convex coefficient λ (Line 9) balancing movement toward the sampled configuration versus along the DIAS. For each nearby node v′ ∈ N (Lines 11-18), the algorithm computes the optimal control using the steering function, which applies control inputs to extend trajectories between states (detailed in Section V-D1). The resulting state qs is evaluated (Line 16), and if it improves the current best solution while being reachable via the steering function, it becomes the new best solution (Lines 17-18). IEEE TRANSACTIONS ON ROBOTICS, VOL. , NO. , JANUARY 2026 8
+
+After adding the new node to the tree (Line 20), the algorithm performs rewiring to improve AGM robustness of existing nodes (Lines 21-23). This is a critical step where our approach differs from traditional RRT ∗: while RRT ∗ rewires to minimize path cost, RRT η rewires to maximize AGM robustness. 
+
+1) Steering Functions: In RRT η , the steering function plays a critical role in extending the tree toward promising regions of the state space. We define the basic steering function steer :
+
+Q × U × Z>0 → Q , where qs ← steer (qt0 , u, ∆t) applies control input u to system (5) starting from initial state qt0 for duration ∆t, resulting in final state qs. This function simply evolves the system dynamics under the given control input, making it the natural mechanism for generating trajectories during planning. For exact steering between states, we also define 
+
+steer_exct : Q×Q → S 
+
+> i∈Z>0
+
+(Ui ×Q i)∪{∅} , where φ ←
+
+steer_exct (qstart , qfinal ) returns the control-trajectory pair 
+
+φ = ( u0,T −1, q0,T −1) if qfinal is reachable from qstart , and ∅
+
+otherwise. The guided steering using DIAS relies on the steer 
+
+function. For each nearby node v′ ∈ N with time difference 
+
+∆tr := tr − v′.t , we compute the optimal control input u∗ by solving: 
+
+u∗ ← arg min  
+
+> u∈U
+
+Jχ(u, steer (v. q, u, ∆tr ),v. q, v.ϕ, qr , ∆tr , λ ) (23) where the cost function Jχ balances two objectives: 
+
+Jχ(u, q s, v ′.q, v ′.ϕ, q r , ∆tr ; λ) := 
+
+λ∥qs − (v′.q + dχ · ∆tr )∥2 + (1 −λ)∥qs − qr ∥2 (24) Here, dχ := χη (v′.qt, v ′.ϕ ) represents the DIAS vector, and 
+
+λ ∈ [0 , 1] is a weighting factor balancing movement along the DIAS direction versus toward the random sample. Solving the optimal control problem (23) exactly is gener-ally intractable for nonlinear systems, as it requires optimizing over the control space U subject to nonlinear dynamics f (·, ·)
+
+from equation (5). The problem is non-convex due to the coupling between control inputs and resulting states through the steer function, and the cost landscape may contain local minima particularly when the DIAS vector dχ points away from the sampled configuration qr .In practice, we employ gradient-based local optimization initialized from random samples in U. For systems with differential constraints (e.g., unicycle), we use trajectory opti-mization with finite-horizon discretization, while for kinematic systems (e.g., KUKA manipulator with IK), the problem reduces to selecting among feasible IK solutions based on the cost function. The computational cost per optimization is O(Niter · Tf ), where Niter ≈ 10 -50 iterations and Tf
+
+is the forward dynamics evaluation time. This local opti-mization approach trades global optimality for computational efficiency, which is acceptable in the RRT η framework since multiple steering attempts occur during tree construction, and suboptimal individual connections can be improved through subsequent rewiring (Lines 21–23). 
+
+2) AGM-Based Rewiring: The algorithm uses our 
+
+update η procedure, detailed in Algorithm 4, which extends the update procedure from [21] to work with AGM robustness intervals. As shown in Algorithm 4, we process each observation in the trajectory incrementally using our 
+
+IRTM function (Algorithm 1), which efficiently computes and updates AGM robustness intervals as new observations become available. The key innovation in our update procedure is the use of AGM robustness intervals as the criterion for adding nodes and rewiring the tree. Nodes are only added when the AGM robustness interval has a positive upper bound, indicating specification satisfaction remains feasible. For rewiring, our algorithm selects connections that improve the lower bound 
+
+η of the AGM robustness interval while maintaining formula consistency. The lower bound optimization strategy provides conserva-tive guarantees during tree construction. Since η represents the worst-case robustness over all possible trajectory com-pletions (Lemma IV.2), maximizing η ensures that even the least favorable completion maintains high robustness. This conservative approach prevents the algorithm from committing to partial trajectories that appear promising based on optimistic upper bounds η but may lead to low-robustness or infeasible completions. As trajectories extend toward the formula horizon 
+
+|| ϕ|| , the interval converges to the exact AGM robustness value (Corollary IV.1), eliminating conservatism for complete paths while maintaining safety during exploration. By basing all tree construction decisions on AGM robust-ness rather than traditional robustness, our approach maintains the algorithmic structure of STL-RRT ∗ while incorporating the benefits of considering all subformulae and time points, not just the critical ones. This results in trajectories that not only satisfy specifications but do so with maximum robustness across all specification aspects. 
+
+E. Optimization Landscape Advantages 
+
+While gradient computation for predicates remains similar between traditional and AGM approaches, a significant ad-vantage emerges during tree rewiring. The cost function used for rewiring in RRT η is based on AGM robustness, which creates a notably smoother optimization landscape compared to traditional robustness. This smoothness arises not from the gradient calculation itself, but from how AGM robustness aggregates satisfaction values across all subformulae and time points. Traditional robustness, with its min / max operators, creates sharp transitions in the optimization landscape whenever the critical subformula changes. In contrast, our AGM approach produces a more continuous landscape through arithmetic and geometric means, making the rewiring process more effective at finding high-quality trajectories. This smoother landscape helps RRT η avoid getting trapped in local optima that might occur with the sharp decision boundaries of traditional robust-ness. IEEE TRANSACTIONS ON ROBOTICS, VOL. , NO. , JANUARY 2026 9
+
+Algorithm 3: RRT η Algorithm  
+
+> 1
+
+Input: qinit – Initial configuration  
+
+> 2
+
+Input: ϕ – STL formula in positive normal form  
+
+> 3
+
+Output: u – a satisfying control policy w.r.t. ϕ with maximum AGM robustness  
+
+> 4
+
+T = ( V := ∅, E = ∅) 
+
+> 5
+
+V ← (v. qinit ← qinit , v.ϕ ← ϕ, v.t ←
+
+1, v. control_StateTraj .q ← ∅ , v. parent ← ∅ , v. ch ← ∅ ) 
+
+> 6
+
+for k = 1 : N max do  
+
+> 7
+
+tr , qr ← sample (Q, T , ϕ ) 
+
+> 8
+
+N ← near (T , qr , t r ) 
+
+> 9
+
+λ ← Unif ([0 , 1])  
+
+> 10
+
+v. parent ← ∅ , J ∗ ← ∞ , q∗ ← ∅  
+
+> 11
+
+foreach v′ ∈ N do  
+
+> 12
+
+∆tr = tr − v′.t  
+
+> 13
+
+// Compute DIAS vector using AGM robustness intervals 
+
+dχ ← χη (v′.control_stateTraj .q v′.t , v ′.ϕ, v ′.t ) 
+
+> 14
+
+// Compute optimal control using DIAS and random sample 
+
+u∗ ←
+
+arg min  
+
+> u∈U
+
+Jχ(u, steer (v. q, u, ∆tr ), v. q, v.ϕ, qr , ∆tr , λ ) 
+
+> 15
+
+qs ← steer (v′.q, u∗, ∆tr ) 
+
+> 16
+
+Js ← Jq(u∗, qs, v ′.q, v ′.ϕ, qr , d η , λ ) 
+
+> 17
+
+if Js < J ∗ ∧ steer_exct (v′.q, qs) then  
+
+> 18
+
+J∗ ← Js, v. parent ← v′, q∗ ← qs 
+
+> 19
+
+vtemp .q ← q∗, v temp .ϕ ← ∅ , v temp .t ←∅, v temp .control_StateTraj ← ∅ , v temp .parent ←∅, v temp .ch ← ∅ , v temp .[η] ← [−1, 1]  
+
+> 20
+
+// Update with AGM robustness interval calculation 
+
+update η (v. parent , v temp ) 
+
+> 21
+
+for v′′ ∈ N ear (T , q∗, t r ) do  
+
+> 22
+
+if steer_exct (q∗, q′′ ) then  
+
+> 23
+
+// Rewiring based on AGM robustness intervals 
+
+update η (vtemp , v ′′ ) 
+
+> 24
+
+if existsSolutionAGM () then  
+
+> 25
+
+vbest = bestAGM (V) 
+
+> 26
+
+return vbest .control_StateTraj  
+
+> 27
+
+else  
+
+> 28
+
+return ∅
+
+F. Optimality and Completeness 
+
+The RRT η algorithm combines the scalability of RRT ∗ with the expressiveness of STL specifications using AGM robust-ness. A key question is whether this integration preserves the core theoretical guarantees of sampling-based planning. We now establish that the algorithm maintains fundamental prop-erties of probabilistic completeness and asymptotic optimality despite the more complex robustness measure. 
+
+Theorem V.1 (Probabilistic Completeness) . Consider the RRT η algorithm (Algorithm 3) applied to a dynamical system with Lipschitz continuous dynamics (5), an STL specification 
+
+ϕ, and initial state qinit . Let G denote the set of feasible control-trajectory pairs with positive AGM robustness. If G̸ = ∅, then 
+
+lim 
+
+n→∞ P(RRT η finds φ ∈ G ) = 1 (25) 
+
+where n is the number of iterations. Proof Sketch. The proof relies on two key properties: 
+
+Stochastic Exploration. The sampling procedure (Line 7) combined with randomized composition mechanisms ensures non-zero probability of exploring all regions of the state space. For FPL-based composition, the randomization term 
+
+αi in Equation (21) maintains exploration. For stochastic composition, the Bernoulli choice in Equation (15) ensures no region is permanently excluded. 
+
+Algorithm 4: update η (v1, v 2) 
+
+> 1
+
+// Initialize AGM robustness interval with parent’s interval  
+
+> 2
+
+[η]curr ← v1.[η] 
+
+> 3
+
+tcurr ← v1.t  
+
+> 4
+
+// Get trajectory points from steering function  
+
+> 5
+
+(u1,2q1,2) ← steer_exct (v1.q, v 2.q) 
+
+> 6
+
+// Incrementally compute AGM robustness interval for each observation  
+
+> 7
+
+for i = 1 to n do  
+
+> 8
+
+[η]curr ← IRTM (v1.ϕ, [η]curr , q1,2(i), t curr ) 
+
+> 9
+
+tcurr ← tcurr + 1  
+
+> 10
+
+[η′
+
+> 2
+
+, η ′
+
+> 2
+
+] ← [η]curr  
+
+> 11
+
+if ϕ2 = ∅ then  
+
+> 12
+
+if η′ 
+
+> 2
+
+≥ 0 then  
+
+> 13
+
+v2.[η] ← [η′
+
+> 2
+
+, η ′
+
+> 2
+
+] 
+
+> 14
+
+v2.ϕ ← simplify (v1.ϕ ) 
+
+> 15
+
+V ← V ∪ { v2}, E ← E ∪ { (v1, v 2)} 
+
+> 16
+
+else if η′ 
+
+> 2
+
+≥ 0 ∧ η′ 
+
+> 2
+
+≥ min( v2.[η]) ∧ ϕ1 ⇒ ϕ2 then  
+
+> 17
+
+v2.[η] ← [η′
+
+> 2
+
+, η ′
+
+> 2
+
+] 
+
+> 18
+
+E ← (E \ { (v2.parent , v 2)}) ∪ { (v1, v 2)} 
+
+> 19
+
+Vupd = ch (v2) // children of v2 
+
+> 20
+
+while Vupd ̸ = ∅ do  
+
+> 21
+
+v ← Vupd .pop () , v′ ← v. parent  
+
+> 22
+
+// Recompute intervals for affected branches recursively  
+
+> 23
+
+[η]curr ← v′.[η] 
+
+> 24
+
+tcurr ← v′.t  
+
+> 25
+
+(uv′,v , qv′.t,v.t ) ← steer_exct (v′.q, v. q) 
+
+> 26
+
+for i = 1 to |qv′.t,v.t | do  
+
+> 27
+
+[η]curr ← IRTM (v′.ϕ, [η]curr , qv′.t,v.t (i), t curr ) 
+
+> 28
+
+tcurr ← tcurr + ∆ t 
+
+> 29
+
+v. [η] ← [η]curr 
+
+Sound Robustness Bounds. By Lemma IV.2, the AGM robustness intervals computed by IRTM (Algorithm 1) are sound: for any completion s ∈ C(st0,t ′ ), we have η(s, ϕ ) ∈
+
+[η]st′ ,ϕ . This ensures that the algorithm correctly identifies when a partial trajectory can potentially reach positive AGM robustness, preventing premature pruning of feasible paths. Given sufficient sampling time, the stochastic exploration guarantees that feasible regions are eventually sampled, and sound robustness bounds ensure these samples are correctly identified and added to the tree. 
+
+Theorem V.2 (Asymptotic Optimality) . Under the conditions of Theorem V.1, let φ∗ = arg max φ∈G η(q0,T , ϕ ) denote the optimal solution to Problem III.1. Let φn = (un
+
+0,T , qn
+
+0,T )
+
+denote the control-trajectory pair returned by RRT η after n
+
+iterations. Then, for any ϵ > 0,
+
+lim 
+
+n→∞ P(η(qn
+
+0,T , ϕ ) ≥ η(q∗
+
+0,T , ϕ ) − ϵ) = 1 (26) 
+
+Proof Sketch. The proof builds on completeness (Theorem V.1) and establishes convergence to optimality through: 
+
+Monotonic Refinement. By Theorem IV.1, as partial tra-jectories extend, AGM robustness intervals satisfy [η]st′ ,ϕ ⊆
+
+[η]st,ϕ for t′ > t. This monotonicity ensures that longer trajectories provide increasingly precise robustness estimates, allowing the algorithm to systematically identify and pursue high-robustness paths through the rewiring mechanism (Lines 21–23). 
+
+Convergence to Exact Values. By Corollary IV.1, when a trajectory reaches t′ ≥ || ϕ|| , the interval converges to exact AGM robustness: [η]st′ ,ϕ = {η(s, ϕ )}. This enables accurate comparison and selection of optimal solutions. IEEE TRANSACTIONS ON ROBOTICS, VOL. , NO. , JANUARY 2026 10 
+
+Rewiring with AGM Cost. The algorithm’s rewiring pro-cedure (Algorithm 4) uses AGM robustness as the cost met-ric, selecting parent connections that maximize η (the lower bound of the robustness interval) while maintaining formula consistency. Combined with the continuous exploration from stochastic mechanisms, this ensures that as n → ∞ , the tree progressively improves toward the optimal AGM robustness value. The formal proof parallels the RRT ∗ optimality proof [5], substituting path length cost with AGM robustness maximiza-tion and leveraging the properties established in Lemma IV.2, Theorem IV.1, and Corollary IV.1. VI. C ASE STUDIES 
+
+A. Unicycle Robot 
+
+We evaluate our AGM-based planning approach on aunicycle-drive robot operating in a planar environment with sequential visitation requirements and continuous avoidance constraints. This benchmark demonstrates the effectiveness of AGM robustness on systems with nonholonomic constraints and strict temporal ordering. 
+
+System Dynamics. Consider a unicycle robot with config-uration q = [ x, y, θ ]⊤ ∈ R2 × [−π, π ], where (x, y ) ∈ R2
+
+represents the robot position and θ ∈ [−π, π ] is the heading angle. The robot evolves according to discrete-time dynamics with sampling time ∆t:
+
+xt+1 = xt + vt cos( θt)∆ tyt+1 = yt + vt sin( θt)∆ tθt+1 = θt + ωt∆tvt+1 = u1, ωt+1 = u2
+
+(27) where v ∈ [−0.3, 0.3] m/s is the translational velocity and 
+
+ω ∈ [−1, 1] rad/s is the angular velocity. The augmented state space: x = ( x, y, θ, v, ω )⊤ ∈ R5.The planar workspace W = [0 , 4] × [0 , 4] m2 contains three rectangular regions: textbfRegion 1 (initial target): x ∈
+
+[2 .0, 3.0] , y ∈ [1 .0, 2.0] ; Region 2 (final target): x ∈ [0 .5, 1.5] ,
+
+y ∈ [2 .5, 3.0] ; and Obstacle region (forbidden): x ∈ [0 .5, 1.5] ,
+
+y ∈ [1 .0, 2.0] .The target region predicates are formulated as conjunctions of linear inequalities: μRegion1 := (2 .0 ≤ x ≤ 3.0) ∧ (1 .0 ≤
+
+y ≤ 2.0, and μRegion2 := (0 .5 ≤ x ≤ 1.5) ∧ (2 .5 ≤ y ≤ 3.0) .The obstacle avoidance constraint is formulated as: μavoid := (x < 0.5) ∨ (x > 1.5) ∨ (y < 1.0) ∨ (y > 2.0) .The task requires sequential region visitation with temporal ordering and continuous obstacle avoidance: 
+
+ϕunicycle := F[0 ,15] (μRegion1 ) ∧ F[15 ,40] (μRegion2 )
+
+∧ G[0 ,20] (μavoid ) (28) The obstacle region is positioned directly between the two target regions, requiring the robot to navigate around it. The nonholonomic constraints further complicate planning—the robot cannot move sideways and must carefully coordinate heading and velocity commands. AGM Robustness Enables Feasible Solutions. Figure 2reveals dramatic performance differences between traditional and AGM-based approaches. Traditional STL-RRT* using standard robustness semantics demonstrates catastrophic fail-ure: even after normalization from [−4.4] → [−1.1] to account for different robustness scales, the lower bound remains per-sistently negative ( η ≈ − 0.35 ), indicating the planner cannot discover any trajectory satisfying the specification. The upper bound reaches only η ≈ 0.05 , and the gap plateaus at ≈ 0.4,confirming the planner is trapped exploring infeasible state space. The fundamental limitation of traditional robustness in this scenario stems from its min-max semantics: when evaluating paths through the temporal sequence, traditional robustness takes the minimum over all time steps, causing any momentary low-robustness configuration (e.g., when navigating near the obstacle boundary) to dominate the entire trajectory evaluation. This pessimistic semantics prevents the planner from recog-nizing that brief proximity to constraint boundaries can be acceptable if compensated by high robustness elsewhere. In stark contrast, both AGM-based heuristics successfully find high-quality solutions. Choose-blend (red) achieves η ≈
+
+0.93 and η ≈ 0.90 with gap ≈ 0.1, while FPL (green) reaches η ≈ 0.95 and η ≈ 0.98 with gap < 0.05 . The additive structure of AGM robustness enables both methods to balance constraint satisfaction across the trajectory: states with moderate robustness near the obstacle can be accepted if they enable high-robustness states in the target regions, and this trade-off is quantified explicitly through AGM’s aggregation mechanism. The convergence patterns (panels a-b) demonstrate this fundamental difference: AGM methods show rapid, monotonic improvement, indicating systematic discovery of increasingly robust trajectories. Traditional robustness shows no such im-provement pattern, remaining stuck in low-robustness regions throughout planning. While both AGM methods vastly outperform traditional robustness, FPL demonstrates superior efficiency through gradient-based objective balancing. When evaluating com-peting subformulae during tree expansion—such as whether to prioritize reaching Region A or Region B during t ∈
+
+[2 , 7] —FPL computes fulfillment values fi from the current AGM robustness intervals (Equation 17). These fulfillment values indicate how well each subformula is currently sat-isfied. FPL then uses power mean derivatives (Equation 20) to compute weights wi that naturally prioritize less-fulfilled objectives, guiding exploration toward states that balance all specification requirements rather than optimizing only the most critical constraint. This gradient-based balancing proves particularly effective for sequential tasks. When expanding the tree near Region A at t = 5 , the fulfillment-based weights guide sampling toward configurations that not only satisfy the immediate requirement (reaching Region A) but also maintain flexibility for satisfying subsequent requirements (later reaching Region D or E while avoiding obstacles). Choose-blend lacks this principled balancing mechanism and must discover good paths through repeated stochastic sampling and rewiring. The gap metric (panel c) quantifies this difference: FPL reaches gap 
+
+< 0.05 within 400 iterations ( ∼ 17 s), while choose-blend IEEE TRANSACTIONS ON ROBOTICS, VOL. , NO. , JANUARY 2026 11 1.00        
+
+> 0.75
+> 0.50
+> 0.25
+> 0.00
+> 0.25
+> 0.50
+> 0.75
+> 1.00
+> RoSI Lower Bounds
+> traditional norm. [-4,4] [-1,1]
+> (a) Lower Bounds
+> trad (norm.)
+> fpl
+> choose_blend
+> 0500 1000 1500 2000
+> Time Steps
+> 0.0
+> 0.2
+> 0.4
+> 0.6
+> 0.8
+> 1.0
+> RoSI Upper Bounds
+> traditional norm. [-4,4] [-1,1]
+> (b) Upper Bounds
+> trad (norm.)
+> fpl
+> choose_blend
+> 0.00
+> 0.25
+> 0.50
+> 0.75
+> 1.00
+> 1.25
+> 1.50
+> 1.75
+> Gap (Upper - Lower)
+> traditional norm. [-4,4] [-1,1]
+> (c) Bounds Gap
+> trad (norm.)
+> fpl
+> choose_blend
+> (d) Tree Construction
+
+Figure 2. Performance comparison on unicycle robot sequential reach-avoid task, demonstrating critical advantages of AGM robustness. (a-c) Traditional robustness (blue, normalized from [−4.4] → [−1.1] ) completely fails with negative lower bound ( η ≈ − 0.35 ), near-zero upper bound ( η ≈ 0.05 ), and stagnant gap ( ≈ 0.4), unable to discover any satisfying trajectory. Both AGM-based methods succeed: choose-blend (red) achieves η ≈ 0.93 , η ≈ 0.90 , gap 
+
+≈ 0.1; FPL (green) reaches η ≈ 0.95 , η ≈ 0.98 , gap < 0.05 . The additive structure of AGM robustness enables both methods to balance constraint satisfaction across temporal phases, discovering feasible trajectories that tra-ditional min-max semantics cannot recognize. Among AGM methods, FPL’s forward prediction provides 2× computational advantage, reaching conver-gence at 400 iterations vs. 800 for choose-blend. (d) Tree construction shows solution path (color indicates temporal progression: blue → yellow → red). The specification requires visiting Region 1 (gray, [2 .0, 3.0] × [1 .0, 2.0] m) during t ∈ [0 , 15] , then Region 2 (orange, [0 .5, 1.5] × [2 .5, 3.0] m) during 
+
+t ∈ [15 , 40] , while avoiding obstacle region (beige, [0 .5, 1.5] × [1 .0, 2.0] m) for t ∈ [0 , 20] . The successful upper-arc trajectory demonstrates AGM’s ability to discover feasible solutions for complex temporal-spatial constraints where traditional approaches fail entirely. 
+
+achieves gap ≈ 0.1 at 800 iterations ( ∼ 35 s), demonstrating FPL’s 2× computational advantage among AGM methods. Choose-blend lacks this predictive capability and must discover good sequencing through repeated sampling. The gap metric (panel c) quantifies the efficiency difference: FPL reaches gap < 0.05 within 400 iterations ( ∼ 17 s), while choose-blend achieves gap ≈ 0.1 at 800 iterations (∼ 35 s), demonstrating FPL’s 2× computational advantage among AGM methods. The tree visualization (panel d) shows the final solution path in the (x1, x 2) plane. Both AGM methods discover trajectories that successfully reach Region 1 (gray rectangle, right-center), navigate around the obstacle region (beige rectangle, left-center) via an upper arc, and ter-minate in Region 2 (orange rectangle, upper-left). The smooth trajectory with color-coded temporal progression demonstrates feasible motion respecting nonholonomic constraints—motion that traditional robustness-based planning fails to discover. This case study demonstrates three key advantages of AGM robustness. First, AGM methods discover satisfying solutions where traditional robustness fails entirely—the traditional ap-proach remained trapped in infeasible regions with nega-tive lower bounds throughout planning while AGM meth-ods achieved high-quality solutions with η ≈ 0.93 -0.95 .Second, both AGM methods converge orders of magnitude faster than traditional approaches, reaching positive robustness within hundreds of iterations compared to the traditional method’s persistent failure. Third, among AGM methods, FPL’s gradient-based objective balancing provides additional computational advantages, achieving convergence in half the iterations required by choose-blend while maintaining compa-rable or superior solution quality. 
+
+B. 7DOF Manipulator 
+
+We evaluate our approach on a 7-DOF KUKA iiwa manipu-lator operating in a constrained workspace with multiple target regions and an obstacle. This scenario presents a cascading choice problem where the planner must make sequential de-cisions about which regions to visit while satisfying temporal constraints and continuous safety requirements. 
+
+Problem Setup. The workspace W ⊂ R3 contains four target regions defined as 3D bounding boxes and one spherical obstacle as follows. Region A (yellow): x ∈ [0 .40 , 0.55] m, 
+
+y ∈ [0 .15 , 0.30] m, z ∈ [0 .50 , 0.65] m; Region B (cyan): 
+
+x ∈ [−0.10 , 0.10] m, y ∈ [0 .25 , 0.40] m, z ∈ [0 .55 , 0.70] m; 
+
+Region D (blue): x ∈ [0 .45 , 0.60] m, y ∈ [−0.10 , 0.10] m, 
+
+z ∈ [0 .65 , 0.80] m; Region E (magenta): x ∈ [−0.15 , 0.15] m, 
+
+y ∈ [0 .35 , 0.50] m, z ∈ [0 .75 , 0.90] m; and Obstacle (black sphere): center at (0 .20 , 0.30 , 0.60) m with radius robs =0.12 m. Each target region is formalized as a workspace predicate: 
+
+μi := ( x ∈ [xmin 
+
+i ,x max 
+
+i ]) ∧ (y ∈ [ymin 
+
+i , y max 
+
+i ]) 
+
+∧ (z ∈ [zmin 
+
+i , z max 
+
+i ]) (29) for i ∈ {A, B, D, E }. The obstacle avoidance constraint ensures safe clearance: 
+
+μobs-free := p(x − 0.20) 2 + ( y − 0.30) 2 + ( z − 0.60) 2
+
+≥ robs + dsafe 
+
+(30) where dsafe = 0 .03 m provides a safety margin, requiring the end-effector to maintain at least 0.15 m distance from the obstacle center. The task requires sequential region visitation with temporal constraints: 
+
+ϕKUKA := F[2 ,7] (μA ∨ μB ) ∧ F[8 ,15] (μD ∨ μE )
+
+∧ G[0 ,15] (μobs-free ) ∧ G[0 ,15] (μjoint-limits ) (31) where μobs-free ensures the end-effector maintains safe distance 
+
+d > dsafe = 0.15 m from the obstacle, and μjoint-limits := 
+
+V7
+
+i=1 (qi ∈ [qmin 
+
+i , q max 
+
+i ]) enforces joint limits. This specification creates a complex decision-making sce-nario with four possible solution paths: A-then-D, A-then-E, B-then-D, or B-then-E. However, not all paths are feasible due to kinematic constraints and the obstacle placement. The planner must choose between visiting Region A ( 0.15 m wide box on the right) or Region B ( 0.20 m wide box in the center) during the first time window t ∈ [2 , 7] s, and this choice constrains subsequent options for visiting Region D (0.15 m wide box on the right) or Region E ( 0.30 m wide box in the center) during t ∈ [8 , 15] s. The obstacle positioned at (0 .20 , 0.30 , 0.60) m with 0.12 m radius creates a critical constraint—certain region pairs require trajectories that pass dangerously close to or through the obstacle sphere. The critical distinction between traditional robustness and our AGM robustness formulation becomes evident in this scenario. Traditional STL-RRT* using standard robustness semantics must explore all four region pairs with roughly equal priority, as the traditional min-max semantics provide limited guidance about which choices lead to higher overall robust-ness. The traditional method (blue in Figure 3) demonstrates IEEE TRANSACTIONS ON ROBOTICS, VOL. , NO. , JANUARY 2026 12 
+
+this undirected exploration: after normalization to account for its different robustness scale ( [−4.4] → [−1.1] ), the lower bound plateaus at η ≈ − 0.35 and upper bound at η ≈ 0.08 ,with gap ≈ 1.2 indicating continued exploration of low-quality solutions. In contrast, both AGM-based heuristics—choose-blend (red) and FPL (green)—leverage the additive structure of AGM ro-bustness to systematically resolve the choice dilemma. Rather than treating each disjunction as an isolated decision, AGM ro-bustness accumulates contributions from both branches, allow-ing the planner to recognize that certain region pairs maintain consistently higher robustness throughout the trajectory. Both AGM methods demonstrate structured convergence: choose-blend achieves η ≈ 0.60 and η ≈ 0.80 with gap ≈ 0.8, while FPL reaches η ≈ 0.95 and η ≈ 0.98 with gap < 0.1, both substantially outperforming the traditional baseline. The RoSI bound evolution (panels a-b) reveals the struc-tured nature of AGM-guided exploration: both choose-blend and FPL show monotonic convergence patterns, indicating they systematically improve solution quality by exploiting the additive robustness structure. The traditional method’s erratic, stagnant bounds demonstrate its inability to leverage choice structure effectively. While both AGM methods significantly outperform the tra-ditional baseline, FPL demonstrates superior performance over choose-blend through its forward predictive capability. When sampling states in Region A during t ∈ [2 , 7] , FPL evaluates not only the immediate AGM robustness but also predicts the future AGM robustness for reaching Regions D or E during t ∈ [8 , 15] . This forward-looking strategy enables FPL to prioritize the A-then-E path, which maintains maximum clearance from the obstacle throughout both temporal phases. Choose-blend, while benefiting from AGM’s additive struc-ture, lacks this predictive horizon and must discover good paths through repeated sampling and rewiring. The gap metric (panel c) quantifies this difference: FPL reaches gap < 0.1
+
+within 1000 iterations ( ∼ 70 s), whereas choose-blend requires 
+
+∼ 2500 iterations ( ∼ 100 s) to achieve gap ≈ 0.2, demon-strating FPL’s 1.5× computational advantage among AGM methods. The augmented state representation x =(q1, . . . , q 7, x, y, z, ψ r , ψ p, ψ y )⊤ ∈ R13 provides crucial computational advantages for this high-dimensional problem. This representation combines joint angles q ∈ Q ⊂ R7 with end-effector workspace coordinates computed via the forward kinematics (FK) mapping F : Q → R3 × SO (3) , where 
+
+F(q) = (x, y, z, ψ r , ψ p, ψ y )⊤ represents the end-effector pose. Rather than sampling blindly in the 7D joint space Q,we employ task-space sampling with inverse kinematics (IK) ,where IK solves for joint configurations q = F−1(w) that achieve desired workspace poses w. When specification pred-icates require end-effector positions in workspace regions, we: 1) Sample candidate workspace poses w = (x, y, z, O)
+
+directly within target region bounds (e.g., uniformly in 
+
+[0 .40 , 0.55] × [0 .15 , 0.30] × [0 .50 , 0.65] for Region A) 2) Solve IK to compute joint configurations: q = F−1(w)
+
+3) Construct augmented state x = [q, w ] caching workspace coordinates This approach offers two significant benefits: (1) sampling is biased toward task-relevant workspace regions rather than the larger joint space, dramatically improving the probability of generating states that satisfy the specification, and (2) forward kinematics computations during robustness evaluation are eliminated since workspace coordinates are pre-computed and cached in x. For each state x, predicate evaluation 
+
+η(xt, μ region ) reduces to comparing cached (x, y, z ) values against region bounds—simple arithmetic operations rather than expensive trigonometric computations required by F(q).See Appendix D for detailed formalization of the augmented state representation and adaptive sampling strategy (Algorithm 5). Let N denote the number of tree nodes and m the spec-ification depth (number of temporal operators). Traditional STL-RRT* with naive joint-space sampling performs O(N m )
+
+forward kinematics computations during rewiring, as each potential parent evaluation requires computing F(q) for ro-bustness checking. Our IK-based sampling with caching re-duces this to O(N ) forward kinematics computations (once per state creation) plus O(N m ) cached lookups. For the KUKA iiwa, forward kinematics computation via Denavit-Hartenberg transformations takes approximately 50 μs while cached lookups require < 1μs, yielding a 50 × speedup in predicate evaluation. Combined with FPL’s faster convergence (requiring ∼ 60% fewer iterations to achieve gap < 0.1
+
+compared to traditional methods), the overall computational improvement is substantial—planning times are reduced from 
+
+∼ 180 s to ∼ 70 s for convergence to high-quality solutions. Figure 3(d-f) visualizes the final reference trajectory from multiple viewpoints using ghost trail epresentation. The robot successfully visits Region A (yellow, 0.15 m × 0.15 m ×
+
+0.15 m box on the right) during the first temporal window and terminates at Region E (magenta, 0.30 m × 0.15 m × 0.15 mbox in the center-top) in the second window, maintaining safe clearance from the obstacle sphere throughout execu-tion. The smooth progression of overlaid poses demonstrates feasible motion respecting joint velocity constraints, with the final fully-opaque pose confirming specification satisfaction at 
+
+t = 15 s. VII. C ONCLUSION AND FUTURE WORK 
+
+We presented RRT η , a sampling-based motion planning framework integrating Arithmetic-Geometric Mean (AGM) robustness for Signal Temporal Logic specifications. Our ap-proach addresses fundamental limitations of traditional min-max robustness through: (1) AGM robustness interval seman-tics with efficient incremental monitoring, (2) Direction of Increasing AGM Satisfaction vectors leveraging Fulfillment Priority Logic for principled multi-objective composition, and (3) formal guarantees of probabilistic completeness and asymptotic optimality. Experimental validation on unicycle and 7-DOF manipu-lator systems demonstrated substantial advantages over tradi-tional approaches. On sequential reach-avoid tasks, traditional IEEE TRANSACTIONS ON ROBOTICS, VOL. , NO. , JANUARY 2026 13 1.0       
+
+> 0.5
+> 0.0
+> 0.5
+> 1.0
+> RoSI Lower Bounds
+> trad norm. [-6.3,6.3] [-1.0,1.0]
+> (a) Lower Bounds
+> 0.4
+> 0.5
+> 0.6
+> 0.7
+> 0.8
+> 0.9
+> 1.0
+> RoSI Upper Bounds
+> trad norm. [-6.3,6.3] [-1.0,1.0]
+> (b) Upper Bounds
+> 01000 2000 3000 4000
+> Time Steps
+> 0.0
+> 0.5
+> 1.0
+> 1.5
+> 2.0
+> Gap (Upper - Lower)
+> (c) Gap
+> trad (norm.)
+> choose_blend
+> fpl
+> (d) Isometric View
+> (e) Top View
+> (f) Front View
+
+Figure 3. Performance comparison of STL-RRT* heuristics on the KUKA iiwa cascading choice problem. (a-b) Lower and upper RoSI bounds evo-lution over planning iterations: FPL (green) demonstrates rapid, structured convergence toward tight bounds, while traditional (blue) and choose-blend (red) methods show slower, less directed exploration. The monotonic con-vergence of FPL bounds indicates its ability to systematically resolve the choice dilemma by prioritizing high-robustness region pairs. (c) Gap metric quantifies the exploration efficiency—FPL reaches near-zero gap ( < 0.1)within 1000 iterations, whereas traditional and choose-blend plateau at 1.2 and 0.8 respectively, demonstrating continued exploration of suboptimal paths. The specification ϕKUKA requires visiting Region A (yellow) or B (cyan) during 
+
+t ∈ [2 , 7] s, then Region D (blue) or E (magenta) during t ∈ [8 , 15] s, while continuously avoiding the obstacle (black sphere) and respecting joint limits. (d-f) Ghost trail visualization from multiple viewpoints shows the reference trajectory with 10 time-sampled configurations (opacity indicates temporal progression: transparent → opaque). The robot successfully executes the A-then-E path, with red spheres marking joint positions throughout motion. The structured, collision-free trajectory demonstrates successful resolution of the cascading choice problem. 
+
+robustness failed to discover satisfying trajectories (negative lower bounds throughout planning) while AGM-based meth-ods achieved high-quality solutions ( η ≈ 0.93 -0.95 ). FPL-based composition demonstrated 1.5-2× computational ad-vantages over stochastic methods through forward prediction. For high-dimensional systems, augmented state representation with IK-based sampling achieved 185 × speedup for tight workspace constraints. Future work includes extensions to probabilistic specifica-tions, integration of learning-based heuristics while preserving theoretical guarantees, and handling of dynamic obstacles with time-varying workspace constraints. The holistic robustness evaluation and principled multi-objective composition demon-strated in RRT η advances formal methods-based robot control for complex temporal specifications. REFERENCES [1] S. M. LaValle, “Rapidly-exploring random trees: A new tool for path planning,” in Ames, IA, USA , 1998. [2] M. Otte and E. Frazzoli, “Rrtx: Asymptotically optimal single-query sampling-based motion planning with quick replanning,” The Interna-tional Journal of Robotics Research , vol. 35, no. 7, pp. 797–822, 2016. [3] M. Kobilarov, “Cross-entropy motion planning,” International Journal of Robotics Research , vol. 31, no. 7, pp. 855–871, 2012. [4] A. Wu, S. Sadraddini, and R. Tedrake, “R3T: Rapidly-exploring Random Reachable Set Tree for Optimal Kinodynamic Planning of Nonlinear Hybrid Systems,” IEEE International Conference on Robotics and Automation (ICRA) , pp. 4245–4251, 2020. [Online]. Available: https://doi.org/10.3182/20070822-3-ZA-2920.00076 [5] S. Karaman and E. Frazzoli, “Sampling-based algorithms for optimal motion planning,” The International Journal of Robotics Research , vol. 30, no. 7, pp. 846–894, 2011. [Online]. Available: https://doi.org/10.1177/0278364911406761 [6] A. Ahmad, C. Belta, and R. Tron, “Adaptive sampling-based motion planning with control barrier functions,” in 2022 IEEE 61st Conference on Decision and Control (CDC) , 2022, pp. 4513–4518. [7] G. Yang, M. Cai, A. Ahmad, A. Prorok, R. Tron, and C. Belta, “Lqr-cbf-rrt*: Safe and optimal motion planning,” arXiv preprint arXiv:2304.00790 , 2023. [8] C. Baier and J.-P. Katoen, Principles of model checking . MIT press, 2008. [9] H. Kress-Gazit, M. Lahijanian, and V. Raman, “Synthesis for robots: Guarantees and feedback for robot behavior,” Annual Review of Control, Robotics, and Autonomous Systems , vol. 1, pp. 211–236, 2018. [10] U. Sadana, A. Chenreddy, E. Delage, A. Forel, E. Frejinger, and T. Vidal, “A survey of contextual optimization methods for decision making under uncertainty,” arXiv preprint arXiv:2306.10374 , 2023. [11] C.-I. Vasile, D. Aksaray, and C. Belta, “Time window temporal logic,” 
+
+Theoretical Computer Science , vol. 691, pp. 27–54, 2017. [12] C. Belta, B. Yordanov, and E. A. Gol, Formal methods for discrete-time dynamical systems . Springer, 2017, vol. 15. [13] O. Maler and D. Nickovic, “Monitoring temporal properties of contin-uous signals,” in Formal Techniques, Modelling and Analysis of Timed and Fault-Tolerant Systems: Joint International Conferences on Formal Modeling and Analysis of Timed Systmes, FORMATS 2004, and Formal Techniques in Real-Time and Fault-Tolerant Systems, FTRTFT 2004, Grenoble, France, September 22-24, 2004. Proceedings . Springer, 2004, pp. 152–166. [14] A. Ahmad, M. Kermanshah, K. Leahy, Z. Serlin, H. C. Siu, M. Mann, C.-I. Vasile, R. Tron, and C. Belta, “Accelerating proximal policy optimization learning using task prediction for solving games with delayed rewards,” 2024. [Online]. Available: https://arxiv.org/abs/2411.17861 [15] K. Majd, S. Yaghoubi, T. Yamaguchi, B. Hoxha, D. Prokhorov, and G. Fainekos, “Safe navigation in human occupied environments using sampling and control barrier functions,” in 2021 IEEE/RSJ International Conference on Intelligent Robots and Systems (IROS) , 2021, pp. 5794– 5800. [16] F. Penedo, C.-I. Vasile, and C. Belta, “Language-guided sampling-based planning using temporal relaxation,” in Algorithmic Foundations of Robotics XII . Springer, 2020, pp. 128–143. [17] C. I. Vasile and C. Belta, “Sampling-based temporal logic path planning,” CoRR , vol. abs/1307.7263, 2013. [Online]. Available: http://arxiv.org/abs/1307.7263 [18] C. I. Vasile, X. Li, and C. Belta, “Reactive sampling-based path planning with temporal logic specifications,” The International Journal of Robotics Research , vol. 39, no. 8, pp. 1002–1028, 2020. [19] S. Sadraddini and C. Belta, “Robust temporal logic model predictive control,” in 2015 53rd Annual Allerton Conference on Communication, Control, and Computing (Allerton) , 2015, pp. 772–779. [20] V. Raman, A. Donz´ e, M. Maasoumy, R. M. Murray, A. Sangiovanni-Vincentelli, and S. A. Seshia, “Model predictive control with signal temporal logic specifications,” in 53rd IEEE Conference on Decision and Control , 2014, pp. 81–87. [21] C.-I. Vasile, V. Raman, and S. Karaman, “Sampling-based synthesis of maximally-satisfying controllers for temporal logic specifications,” in 2017 IEEE/RSJ International Conference on Intelligent Robots and Systems (IROS) , 2017, pp. 3840–3847. [22] B. E. Mabsout, A. AbdelGawad, and R. Mancuso, “Closing the intent-to-reality gap via fulfillment priority logic,” arXiv preprint arXiv:2503.05818 , 2025. [23] N. Mehdipour, C.-I. Vasile, and C. Belta, “Arithmetic-geometric mean robustness for control from signal temporal logic specifications,” in 2019 American Control Conference (ACC) . IEEE, 2019, pp. 1690–1695. [24] A. Donz´ e and O. Maler, “Robust satisfaction of temporal logic over real-valued signals,” in Formal Modeling and Analysis of Timed Systems: 8th International Conference, FORMATS 2010, Klosterneuburg, Austria, September 8-10, 2010. Proceedings 8 . Springer, 2010, pp. 92–106. [25] J. V. Deshmukh, A. Donz´ e, S. Ghosh, X. Jin, G. Juniwal, and S. A. Seshia, “Robust online monitoring of signal temporal logic,” Formal Methods in System Design , vol. 51, no. 1, pp. 5–30, 2017. IEEE TRANSACTIONS ON ROBOTICS, VOL. , NO. , JANUARY 2026 14            
+
+> [26] A. Ahmad, C.-I. Vasile, R. Tron, and C. Belta, “Robustness measures and monitors for time window temporal logic,” in 2023 62nd IEEE Conference on Decision and Control (CDC) , 2023, pp. 6841–6846. [27] B. Siciliano, Robotics: Modelling, Planning and Control ,1st ed. Springer Publishing Company, Incorporated, 2008.
+
+APPENDIX 
+
+A. Correctness of Incremental Modification Functions 
+
+We provide the detailed proof of Lemma IV.1, establish-ing that incremental modification functions produce identical results to full AGM robustness recomputation. 
+
+Proof. We prove correctness for disjunction; conjunction fol-lows by symmetry. Let {r1, . . . , r N −1} be the values used to compute η = AGM ∨(r1, . . . , r N −1), and let η′ be a new observation. 
+
+Case 1: η < 0 ∧ η′ < 0
+
+Since all values r1, . . . , r N −1 must be negative for η < 0,by equation (2) we have: 
+
+η = − N −1
+
+vuutN −1Y
+
+> i=1
+
+(1 − ri) + 1 (32) Rearranging: 
+
+(1 − η)N −1 = 
+
+> N−1
+
+Y
+
+> i=1
+
+(1 − ri) (33) Now computing the full AGM with all N values: 
+
+AGM ∨(r1, . . . , r N −1, η ′) = − N
+
+vuut NY
+
+> i=1
+
+(1 − ri) + 1 = − N
+
+vuutN −1Y
+
+> i=1
+
+(1 − ri) · (1 − η′) + 1 = − N
+
+q
+
+(1 − η)N −1(1 − η′) + 1 
+
+(34) This exactly matches the first case of equation (9): 
+
+mdf_AGM ∨(η, N, η ′) = − N
+
+q
+
+(1 − η)N −1 · (1 − η′) + 1 (35) 
+
+Case 2: η < 0 ∧ η′ > 0
+
+Since η < 0, all previous values ri < 0, thus [ri]+ = 0 for all i ∈ { 1, . . . , N − 1}. The full AGM computation switches to arithmetic mean: 
+
+AGM ∨(r1, . . . , r N −1, η ′) = 1
+
+N
+
+> N
+
+X
+
+> i=1
+
+[ri]+
+
+= 1
+
+N 
+
+> N−1
+
+X
+
+> i=1
+
+[ri]+ + [ η′]+
+
+!
+
+= 1
+
+N (0 + [ η′]+) = [η′]+
+
+N
+
+(36) This matches the second case of equation (9). 
+
+Case 3: Otherwise 
+
+In this case, at least one value among r1, . . . , r N −1 was positive, so the AGM used arithmetic mean of positive parts: 
+
+η = 1
+
+N − 1 
+
+> N−1
+
+X
+
+> i=1
+
+[ri]+ (37) Therefore: N −1X
+
+> i=1
+
+[ri]+ = ( N − 1) η (38) Computing the full AGM with the new value: 
+
+AGM ∨(r1, . . . , r N −1, η ′) = 1
+
+N
+
+> N
+
+X
+
+> i=1
+
+[ri]+
+
+= 1
+
+N 
+
+> N−1
+
+X
+
+> i=1
+
+[ri]+ + [ η′]+
+
+!
+
+= (N − 1) η + [ η′]+
+
+N
+
+(39) However, equation (9) shows: 
+
+mdf_AGM ∨(η, N, η ′) = (N · η − [η]+) + [ η′]+
+
+N (40) To reconcile these expressions, observe that: 
+
+(N − 1) η + [ η′]+
+
+N = N · η − η + [ η′]+
+
+N (41) If η > 0, then [η]+ = η, yielding: 
+
+N · η − [η]+ + [ η′]+
+
+N = (N − 1) η + [ η′]+
+
+N (42) If η ≤ 0, then [η]+ = 0 , and the expressions are trivially equal. Thus the third case is verified. 
+
+B. AGM Robustness Interval Soundness Proof. We prove the soundness by structural induction over formula ϕ.
+
+Base Cases: Predicate μ: For a predicate, if the signal is complete at time t, then [η]( st, μ ) = {η(st, μ )} and [η]( st, μ ) =
+
+{η(st, μ )}, so the inclusions hold trivially. 
+
+Inductive Cases: Conjunction ( ϕ1 ∧ ϕ2): We have [η]( st1,t ′ , ϕ 1 ∧ ϕ2) = min([ η]( st1,t ′ , ϕ 1), [η]( st1,t ′ , ϕ 2)) and [η]( st1,t ′ , ϕ 1 ∧ ϕ2) = AGM ∧([ η]( st1,t ′ , ϕ 1), [η]( st1,t ′ , ϕ 2)) .By the induction hypothesis, for any completion 
+
+st1,t 2 ∈ C, we have η(st1,t 2 , ϕ 1) ∈ [η]( st1,t ′ , ϕ 1) and 
+
+η(st1,t 2 , ϕ 2) ∈ [η]( st1,t ′ , ϕ 2). Since η(st1,t 2 , ϕ 1 ∧ ϕ2) =min {η(st1,t 2 , ϕ 1), η (st1,t 2 , ϕ 2)}, by the properties of interval arithmetic on minimum operations, we have 
+
+η(st1,t 2 , ϕ 1 ∧ ϕ2) ∈ [η]( st1,t ′ , ϕ 1 ∧ ϕ2).Similarly, by the induction hypothesis, η(st1,t 2 , ϕ 1) ∈
+
+[η]( st1,t ′ , ϕ 1) and η(st1,t 2 , ϕ 2) ∈ [η]( st1,t ′ , ϕ 2). Since 
+
+η(st1,t 2 , ϕ 1 ∧ϕ2) = AGM ∧(η(st1,t 2 , ϕ 1), η (st1,t 2 , ϕ 2)) , by the properties of interval arithmetic on AGM operations, we have 
+
+η(st1,t 2 , ϕ 1 ∧ ϕ2) ∈ [η]( st1,t ′ , ϕ 1 ∧ ϕ2).
+
+Disjunction ( ϕ1 ∨ ϕ2): The proof follows similarly to the conjunction case, using maximum operations for standard robustness and AGM ∨ for AGM robustness, along with the corresponding interval arithmetic properties. 
+
+Negation ( ¬ϕ): We have [η]( st1,t ′ , ¬ϕ) = −[η]( st1,t ′ , ϕ )
+
+and [η]( st1,t ′ , ¬ϕ) = −[η]( st1,t ′ , ϕ ). By the induction hypothe-sis, η(st1,t 2 , ϕ ) ∈ [η]( st1,t ′ , ϕ ) and η(st1,t 2 , ϕ ) ∈ [η]( st1,t ′ , ϕ ).Since η(st1,t 2 , ¬ϕ) = −η(st1,t 2 , ϕ ) and η(st1,t 2 , ¬ϕ) =IEEE TRANSACTIONS ON ROBOTICS, VOL. , NO. , JANUARY 2026 15 
+
+−η(st1,t 2 , ϕ ), the results follow by the properties of interval arithmetic under negation. 
+
+Globally (G[a,b ]ϕ): We prove this case by contradic-tion. Consider partial signal st1,t ′ and assume that for some completion st1,t 2 ∈ C , we have η(st1,t 2 , G[a,b ]ϕ) /∈
+
+[η]( st1,t ′ , G[a,b ]ϕ).
+
+Case 1: If t′ − t1 ≥ b, then by definition of the interval semantics, [η]( st1,t ′ , G[a,b ]ϕ) = {η(st1,t ′ , G[a,b ]ϕ)}, which means the interval contains only the true robustness value. This contradicts our assumption. 
+
+Case 2: If t′ − t1 < b , then by definition: 
+
+[η]( st1,t ′ , G[a,b ]ϕ) = 
+
+
+
+η⊥, min  
+
+> t∈[t1+a,t 1+b]∩[t1,t ′]
+
+η(st1,t , ϕ )
+
+
+
+(43) By definition of standard robustness, η(st1,t 2 , G[a,b ]ϕ) = min t∈[t1+a,t 1+b] η(st1,t , ϕ ). Since the partial signal agrees with the completion on the observed portion, we have η(st1,t 2 , G[a,b ]ϕ) ≥ η⊥ and 
+
+η(st1,t 2 , G[a,b ]ϕ) ≤ min t∈[t1+a,t 1+b]∩[t1,t ′] η(st1,t , ϕ ),which contradicts our assumption. The proof for the AGM robustness interval follows simi-larly, considering the specific definitions of the AGM interval semantics for the globally operator: 
+
+[η]( st1,t ′ , G[a,b ]ϕ) = 
+
+(
+
+{η(st1,t ′ , G[a,b ]ϕ)} if t′ − t1 ≥ b
+
+[η, η ] otherwise (44) where η and η are computed based on the observed partial signal and the possible range of future values, ensuring that any completion’s AGM robustness falls within this interval. 
+
+Eventually ( F[a,b ]ϕ): The proof follows similarly to the globally case, with appropriate modifications for the maximum operation in standard robustness and AGM ∨ operation in AGM robustness. For the eventually operator, the interval semantics is defined as: 
+
+[η]( st1,t ′ , F[a,b ]ϕ) = 
+
+
+
+{η(st1,t ′ , F[a,b ]ϕ)}; if t′ − t1 ≥ b
+
+[max t∈[t1+a,t 1+b]∩[t1,t ′] η(st1,t , ϕ ), η ⊤]; 
+
+otherwise (45) The soundness follows by similar contradiction arguments, noting that the true robustness value for any completion must lie within the computed interval bounds. 
+
+C. AGM Robustness Interval Chain Inclusion Proof. The set inclusion property follows from the fact that as more of the signal becomes observed, the set of possible completions becomes more constrained, leading to tighter interval bounds. 
+
+Monotonicity: For any formula ϕ, as the partial signal grows from st1,t ′ 
+
+> 1
+
+to st1,t ′ 
+
+> 2
+
+, the interval bounds can only become tighter or remain the same, never become looser. This is because additional observed values either: 1) Provide exact values for subformulae that were previ-ously estimated with intervals, or 2) Constrain the possible range of future values based on the observed trend. 
+
+Convergence: When t′ ≥ || ϕ|| , the entire time horizon required to evaluate formula ϕ has been observed. At this point:  
+
+> •
+
+All temporal operators can be evaluated exactly using the observed signal values  
+
+> •
+
+No uncertainty remains about future signal values within the formula’s time horizon  
+
+> •
+
+The interval semantics reduces to the exact robustness computation Therefore, [η]( st1,t ′ , ϕ ) = {η(st1,t 2 , ϕ )} and [η]( st1,t ′ , ϕ ) = 
+
+{η(st1,t 2 , ϕ )} when t′ ≥ || ϕ|| .The proof can be formalized by structural induction over ϕ,showing that each operator’s interval semantics satisfies the monotonicity and convergence properties. 
+
+D. STL Specifications for Robotic Manipulators 
+
+This appendix provides detailed formalization of STL-based planning for robotic manipulators, including: (1) the augmented state representation combining joint and workspace coordinates, (2) the adaptive sampling strategy with inverse kinematics and caching (Algorithm 5), and (3) computational complexity analysis demonstrating the efficiency gains of this approach. These technical details support the implementation described in Section VI for the KUKA iiwa case study. 
+
+1) State Space Representation: We consider a robotic ma-nipulator with n joints and configuration space Q ⊂ Rn, where each joint configuration q = ( q1, . . . , q n)⊤ is subject to joint limits qi ∈ [qmin  
+
+> i
+
+, q max  
+
+> i
+
+]. For our KUKA iiwa manipulator, 
+
+n = 7 .The robot’s end-effector pose lies in the Special Euclidean group SE (3) , which represents all possible positions and orientations in 3D space. The workspace W ⊆ SE (3) is the set of end-effector poses achievable by the robot, constrained by its kinematic structure and joint limits. For computational purposes, we parametrize each pose in SE(3) using position p = ( x, y, z )⊤ ∈ R3 and orientation represented by Euler angles O = ( ψr , ψ p, ψ y )⊤ ∈ [−π, π ]3.This provides a local 6-dimensional parametrization of the workspace: 
+
+W ⊆ R3 × SO (3) (46) The relationship between joint space and workspace is given by the forward kinematics mapping: 
+
+F : Q → W ⊆ SE (3) , F(q) = ( p, O) (47) where F is typically a nonlinear function determined by the robot’s kinematic structure through Denavit-Hartenberg parameters or similar representations [27]. 
+
+2) Augmented State Representation: To facilitate STL spec-ification in task-relevant workspace coordinates while main-taining computational efficiency, we employ an augmented state representation :
+
+x = ( q1, . . . , q n, x, y, z, ψ r , ψ p, ψ y )⊤ ∈ Rn+6 (48) IEEE TRANSACTIONS ON ROBOTICS, VOL. , NO. , JANUARY 2026 16 
+
+where the first n components are the joint angles, and the remaining 6 components represent the end-effector pose com-puted via forward kinematics. This augmented representation has dimension d = n+6 (for our 7-DOF manipulator, d = 13 ). The augmented state space X = Q × W has bounds: 
+
+X =
+
+> n
+
+Y
+
+> i=1
+
+[qmin  
+
+> i
+
+, q max  
+
+> i
+
+] × [xmin , x max ] × [ymin , y max ]×
+
+[zmin , z max ] × [−π, π ]3
+
+The augmented state is maintained consistently by updating the workspace coordinates whenever joint angles change: 
+
+xt+1 = ( qt+1 , F(qt+1 )) (49) This representation provides a crucial computational ad-vantage: workspace coordinates are computed once during state creation and cached in the state vector, eliminating redundant forward kinematics computations during robustness evaluation. 
+
+3) STL Specification in Workspace Coordinates: Task-level specifications for robotic manipulators are naturally expressed in workspace coordinates. An STL formula ϕ for a manipulator typically consists of: 
+
+Workspace Predicates. The most common predicates spec-ify regions in the workspace: 
+
+μregion := ( x − xc)2 + ( y − yc)2 + ( z − zc)2 ≤ r2 (50) or more generally, bounding box constraints: 
+
+μbox := ( x ∈ [xmin , x max ]) ∧ (y ∈ [ymin , y max ]) ∧
+
+(z ∈ [zmin , z max ]) 
+
+Orientation Constraints. For tasks requiring specific end-effector orientations: 
+
+μorient := |ψr − ψrd | ≤ δr ∧ | ψp − ψpd | ≤ δp
+
+Joint Space Constraints. Safety constraints are often ex-pressed in joint space: 
+
+μjoint := qi ∈ [qsafe,min  
+
+> i
+
+, q safe,max  
+
+> i
+
+]
+
+Example Specification. A pick-and-place task can be for-malized as: 
+
+ϕpick-place := F[t1,t 2](μpick ∧ μgrasp-orient )
+
+∧ F[t3,t 4](μplace ∧ μrelease-orient )
+
+∧ G[0 ,T ](μcollision-free ∧ μjoint-limits )
+
+(51) where μpick and μplace are workspace regions, μgrasp-orient and 
+
+μrelease-orient are orientation constraints, and μcollision-free ensures obstacle avoidance throughout execution. 
+
+4) Robustness Evaluation on Augmented States: The AGM robustness of an STL formula ϕ is evaluated on a signal 
+
+x0: T = ( x0, x1, . . . , xT ) in the augmented state space. For a predicate μ involving workspace variables, the evaluation 
+
+η(xt, μ ) directly accesses the relevant components of the augmented state xt.
+
+Workspace Predicate Example. For a spherical region centered at (xc, y c, z c) with radius r:
+
+h(xt) = r2 − [( xt − xc)2 + ( yt − yc)2 + ( zt − zc)2] (52) 
+
+Algorithm 5: AdaptiveSample (ϕ, t, C)                                                                               
+
+> Input: ϕ: STL formula, t: sampled time, C: IK cache
+> Output: xnew = [ q, F(q)] ∈Rn+6 : augmented state
+> // Identify active predicates
+> 1PW,PQ←GetActivePredicates (ϕ, t )
+> 2if PW=∅then
+> // Configuration space sampling
+> 3q←SampleConfig (Q,PQ)
+> 4w← F (q)▷Forward kinematics
+> 5else
+> // IK-based workspace sampling
+> 6w←SampleWorkspace (PW)▷Direct geometric sampling
+> 7if w∈ C then
+> 8q← C [w]▷Cache hit
+> 9else
+> 10 q←SolveIK (w)▷Numerical IK solver
+> 11 if q=NULL or q / ∈ P Qthen
+> 12 return FAILURE ▷Retry sampling
+> 13 C[w]←q▷Cache solution
+> 14 xnew ←[q, w ]▷Construct augmented state
+> 15 return xnew
+
+and the robustness is: 
+
+η(xt, μ region ) = 12 (h(xt) − 0) (53) 
+
+Hybrid Specifications. The augmented representation al-lows seamless combination of joint-space and workspace predicates: 
+
+ϕhybrid := F[5 ,15] μworkspace-target ∧ G[0 ,20] μsafe-joints (54) where the robustness evaluation accesses joint components for 
+
+μsafe-joints and workspace components for μworkspace-target from the same augmented state xt.
+
+5) Adaptive Sampling with Inverse Kinematics: While the augmented state representation enables efficient robustness evaluation, sampling from regions that satisfy workspace pred-icates requires special consideration. We employ an adaptive sampling strategy that leverages the geometric simplicity of workspace specifications. 
+
+Active Predicate Identification. Given a sampled time 
+
+t and STL formula ϕ, we identify the set of predicates 
+
+Pactive (t, ϕ ) that constrain the state at time t. These predi-cates are categorized as either workspace predicates PW or configuration space predicates PQ.
+
+Configuration Space Sampling. When only configuration space predicates are active, we sample directly from the joint space: 
+
+q ∼ Uniform (Q) ∩ \
+
+> μ∈P Q
+
+{q : μ(q) true } (55) 
+
+Inverse Kinematics-Based Sampling. When workspace predicates are active, rejection sampling in configuration space becomes prohibitively inefficient due to the complex geometry of the inverse image F−1(Wpred ). Instead, we sample directly from the workspace region and solve the inverse kinematics problem: 
+
+6) Computational Complexity Analysis: We analyze the computational complexity of the adaptive sampling procedure in Algorithm 5 and compare it with standard rejection sam-pling in configuration space. IEEE TRANSACTIONS ON ROBOTICS, VOL. , NO. , JANUARY 2026 17 
+
+7) Per-Sample Complexity: When only configuration pred-icates are active ( PW = ∅), sampling requires O(n) time to generate random joint angles and compute forward kinematics (Line 4). For serial manipulators, forward kinematics has complexity O(n).When workspace predicates are active ( PW̸ = ∅), the pro-cedure performs workspace geometric sampling in O(1) time for primitive shapes such as spheres or boxes (Line 6). Cache lookup requires O(1) time with hash table implementation (Line 8). On cache miss, numerical IK solving has complexity 
+
+O(n3) for gradient-based optimization methods (Line 10). Let η denote the cache hit rate. After cache warm-up, empirical results show η ≈ 0.9. The expected cost per IK-based sample is: 
+
+E[Cost IK-sample ] = O((1 − η)n3)
+
+For η = 0 .9, this reduces to approximately O(0 .1n3) per sample. 
+
+8) Comparison with Rejection Sampling: Consider a tight workspace constraint defining a spherical region of radius 
+
+r = 0 .1m within a workspace of volume VW ≈ 4m3. The constraint volume is Vconst = 43 πr 3 ≈ 0.0042 m3, yielding an acceptance probability pacc ≈ Vconst /V W ≈ 0.001 .Rejection sampling in configuration space requires an ex-pected 1/p acc ≈ 1000 attempts per successful sample. Each attempt costs O(n) for forward kinematics computation, giv-ing a total expected cost of O(1000 n) per successful sample. IK-based sampling achieves an IK success rate of approx-imately pIK ≈ 0.9 for well-designed workspace constraints. This requires an expected 1/p IK ≈ 1.1 attempts per successful sample. With caching at rate η = 0 .9, the cost per attempt is O(0 .1n3), yielding a total expected cost of O(0 .11 n3) per successful sample. For the KUKA iiwa with n = 7 joints, the speedup factor is: Speedup = 1000 n
+
+0.11 n3 = 1000 0.11 n2 ≈ 1000 5.4 ≈ 185 
+
+The IK-based approach achieves approximately 185 times speedup for tight workspace constraints despite the higher per-call cost of IK compared to FK. 
+
+9) Overall Planning Complexity: During typical planning scenarios, workspace predicates are active for approximately 
+
+α ≈ 0.4 of samples based on empirical observations. For a planning run with Nsamples samples, the total sampling cost is: Cost sample = Nsamples 
+
+(1 − α) · O(n) + α · O((1 − η)n3)
+
+Substituting α = 0 .4, η = 0 .9, and n = 7 yields approximately 
+
+Nsamples · O(18) .The augmented state representation provides additional computational savings during robustness evaluation. Without state augmentation, evaluating a trajectory of length T with 
+
+P workspace predicates requires O(T P n ) forward kinematics calls per evaluation. The augmented state caches these results during trajectory generation, requiring only O(T n ) forward kinematics calls total regardless of the number of evaluations. For M robustness evaluations during planning: Cost eval, standard = M · T · P · O(n)
+
+Cost eval, augmented = T · O(n)
+
+This provides a speedup factor of M P . For typical values 
+
+M = 10 ,000 and P = 7 , the augmented state achieves a 70,000 times reduction in evaluation cost. 
+
+10) Space Complexity: The IK cache stores discretized workspace poses mapped to configuration solutions. Using discretization resolution ∆x = ∆y = ∆z = 0.01 m and 
+
+∆orient = 5 ◦ over an active workspace volume of approxi-mately 0.5m3, the cache contains at most |C| ≲ 10 6 entries. Each entry stores 7 joint angles as double precision values requiring 56 bytes, yielding total cache memory of approxi-mately 56 MB. The augmented state increases per-node memory from n to 
+
+n + 6 dimensions. For the 7-DOF KUKA manipulator, this represents a factor of 13 /7 ≈ 1.86 increase in memory per node. This modest overhead is acceptable given the substantial computational savings in both sampling and evaluation.

@@ -1,0 +1,521 @@
+Title: Distilling Formal Logic into Neural Spaces: A Kernel Alignment Approach for Signal Temporal Logic
+
+URL Source: https://arxiv.org/pdf/2603.05198v1
+
+Published Time: Fri, 06 Mar 2026 02:28:48 GMT
+
+Number of Pages: 23
+
+Markdown Content:
+> Proceedings of Machine Learning Research vol 284:1–23, 2026 20th Conference on Neurosymbolic Learning and Reasoning
+
+# Distilling Formal Logic into Neural Spaces: A Kernel Alignment Approach for Signal Temporal Logic 
+
+Sara Candussio sara.candussio@phd.units.it 
+
+AILab, MIGe, University of Trieste, IT 
+
+Gabriele Sarti g.sarti@northeastern.edu 
+
+Khoury College of Computing Sciences, Northeastern University, Boston, MA, USA 
+
+Gaia Saveri gaia.saveri@phd.units.it 
+
+AILab, MIGe, University of Trieste, IT 
+
+Luca Bortolussi lbortolussi@units.it 
+
+AILab, MIGe, University of Trieste, IT 
+
+Editor: Under Review for NeSy 2026 
+
+## Abstract 
+
+We introduce a framework for learning continuous neural representations of formal specifica-tions by distilling the geometry of their semantics into a latent space. Existing approaches rely either on symbolic kernels – which preserve behavioural semantics but are compu-tationally prohibitive, anchor-dependent, and non-invertible – or on syntax-based neural embeddings that fail to capture underlying structures. Our method bridges this gap: us-ing a teacher-student setup, we distill a symbolic robustness kernel into a Transformer encoder. Unlike standard contrastive methods, we supervise the model with a continu-ous, kernel-weighted geometric alignment objective that penalizes errors in proportion to their semantic discrepancies. Once trained, the encoder produces embeddings in a single forward pass, effectively mimicking the kernel’s logic at a fraction of its computational cost. We apply our framework to Signal Temporal Logic (STL), demonstrating that the resulting neural representations faithfully preserve the semantic similarity of STL formulae, accurately predict robustness and constraint satisfaction, and remain intrinsically invert-ible. Our proposed approach enables highly efficient, scalable neuro-symbolic reasoning and formula reconstruction without repeated kernel computation at runtime. 
+
+## 1. Introduction 
+
+Formal specification languages such as Signal Temporal Logic (STL, Maler and Niˇ ckovi´ c, 2004) are central to the analysis and control of cyber-physical systems, enabling the formal-ization of safety, liveness, and performance requirements over time-varying signals. Recent work integrates STL within machine learning pipelines (Raman et al., 2015; Bombara and Belta, 2021; Akazaki et al., 2018; Li et al., 2017; Hasanbeig et al., 2020), supporting tasks such as requirement mining, specification-guided learning, and neural verification. STL ad-mits a quantitative semantics via robustness (Fainekos and Pappas, 2006), which measures the degree to which a formula is satisfied or violated. Robustness-based kernel methods offer a semantic alternative: formulae are compared by computing their robustness over a distribution of signals (Bortolussi et al., 2022), embedding specifications into a Hilbert space where distance reflects behavioural agreement rather than syntax (Saveri et al., 2024). However, estimating pairwise similarities requires repeated robustness evaluations and scales  
+
+> ©2026 S. Candussio, G. Sarti, G. Saveri & L. Bortolussi.
+> arXiv:2603.05198v1 [cs.CL] 5 Mar 2026 Candussio Sarti Saveri Bortolussi
+
+quadratically in the number of formulae. Moreover, behaviourally equivalent but lexically distinct specifications collapse to the same point, making the mapping non-invertible. While acceptable for similarity estimation, this is problematic when generating or manipulating a large number of formulae. While neural reconstruction from kernel embeddings has been ex-plored (Candussio et al., 2025), generalizing these results depends critically on the coverage of the formulae reference sets selected for model training. Recent works explore using Transformers-based neural encoders to embed formulae in a shared vector space, producing representations that can be computed efficiently through a single forward pass (Allamanis et al., 2018; Feng et al., 2020; Dong et al., 2021; Reimers and Gurevych, 2019). However, most existing approaches rely primarily on lexical similarity (Gao et al., 2022), resulting in embeddings that fail to fully capture the complex semantic relationships underlying formal language specifications. We bridge these paradigms by training a neural encoder to approximate the geometry induced by the STL semantic kernel. Treating the kernel as a teacher metric, we cast repre-sentation learning as a relational distillation process (Hinton et al., 2015; Park et al., 2019), aligning embedding inner products with kernel robustness-based similarities. A Transformer encoder is trained with pairwise kernel similarities using a weighted geometric alignment ob-jective that emphasizes corrections for large semantic discrepancies. The cost of robustness computation is thus front-loaded during training, reducing inference costs to a single forward pass with the distilled model, thereby amortizing evaluation computations. 
+
+Contributions 
+
+1. We propose a procedure to distill STL quantitative semantics into neural embeddings, employing a robustness-based semantic kernel to control the geometry of learned rep-resentations. The resulting latent space approximates the associated Reproducing Kernel Hilbert Space (RKHS) (Berlinet and Thomas-Agnan, 2004), organizing for-mulae by their behavioural semantics. 2. We introduce a weighted pairwise objective that encourages the neural encoder to mimic the kernel similarities. The weighting prioritizes examples where the model deviates most from the kernel signal, ensuring the encoder focuses on its largest errors. 
+
+## 2. Background 
+
+2.1. Signal Temporal Logic 
+
+Signal Temporal Logic (STL) (Maler and Niˇ ckovi´ c, 2004) is a linear-time temporal logic for specifying properties of real-valued trajectories over dense time domains. A trajectory (or signal) is a function ξ : I → D, where I ⊆ R≥0 is a time interval and D ⊆ Rk is the state space. We denote by T the space of admissible trajectories and by F the set of well-formed STL formulae. The syntax of STL is given by φ ::= ⊤ | π | ¬ φ | φ1 ∧ φ2 | φ1 U[a,b ] φ2,where π is an atomic predicate of the form fπ(x) ≥ 0, ¬ and ∧ are Boolean connectives, and U[a,b ] is the time-bounded until operator, from which the eventually F[a,b ]φ ≡ ⊤ U[a,b ] φ
+
+and always G[a,b ] ≡ ¬ F[a,b ]¬φ operators are derived. STL admits both Boolean and quantitative semantics (Appendix A); the boolean se-mantics determines whether a trajectory ξ satisfies a formula φ at time t; the quantitative 
+
+> 2Distilling Formal Logic into Neural Spaces
+
+semantics, called robustness and denoted ρ(φ, ξ, t ) ∈ R, measures the degree of satisfaction or violation at time t. In what follows, when t = 0 we use the shortcut notation ρ(φ, ξ )to indicate ρ(φ, ξ, 0). Positive robustness implies satisfaction, negative robustness implies violation, and the magnitude quantifies the distance from the satisfaction boundary. 
+
+2.2. Semantic-preserving embeddings for Signal Temporal Logic 
+
+The quantitative semantics enables a functional view of specifications: each formula φ ∈ F 
+
+can be interpreted as a real-valued function over trajectories, Φ( φ) := ρ(φ, ·). Fixing a probability measure μ0 over T , this induces the representation Φ( φ) ∈ L2(T , μ 0) and a semantic similarity measure defined via the inner product: 
+
+k(φi, φ j ) = ⟨Φ( φi), Φ( φj )⟩μ0 =
+
+Z
+
+> T
+
+ρ(φi, ξ )ρ(φj , ξ ) dμ 0(ξ). (1) This construction defines a positive-definite kernel over F and embeds STL specifications into a Reproducing Kernel Hilbert Space (RKHS), where proximity reflects behavioural similarity over the trajectory distribution μ0 rather than lexical matching. In practice, the integral is approximated via Monte Carlo sampling over trajectories. Cosine normalization and exponential mappings are typically applied to obtain a scale-invariant RBF kernel (Appendix A). The resulting geometry admits a behavioural inter-pretation: the distance between the embeddings of two formulae measures disagreement in expected robustness, providing a continuous notion of semantic similarity grounded in system behaviour. 
+
+2.3. Kernel embedding inversion and coverage limitations 
+
+From the definition of STL kernel (Equation 1), a continuous representation k(φ) ∈ RD of a formula φ ∈ F can be obtained by fixing a (possibly random) set of D anchor formulae 
+
+{φj }Dj=1 and devising the vector k(φ) = [ k(φ, φ j )] D−1 
+
+> j=0
+
+. Then, if we want to map another specification φ′ ∈ F in the same latent space, allowing meaningful comparison of the result-ing embeddings, we need to rely on the same anchor set to get k(φ′) = [ k(φ′, φ j )] D−1 
+
+> j=0
+
+. Hence, the resulting representation is not intrinsic to the formula itself, but defined in relation to a coordinate system induced by the anchor set. Inverting such robustness-based embed-dings has been explored via large-scale nearest-neighbour retrieval over ∼ 10 7 moderate-complexity formulae (Saveri and Bortolussi, 2024), and Transformer decoders trained on 
+
+∼ 10 5 examples (Candussio et al., 2025). Both approaches rely on a finite anchor set that defines the span of the semantic space they can represent. 
+
+2.4. Neural encoders and pooling strategies 
+
+In principle, embeddings of symbolic expressions can be learned with neural networks (Al-lamanis et al., 2018; Feng et al., 2020). A parametric encoder fθ : S → Rd can be trained to map each symbolic object s ∈ S to a fixed-dimensional vector. Symbolic expressions can be processed with a Transformer (Vaswani et al., 2017), producing token embeddings that capture both local structure and long-range dependencies. To obtain a single embedding for the entire expression, token-level representations can be aggregated via pooling. Typical 
+
+> 3Candussio Sarti Saveri Bortolussi
+
+strategies include averaging the token representations ( mean pooling ) or using a designated token representation (e.g., the special start-of-sequence tokens [CLS] and [BOS] ), which is explicitly trained to summarize the sequence and capture its global contextual information (Devlin et al., 2019; Radford and Narasimhan, 2018; Reimers and Gurevych, 2019). 
+
+## 3. Related works 
+
+3.1. Kernel-guided neural representation learning 
+
+Learning neural embeddings that preserve the geometry of a target kernel has been ex-plored under the umbrella of kernel distillation and metric supervision . In this framework, the kernel defines pairwise similarities between inputs, which the neural encoder is trained to reproduce in its latent space (Park et al., 2019). Representation distillation approaches have been proposed in various domains, e.g., convolutional networks (Jones et al., 2019) and Neural Tangent Kernels (Mahowald et al., 2026). Theoretical analyses indicate that similarity-preserving learning on a hypersphere can approximate the leading eigenspace of a kernel operator (Lee et al., 2025). Continuous kernel similarities thus act as soft supervi-sion, allowing neural encoders to internalize the semantic geometry induced by the kernel and realize a finite-dimensional approximation of the underlying RKHS. Unlike contrastive objectives, this approach enforces global consistency with the semantic structure rather than only relative discrimination (Zbontar et al., 2021). 
+
+3.2. Neural architectures and projection heads for symbolic representation 
+
+In modern self-supervised contrastive learning frameworks such as SimCLR (Chen et al., 2020), BYOL (Grill et al., 2020), MoCo v2 (Liu et al., 2024), decoupling structural encoding from metric alignment is an established strategy. These frameworks typically employ a deep backbone for syntax-aware feature extraction and a learnable projection head to map these features onto a target latent space for metric comparisons. Inspired by these techniques, we adopt a similar separation to align neural structural representations with the continuous semantic geometry induced by the robustness kernel, ensuring the backbone retains logical compositionality while the projection enforces semantic consistency. 
+
+## 4. Methodology 
+
+Our goal is to learn a neural encoder fθ : F → SD−1, where D is the dimensionality of the embedding space, that maps STL specifications φi, φ j ∈ F to latent representations ei, e j ,such that their dot product approximates the STL kernel similarity from Equation 1: 
+
+⟨ei, e j ⟩ ≊ k(φi, φ j )Although the kernel k(·, ·) implicitly defines a mapping into a (theoretically) infinite-dimensional RKHS, the encoder fθ(·) learns a finite D-dimensional representation that approximates the pairwise semantic relationships of this space. This is achieved via a 
+
+weighted geometric alignment loss (see Section 4.1), promoting semantic agreement under the STL kernel. As a result, formulae with high semantic similarity are encouraged to 
+
+> 4Distilling Formal Logic into Neural Spaces
+
+Figure 1: An overview of our proposed approach to distill robustness semantics from a symbolic STL kernel into a Transformer-based encoder for efficient inference. lie close on the hypersphere, while semantically dissimilar ones are driven toward near-orthogonal positions. 
+
+4.1. Weighted geometric alignment loss 
+
+The training process aligns latent representation z of a formula φ produced by a Transformer-based encoder fθ(·) with the geometric structure induced by a semantic kernel k(φ, φ ref ). Unlike standard contrastive approaches that use binary labels 1, our framework treats the kernel value Kij = k(φi, φ j ) as a continuous target in a regression task. Given a batch B of formulae, we define the kernel-weighted contrastive loss as: 
+
+L = 1
+
+B2
+
+> B
+
+X
+
+> i=1
+> B
+
+X
+
+> j=1
+
+wij · (Kij − Sij )2
+
+where Kij = k(φi, φ j ) ∈ [0 , 1] is the STL kernel similarity, and Sij = ⟨ei, e j ⟩ is the dot product between the L2-normalized embeddings e = fθ(φ)/∥fθ(φ)∥.While cosine similarity Sij lies in [ −1, 1], the kernel Kij is non-negative (2.2, Appendix A). This apparent discrepancy is resolved geometrically: pairs of semantically unrelated formulae ( Kij ≈ 0) are driven toward orthogonality on the hypersphere ( Sij ≈ 0), resulting in maximum logical disagreement corresponding to null similarity. This ensures the latent geometry remains consistent with the probabilistic agreement formulation of the STL kernel. The weight wij serves as a dynamical focal mechanism, prioritizing pairs in which the Transformer’s structural understanding deviates most from the kernel semantics: 
+
+wij = min 
+
+ |Kij − Sij |γ
+
+Ei,j ∈B [|Kij − Sij |γ ] , C 
+
+
+
+|Kij − Sij |γ amplifies the gradient for pairs exhibiting high semantic misalignment, while Ei,j ∈B [|Kij − Sij |γ ] normalizes this quantity relative to the current batch average 
+
+> 1. Pairs are either positive if they match or negative if they do not.
+> 5Candussio Sarti Saveri Bortolussi
+
+error, stabilizing the learning signal. The clamping operation caps the maximum allowed influence of any pair to a constant C, preventing gradient instabilities for outlier values. The parameter γ controls the focal mechanism, with high values forcing the encoder to converge faster on challenging pairs. The weighting does not affect the target geometry but modulates gradient allocation during training. 
+
+4.2. Encoder module 
+
+The encoder fθ(φ) maps discrete STL syntax into a continuous latent space using a deep Transformer-based feature extractor and a non-linear MLP projection head. 
+
+Transformer encoder To capture the hierarchical and long-range dependencies inher-ent in STL specifications, we employ a 12-layer Transformer with 16 attention heads per layer. Since the semantics of STL formulae depend on hierarchical structures, we employ learned positional embeddings to encode the relative precedence of operators. This allows the model to effectively distinguish permutations with identical symbols but different se-mantics. 2 Conversely, the model should remain invariant to permutations that preserve semantics, such as the commutativity of logical operators. 
+
+Pooling Transformer-based classifiers typically use special designated tokens (e.g., [CLS] 
+
+or [BOS] ) trained end-to-end to aggregate sequence information into a bottleneck represen-tation (Devlin et al., 2019; Radford and Narasimhan, 2018; Reimers and Gurevych, 2019). We evaluate three pooling strategies to summarize the Transformer’s output before passing it to the final projection: mean, [CLS] and [BOS] pooling (2.4). Concretely, let H ∈ RN ×D denote the sequence of hidden states from the final Trans-former layer where N is the sequence length and D is the embedding dimension, and 
+
+M ∈ { 0, 1}N the binary attention mask. For [CLS] and [BOS] pooling, the representa-tion is directly taken from the first token. For mean pooling, the attention mask is used to ensure only valid token positions are included, ignoring padding. 
+
+e[CLS] = e[BOS] = H1 ∈ RD. emean =
+
+PNi=1 Hi · Mi
+
+PNi=1 Mi
+
+∈ RD (2) 
+
+MLP projector The embedding e pooled using one of the above strategies is mapped to the final latent manifold Z via a two-layer MLP with a bottleneck architecture: 
+
+z = MLP( e) = W2 · LayerNorm( σ(W1 · e + b1)) + b2,
+
+where σ is the GELU activation function (Hendrycks and Gimpel, 2016), providing smooth non-linearities well-suited to the continuous gradients of STL robustness. The first linear layer W1 ∈ RD×D/ 2 projects the D = 1024-dimensional input to a 
+
+D/ 2 = 512-dimensional bottleneck, forcing the encoder to compress information needed to reproduce the STL kernel similarities and hence promoting the filtering of irrelevant details while retaining semantic structure. Layer Normalization (LayerNorm) is applied to stabilize the feature distribution before the final projection.               
+
+> 2. For example, always eventually φmeans that φwill happen infinitely often (recurrence), while
+> eventually always φmeans that φwill be always true from a certain point on (persistence).
+> 6Distilling Formal Logic into Neural Spaces
+
+The second layer W2 ∈ RD/ 2×D maps back to the target embedding dimension, and the output is L2-normalized onto the unit hypersphere SD−1:
+
+e = z
+
+∥z∥ = fθ(φ)
+
+∥fθ(φ)∥ .
+
+Constraining e to the manifold Z ⊂ SD−1 ensures that the dot product ⟨ei, e j ⟩ directly computes the cosine similarity between formulae, allowing the latent space to faithfully encode the quantitative kernel semantics. At the same time, the hyperspherical geometry prevents collapse of the embedding space and promotes uniform utilization of all dimensions, maintaining expressive capacity while preserving semantic relationships. 
+
+## 5. Experimental setup 
+
+Dataset composition The training and test sets are derived from the seeds in Candussio et al. (2025) through the augmentation pipeline detailed in Appendix B. For each seed formula, we generate: (i) lexically complex formulas with equivalent semantics (10.4%), (ii) parametric perturbations altering numerical values of thresholds and temporal bounds while keeping structure (43.4%), and (iii) hybrid items combining structural and semantic changes (45.7%). This stratification ensures the model learns to capture semantic similarity across varying syntactic and quantitative modifications, resulting in a total of 3.3M formulae. 
+
+Training setup The architecture described in Section 4 is trained using the kernel-alignment loss (Section 4.1). Optimization is performed with AdamW (Loshchilov and Hutter, 2017) at a learning rate of 1 · 10 −5, using bf16 mixed-precision and gradient accu-mulation over 4 steps, resulting in an effective batch size of 512. Formulae are tokenized as in Candussio et al. (2025) 3, with a maximum sequence length of 512 tokens. The STL semantic kernel is computed online per mini-batch during the forward pass, avoiding the prohibitive memory overhead of pre-computing a full Gram matrix while al-lowing the loss to operate on the current embeddings. Training is conducted for 5 epochs, while monitoring the kernel alignment and embedding distribution on the hypersphere. 
+
+Training metrics We quantify the quality of learned representations by measuring their faithfulness in reproducing the semantic STL kernel geometry. Since the kernel induces an inner product in the Hilbert space (Section 2.2), a correct embedding should preserve both pairwise similarities and the global distribution of representations. We report three com-plementary metrics: the kernel-weighted semantic loss (Section 4.1), kernel alignment , and embeddings’ uniformity . Kernel alignment is the cosine similarity between the vectorized kernel and the neural similarity matrices, ranging from 0 to 1, with higher values indicating better preservation of semantic structure. Uniformity (Wang and Isola, 2022) quantifies how well the embeddings are spread on the hypersphere, with values in [ −4, 0]; 0 indicates complete collapse, whereas −4 corresponds to maximal uniform distribution and optimal separation of semantic content (see Appendix C for definitions).   
+
+> 3. In the [CLS] scenario, a special control token is added to serve as a representation bottleneck.
+> 7Candussio Sarti Saveri Bortolussi
+
+## 6. Results 
+
+6.1. Kernel distillation adherence 
+
+Using the training metrics defined above, we find that all three pooling strategies (mean, 
+
+[CLS] , and [BOS] ) converge to high adherence values, demonstrating the robustness of our proposed distillation framework. Kernel alignment consistently surpasses 0.9 across configurations, indicating that learned representations accurately reflect kernel similarities. We also find that the uniformity metric stabilizes around -3.0, suggesting that formulae embeddings are spread across the hypersphere to avoid dimensional collapse. 
+
+Figure 2: Evolution of training (top) and validation (bottom) metrics over approximately 30,000 training steps for the three pooling strategies ( [CLS] , mean, and [BOS] ). The left and center panels of Figure 2 illustrate the steady minimization of the geometric alignment loss and the corresponding increase in kernel alignment ( > 0.9), demonstrating that the encoder effectively internalizes the target semantic geometry. Validation metrics closely mirror training performance, confirming strong generalization to unseen formulae without syntactic overfitting. The right panels show the uniformity score stabilizing around 
+
+−2.4 on the validation set, indicating that the representations maintain a well-distributed hyperspherical latent space, avoiding dimensional collapse. Across all configurations, [CLS] 
+
+pooling (in blue) consistently exhibits the fastest and most stable convergence. 
+
+6.2. Semantic agreement 
+
+To evaluate whether the trained encoder recovers STL kernel semantics, we compare neural cosine similarity with the corresponding STL kernel value on a test set of logically equivalent formula pairs ( ≈ 3000 examples). For each pair ( φ1, φ 2), we compute the mean absolute error (MAE) between the neural and kernel-based metrics, with lower values indicating stronger alignment. As baselines, we employ random formulae from the test set ( Non-equivalent ), as well as lexically similar but semantically distinct formulae, i.e. selected by taking thosw with the smallest Edit distance and kernel similarity < 0.7 ( Lexically Sim. ). Both neural and kernel distances are normalized by their respective maximum values for intuitive comparison across formula categories. As shown in Table 1, the model assigns high similarity to equivalent pairs (0 .966) and low similarity to non-equivalent ones (0 .182). Crucially, it resists Lexically Sim. hard negatives 
+
+> 8Distilling Formal Logic into Neural Spaces
+
+Table 1: Semantic agreement evaluation for [CLS] pooling.                   
+
+> Metric Equivalent Non-equivalent Lexically Sim.
+> Neural similarity 0.966 0.182 0.308 Kernel similarity 0.997 0.170 0.225 MAE (semantic gap) 0.034 0.072 0.112 Relative neural distance 0.137 0.833 0.770 Relative kernel distance 0.105 0.830 0.775
+
+(0 .308), proving that the encoder successfully maps discrete syntax into a continuous space that faithfully reflects true logical semantics. 
+
+6.3. Efficiency analysis 
+
+We measure the embedding time for computing a vector representation for each formula, and the similarity time for comparing two embedded formulae, capturing different scalability properties for similarity measurements. 
+
+Embedding time The STL kernel has complexity O(BN P ), where B is the number of formulae, N is the number of signals in Monte Carlo evaluation, and P = 1000 the number of estimation points (Appendix A). The neural encoder complexity is O(BL 2), where L is the fixed sequence length. While these trends follow directly from the theoretical complexities, results in Table 2 show that the kernel’s memory footprint grows linearly with N P , whereas Transformer embeddings remain invariant to N P and demonstrate substantial gains in both runtime and memory efficiency across all tested signal counts (as shown in Appendix D). Table 2: Embedding efficiency comparison ( B = 2000) on a NVIDIA A100 80GB GPU. 
+
+loaded : inference time for a pre-loaded model; full also includes model loading.                           
+
+> Metric Kernel Transformer
+> N= 500 1000 2000 4000 8000 16000 loaded full
+> Time (s) 2.18 3.03 4.77 8.36 17.08 48.86 2.17 3.56 RAM (GB) 4.91 8.74 16.46 31.70 62.38 123.38 1.54 1.71
+
+Pairwise similarities computation Computing pairwise similarities over a batch of B
+
+formulae requires constructing a B × B matrix. However, the computational cost per entry differs substantially. The STL kernel requires computing inner products between robustness vectors over N sampled signals, each with P points, yielding a O(B2N P ) complexity. In contrast, the neural encoder produces fixed-dimensional embeddings e ∈ SD−1, and pairwise similarities reduce to a single matrix multiplication, with complexity O(B2D) and efficient GPU implementation. Since typically D ≪ N · P , the neural approach yields significantly lower latency despite the same quadratic scaling in B (see Figures of Appendix D). 
+
+6.4. Probing average robustness and satisfaction 
+
+To verify that the learned embeddings capture quantitative STL semantics beyond struc-tural cues, we freeze the encoder and train a lightweight regressor on top of the L2-
+
+> 9Candussio Sarti Saveri Bortolussi
+
+normalized representations to predict two scalar quantities for each formula φ: the average robustness ¯ ρ(φ) and the satisfaction probability psat (φ), both computed over 1000 signals sampled from a fixed probability distribution μ0 on trajectories. As a reference, we repeat the same experiment using rows of the STL kernel Gram matrix as input features. In both settings, we train the same two-layer MLP with MSE loss, ensuring architectural symme-try between neural and kernel-based representations 4. Evaluation on unseen formulae is performed using both Pearson correlation r and mean absolute error (MAE) where the predicted values, where the predicted values ˆ y are the outputs of a lightweight probe MLP applied to the embeddings, and the true targets y are the quantities computed from 1000 sampled signals per formula: the average robustness ¯ ρ(φ) or the satisfaction probability 
+
+psat (φ). The neural embeddings achieve r = 0 .910 and MAE = 0 .399 for robustness, and 
+
+r = 0 .947 and MAE = 0 .062 for satisfaction, compared to r = 0 .999 and MAE = 0 .064, and 
+
+r = 0 .994 and MAE = 0 .023 obtained using kernel features. The high correlations and low MAE indicate that the learned embedding space preserves most of the STL quantitative semantics while providing a substantially more compact and efficient representation. 
+
+6.5. Decoding neural embeddings 
+
+To address the embedding inversion problem (Section 2.3), we investigated whether original symbolic formulae can be reconstructed directly from our frozen neural representations using a decoder-only Transformer analogous to that of Candussio et al. (2025). To explicitly test the structural and semantic richness of the learned latent space, we deliberately restricted the decoder’s training to 5 epochs. 5 If the continuous embedding faithfully captures the formulae semantics, a downstream decoder should require a significantly reduced training budget to perform the inversion. As in previous sections, we measure the semantic dis-crepancy between original and decoded formulae from their robustness vectors ρ(φ) ∈ RM ,computed by taking a set of M signals Ξ = {ξi}Mi=1 sampled from μ0 as ρ(φ)i = ρ(φ, ξ i). Intuitively, if the robustness vectors of two formulae are similar, it means that the speci-fications behave similarly on the trajectories in Ξ, providing a fast approximation of the semantic similarity between formulae. Even under our strict computational budget, the decoder trained on frozen representations achieved a median cosine similarity of 0.8688 and an L2-distance of 2.1766. For reference, the Candussio et al. (2025) baseline reports median cosine 0.926–0.985 and median L2-distance 12–28. Despite the smaller distance due to dif-ferent scaling, the high cosine similarity shows that our embeddings capture most semantic information, enabling efficient inversion with far fewer training steps than the baseline. 
+
+## 7. Conclusions 
+
+In this work, we present a framework to distill the semantics of robustness-based kernels into Transformer-based models, and demonstrate its application to Signal Temporal Logic (STL) formulae. While standard kernels provide accurate behavioural comparisons, they are computationally intensive, anchor set-dependent, and inherently non-invertible. We 
+
+> 4. This baseline differs from classical kernel ridge regression, as we apply a parametric regressor to kernel-derived features rather than solving the closed-form RKHS regression problem. 5. This corresponds to a quarter of the reference baseline by Candussio et al. (2025).
+> 10 Distilling Formal Logic into Neural Spaces
+
+show that our procedure instead produces embeddings that faithfully preserve semantic similarity at a fraction of the runtime cost. We also demonstrate that the resulting embeddings are not only semantically rich but also invertible: a decoder used to invert kernel embeddings can rapidly learn to reconstruct original formulae from the distilled latent space, showing that the embedding captures rich structural and semantic information about the underlying logic. Overall, our framework provides a practical and scalable method for reasoning over STL specifications, bridging formal symbolic representations and continuous vectorial embeddings, while preserving the ability to perform formula comparison, retrieval, and reconstruction. Future work will investigate extending this distillation approach to diverse string-based kernels, broadening its scope beyond temporal logics to test the generality of our approach. 
+
+> 11 Candussio Sarti Saveri Bortolussi
+
+## References 
+
+Takumi Akazaki, Shuang Liu, Yoriyuki Yamagata, Yihai Duan, and Jianye Hao. Falsi-fication of Cyber-Physical Systems Using Deep Reinforcement Learning , page 456–465. Springer International Publishing, 2018. ISBN 9783319955827. doi: 10.1007/ 978-3-319-95582-7 27. URL http://dx.doi.org/10.1007/978-3-319-95582-7_27 .Miltiadis Allamanis, Marc Brockschmidt, and Mahmoud Khademi. Learning to represent programs with graphs, 2018. URL https://arxiv.org/abs/1711.00740 .Alain Berlinet and Christine Thomas-Agnan. Reproducing Kernel Hilbert Space in Proba-bility and Statistics . 01 2004. ISBN 978-1-4613-4792-7. doi: 10.1007/978-1-4419-9096-9. Giuseppe Bombara and Calin Belta. Offline and online learning of signal temporal logic formulae using decision trees. ACM Trans. Cyber-Phys. Syst. , 5(3), March 2021. ISSN 2378-962X. doi: 10.1145/3433994. URL https://doi.org/10.1145/3433994 .Luca Bortolussi, Giuseppe Maria Gallo, Jan Kˇ ret´ ınsk´ y, and Laura Nenzi. Learning model checking and the kernel trick for signal temporal logic on stochastic processes, 2022. URL 
+
+https://arxiv.org/abs/2201.09928 .Sara Candussio, Gaia Saveri, Gabriele Sarti, and Luca Bortolussi. Bridging Logic and Learn-ing: Decoding Temporal Logic Embeddings via Transformers , page 3–18. Springer Nature Switzerland, September 2025. ISBN 9783032060969. doi: 10.1007/978-3-032-06096-9 1. URL http://dx.doi.org/10.1007/978-3-032-06096-9_1 .Ting Chen, Simon Kornblith, Mohammad Norouzi, and Geoffrey Hinton. A simple frame-work for contrastive learning of visual representations. In Proceedings of the 37th Inter-national Conference on Machine Learning , ICML’20. JMLR.org, 2020. Jacob Devlin, Ming-Wei Chang, Kenton Lee, and Kristina Toutanova. Bert: Pre-training of deep bidirectional transformers for language understanding. In North American Chapter of the Association for Computational Linguistics , 2019. URL https://api. semanticscholar.org/CorpusID:52967399 .Lijun Dong, Hong Yao, Dan Li, Yi Wang, Shengwen Li, and Qingzhong Liang. Im-proving graph neural network via complex-network-based anchor structure. Knowledge-Based Systems , 233:107528, 2021. ISSN 0950-7051. doi: https://doi.org/10.1016/j. knosys.2021.107528. URL https://www.sciencedirect.com/science/article/pii/ S0950705121007905 .Georgios E. Fainekos and George J. Pappas. Robustness of temporal logic specifications. In Proceedings of the First Combined International Conference on Formal Approaches to Software Testing and Runtime Verification , FATES’06/RV’06, page 178–192, Berlin, Heidelberg, 2006. Springer-Verlag. ISBN 3540496998. doi: 10.1007/11940197 12. URL 
+
+https://doi.org/10.1007/11940197_12 .Zhangyin Feng, Daya Guo, Duyu Tang, Nan Duan, Xiaocheng Feng, Ming Gong, Linjun Shou, Bing Qin, Ting Liu, Daxin Jiang, and Ming Zhou. Codebert: A pre-trained model 
+
+> 12 Distilling Formal Logic into Neural Spaces
+
+for programming and natural languages, 2020. URL https://arxiv.org/abs/2002. 08155 .Tianyu Gao, Xingcheng Yao, and Danqi Chen. Simcse: Simple contrastive learning of sentence embeddings, 2022. URL https://arxiv.org/abs/2104.08821 .Jean-Bastien Grill, Florian Strub, Florent Altch´ e, Corentin Tallec, Pierre H. Richemond, Elena Buchatskaya, Carl Doersch, Bernardo Avila Pires, Zhaohan Daniel Guo, Moham-mad Gheshlaghi Azar, Bilal Piot, Koray Kavukcuoglu, R´ emi Munos, and Michal Valko. Bootstrap your own latent a new approach to self-supervised learning. In Proceedings of the 34th International Conference on Neural Information Processing Systems , NIPS ’20, Red Hook, NY, USA, 2020. Curran Associates Inc. ISBN 9781713829546. Mohammadhosein Hasanbeig, Daniel Kroening, and Alessandro Abate. Deep reinforcement learning with temporal logics. In International Conference on Formal Modeling and Analysis of Timed Systems , 2020. URL https://api.semanticscholar.org/CorpusID: 221305630 .Dan Hendrycks and Kevin Gimpel. Gaussian error linear units (gelus). arXiv: Learning ,2016. URL https://api.semanticscholar.org/CorpusID:125617073 .Geoffrey E. Hinton, Oriol Vinyals, and Jeffrey Dean. Distilling the knowledge in a neu-ral network. ArXiv , abs/1503.02531, 2015. URL https://api.semanticscholar.org/ CorpusID:7200347 .Corinne Jones, Vincent Roulet, and Zaid Harchaoui. Kernel-based translations of convolu-tional networks, 2019. URL https://arxiv.org/abs/1903.08131 .Chungpa Lee, Sehee Lim, Kibok Lee, and Jy yong Sohn. On the similarities of embeddings in contrastive learning, 2025. URL https://arxiv.org/abs/2506.09781 .Xiao Li, Cristian-Ioan Vasile, and Calin Belta. Reinforcement learning with temporal logic rewards, 2017. URL https://arxiv.org/abs/1612.03471 .Shipeng Liu, Liang Zhao, Deng feng Chen, and Zhanping Song. Contrastive learning for image complexity representation. ArXiv , abs/2408.03230, 2024. URL https://api. semanticscholar.org/CorpusID:271720179 .Ilya Loshchilov and Frank Hutter. Decoupled weight decay regularization. In International Conference on Learning Representations , 2017. URL https://api.semanticscholar. org/CorpusID:53592270 .Jamie Mahowald, Brian Bell, Alex Ho, and Michael Geyer. Efficient analysis of the dis-tilled neural tangent kernel. 2026. URL https://api.semanticscholar.org/CorpusID: 285541139 .Oded Maler and D. Niˇ ckovi´ c. Monitoring temporal properties of continuous signals. In FORMATS/FTRTFT , 2004. URL https://api.semanticscholar.org/CorpusID: 15642684 .
+
+> 13 Candussio Sarti Saveri Bortolussi
+
+Wonpyo Park, Dongju Kim, Yan Lu, and Minsu Cho. Relational knowledge distillation. 2019 IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) , pages 3962–3971, 2019. URL https://api.semanticscholar.org/CorpusID:131765296 .Alec Radford and Karthik Narasimhan. Improving language understanding by generative pre-training. 2018. URL https://api.semanticscholar.org/CorpusID:49313245 .Vasumathi Raman, Alexandre Donz´ e, Dorsa Sadigh, Richard M. Murray, and Sanjit A. Seshia. Reactive synthesis from signal temporal logic specifications. In Proceedings of the 18th International Conference on Hybrid Systems: Computation and Control , HSCC ’15, page 239–248, New York, NY, USA, 2015. Association for Computing Machinery. ISBN 9781450334334. doi: 10.1145/2728606.2728628. URL https://doi.org/10.1145/ 2728606.2728628 .Nils Reimers and Iryna Gurevych. Sentence-BERT: Sentence embeddings using Siamese BERT-networks. In Kentaro Inui, Jing Jiang, Vincent Ng, and Xiaojun Wan, edi-tors, Proceedings of the 2019 Conference on Empirical Methods in Natural Language Processing and the 9th International Joint Conference on Natural Language Process-ing (EMNLP-IJCNLP) , pages 3982–3992, Hong Kong, China, November 2019. As-sociation for Computational Linguistics. doi: 10.18653/v1/D19-1410. URL https: //aclanthology.org/D19-1410/ .Gaia Saveri and Luca Bortolussi. Retrieval-augmented mining of temporal logic specifica-tions from data, 2024. URL https://arxiv.org/abs/2405.14355 .Gaia Saveri, Laura Nenzi, Luca Bortolussi, and Jan Kˇ ret´ ınsk´ y. stl2vec: Semantic and interpretable vector representation of temporal logic, 2024. URL https://arxiv.org/ abs/2405.14389 .Ashish Vaswani, Noam Shazeer, Niki Parmar, Jakob Uszkoreit, Llion Jones, Aidan N. Gomez, Lukasz Kaiser, and Illia Polosukhin. Attention is all you need. In Neural Infor-mation Processing Systems , 2017. URL https://api.semanticscholar.org/CorpusID: 13756489 .Tongzhou Wang and Phillip Isola. Understanding contrastive representation learning through alignment and uniformity on the hypersphere, 2022. URL https://arxiv.org/ abs/2005.10242 .Jure Zbontar, Li Jing, Ishan Misra, Yann LeCun, and St´ ephane Deny. Barlow twins: Self-supervised learning via redundancy reduction. ArXiv , abs/2103.03230, 2021. URL 
+
+https://api.semanticscholar.org/CorpusID:232110471 .
+
+> 14 Distilling Formal Logic into Neural Spaces
+
+## Appendix A. Kernel Implementation and STL Semantics 
+
+A.1. Kernel Implementation 
+
+The semantic inner product defined in Section 2.2 involves an integral over the signal space 
+
+T with respect to the measure μ0. In practice, this distance in the semantic space is approximated via Monte Carlo sampling over a set of n stochastic signals {ε1, ..., ε n} ∼ μ0:
+
+⟨ρ(φi, ·), ρ (φj , ·)⟩μ0 ≈ 1
+
+n
+
+> n
+
+X
+
+> t=1
+
+ρ(φi, ε t) · ρ(φj , ε t)To ensure scale invariance, the original formulation considers the cosine similarity of the robustness features in place of their plain dot product. Let || · || denote the L2-norm in the Hilbert space induced by μ0; the normalized similarity k′(·, ·) is computed as: 
+
+k′(φi, φ j ) = ⟨ρ(φi, ·), ρ (φj , ·)⟩μ0
+
+|| ρ(φi, ·)|| · || ρ(φj , ·)|| ≈
+
+Pnt=1 ρ(φi, ε t) · ρ(φj , ε t)
+
+pP nt=1 ρ(φi, ε t)2 · pP nt=1 ρ(φj , ε t)2
+
+Finally, the similarity is projected into a Radial Basis Function (RBF) space through an exponential transformation. This maps the angular distance between formulae into a continuous spectrum k(·, ·) ∈ [0 , 1]: 
+
+k(φi, φ j ) = exp − 2 − 2 · k′(φi, φ j )2σ2
+
+!
+
+The bandwidth parameter σ2 (set by default to 0.2) controls the resolution of the semantic manifold. Lower values of σ2 increase the ”sharpness” of the kernel, assigning high similarity scores only to formulae that exhibit near-identical behaviour over the sampled trajectories. 
+
+A.2. Boolean and Quantitative Semantics of STL 
+
+Let ξ : [0 , T ] → Rn be a trajectory and φ an STL formula. STL admits two complementary semantics: 
+
+Boolean semantics The formula φ is satisfied by ξ at time t if ξ |=t φ. For an atomic predicate μ = xi ≥ θ:
+
+ξ |=t μ ⇔ xi(t) ≥ θ. 
+
+Boolean connectives and temporal operators are interpreted in the standard way: 
+
+ξ |=t ¬φ ⇔ ξ̸ |=t φ, ξ |=t φ1 ∧ φ2 ⇔ ξ |=t φ1 and ξ |=t φ2,ξ |=t φ1 ∨ φ2 ⇔ ξ |=t φ1 or ξ |=t φ2,ξ |=t F[a,b ]φ ⇔ ∃ t′ ∈ [t + a, t + b] : ξ |=t′ φ, ξ |=t G[a,b ]φ ⇔ ∀ t′ ∈ [t + a, t + b] : ξ |=t′ φ. 
+
+> 15 Candussio Sarti Saveri Bortolussi
+
+Quantitative semantics (robustness) The robustness ρ(φ, ξ, t ) ∈ R measures the de-gree of satisfaction: 
+
+ρ(μ, ξ, t ) = xi(t) − θ, ρ(¬φ, ξ, t ) = −ρ(φ, ξ, t ),ρ(φ1 ∧ φ2, ξ, t ) = min( ρ(φ1, ξ, t ), ρ (φ2, ξ, t )) , ρ(φ1 ∨ φ2, ξ, t ) = max( ρ(φ1, ξ, t ), ρ (φ2, ξ, t )) ,ρ(F[a,b ]φ, ξ, t ) = max  
+
+> t′∈[t+a,t +b]
+
+ρ(φ, ξ, t ′), ρ(G[a,b ]φ, ξ, t ) = min  
+
+> t′∈[t+a,t +b]
+
+ρ(φ, ξ, t ′).
+
+We write ρ(φ, ξ ) := ρ(φ, ξ, 0) when evaluating at t = 0. Positive robustness implies satisfaction, negative robustness implies violation, and the magnitude quantifies the distance from the satisfaction boundary. 
+
+## Appendix B. Dataset Construction 
+
+To ensure the training and testing datasets effectively stress the encoder’s recursive under-standing, we employed an object-based augmentation strategy acting directly on the Signal Temporal Logic (STL) Abstract Syntax Tree (AST). 
+
+Semantic-preserving recursive augmentation pipeline The core of the strategy is a stochastic priority cascade operating on AST nodes. For each node, a transformation is selected based on the probability distribution P (·) detailed in Table 3. To ensure structural complexity, the pipeline implements a forcing loop: if a generated variant does not reach at least the target minimum depth (set to d ≥ 5), the augmentation is re-attempted until the complexity threshold is met. Table 3: Semantic-preserving augmentation rules. Notation: □ (always), ♢ (eventually), U
+
+(until). 
+
+Rule P (·) Mathematical Transformation 
+
+Not -injection 0.1% φ → ¬¬ φ (if parent ̸ = ¬)De Morgan rewriting 9.9% (A ∧ B) → ¬ (¬A ∨ ¬ B) (and dual) Time partitioning 35.0% op I φ → op I1 (op I2 φ), op ∈ { □, ♢} 
+
+Until nesting 25.0% φ → (φ U ψ) or (ψ U φ)Temporal identity 5.0% φ → op [0 ,0] φ, op ∈ { □, ♢} 
+
+Distributivity 15.0% □I (A ∧ B) → □I A ∧ □I B (or dual) Predicate inversion 8.0% xi ≤ θ → ¬ (xi > θ )
+
+No change (default) 2.0% φ → φ
+
+Semantic-altering perturbations The pipeline generates variants through a stratified approach . While some variants only undergo structural complication, 65% of the dataset is subjected to semantic shifts that move the satisfaction boundaries. These shifts are applied orthogonally to the structural transformations: a formula may first be logically complicated 
+
+> 16 Distilling Formal Logic into Neural Spaces
+
+to reach the target depth and subsequently perturbed numerically. Perturbations are equally split ( P = 0 .5) between: 
+
+• Vibration: multiplicative noise affecting thresholds ( ±10%) and time bounds ( W ′ ∈
+
+[0 .6 · W, 1.8 · W ]). 
+
+• Shift: additive offsets (∆ ∈ [−6, 6] for thresholds, ∆ ∈ [−15 , 40] for time bounds). This layering ensures that semantically distinct formulae still retain the high syntactic complexity required to stress the encoder. 
+
+Post-serialization refinement Once serialized, three final operations de-correlate sur-face syntax from logic and ensure formula integrity: 
+
+• Duality shift (40% probability): Temporal operators are replaced with their negated duals via regex-based substitution: □[I]A ⇐⇒ ¬♢ [I]¬A.
+
+• Interval consistency: The algorithm strictly enforces the temporal constraint R > L. Following any perturbation, the upper bound is reset as R′ = L′ + W ′, where the new width W ′ is sampled stochastically. 
+
+• Empirical validation: Every formula variant is evaluated against a stochastic dummy signal. This ensures the formula is compatible with the signal’s temporal horizon and does not result in undefined robustness values or empty traces due to excessive nesting or parameter shift. 
+
+## Appendix C. Training metrics in detail 
+
+In our setting, kernel alignment quantifies the global agreement between the semantic similarity induced by the STL kernel matrix K ∈ RB×B and the neural similarity matrix 
+
+S ∈ RB×B obtained from the learned embeddings. Denoting by vec( ·) the flattening operator, we define: kernel alignment( K, S ) = vec( K) · vec( S)
+
+∥vec( K)∥2 · ∥ vec( S)∥2
+
+.
+
+This quantity corresponds to the cosine similarity between the two vectorized Gram matrices. An alignment value of 1 .0 flags that the learned embedding preserves all pair-wise inner products up to a global scaling factor, meaning that the neural representation approximates the geometry of the STL semantic Hilbert space 6.
+
+Uniformity measures how the representations are distributed on the unit hypersphere and serves as a safeguard against representational collapse. Even if pairwise similarities are locally preserved, the embedding may degenerate by concentrating most formulae in a restricted region of the space, reducing the expressive capacity of the representation. 
+
+> 6. While Wang and Isola (2022) defines alignment over discrete positive pairs, our formulation generalizes the concept to a continuous similarity structure, reflecting the graded notion of semantic agreement induced by STL robustness.
+> 17 Candussio Sarti Saveri Bortolussi
+
+Following Wang and Isola (2022), uniformity is defined as the logarithm of the average Gaussian potential over all pairs in the batch: 
+
+U(Z) = log  Ei,j ∈B
+
+exp( −2∥zi − zj ∥22) .
+
+This formulation corresponds to the case t = 2 in Wang and Isola (2022). High uni-formity indicates that the embedding occupies the hypersphere broadly, ensuring that se-mantically distinct specifications are mapped to separable regions of the latent space and preventing many-to-one semantic collapse. Its values range in the extremes [ −4, 0] and can be briefly interpreted as follows: 
+
+U(Z) geometrically interpretation 
+
+0.0 complete collapse zero discriminative power; all formulae are isomorphic 
+
+−1.0 dense clustering poor resolution; distinct logics occupy overlapping regions 
+
+−2.5 reasonable distribution reliable separation of standard temporal properties 
+
+−3.0 good sparsity maximum entropy; preserves fine-grained semantic nuances. 
+
+−4.0 asymptotic limit theoretical maximum spread for d → ∞ with t = 2 The upper bound means complete dimensional collapse since it only happens whether all the embeddings exhibit zero euclidean distance, i.e. 
+
+|| zi − zj || 22 = 0 , ∀i, j ∈ B
+
+This would cause the uniformity to be null: 
+
+U(Z) = log  Ei,j ∈B
+
+exp( −2 · 02) = log ( Ei,j ∈B [exp(0)]) = log(1) = 0 thus we can only observe zero uniformity when the model is unable to discriminate between different formulae, neither in syntactical or in semantic terms. On the opposite, the theoretical lower bound corresponds to a perfectly uniform dis-tribution of points across the hypersphere. Formally, for an infinite number of formulae distributed uniformly according to the surface area measure σd, the uniformity becomes: 
+
+U(Z) = log 
+
+Z
+
+> Sd−1
+
+Z
+
+> Sd−1
+
+exp  −2 · || u − v|| 22
+
+ dσ d(u)dσ d(v)where || u − v|| 22 = || u|| 22 + || v|| 22 − 2uT v = 2 − 2uT v since u, v ∈ S d−1. Thus, the expression reduces to: 
+
+U(Z) = −2 · 2 + log Eu,v ∼σd
+
+exp  2 · 2uT v 
+
+As the dimension d → ∞ , uT v → 0, leading the (empirical) lower bound to: 
+
+U(Z) = −4 + log Eu,v ∼σd [exp(0)] = −4 + log(1) = −4
+
+## Appendix D. Time and memory details 
+
+The benchmarks reported in Tables 4 and 5 were collected to compare the STL kernel and the Transformer-based model. Both approaches were evaluated on the same dataset of STL 
+
+> 18 Distilling Formal Logic into Neural Spaces
+
+formulae and synthetic signals, ensuring comparability. Memory usage accounts for both CPU RAM and GPU VRAM, capturing peak consumption during embedding and similarity computation stages. The selection of formulae is deterministic: for each benchmark run, the first B elements of the dataset are taken and used for computation. No random sampling is performed at this stage, ensuring reproducibility across runs. Each formula is then processed either through the Transformer-based embedding pipeline or via the STL kernel approach. For the 
+
+Transformer pipeline, each formula is tokenized using its tokenizer and forwarded through the trained model to extract embeddings. Formulae were tokenized in batches using a multithreaded DataLoader, and embeddings were extracted via forward passes without gradient computation. Similarity matrices were computed using normalized inner products of embeddings. Memory usage is monitored separately for RAM and VRAM, and timing is measured using GPU-synchronized timers to ensure precise measurement of both the forward pass and similarity computations. Benchmarks are repeated for two scenarios: one where the model is already loaded, and one including the full model loading. For the STL kernel approach, synthetic signals are first sampled to produce N trajectories, each with 1000 points and 3 variables. Formulae are then evaluated over these signals to compute their robustness vectors. The kernel matrix is finally computed as a similarity measure between the robustness vectors. Both memory (RAM + VRAM) and time are recorded, capturing peak consumption during robustness computation and kernel evaluation. All experiments are run on the same hardware setup (an NVIDIA A100 80GB GPU), ensuring a fair comparison between the two methods. Memory usage includes both CPU RAM and GPU VRAM allocations, measured using system-level queries and PyTorch mem-ory tracking. Timing accounts for all GPU synchronization points to avoid underestimating the actual execution time. 
+
+> 19 Candussio Sarti Saveri Bortolussi
+
+Table 4: Embedding times (s) and total memory usage (MB) for STL kernel and Trans-former. Total memory = RAM + VRAM. “Loaded” refers to Transformer with model already initialized; “Full pipeline” includes model loading. 
+
+B N STL Kernel Transformer 
+
+TEmb Mem TEmb (Loaded) Mem (Loaded) TEmb (Full) Mem (Full) 500 500 0.61 2059 0.62 2136 2.06 2914 500 1000 0.83 3061 0.62 2128 1.98 2916 500 2000 1.25 5051 0.62 2128 2.05 2918 500 4000 2.21 8955 0.63 2134 2.02 2918 500 8000 4.53 16995 0.62 2127 1.98 2918 500 16000 12.44 32442 0.62 2126 1.99 2918 1000 500 1.09 3027 1.11 2139 2.53 2911 1000 1000 1.54 4960 1.11 2138 2.54 2911 1000 2000 2.40 8829 1.11 2138 2.53 2910 1000 4000 4.63 16505 1.11 2139 2.48 2910 1000 8000 9.10 32008 1.11 2139 2.47 2909 1000 16000 24.70 62338 1.11 2138 2.56 2910 2000 500 2.18 4907 2.17 2158 3.59 2914 2000 1000 3.03 8737 2.16 2151 3.56 2914 2000 2000 4.77 16464 2.18 2155 3.59 2914 2000 4000 8.36 31696 2.15 2156 3.52 2915 2000 8000 17.08 62384 2.16 2152 3.55 2912 2000 16000 48.86 123384 2.17 2143 3.56 2913 4000 500 4.33 8755 4.45 2163 5.91 2992 4000 1000 6.09 16452 4.41 2162 5.84 2988 4000 2000 9.47 31897 4.42 2163 5.88 2985 4000 4000 17.06 62408 4.38 2162 5.86 2986 4000 8000 34.30 123788 4.42 2158 5.84 2980 4000 16000 232.63 246151 4.46 2157 6.20 2980 Computational scaling of the kernel method and the Transformer-based embedding pipeline. Runtime (Figure D) and memory usage (Figure D) are reported as functions of signal resolution N and batch size B. Projected values (dashed) indicate configurations exceeding memory limits (OOM). 
+
+> 20 Distilling Formal Logic into Neural Spaces
+
+Table 5: Pairwise similarity computation times (s) and total memory usage (MB) for STL kernel and Transformer. Total memory = RAM + VRAM. “Loaded” refers to Transformer with model already initialized; “Full pipeline” includes model loading. Kernel hits OOM for large N .
+
+B N STL Kernel Transformer (Loaded) Transformer (Full) 
+
+TSim Mem TSim Mem TSim Mem 500 500 1.58 2059 0.73 2136 2.04 2914 500 1000 2.50 3061 0.73 2128 1.99 2916 500 2000 4.38 5051 0.73 2128 2.02 2918 500 4000 8.21 8955 0.73 2134 2.02 2918 500 8000 16.81 16995 0.73 2127 1.99 2918 500 16000 40.24 32442 0.73 2126 1.99 2918 1000 500 3.64 3027 1.21 2139 2.52 2911 1000 1000 6.17 4960 1.22 2138 2.53 2911 1000 2000 11.05 8829 1.21 2138 2.52 2910 1000 4000 21.57 16505 1.22 2139 2.47 2910 1000 8000 42.86 32008 1.22 2139 2.45 2909 1000 16000 98.51 62338 1.21 2138 2.56 2910 2000 500 10.54 4907 2.29 2158 3.53 2914 2000 1000 18.33 8737 2.28 2151 3.59 2914 2000 2000 33.87 16464 2.29 2155 3.62 2914 2000 4000 66.37 31696 2.27 2156 3.53 2915 2000 8000 132.29 62384 2.28 2152 3.54 2912 2000 16000 434.57 123384 2.29 2143 3.55 2913 4000 500 32.65 16776 4.59 2163 5.85 2992 4000 1000 60.11 32112 4.55 2162 5.93 2988 4000 2000 114.98 62653 4.53 2155 6.05 2985 4000 4000 227.25 123651 4.51 2156 6.47 2986 4000 8000 552.04 245724 4.58 2152 5.83 2980 4000 16000 1089.28 ∗ 489898 ∗ 4.65 2152 6.01 2980 
+
+## Appendix E. [CLS] , [BOS] and mean pooling comparison 
+
+In Section 4, we introduced three distinct pooling strategies to aggregate the token-level representations produced by the Transformer encoder into a single fixed-dimensional em-bedding. To evaluate the sensitivity of our distillation framework to the chosen aggregation method, we present a detailed semantic understanding evaluation for each strategy. Table 1 (reproduced here from the main text for ease of comparison), Table 7, and Table 8 report the performance of [CLS] , mean, and [BOS] pooling, respectively. Across all metrics, the results demonstrate that the proposed kernel-alignment objective is highly robust to the choice of pooling operation. While [CLS] pooling exhibits a marginally tighter alignment with the target kernel similarities (yielding the lowest Mean Absolute Error of 0.034 on equivalent pairs), both 
+
+> 21 Candussio Sarti Saveri Bortolussi
+
+mean and [BOS] pooling successfully internalize the continuous semantic geometry. All three strategies consistently and effectively separate semantically equivalent formulae from non-equivalent and syntactically similar ones. This confirms that the architectural bottle-neck effectively compresses logical meaning and filters out syntactic noise, regardless of the specific token aggregation heuristic employed. 
+
+> 22 Distilling Formal Logic into Neural Spaces
+
+Table 6: Semantic understanding evaluation for [CLS] pooling (reference). 
+
+Metric Equivalent Non-equivalent Syntactically similar 
+
+Neural similarity 0.966 0.182 0.308 Kernel similarity 0.997 0.170 0.225 MAE (semantic gap) 0.034 0.072 0.112 Relative neural distance 0.137 0.833 0.770 Relative kernel distance 0.105 0.830 0.775 Table 7: Semantic understanding evaluation for mean pooling. 
+
+Metric Equivalent Non-equivalent Syntactically similar 
+
+Neural similarity 0.954 0.201 0.332 Kernel similarity 0.997 0.163 0.221 MAE (semantic gap) 0.044 0.066 0.143 Relative neural distance 0.169 0.833 0.749 Relative kernel distance 0.100 0.837 0.779 Table 8: Semantic understanding evaluation for [BOS] pooling. 
+
+Metric Equivalent Non-equivalent Syntactically similar 
+
+Neural similarity 0.946 0.171 0.280 Kernel similarity 0.997 0.152 0.182 MAE (semantic gap) 0.052 0.070 0.133 Relative neural distance 0.186 0.834 0.794 Relative kernel distance 0.111 0.848 0.818

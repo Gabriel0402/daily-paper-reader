@@ -1,0 +1,341 @@
+Title: Learning to Retrieve Navigable Candidates for Efficient Vision-and-Language Navigation
+
+URL Source: https://arxiv.org/pdf/2602.15724v1
+
+Published Time: Wed, 18 Feb 2026 02:00:29 GMT
+
+Number of Pages: 9
+
+Markdown Content:
+# Learning to Retrieve Navigable Candidates for Efficient Vision-and-Language Navigation 
+
+Shutian Gu 1, Chengkai Huang 1,2 , Ruoyu Wang 1, Lina Yao 1,3 
+
+> 1
+
+University of New South Wales, Sydney, Australia 
+
+> 2
+
+Macquarie University, Sydney, Australia 
+
+> 3
+
+Data61, CSIRO, Sydney, Australia Email: chengkai.huang1@unsw.edu.au 
+
+Abstract —Vision-and-Language Navigation (VLN) requires an agent to follow natural-language instructions and navigate through previously unseen environments. Recent approaches increasingly employ large language models (LLMs) as high-level navigators due to their flexibility and reasoning capability. However, prompt-based LLM navigation often suffers from inef-ficient decision-making, as the model must repeatedly interpret instructions from scratch and reason over noisy and verbose navigable candidates at each step. In this paper, we propose a retrieval-augmented framework to improve the efficiency and stability of LLM-based VLN without modifying or fine-tuning the underlying language model. Our approach introduces retrieval at two complementary levels. At the episode level, an instruction-level embedding retriever selects semantically similar successful navigation trajectories as in-context exemplars, providing task-specific priors for instruction grounding. At the step level, an imitation-learned candidate retriever prunes irrelevant navigable directions before LLM inference, reducing action ambiguity and prompt complexity. Both retrieval modules are lightweight, modular, and trained independently of the LLM. We evaluate our method on the Room-to-Room (R2R) benchmark. Experi-mental results demonstrate consistent improvements in Success Rate, Oracle Success Rate, and SPL on both seen and unseen environments. Ablation studies further show that instruction-level exemplar retrieval and candidate pruning contribute complemen-tary benefits to global guidance and step-wise decision efficiency. These results indicate that retrieval-augmented decision support is an effective and scalable strategy for enhancing LLM-based vision-and-language navigation. 
+
+Index Terms —Vision-language navigation, multimodal repre-sentation 
+
+I. I NTRODUCTION 
+
+Vision-and-Language Navigation (VLN) requires an agent to follow natural language instructions and navigate through discrete viewpoints in a previously unseen environment [1]. The task demands accurate grounding of linguistic cues in visual observations as well as sequential decision-making over long horizons. Recent advances increasingly adopt large language models (LLMs) as high-level navigators [2], [3], formulating VLN as a sequence of language-based reason-ing and action selection steps [4]–[6]. In LLM-based VLN frameworks, the navigator is typically modeled as a language-driven decision module that predicts navigation actions from textual descriptions of the current observation, navigation his-tory, and navigable candidates. This formulation allows LLMs to naturally incorporate long-range instruction context and produce interpretable reasoning traces in natural language [7], [8], making LLM-based navigation a promising direction for embodied decision making. By leveraging the strong reasoning ability and world knowledge encoded in LLMs [9]–[13], these methods enable more flexible decision making and improved generalization, particularly in unseen environments [6], [14]. Despite these strengths, prompt-based navigation with LLMs exhibits notable limitations. In particular, the core challenge no longer lies in visual perception, but in how decisions are made under complex and information-heavy prompts. 
+
+Gap 1: Lack of task-specific priors for instruction un-derstanding. At the beginning of each navigation episode, the LLM is typically required to interpret the instruction and infer appropriate navigation strategies from scratch. Although similar instructions and successful navigation patterns may exist in prior experiences, current approaches do not explicitly leverage such knowledge, placing unnecessary burden on the LLM’s reasoning process [7], [12], [14]. 
+
+Gap 2: Inefficient and noisy candidate-level decision making. At each navigation step, the agent is exposed to a relatively large set of navigable candidates, each accompanied by verbose textual descriptions. The LLM must repeatedly reason over all candidates to select the next action [2], [15], even though many of them are clearly suboptimal or irrelevant given the current state. Requiring the LLM to reason over all candidates increases inference cost and susceptibility to decision errors, especially in unseen environments. A key observation underlying our work is that successful navigation trajectories exhibit strong and reusable decision structure. At the episode level, prior successful trajectories en-code effective instruction grounding and navigation strategies that can serve as useful exemplars for new tasks. At the step level, navigation decisions are highly structured: in most states, only a small subset of candidates aligns with the optimal path, while the majority are clearly suboptimal. Nevertheless, exist-ing LLM-based VLN methods largely ignore these regularities, leaving both instruction understanding and candidate selection to the LLM’s implicit reasoning [2], [15]. As a result, task-relevant structure must be repeatedly rediscovered from raw prompts, leading to inefficient and unstable decisions. Motivated by this observation, we propose a dual-level retrieval framework that augments LLM-based navigation with explicit decision support. Before navigation begins, an 
+
+> arXiv:2602.15724v1 [cs.CV] 17 Feb 2026
+
+instruction-level exemplar retriever selects a small set of se-mantically similar successful trajectories as in-context demon-strations. During navigation, a candidate retriever scores and prunes navigable actions at each step, allowing the LLM to reason over a reduced candidate set. Together, these retrieval modules reduce the reasoning burden on the LLM while preserving its flexibility and interpretability. Both modules are lightweight, modular, and operate independently of the LLM. In particular, the candidate retriever is trained via imitation learning with shortest-path supervision, without modifying or fine-tuning the navigator. In this paper, our contribution can be summarized as fol-lows:  
+
+> •
+
+We introduce an instruction-level exemplar retrieval mechanism for LLM-based vision-and-language naviga-tion, enabling the reuse of successful navigation experi-ences as in-context guidance.  
+
+> •
+
+We propose an imitation-learned candidate retriever that explicitly models action relevance and prunes suboptimal navigable candidates prior to LLM decision making.  
+
+> •
+
+We demonstrate on the R2R benchmark that the proposed dual-level retrieval framework consistently improves nav-igation performance, decision stability, and efficiency, particularly in unseen environments. II. R ELATED WORK 
+
+A. Vision-Language Navigation 
+
+Recent progress in multimodal learning and retrieval [16]– [19] has advanced vision-language representation modeling. Vision-Language Navigation (VLN) has received significant attention in recent years, and a wide range of approaches have been proposed to improve navigation performance and generalization. Early VLN methods primarily rely on su-pervised learning with multimodal encoders [20]–[22] and sequential decision models [23], [24], often integrating local perception with short-term memory or global maps [25], [26]. While effective for well-annotated datasets, these approaches struggle with long-horizon reasoning and generalization to novel environments due to limited task priors and reliance on densely labeled trajectories. Recently, LLM-based VLN has emerged as a promising direction, leveraging large language models to perform embodied decision-making through textual reasoning [5], [27]. These agents transform multimodal inputs into language representations and rely on LLM reasoning to plan action sequences, decompose sub-goals, and apply commonsense knowledge in zero-shot or few-shot settings [7]. Despite their flexibility, such methods largely depend on carefully designed prompts to encode visual observations and navigation history [2], [15], which limits the ability of the agent to learn task priors end-to-end and constrains robust long-horizon performance. Following these mainstream studies, our work builds on the advantages of NavGPT [2], enhancing LLM-based VLN by introducing embedding and candidate retrievers to incor-porate learned task knowledge, reduce reliance on prompt engineering, and improve reasoning fidelity and navigation performance in complex environments. 
+
+B. In-Context Learning 
+
+In-context learning (ICL) describes the capability of large language models to perform tasks by conditioning on a small set of input–output examples provided in the prompt, without parameter updates [9], [28]–[30]. Prior studies in natural language processing show that demonstrations implicitly shape model behavior and reasoning trajectories [31]–[33]. ICL per-formance is known to be sensitive to demonstration selection, ordering, and formatting, which has motivated research on prompt calibration and example selection [31], [34], [35]. Retrieval-augmented ICL further addresses this issue by dy-namically selecting demonstrations based on input similarity or learned relevance, and has shown strong empirical results on static prediction tasks [7]. Beyond single-step NLP settings, applying in-context learn-ing to embodied and sequential decision-making problems introduces additional challenges [36], [37]. In such tasks, decisions are state-dependent and unfold over long horizons, making it insufficient to treat demonstrations as isolated in-put–output pairs. Recent works have begun to explore ICL in agentic contexts, including embodied agents and navigation tasks, typically by incorporating a small number of handcrafted or heuristically selected exemplars into the prompt [37]. How-ever, these approaches often rely on fixed demonstrations or manual prompt design, and do not explicitly model how prior experiences should be selected or adapted to the current task and environment [38]. In the context of vision-and-language navigation, where instruction grounding and action selection evolve throughout an episode, how to effectively leverage prior navigation experience as in-context guidance remains largely underexplored. Our work builds on this line of research by introducing task-aware in-context learning for VLN. By retrieving exemplar tra-jectories conditioned on the current instruction and integrating them into the navigation prompt, we enable LLM-based agents to reuse prior navigation experience in a structured manner while preserving the flexibility of language-driven reasoning. III. P ROBLEM FORMULATION 
+
+We study VLN in the Room-to-Room (R2R) setting [1], where an agent must follow a natural-language instruction to navigate on a discrete viewpoint graph from a start viewpoint to a goal region. 
+
+Instruction. Each episode provides an instruction I that includes the task instruction text and a fixed set of system navigation rules. 
+
+Observation. At step t, the agent is at the current viewpoint 
+
+vt with a heading/elevation orientation. The environment pro-vides a panoramic observation that we represent in text form as: 
+
+ot =  sscene t , {dt,k }Kk=1 
+
+ , K = 8 , (1) where st is a short scene summary of the current viewpoint, and dt,k is the textual description for the k-th directional sector (Front, Front-Right, . . . , Front-Left). Each dt,k aggregates (i) a direction-specific scene description, (ii) nearby object mentions (within 3 meters), and (iii) navigable viewpoint IDs that fall into that direction sector with approximate relative heading and distance (as constructed by our directional binning function). 
+
+Candidates. We define the directional candidate set as: 
+
+Dt = {dt,k }Kk=1 , (2) and denote by Vt,k ⊆ V t the subset of navigable viewpoints whose headings fall into sector k (these are the viewpoint IDs listed inside dt,k ). Thus, each dt,k is both an observation slice and a “direction candidate” for pruning. 
+
+Candidate pruning. A candidate retriever outputs a subset of direction indices It ⊆ { 1, . . . , K } (e.g., |I t| = 5 ), which induces a pruned observation: 
+
+˜ot = ( sscene t , {dt,k }k∈I t ), (3) If we also expose an explicit navigable list, it is correspond-ingly pruned to ˜Vt = S 
+
+> k∈I t
+
+Vt,k .
+
+Action space. The agent selects an action at from the action space: 
+
+At = Vt ∪ { finished }, (4) where selecting a viewpoint ID moves the agent to that viewpoint, and finished terminates the episode. 
+
+History. We denote the navigation history up to step t as: 
+
+ht = {(a0, o 0), (a1, o 1), . . . , (at−1, o t−1)}, (5) which is stored and fed to the LLM as a textual scratchpad summarizing prior actions and observations. 
+
+State. We define the agent state as the tuple: 
+
+st = ( I, o t, h t), (6) i.e., the instruction, the current textual observation, and the navigation history. 
+
+Policy and trajectory. A navigation policy π maps the state to an action: 
+
+at ∼ π(· | st), (7) The executed actions produce a trajectory τ =(v0, a 0, v 1, . . . , a T −1, v T ).
+
+Success criterion and metrics. Following standard R2R evaluation, an episode is successful if the agent terminates with finished at a final viewpoint vT whose shortest-path distance to the goal viewpoint is less than 3 meters. We evaluate using Success Rate (SR) and Success weighted by Path Length (SPL), and additionally report efficiency metrics relevant to LLM-based navigation. IV. M ETHODOLOGY 
+
+We present a retrieval-augmented LLM navigator that ex-tends a NavGPT-style baseline [2] with two retrieval modules: (i) an embedding-based demonstration retriever for in-context learning (ICL) and (ii) an imitation-learned candidate retriever for top-k directional pruning. 
+
+A. Model Architecture 
+
+We adopt a language-centric navigation architecture that performs sequential decision making by combining instruction, textualized perception, and navigation history [2]. At each step t, the agent is located at viewpoint vt and represents the panoramic sensory input as a textual observation ot =(sscene t , {dt,k }8
+
+> k=1
+
+), where each dt,k summarizes the scene and nearby objects within a directional sector and lists the navigable viewpoint IDs in that sector. A prompt manager 
+
+M aggregates the instruction I, current observation ot, and history buffer ht into a single prompt, which is then consumed by an LLM (Qwen3 [11] in our baseline) to produce an explicit reasoning trace rt and the next action at ∈ At.Executing viewpoint-ID actions transitions the agent to vt+1 ,after which the new observation and the reasoning–action trace are appended to ht+1 to support progress tracking and long-horizon planning. On top of this baseline, we introduce two lightweight yet complementary retrieval modules to support LLM reasoning. As illustrated in Fig. 1, an instruction-level retriever operates once at the beginning of each navigation episode, retrieving ex-emplar trajectories that are semantically similar to the current instruction I. These exemplars are used to augment the prompt and provide high-level reasoning references. During naviga-tion, a candidate retriever is invoked at every time step to score and prune the directional candidate set Dt = {dt,k }8
+
+> k=1
+
+given the current state st = ( I, o t, h t), producing a subset of indices It and a pruned observation ˜ot = ( sscene t , {dt,k }k∈I t ).The filtered candidates are then passed to the LLM, which produces the final navigation decision in the original action format. This design preserves the core decision pipeline while explicitly injecting task-relevant priors and reducing unneces-sary reasoning over irrelevant candidates. 
+
+B. Embedding-based Demonstration Retriever 
+
+LLM navigators are sensitive to the choice of in-context demonstrations. Rather than using a single static demonstra-tion, we dynamically retrieve relevant successful trajectories conditioned on the episode instruction. To enable instruction-level retrieval, we maintain an exemplar memory E from successful navigation trajectories stored in a static file, where each exemplar e ∈ E contains (i) a task instruction string and (ii) a step-wise navigation trace formatted in the same 
+
+Thought/Action/Observation style as the navigator. Each exemplar is also associated with a precomputed embed-ding vector, allowing efficient similarity search at runtime. This memory serves as a repository of prior navigation ex-periences, allowing the agent to reuse previously successful reasoning patterns when encountering semantically similar instructions. 
+
+Embedding and similarity. Given a new navigation episode, the input instruction is encoded into a fixed-dimensional embedding using a pretrained text encoder. All exemplar instructions in the memory are encoded in the same embedding space. Let fϕ(·) be a pretrained sentence embed-ding model. Given the episode instruction I, we compute a Histor y
+
+> Candidates
+> Retrieve r
+
+Instruction 
+
+System 
+
+Principle s
+
+> Exemplars
+> Embedding
+> Retrieve r
+> Instruction
+> Thought
+> Actio n
+> ……
+> Observation
+> Summarizer
+
+Action 
+
+# LLM Prompt 
+
+Reasoning 
+
+> Top -k’
+> Top -k Observations
+
+Fig. 1: The agent follows a language-centric pipeline. At each step, a candidate retriever prunes directional observations before LLM reasoning, while an embedding-based instruction retriever retrieves exemplar trajectories at the episode level for in-context guidance. A history summarizer maintains a compact navigation context. The prompt aggregates the system principles, instruction, retrieved exemplars, pruned observations, and history, enabling the LLM to generate reasoning traces and navigation actions in a closed-loop manner. query embedding q = fϕ(I) and rank exemplars by cosine similarity to the stored exemplar embedding ze:
+
+sim( I, e ) = ⟨q, z e⟩∥q∥ ∥ ze∥ , (8) We select the top-k demonstrations Ek(I) and format them into an examples block. 
+
+Prompt construction. The examples block is prepended to the navigation prompt once per episode (before step t = 0 ). Each exemplar includes the instruction and its corresponding trajectory summary, presented as a reference navigation ex-perience. This provides instruction-conditioned guidance on (i) how to interpret directional observations, (ii) how to select viewpoint IDs, and (iii) when to output finished , improving stability without modifying the LLM weights. Importantly, ex-emplars provide soft in-context guidance rather than templates to be strictly imitated. The LLM may deviate from exemplar behaviors when the current observation differs, preserving flexibility in unseen environments. 
+
+C. Imitation-learned Candidate Retriever 
+
+In language-driven navigation, the LLM is often required to reason over verbose candidate descriptions at every step, which increases inference cost and can amplify errors from irrelevant or distracting options. We introduce a lightweight candidate retriever that prunes the directional candidate set 
+
+Dt = {dt,k }8 
+
+> k=1
+
+before LLM reasoning, reducing prompt length while preserving valid navigation options. 
+
+1) State-Action Representation: At each step t, the candi-date retriever operates on the same information available to the navigator. We build a context string: 
+
+ct = Concat( I, h t), (9) and use the 8 directional descriptions {dt,k }8 
+
+> k=1
+
+(each contain-ing a direction-specific scene description, nearby objects, and the viewpoint IDs in that sector) as candidates. We encode the context and each directional candidate with a sentence encoder 
+
+gψ (·):
+
+ut = gψ (ct), zt,k = gψ (dt,k ), (10) The relative spatial cues are included implicitly in the textual descriptions dt,k . We score each direction independently with a lightweight MLP head: 
+
+αt,k = MLP θ ([ ut; zt,k ]) , (11) We then select the top-k direction indices It =TopK( {αt,k }8
+
+> k=1
+
+) and pass the pruned observation ˜ot =(sscene  
+
+> t
+
+, {dt,k }k∈I t ) to the LLM navigator. 
+
+2) Training via Imitation Learning: We train the retriever with imitation learning on R2R trajectories [1]. For each train-ing trajectory and each step t, we construct the 8 directional descriptions with the same formatting used at inference time, and label the ground-truth direction yt ∈ {1, . . . , 8} that contains the next viewpoint on the reference path. We optimize cross-entropy over the 8 directions: 
+
+Lret = − X
+
+> t
+
+log exp( αt,y t )
+
+P8 
+
+> k=1
+
+exp( αt,k ) , (12) In practice, gψ is instantiated with a pretrained sentence transformer encoder, while the MLP head is trained to predict the correct direction. Training is performed offline and does not involve updating the LLM parameters. This separation allows the retriever to learn task-specific priors while keeping the language model frozen. 
+
+3) Inference-time Integration: Each selected direction k ∈It contains a set of navigable viewpoint IDs Vt,k . During inference, the candidate retriever scores all navigable actions at the current time step and selects the top-k candidates. Only these directions are included in the prompt passed to the LLM. Consequently, the LLM effectively chooses the next viewpoint ID from ˜Vt = S 
+
+> k∈I t
+
+Vt,k , which reduces candidate noise and improves inference efficiency. This integration reduces prompt length and inference cost without modifying the LLM’s rea-soning mechanism. V. E XPERIMENT 
+
+A. Research Questions 
+
+Our experiments are designed to answer the following research questions (RQs):  
+
+> •
+
+RQ1: Does retrieval augmentation improve navigation performance in LLM-based VLN?  
+
+> •
+
+RQ2: What are the individual and combined contribu-tions of instruction-level exemplar retrieval and step-level candidate pruning?  
+
+> •
+
+RQ3: How does retrieval augmentation affect inference efficiency in LLM-based navigation?  
+
+> •
+
+RQ4: How does retrieval augmentation influence nav-igation decisions and error patterns in representative navigation episodes? 
+
+B. Experiment Setup 1) Dataset: We evaluate our method on the Room-to-Room (R2R) benchmark [1], which is built upon Matterport3D indoor environments. R2R consists of 7,189 navigation tra-jectories across 90 real-world scenes, each paired with three natural-language instructions. Agents navigate on a discrete viewpoint graph and are required to follow the instructions to reach a target location. We report results on the standard 
+
+Val Seen and Val Unseen splits, containing 1,021 and 2,349 instruction–trajectory pairs, respectively. Following the standard protocol, an episode is considered successful if the agent terminates within 3 meters of the goal viewpoint (Please refer to Section III). 
+
+2) Baselines: Our primary baseline is a Qwen3-based im-plementation of the NavGPT navigation pipeline [2]. This baseline introduces no algorithmic modifications. We only replace the original LLM used in NavGPT with Qwen3, while keeping all other components unchanged, including the prompt format, the 8-direction textual observation representation, the navigation rules, and the interaction loop with the simulator. We compare this Qwen3-based NavGPT baseline against our full retrieval-augmented system. Fig. 3 further provides a bar-chart comparison between the baseline and our method, highlighting consistent gains in SR/OSR/SPL across splits. 
+
+3) Evaluation Metrics: We adopt standard R2R evaluation metrics [2]. TL (Trajectory Length) measures the number of executed actions (viewpoint transitions) before termination. 
+
+NE (Navigation Error) computes the shortest-path distance (in meters) between the final viewpoint and the goal view-point, where lower values indicate better goal localization. 
+
+SR (Success Rate) ireports the fraction of episodes with 
+
+NE < 3m at termination. OSR (Oracle Success Rate) is the fraction of episodes where any visited viewpoint along the trajectory comes within 3 meters of the goal, which measures whether the agent can reach the vicinity of the target even if it fails to stop optimally. SPL (Success weighted by Path Length) measures efficiency by weighting success with the ratio between the shortest-path length and the executed path length, penalizing unnecessary detours. Higher SPL reflects both higher success and shorter trajectories. 
+
+4) Implementation Details: For our method, we adopt Qwen-3 (8B) [11] as the LLM backbone and Qwen embed-ding (0.6B) [44] for instruction-level retrieval. The candidate retriever is trained using a sentence-transformer encoder all-MiniLM-L6-v2 [45] followed by an MLP scoring head. All ex-periments are conducted on a single NVIDIA A100 GPU. The candidate retriever is trained offline for 10 epochs using the R2R training split, with a batch size of 32 , AdamW optimizer [46], and a learning rate of 2×10 −5. We supervise the retriever using shortest-path labels over 8 navigable directions. During inference, we retrieve the top-3 instruction exemplars and top-5 candidate actions by default. The exemplar memory E for the embedding retriever contains 20 demonstration samples. 
+
+C. Main Result (RQ1) 
+
+Table I summarizes the main results on the R2R bench-mark. We compare our retrieval-augmented method with both classical supervised VLN agents and recent LLM-based navigation approaches. As expected, fully supervised and pretraining-based methods, such as HAMT [40], DUET [41], and ScaleVLN [26], achieve substantially higher absolute per-formance due to large-scale task-specific training and stronger cross-modal architectures. In contrast, our approach keeps the navigator LLM frozen and introduces only lightweight retrieval modules, targeting practical improvements within an LLM-centric pipeline. Compared to the Qwen3-based base-line, our method improves Success Rate (SR) from 15.77% to 19.88% on Val Seen , and from 18.22% to 23.41% on 
+
+Val Unseen . These gains are accompanied by consistent improvements in Oracle Success Rate (OSR), which increases from 29.87% to 39.86% on Val Seen and from 33.25% to 44.70% on Val Unseen . Similarly, SPL improves from 10.30 to 13.29 on Val Seen and from 11.40 to 14.76 on Val Unseen , indicating that retrieval augmentation not only increases the likelihood of reaching the goal region, but also encourages more efficient trajectories. Navigation Error (NE) remains comparable, suggesting that improvements primarily come from better step-wise decisions rather than simply shorter paths. Notably, gains on Val Unseen is more pronounced, suggesting that retrieval provides stronger Methods Val Seen Val Unseen TL NE ↓ SR ↑ OSR ↑ SPL ↑ TL NE ↓ SR ↑ OSR ↑ SPL ↑                                                                                          
+
+> Seq2Seq [1] 11.33 6.01 39 53 -8.39 7.81 21 28 -SpeakerFollower [39] -3.36 66 74 --6.62 36 45 -HAMT [40] 11.15 2.52 76 -72 11.46 2.29 66 -61 DUET [41] 12.32 2.28 79 86 73 13.94 3.31 72 81 60 BEVBert [25] 13.56 2.17 81 88 74 14.55 2.81 75 84 64 ScaleVLN [26] 13.24 2.12 81 87 75 14.09 2.09 81 88 70
+> NavGPT [2] -----11.45 6.46 34 42 29 NavGPT (Qwen-3) 15.29 8.81 15.77 29.87 10.30 15.66 8.27 18.22 33.25 11.40
+> Our Method 16.20 8.96 19.88 39.86 13.29 16.35 8.33 23.41 44.70 14.76
+
+TABLE I: Comparison with the state of the art on R2R. Bold highlight the best and runner-up performance in each column, while blue underscore our method row. ↑ indicates better performance with higher values.                                                                                                       
+
+> Setting Method Val Seen Val Unseen Tokens / Time TL NE ↓SR ↑OSR ↑SPL ↑TL NE ↓SR ↑OSR ↑SPL ↑(per episode) Ablation Mode Baseline 15.29 8.81 15.77 29.87 10.30 15.66 8.27 18.22 33.25 11.40 24.8k / 17.9s Baseline + Embedding Retriever 16.68 9.21 17.04 33.99 10.84 16.83 8.39 20.14 38.95 12.54 35.0k / 9.76s Baseline + Candidate Retriever 15.18 8.75 21.65 36.14 14.03 15.47 8.28 20.31 37.89 12.97 22.1k / 16.1s Full Mode + Thinking Mode ∗14.93 7.91 24.00 39.00 15.91 14.11 8.02 26.40 44.40 18.00 57.6k / 536.5s Full Mode (Ours) 16.20 8.96 19.88 39.86 13.29 16.35 8.33 23.41 44.70 14.76 32.1k / 10.1s LLM Backbone LLaMA 3.1 [42] 13.80 8.89 10.38 21.65 6.32 13.97 8.24 13.18 24.96 8.50 35.4k / 36.1s Qwen 3 [11] 16.20 8.96 19.88 39.86 13.29 16.35 8.33 23.41 44.70 14.76 32.1k / 10.1s GPT 4o mini [43] 19.80 8.67 22.43 48.78 11.64 19.49 8.43 22.78 56.24 11.60 30.1k / 14.4s
+
+TABLE II: Ablation Studies. Thinking Mode ∗ is enabled by using a reasoning-capable model with its internal “thinking” mode turned on. Unless otherwise specified, all baseline results are based on NavGPT with Qwen3-8B [11] as the backbone model. 
+
+↑ indicates better performance with higher values. benefits under distribution shift. In terms of efficiency, in our profiling, our method processes approximately 32.1k input tokens per episode and requires an average inference time of 10.1 seconds per episode. While retrieval introduces additional computation, this overhead is partially offset by improved success and path efficiency, as well as reduced reasoning over irrelevant candidates. Overall, these results demonstrate that retrieval augmenta-tion is an effective and scalable strategy for improving LLM-based vision-language navigation, narrowing the performance gap with supervised methods while preserving the flexibility and transparency of language-driven decision making. 
+
+D. Ablation Study (RQ2 and RQ3) 
+
+Table II presents a detailed ablation study that analyzes the contribution of each component in our retrieval-augmented framework, as well as the impact of different LLM backbones and reasoning modes. 
+
+Effect of the instruction-level embedding retriever. 
+
+Adding only the instruction-level embedding retriever leads to consistent improvements over the baseline on both splits. On Val Unseen , the Success Rate increases from 18.22% to 20.14%, and Oracle Success Rate improves notably from 33.25% to 38.95%. This suggests that retrieving instruction-level exemplars provides useful global guidance, helping the LLM better interpret task intent and maintain progress toward the goal. However, the improvement in SPL is comparatively smaller, (11.40 → 12.54), indicating that exemplar retrieval alone does not sufficiently address inefficiencies arising from step-level action ambiguity. 
+
+Effect of the candidate retriever. In contrast, adding only the candidate retriever yields more substantial gains in trajec-tory efficiency. On Val Seen , SPL improves from 10.30 to 14.03, while SR increases from 15.77% to 21.65%. Similar trends are observed on Val Unseen . These results support the hypothesis that pruning irrelevant navigable candidates effectively reduces local decision noise, allowing the LLM to focus on a smaller, more relevant action set. Compared with exemplar retrieval, candidate pruning has a stronger impact on SPL, highlighting its role in improving step-wise efficiency rather than global planning. 
+
+Complementarity of both retrieval modules. Combining both retrievers yields consistent improvements across all met-rics compared to either module alone. Our full model achieves higher OSR on both splits (39.86% on Val Seen , 44.70% on Val Unseen ), indicating improved ability to reach goal-adjacent regions. At the same time, SR and SPL also improve over the baseline, confirming that global instruction-level priors and local candidate pruning are complementary. From an efficiency perspective, although exemplar augmentation increases the prompt length (from 24.8k to 32.1k tokens per episode), the full model reduces inference time from 17.9s to 10.1s per episode. This indicates that exemplar retrieval provides high-level reasoning references at the episode level, while the candidate retriever reduces ambiguity during per-step decision-making. 
+
+Chain-of-thought reasoning mode analysis. We evaluate Instruction: Enter the door to the left of the globe. Walk forward and continue down the corridor. Continue straig ht until you reach a 
+
+circular design on the floor. Wait here. 
+
+Current viewpoint:  cc96c884cf7c4218a00005a03143b889 
+
+Top -5 directional o bservation s
+
+selec ted by the candidate retrieve r        
+
+> Observations:
+> •Front, range (left 3.77 to right 41.23): 'A bathroom with a wooden door and glass panel is depicted from
+> different perspectives.’ Front Objects in 3m: None. Front Navigable Viewpoints: None.
+> •Front Right, range (right 41.23 to right 86.23): 'A hallway with a tile floor, archway, vase, chandelier, painting,
+> and a door.’ Front Right Objects in 3m: None. Front Right Navigable Viewpoints:
+> {'31ef98acc7f44716abedd5a0e0747b71': 'right 68.42, 2.12m’}.
+> •Right, range (right 86.23 to right 131.23): 'A bathroom with a wooden and glass door is connected to a
+> hallway with a door and a doorway, and there is a glass panel and a light above the doorway.’ Right Objects
+> in 3m: None. Right Navigable Viewpoints:{'2fd969a3140b4fbe91d8c3b1766e0a19': 'right 98.23, 2.38m’}.
+> •Rear Right, range (right 131.23 to right 176.23): 'A globe is positioned near a door, either on a tripod or on a
+> table, with the door being made of wood and glass.’ Rear Right Objects in 3m: None. Rear Right Navigable
+> Viewpoints: None.
+> •Rear, range (right 176.23 to left 138.77): 'A luxurious room with leather chairs, a fireplace, a window, a
+> chandelier, and a brown wall.’ Rear Objects in 3m: None. Rear Navigable Viewpoints:
+> {'afde05a9bd214e63808a5546594b59d1': 'right 180.00, 1.94m’}.
+> •Rear Left, range (left 138.77 to left 93.77): 'A room with a desk and chandelier, featuring a laptop and chair
+> on the desk and a large number of lights on the chandelier.’ Rear Left Objects in 3m: None. Rear Left
+> Navigable Viewpoints:{'4d7fc7084ff4439a94484b218369887a': 'left 138.60, 3.33m’}.
+> •Left, range (left 93.77 to left 48.77): 'A home office with a desk, chair, rug, bookshelves, and a large bookcase
+> filled with many books.’ Left Objects in 3m: None. Left Navigable Viewpoints:
+> {'2d9d33f7b8034242b5f81027bc192ccd': 'left 84.06, 2.60m', '471a6f3beedb4cc7a71edc7fc1c5275b':
+> 'left 53.45, 1.40m’}.
+> •Front Left, range (left 48.77 to left 3.77): 'The scene features a bookcase, desk, and wooden door with books
+> present throughout.’ Front Left Objects in 3m: None. Front Left Navigable Viewpoints: None.
+
+LLM output: 
+
+Thought : The door to the left of the globe is in the Front Right direction, so I should navigate to that 
+
+viewpoint first. 
+
+Action : action_maker 
+
+Action Input: "31ef98acc7f44716abedd5a0e0747b71 "Fig. 2: Here is a case study of a successful navigation step. At this step, the candidate retriever selects the top 5 directional observations for LLM reasoning. The direction highlighted in blue corresponds to the correct navigable direction chosen by the LLM, while the red directions indicate irrelevant candidates pruned by the candidate retriever. This pruning reduces decision noise and enables the LLM to focus on instruction-consistent actions. 
+
+Fig. 3: SR, OSR, and SPL of the baseline agent with different ablation modules on the R2R val-unseen split. the effect of enabling explicit CoT reasoning on top of the full retrieval framework. As shown in Table II, the full mode + thinking mode configuration achieves the strongest performance among all ablation settings. On Val Unseen ,SR increases from 23.41% to 26.40%, SPL improves from 14.76 to 18.00, and Navigation Error is reduced (8.33 → 8.02), indicating more coherent long-horizon planning. These results suggest that explicit reasoning traces help the LLM maintain consistent plans and resolve ambiguities from long navigation histories. However, CoT reasoning incurs substantial com-putational overhead: enabling reasoning mode significantly increases generation length and inference latency, requiring approximately 12 hours to evaluate 150 episodes. As a result, we do not adopt the reasoning mode in the default setting and treat it as an optional accuracy-boosting configuration. Due to resource constraints, the reported results with reasoning mode are obtained by randomly sampling 10% of episodes from both the Val Seen and Val Unseen splits, which provides a reasonable approximation of overall performance trends. 
+
+LLM backbone comparison. Finally, we evaluate different LLM backbones under the same retrieval framework. GPT-4o mini [43] achieves strong oracle success, particularly on 
+
+Val Unseen (OSR 56.24%), but exhibits lower SPL due to longer and less efficient trajectories. LLaMA 3.1 [42] underperforms across most metrics, especially in SR and SPL, suggesting weaker instruction grounding in this setting. Qwen 3 [11] achieves a favorable balance between success rate, trajectory efficiency, and computational cost, making it a practical choice for our framework. These results demonstrate that our retrieval-augmented design generalizes across LLM backbones and is not tied to a specific model. 
+
+E. Qualitative Analysis (RQ4) 
+
+We qualitatively analyze a representative navigation step in Fig. 2 to illustrate how retrieval-augmented reasoning improves decision making. In this example, the candidate retriever prunes visually plausible but instruction-irrelevant directional observations (marked in red), reducing prompt clutter and constraining the LLM’s reasoning to a small set of instruction-consistent candidates. Conditioned on this pruned observation set, the LLM correctly grounds the phrase “to the left of the globe” to the appropriate front-right navigable viewpoint (highlighted in blue) and selects the correct action. This case highlights the complementary roles of the two re-trieval components: instruction-level exemplars provide high-level guidance on navigation intent, while candidate pruning enforces local action relevance, together enabling more fo-cused reasoning and improved robustness in complex indoor environments. VI. C ONCLUSION 
+
+In this paper, we propose a retrieval-augmented LLM nav-igation framework that improves the VLN agents without modifying the underlying language model. By combining an instruction-level exemplar retriever for in-context guidance and an imitation-learned candidate retriever for directional pruning, our method achieves consistent improvements in SR, OSR, and SPL on both seen and unseen splits of the R2R benchmark while reducing reasoning over irrelevant candidates. Future work will explore stronger multimodal perception, retrieval objectives better aligned with navigation success, and tighter integration with verification or lightweight fine-tuning. REFERENCES [1] P. Anderson, Q. Wu, D. Teney, J. Bruce, M. Johnson, N. S¨ underhauf, I. D. Reid, S. Gould, and A. van den Hengel, “Vision-and-language navigation: Interpreting visually-grounded navigation instructions in real environments,” in 2018 IEEE Conference on Computer Vision and Pattern Recognition, CVPR 2018, Salt Lake City, UT, USA, June 18-22, 2018 . Computer Vision Foundation / IEEE Computer Society, 2018, pp. 3674–3683. [2] G. Zhou, Y. Hong, and Q. Wu, “Navgpt: Explicit reasoning in vision-and-language navigation with large language models,” 2023. [Online]. Available: https://arxiv.org/abs/2305.16986 [3] C. Huang, J. Wu, Z. Xie, Y. Xia, R. Wang, T. Yu, S. Mitra, J. McAuley, and L. Yao, “Pluralistic off-policy evaluation and alignment,” arXiv preprint arXiv:2509.19333 , 2025. [4] M. Ahn, A. Brohan, N. Brown, Y. Chebotar, O. Cortes, B. David, C. Finn, C. Fu, K. Gopalakrishnan, K. Hausman, A. Herzog, D. Ho, J. Hsu, J. Ibarz, B. Ichter, A. Irpan, E. Jang, R. J. Ruano, K. Jeffrey, S. Jesmonth, N. J. Joshi, R. Julian, D. Kalashnikov, Y. Kuang, K.-H. Lee, S. Levine, Y. Lu, L. Luu, C. Parada, P. Pastor, J. Quiambao, K. Rao, J. Rettinghouse, D. Reyes, P. Sermanet, N. Sievers, C. Tan, A. Toshev, V. Vanhoucke, F. Xia, T. Xiao, P. Xu, S. Xu, M. Yan, and A. Zeng, “Do as i can, not as i say: Grounding language in robotic affordances,” 2022. [Online]. Available: https://arxiv.org/abs/2204.01691 [5] W. Huang, F. Xia, T. Xiao, H. Chan, J. Liang, P. Florence, A. Zeng, J. Tompson, I. Mordatch, Y. Chebotar, P. Sermanet, N. Brown, T. Jackson, L. Luu, S. Levine, K. Hausman, and B. Ichter, “Inner monologue: Embodied reasoning through planning with language models,” 2022. [Online]. Available: https://arxiv.org/abs/2207.05608 [6] A. Zhao, D. Huang, Q. Xu, M. Lin, Y.-J. Liu, and G. Huang, “Expel: Llm agents are experiential learners,” in Proceedings of the AAAI Conference on Artificial Intelligence , vol. 38, 2024, pp. 19 632–19 642. [7] J. Wei, X. Wang, D. Schuurmans, M. Bosma, F. Xia, E. Chi, Q. V. Le, D. Zhou et al. , “Chain-of-thought prompting elicits reasoning in large language models,” Advances in neural information processing systems ,vol. 35, pp. 24 824–24 837, 2022. [8] C. Wang, X. Li, J. Y. Zhang, J. Wu, C. Huang, L. Yao, J. McAuley, and J. Shang, “Scenealign: Aligning multimodal reasoning to scene graphs in complex visual scenes,” arXiv preprint arXiv:2601.05600 , 2026. [9] T. B. Brown, B. Mann, N. Ryder, M. Subbiah, J. Kaplan, P. Dhariwal, A. Neelakantan, P. Shyam, G. Sastry, A. Askell, S. Agarwal, A. Herbert-Voss, G. Krueger, T. Henighan, R. Child, A. Ramesh, D. M. Ziegler, J. Wu, C. Winter, C. Hesse, M. Chen, E. Sigler, M. Litwin, S. Gray, B. Chess, J. Clark, C. Berner, S. McCandlish, A. Radford, I. Sutskever, and D. Amodei, “Language models are few-shot learners,” 2020. [Online]. Available: https://arxiv.org/abs/2005.14165 [10] H. Touvron, T. Lavril, G. Izacard, X. Martinet, M.-A. Lachaux, T. Lacroix, B. Rozi` ere, N. Goyal, E. Hambro, F. Azhar, A. Rodriguez, A. Joulin, E. Grave, and G. Lample, “Llama: Open and efficient foundation language models,” 2023. [Online]. Available: https://arxiv.org/abs/2302.13971 [11] A. Yang, A. Li, B. Yang, B. Zhang, B. Hui, B. Zheng, B. Yu, C. Gao, C. Huang, C. Lv, C. Zheng, D. Liu, F. Zhou, F. Huang, F. Hu, H. Ge, H. Wei, H. Lin, J. Tang, J. Yang, J. Tu, J. Zhang, J. Yang, J. Yang, J. Zhou, J. Zhou, J. Lin, K. Dang, K. Bao, K. Yang, L. Yu, L. Deng, M. Li, M. Xue, M. Li, P. Zhang, P. Wang, Q. Zhu, R. Men, R. Gao, S. Liu, S. Luo, T. Li, T. Tang, W. Yin, X. Ren, X. Wang, X. Zhang, X. Ren, Y. Fan, Y. Su, Y. Zhang, Y. Zhang, Y. Wan, Y. Liu, Z. Wang, Z. Cui, Z. Zhang, Z. Zhou, and Z. Qiu, “Qwen3 technical report,” 2025. [Online]. Available: https://arxiv.org/abs/2505.09388 [12] J. Ye, X. Li, X. Yang, C. Huang, L. Nie, L. Yao, and D. Zhan, “Memweaver: Weaving hybrid memories for traceable long-horizon agentic reasoning,” arXiv preprint arXiv:2601.18204 , 2026. [13] S. Jiao, X. Xiao, Y. Wei, S. Qi, C. Huang, Q. Z. M. Sheng, and L. Yao, “Prunerag: Confidence-guided query decomposition trees for effi-cient retrieval-augmented generation,” arXiv preprint arXiv:2601.11024 ,2026. [14] L. Wang, N. Yang, and F. Wei, “Learning to retrieve in-context examples for large language models,” in Proceedings of the 18th Conference of the European Chapter of the Association for Computational Linguistics (Volume 1: Long Papers) , 2024, pp. 1752–1767. [15] Y. Long, X. Li, W. Cai, and H. Dong, “Discuss before moving: Visual language navigation via multi-expert discussions,” 2023. [Online]. Available: https://arxiv.org/abs/2309.11382 [16] Z. Liu, Y. Liu, and C. Huang, “Semi-online knowledge distillation,” 
+
+arXiv preprint arXiv:2111.11747 , 2021. [17] X. Wang, X. Hu, C. Huang, Z. Zeng, G. Nie, Q. Z. Sheng, and L. Yao, “Self-supervised cross-modal learning for image-to-point cloud registration,” arXiv preprint arXiv:2509.15882 , 2025. [18] Y. Li, X. Wang, L. Cui, J. Zhang, C. Huang, X. Luo, and S. Qi, “Autoencoder-based self-supervised hashing for cross-modal retrieval,” 
+
+Multimedia Tools and Applications , vol. 80, no. 11, pp. 17 257–17 274, 2021. [19] Y. Li, X. Wang, S. Qi, C. Huang, Z. L. Jiang, Q. Liao, J. Guan, and J. Zhang, “Self-supervised learning-based weight adaptive hashing for fast cross-modal retrieval,” Signal, Image and Video Processing , vol. 15, no. 4, pp. 673–680, 2021. [20] Y. Qi, Z. Pan, S. Zhang, A. Hengel, and Q. Wu, “Object-and-action aware model for visual language navigation,” 07 2020. [21] IEEE Conference on Computer Vision and Pattern Recognition, CVPR 2021, virtual, June 19-25, 2021 . Computer Vision Foundation / IEEE, 2021. [Online]. Available: https://openaccess.thecvf.com/CVPR2021 [22] S. Chen, P.-L. Guhur, C. Schmid, and I. Laptev, “History aware multimodal transformer for vision-and-language navigation,” 2023. [Online]. Available: https://arxiv.org/abs/2110.13309 [23] Z. Deng, K. Narasimhan, and O. Russakovsky, “Evolving graphical planner: Contextual global planning for vision-and-language navigation,” 2020. [Online]. Available: https://arxiv.org/abs/2007.05655 [24] B. Lin, Y. Zhu, Z. Chen, X. Liang, J. Liu, and X. Liang, “Adapt: Vision-language navigation with modality-aligned action prompts,” 2022. [Online]. Available: https://arxiv.org/abs/2205.15509 [25] D. An, Y. Qi, Y. Li, Y. Huang, L. Wang, T. Tan, and J. Shao, “Bevbert: Multimodal map pre-training for language-guided navigation,” in Proceedings of the IEEE/CVF International Conference on Computer Vision (ICCV) , 2023, pp. 2737–2748. [26] Z. Wang, J. Li, Y. Hong, Y. Wang, Q. Wu, M. Bansal, S. Gould, H. Tan, and Y. Qiao, “Scaling data generation in vision-and-language navigation,” 2023. [Online]. Available: https://arxiv.org/abs/2307.15644 [27] F. Zhao, T. Pang, Z. Wu, Z. Ma, S. Huang, and X. Dai, “Dy-namic demonstrations controller for in-context learning,” arXiv preprint arXiv:2310.00385 , 2023. [28] J. Wei, M. Bosma, V. Y. Zhao, K. Guu, A. W. Yu, B. Lester, N. Du, A. M. Dai, and Q. V. Le, “Finetuned language models are zero-shot learners,” arXiv preprint arXiv:2109.01652 , 2021. [29] R. Wang, Z. Wang, C. Huang, R. Wang, T. Yu, L. Yao, J. Lui, and D. Zhou, “Federated in-context learning: Iterative refinement for improved answer quality,” arXiv preprint arXiv:2506.07440 , 2025. [30] C. Huang, Y. Xia, R. Wang, K. Xie, T. Yu, J. McAuley, and L. Yao, “Embedding-informed adaptive retrieval-augmented generation of large language models,” in Proceedings of the 31st International Conference on Computational Linguistics , 2025, pp. 1403–1412. [31] J. Liu, D. Shen, Y. Zhang, B. Dolan, L. Carin, and W. Chen, “What makes good in-context examples for gpt-3?” arXiv preprint arXiv:2101.06804 , 2021. [32] O. Rubin, J. Herzig, and J. Berant, “Learning to retrieve prompts for in-context learning,” arXiv preprint arXiv:2112.08633 , 2021. [33] H. Huang, C. Huang, J. Wu, T. Yu, J. McAuley, and L. Yao, “Listwise preference diffusion optimization for user behavior trajectories predic-tion,” arXiv preprint arXiv:2511.00530 , 2025. [34] Y. Hao, Y. Sun, L. Dong, Z. Han, Y. Gu, and F. Wei, “Structured prompt-ing: Scaling in-context learning to 1,000 examples,” arXiv preprint arXiv:2212.06713 , 2022. [35] S. Liu, H. Ye, L. Xing, and J. Zou, “In-context vectors: Making in context learning more effective and controllable through latent space steering,” arXiv preprint arXiv:2311.06668 , 2023. [36] S. Yao, J. Zhao, D. Yu, N. Du, I. Shafran, K. Narasimhan, and Y. Cao, “React: Synergizing reasoning and acting in language models,” in 
+
+International Conference on Learning Representations (ICLR) , 2023. [37] T. Kagaya, T. J. Yuan, Y. Lou, J. Karlekar, S. Pranata, A. Kinose, K. Oguri, F. Wick, and Y. You, “Rap: Retrieval-augmented planning with contextual memory for multimodal llm agents,” arXiv preprint arXiv:2402.03610 , 2024. [38] L. Wang, C. Ma, X. Feng, Z. Zhang, H. Yang, J. Zhang, Z. Chen, J. Tang, X. Chen, Y. Lin et al. , “A survey on large language model based autonomous agents,” Frontiers of Computer Science , vol. 18, no. 6, p. 186345, 2024. [39] D. Fried, R. Hu, V. Cirik, A. Rohrbach, J. Andreas, L.-P. Morency, T. Berg-Kirkpatrick, K. Saenko, D. Klein, and T. Darrell, “Speaker-follower models for vision-and-language navigation,” 2018. [Online]. Available: https://arxiv.org/abs/1806.02724 [40] S. Chen, P.-L. Guhur, C. Schmid, and I. Laptev, “History-aware multi-modal transformer for vision-and-language navigation,” in Advances in Neural Information Processing Systems (NeurIPS) , vol. 34, 2021, pp. 5834–5847. [41] S. Chen, P.-L. Guhur, M. Tapaswi, C. Schmid, and I. Laptev, “Think global, act local: Dual-scale graph transformer for vision-and-language navigation,” in Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) , 2022, pp. 16 537–16 547. [42] A. Grattafiori, A. Dubey, A. Jauhri, A. Pandey, A. Kadian, A. Al-Dahle, A. Letman, A. Mathur, A. Schelten, and A. V. et al. , “The llama 3 herd of models,” 2024. [Online]. Available: https://arxiv.org/abs/2407.21783 [43] OpenAI, J. Achiam, S. Adler, S. Agarwal, L. Ahmad, I. Akkaya, F. L. Aleman, D. Almeida, J. Altenschmidt, and S. A. et al. , “Gpt-4 technical report,” 2024. [Online]. Available: https://arxiv.org/abs/2303.08774 [44] Y. Zhang, M. Li, D. Long, X. Zhang, H. Lin, B. Yang, P. Xie, A. Yang, D. Liu, J. Lin, F. Huang, and J. Zhou, “Qwen3 embedding: Advancing text embedding and reranking through foundation models,” 2025. [Online]. Available: https://arxiv.org/abs/2506.05176 [45] N. Reimers and I. Gurevych, “Sentence-bert: Sentence embeddings using siamese bert-networks,” 2019. [Online]. Available: https://arxiv.org/abs/1908.10084 [46] I. Loshchilov and F. Hutter, “Decoupled weight decay regularization,” in 7th International Conference on Learning Representations, ICLR 2019, New Orleans, LA, USA, May 6-9, 2019 . OpenReview.net, 2019. [Online]. Available: https://openreview.net/forum?id=Bkg6RiCqY7
