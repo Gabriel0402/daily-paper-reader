@@ -1,0 +1,970 @@
+Title: STLts-Div: Diversified Trace Synthesis from STL Specifications Using MILP (Extended Version)
+
+URL Source: https://arxiv.org/pdf/2603.17293v1
+
+Published Time: Thu, 19 Mar 2026 00:38:57 GMT
+
+Number of Pages: 20
+
+Markdown Content:
+# STLts-Div: Diversified Trace Synthesis from STL Specifications Using MILP (Extended Version) 
+
+Martin Jouve-Genty 1,2 †, Han Su 2 †, Sota Sato 2,5 , Jie An 3 , Zhenya Zhang 4,2 , and Ichiro Hasuo 2,5,6 
+
+> 1
+
+D´ epartement Informatique, ENS de Lyon, Lyon, France 
+
+martin.jouve-genty@ens-lyon.fr  
+
+> 2
+
+National Institute of Informatics, Tokyo, Japan 
+
+{suhan,sotasato,hasuo }@nii.ac.jp  
+
+> 3
+
+Institute of Software, Chinese Academy of Sciences, Beijing, China 
+
+anjie@iscas.ac.cn  
+
+> 4
+
+Kyushu University, Fukuoka, Japan 
+
+zhang@ait.kyushu-u.ac.jp  
+
+> 5
+
+SOKENDAI (The Graduate University for Advanced Studies), Tokyo, Japan  
+
+> 6
+
+Imiron Co., Ltd., Tokyo, Japan 
+
+Abstract. Modern cyber–physical systems are complex, and require-ments are often written in Signal Temporal Logic (STL). Writing the right STL is difficult in practice; engineers benefit from concrete execu-tions that illustrate what a specification actually admits. Trace synthesis addresses this need, but a single witness rarely suffices to understand intent or explore edge cases—diverse satisfying behaviors are far more informative. We introduce diversified trace synthesis: the automatic gen-eration of sets of behaviorally diverse traces that satisfy a given STL formula. Building on a MILP encoding of STL and system model, we formalize three complementary diversification objectives—Boolean dis-tance, random Boolean distance, and value distance—all captured by an objective function and solved iteratively. We implement these ideas in STLts-Div, a lightweight Python tool that integrates with Gurobi. 
+
+Keywords: Cyber-Physical Systems · Signal Temporal Logic · Trace Synthesis. 
+
+## 1 Introduction 
+
+Cyber–physical systems (CPS) underpin safety-critical applications such as air-craft collision-avoidance protocols [23], aerospace [2], and pacemakers [24]. En-
+
+The authors are supported by JST ASPIRE Grant No. JPMJAP2301. Jie An is supported by the CAS Project for Young Scientists in Basic Research Grant No. YSBR-123. Zhenya Zhang is supported by JST BOOST Grant No. JPMJBY24D7 and JSPS Grant No. JP25K21179. The work was done during M.J.’s internship at National Inst. of Inform., Japan.  
+
+> †
+
+Equal contribution.  
+
+> arXiv:2603.17293v1 [eess.SY] 18 Mar 2026 2M. Jouve-Genty et al.
+
+suring their reliability is essential, yet formal verification is challenging due to hybrid/nonlinear dynamics, continuous state spaces, and environmental uncer-tainty. As a result, full verification is often infeasible in practice. 
+
+Trace synthesis offers a pragmatic alternative: instead of proving properties for all behaviors, it constructs concrete executions that satisfy (or violate) a given temporal specification, providing actionable artifacts for testing and anal-ysis. As a dual to model checking [20], trace synthesis has been realized via SMT encodings [3], optimization-based falsification [8], and—–more recently– —mixed-integer linear programming (MILP) encodings that capture both Signal Temporal Logic (STL) constraints and plant dynamics [20]. These approaches generate informative scenarios and counterexamples while interfacing naturally with simulators and models. However, a single satisfying trace is often insufficient—for example, when val-idating whether an STL requirement truly captures the intent of the engineer. A 
+
+set of behaviorally diverse traces that illuminate different ways the specification can be met is required. In this work we study diversified trace synthesis from STL, aiming to generate traces that satisfy the specification while exhibiting sufficient diversity. We address this problem with STLts-Div, a tool that synthesizes sets of di-verse traces for a given system model M and STL specification φ. STLts-Div builds on the MILP-based synthesis framework of [20]. We introduce three com-plementary diversity objectives—Boolean distance (BD), randomized Boolean distance (RBD), and value distance (VD)—and encode them as MILP objec-tives. We adopt the MILP setting because its numeric decision variables allow these objectives to be integrated directly, whereas propositional SMT encodings do not readily support summing/counting of truth assignments (see Remark 2). 
+
+Contributions and Organization. We summarize our contributions as below. 
+
+– We formulate the problem of diversified trace synthesis for STL. 
+
+– We propose three diversity objectives (BD, RBD, VD) and provide MILP objective function encodings compatible with [20]. 
+
+– We implement these ideas in STLts-Div, a Python package, and evaluate them on benchmark suites, demonstrating substantially higher diversity than a solution-pool baseline. Sect. 2 reviews STL preliminaries and states the problem. Sect. 3 recaps the MILP encoding of [20], which underpins our approach. Sect. 4 formalizes three diversity objectives and presents our MILP-based synthesis procedures. Sect. 5 demonstrates the STLts-Div tool. Sect. 6 reports experiments evaluating effectiveness and efficiency. We conclude in Sect. 7. 
+
+Related Work. Signal Temporal Logic is widely used for specifying CPS be-haviors. Prior work spans controller synthesis [6,17,18,21], runtime/online mon-itoring [22,25], and trace synthesis/falsification [20,3], among others. The choice of technique depends on the task: for continuous-time control, Lyapunov/bar-rier–based methods synthesize controllers that enforce STL constraints [13]; for bounded model checking, SMT encodings search for a time partition witnessing STLts-Div: Diversified Trace Synthesis from STL Using MILP 3
+
+satisfaction [3]; and recent MILP encodings support trace synthesis by jointly searching over signal values and a δ-stable partition (see Sect. 3) [20]. Existing approaches, however, typically return one satisfying execution. In contrast, we target the multi-trace setting and synthesize sets of behaviorally diverse traces for a fixed model and STL formula. 
+
+## 2 Preliminaries 
+
+Let N, R, and R≥0 denote the sets of natural numbers, real numbers, and non-negative real numbers, respectively. Let B = {⊤ , ⊥} denote the Boolean domain. For a set X, we write ℘(X) for its power set and |X| for its cardinality. An 
+
+interval is any subset of R≥0 of the form ( a, b ), (a, b ], [a, b ), or [ a, c ], where a < b 
+
+and a ≤ c.
+
+Signal. Let T > 0 and V be a finite set of variables. A signal over V with time horizon T is a function σ : [0 , T ] → R|V |. We let Signal TV denote the set of all such signals; when T is clear from the context we write Signal V . For v ∈ V
+
+we write σ(t)( v) for the value of the variable v in σ at time t. We extend any 
+
+σ ∈ Signal TV to t > T by setting σ(t) := σ(T ) for all t > T .For a signal σ and t ≥ 0, the t-postfix is the signal σt defined by σt(t′) := 
+
+σ(t + t′). The t-postfix is the basis for defining the STL semantics (see Def. 9). 
+
+System model. Let V ′ and V be the input and output variable sets. A sys-tem model M from V ′ to V with a time horizon T is a (possibly nondeter-ministic) map M : Signal TV ′ → ℘(Signal TV ). The trace set of M is L(M) := S   
+
+> τ∈Signal TV′
+
+M(τ ), i.e., the set of all output signals under any input τ .
+
+Example 1 (Single-lane car). Consider a car moving in a single lane whose dy-namics are given by the ordinary differential equation (ODE) ˙x = v, ˙v = a, (1) where x, v and a denote position, velocity and acceleration, respectively. We formalize this system as Mcar with input variables V ′ = {a, v init , x init }
+
+and output variables V = {a, v, x }. Here, the acceleration a changes over time; the initial velocity and position vinit , x init change as well but only their initial values τ (0)( vinit ), τ (0)( xinit ) matter. Given an input signal τ , the model yields 
+
+Mcar (τ ) = {σ}, where σ is determined by Eq. (1): σ(t)( a) = τ (t)( a), σ(t)( v) = 
+
+τ (0)( vinit ) + R t 
+
+> 0
+
+τ (θ)( a) d θ, σ(t)( x) = τ (0)( xinit ) + R t 
+
+> 0
+
+σ(θ)( v) d θ.
+
+2.1 Signal Temporal Logic (STL) 
+
+We use the standard syntax and semantics of STL [14,20]. We present some basic definitions for the record. In STL, an atomic proposition over a variable set V is represented as p :≡
+
+(πp(⃗w) ≥ 0), where π p : R|V | → R maps a valuation ⃗w ∈ R |V | of variables in 4 M. Jouve-Genty et al. 
+
+V to a real value. In this work, we restrict attention to linear (affine) atomic propositions, i.e., πp(⃗w) = a ⊤⃗w + c with a ∈ R |V | and c ∈ R. This syntactic restriction enables an MILP encoding of STL formulas. Any STL formula has an equivalent negation normal form (NNF) [9], in which negations appear only adjacent to atomic propositions. We assume all STL formulas are in NNF in this work. The syntax of STL is as follows: 
+
+φ :≡ ⊤ | p | ¬ p | φ1 ∧ φ2 | φ1 ∨ φ2 | φ1 UI φ2 | φ1 RI φ2,
+
+where I is a nonsingular closed time interval, and UI and RI are temporal operators until and release , respectively. The eventually and always operators are syntactic sugars defined as ♢I φ = ⊤ U I φ, □I φ = ⊥ R I φ. The set of all subformulas of φ is denoted by Sub( φ). The Boolean semantics σ ⊨ φ and robust semantics [[ σ, φ ]] ∈ R ∪ { +∞, −∞} 
+
+of STL are standard. See Appx. A. 
+
+2.2 Finite Variability 
+
+Finite variability is a standard assumption used to make STL model checking and synthesis tractable in practice (see, e.g., [12,15]). In particular, without such a restriction the full (unbounded) STL model-checking problem is EXPSPACE-complete [1]; adopting finite variability permits efficient bounded analyses, which we also assume in this work. 
+
+Definition 1 (finite variability [16]). A Boolean signal q : R≥0 → B has 
+
+N -bounded variability if there exists a collection P = {Ji}Ni=1 of nonempty, pairwise disjoint intervals with SNi=1 Ji = R≥0 such that q is constant on every 
+
+Ji ∈ P .
+
+Intuitively, N -bounded variability means that the Boolean signal can change its value at most N − 1 times over R≥0. We say that a signal σ has N -bounded variability with respect to an STL formula φ if the Boolean signal t 7 → (σt ⊨ φ)has the N -bounded variability. Moreover, σ has hereditary N-bounded variability 
+
+(abbreviated N -HBV) with respect to φ if σ has N -bounded variability with respect to every subformula ψ ∈ Sub( φ). We recall the bounded STL trace synthesis problem from [20]: 
+
+Problem 1. Given an STL formula φ (over V ), a system model M (from V ′ to 
+
+V ) with time horizon T , and a variability bound N ∈ N, find a trace σ ∈ L (M)such that i) σ has the N -HBV with respect to φ and ii) σ ⊨ φ holds, or prove such σ does not exist. In this paper we study a diversity-aware variant of the above problem: instead of returning an arbitrary satisfying trace, we generate a set of traces that are mutually diverse, i.e., sufficiently distinct under a suitable notion of difference. Formalizing diversity is nontrivial: it can be quantified in multiple, funda-mentally different ways. In Sect. 4 we discuss this issue and present three distinct methods for measuring and enforcing diversity in MILP-based synthesis. STLts-Div: Diversified Trace Synthesis from STL Using MILP 5
+
+## 3 MILP-Based Trace Synthesis 
+
+We recall the MILP-based trace synthesis workflow in [20]. The key idea, origi-nally from [3], is to partition the time horizon into time intervals, with respect to the truth values of relevant STL formulas. The partition should be such that 
+
+– it ensures interval-wise constancy : the truth value of each subformula ψ ∈
+
+Sub( φ) remains constant on each interval; 
+
+– it is MILP-encodable : it avoids strict inequalities ( <), since MILP solvers cannot distinguish < from ≤ and only support non-strict ones ( ≤) [10]. The original SMT-based approach [3] partitions the horizon into alternating sin-gleton and open intervals, i.e., . . . , (γi−1, γ i), {γi}, (γi, γ i+1 ), . . . . However, this scheme requires < to distinguish open and closed intervals and is therefore not MILP-encodable. To address this, we use closed intervals . . . , [γi−1, γ i], [γi, γ i+1 ], . . . 
+
+to partition the horizon. Closed intervals can be expressed only using ≤; but they have overlaps (at γi). This overlap creates ambiguity for the previous notion of interval-wise constancy, which requires that a subformula is either “constantly true” or “never true” on an interval. The technique of δ-stable partition [20] avoids this ambiguity via introducing the δ-tightening of a STL formula with some δ > 0 (Def. 4). 
+
+Definition 2 (time sequence, time state sequence [20]). A time sequence 
+
+over [0 , T ] is a sequence Γ = (0 = γ0 < · · · < γ N = T ). The same construct is often denoted by Γ = ([ γi−1, γ i]) Ni=1 , using the corresponding partition of [0 , T ]
+
+into closed intervals with singular overlaps. We write Γi for [γi−1, γ i].Given a time sequence, a time state sequence over V is a sequence ς = (x0, γ 0), . . . , (xN , γ N ), where x0, . . . , x N in R|V |.
+
+Definition 3 (piecewise-linear signal [20]). Given a timed state sequence 
+
+ς =  (x0, γ 0), . . . , (xN , γ N ), the piecewise-linear signal ςpwl : [0 , γ N ] → R|V | is defined by the following linear interpolation: ςpwl := (1 − λ)xi−1 + λx i if γi−1 ≤
+
+t ≤ γi
+
+ where λ = 1 
+
+> γi−γi−1
+
+(t − γi−1).
+
+Definition 4 ( δ-tightening of STL formulas in NNF [20]). Let φ be an STL formula in NNF whose atomic propositions are linear predicates of the form 
+
+(c⊤x+b ≥ 0) . Given δ > 0, the δ-tightening φδ is obtained from φ by i) replacing every occurrence of (c⊤x + b ≥ 0) with (c⊤x + b ≥ δ), and ii) replacing every occurrence of ¬(c⊤x + b ≥ 0) with (−c⊤x − b ≥ δ). All Boolean connectives and temporal connectives (with the time intervals therein) are left unchanged. 
+
+Note that φδ is stronger than φ, i.e.,  σ ⊨ φδ  ⇒  σ ⊨ φ for all signals σ.Using this notion, a δ-stable partition defined below classifies each subformula on each closed interval as either i) always true, or ii) never robustly true. 
+
+Definition 5 ( δ-stability [20]). Let φ be an STL formula over V in NNF, 
+
+σ ∈ Signal TV be a signal, and Γ = ( γ0, . . . , γ N ) be a time sequence (Def. 2) with 
+
+γN = T . We say Γ is δ-stable for σ and φ if, for each i = 1 , . . . , N and each subformula ψ ∈ Sub( φ), either of the following holds: i) σt ⊨ ψ for each t ∈ Γi,or ii) σt ⊭ ψδ for each t ∈ Γi.6 M. Jouve-Genty et al. 
+
+Finding a δ-stable partition Γ for a signal σ and formula φ, so that σt ⊨ φ
+
+holds for t ∈ Γ1, is a sufficient method to prove σ ⊨ φ. Recall that Γ1 = [ γ0, γ 1]with γ0 = 0 (see Def. 2). As shown in [20], this search can be encoded as an MILP when σ is piecewise-linear (Def. 3). 
+
+Definition 6 (conservative valuation [20]). Let φ be an STL formula in NNF, and Γ = ( γ0, . . . , γ N ) be a time sequence. A valuation of φ in Γ is a function Θ : Sub( φ) × { 1, . . . , N } → B that assigns, to each subformula and index of the intervals of Γ , a Boolean truth value. Let σ be a signal with a time horizon T = γN . We say that Θ is a conservative valuation of φ in Γ on σ
+
+(up to δ) if i) Θ(ψ, i ) = ⊤ implies that, for each t ∈ Γi, σt ⊨ ψ holds; and ii) Θ(ψ, i ) = ⊥ implies, for each t ∈ Γi, σt ⊭ ψδ .
+
+Lemma 1 ([20]). Suppose there is a conservative valuation Θ of an STL for-mula φ in a time sequence Γ on σ up to δ. Then Γ is δ-stable for σ and φ.
+
+We simply write ⟨ψ⟩i for Θ(ψ, i ) when Θ is clear from context. The MILP problem therefore searches for i) a partition Γ = ([ γi−1, γ i]) Ni=1 (see Def. 2), and ii) a conservative valuation Θ (see Def. 6), such that: 
+
+– the truth values assigned to subformulas comply with the STL semantics (Sect. 2.1), e.g., for a subformula ( ψ1 ∧ ψ2) ∈ Sub( φ) and i ∈ { 1, . . . , N },
+
+⟨ψ1 ∧ ψ2⟩i = ⟨ψ1⟩i ∧ ⟨ ψ2⟩i;
+
+– Θ assigns ⊤ to the top-level formula φ in Γ1; and 
+
+– there is a piecewise-linear trace σ ∈ L (M) of M that yields Θ.The entities Γ, Θ we search for are expressed as MILP variables, and the above three conditions are expressed as MILP constraints. The variables can be classi-fied into four types, where N ∈ N is a constant for variability bound (Prob. 1). 
+
+– Real-valued variables γ0, . . . , γ N specifying the time sequence Γ .
+
+– Boolean variables {⟨ ψ⟩i | 1 ≤ i ≤ N, ψ ∈ Sub( φ)} for the value Θ(ψ, i ) of a valuation Θ that we search for. 
+
+– Real-valued variables {xi,v | 0 ≤ i ≤ N, v ∈ V } for the values of a piecewise-linear trace σ ∈ L (M). 
+
+– Auxiliary variables (real or binary) used to encode big-M constraints—a common technique in LP—and the temporal/satisfaction encodings. We omit the MILP details here; see [20] for the full encoding. 
+
+## 4 Diversity-Aware Synthesis 
+
+This section presents methods to synthesize mutually diverse traces. Although modern MILP solvers such as Gurobi [11] can return multiple solutions from the solution pool of a single instance, those solutions are typically very similar (see Sect. 6 for an empirical demonstration). To overcome this limitation, we propose three diversity measures that quan-tify how “different” one trace is from another. Each measure is encoded as an STLts-Div: Diversified Trace Synthesis from STL Using MILP 7
+
+MILP objective to promote diverse solutions. We do not claim that the three methods presented here are the only possible approaches. However, given the practical need to generate diverse example traces, it is important to provide methods that work. 
+
+4.1 Boolean Distance Method (BD) 
+
+As flipping the truth value of a subformula may induce substantial changes in the underlying signal variables, an initial attempt to diversify traces is to bias the truth valuations of subformulas in each trace. We quantify the resulting diversity using a Boolean distance between traces. 
+
+Definition 7 (Boolean distance). Let σ1, σ 2 be two traces found by an MILP solver that i) have N -HBV (see Prob. 1) and ii) satisfy the same STL formula φ.Let Γ σ1 (resp. Γ σ2 ) be the δ-stable partition for σ1 (resp. σ2) and φ. Let ⟨ψ⟩σj
+
+> i
+
+denote the Boolean valuation of ψ ∈ Sub( φ) over the interval Γ σj 
+
+> i
+
+of the partition 
+
+Γ σj , where i ∈ { 1, . . . , N } and j ∈ { 1, 2}. The Boolean distance between σ1 and 
+
+σ2 is 
+
+dB(σ1, σ 2) := 
+
+> N
+
+X
+
+> i=1
+
+X
+
+> ψ∈Sub( φ)
+
+|⟨ ψ⟩σ1 
+
+> i
+
+− ⟨ ψ⟩σ2 
+
+> i
+
+|. (2) By construction, dB(σ1, σ 2) is equal to the number of pairs ( i, ψ ) on which the two traces assign different truth values. Hence, a larger Boolean distance indicates greater diversity, in the sense of satisfaction of subformulas. 
+
+Remark 1. In Eq. (2), if the Boolean value of ⟨ψ⟩σ1 
+
+> i
+
+is fixed for i ∈ { 1, . . . , N }
+
+(which is the case in our usage), the absolute value can be rewritten as 
+
+|⟨ ψ⟩σ1 
+
+> i
+
+− ⟨ ψ⟩σ2 
+
+> i
+
+| =
+
+(⟨ψ⟩σ2 
+
+> i
+
+if ⟨ψ⟩σ1 
+
+> i
+
+= 0 ,
+
+1 − ⟨ ψ⟩σ2 
+
+> i
+
+if ⟨ψ⟩σ1 
+
+> i
+
+= 1 ,
+
+or equivalently, |⟨ ψ⟩σ1 
+
+> i
+
+− ⟨ ψ⟩σ2 
+
+> i
+
+| = (1 − 2⟨ψ⟩σ1 
+
+> i
+
+) ⟨ψ⟩σ2 
+
+> i
+
++ ⟨ψ⟩σ1 
+
+> i
+
+.
+
+Note that the last expression is affine in ⟨ψ⟩σ2 
+
+> i
+
+(⟨ψ⟩σ1 
+
+> i
+
+is a constant). Applying this rule to Eq. (2), we obtain an affine expression over variables ⟨ψ⟩σ2 
+
+> i
+
+.Given a fixed variability bound N ∈ N, we incorporate the Boolean dis-tance of traces into the MILP objective while keeping the original constraints from Sect. 3 unchanged. This MILP problem is then solved iteratively, for 
+
+m = 1 , 2, . . . , to synthesize a trace σm that is maximally distinct (in terms of Boolean distance) from the previously synthesized traces σ1, . . . , σ m−1. The objective in each iteration is defined as follows. 
+
+– Initialization ( m = 1 ). Maximize f1 := 0. 8 M. Jouve-Genty et al. 
+
+– Iteration ( m > 1). Let σm denote the trace to be synthesized at the current iteration (this gives decision variables). Given the previously obtained traces 
+
+{σi}m−1 
+
+> i=1
+
+(which are constants in MILP), maximize 
+
+fm := 
+
+> m−1
+
+X
+
+> i=1
+
+dB (σm, σ i) . (3) By Remark 1, fm is an affine function of the Boolean decision variables of the trace σm, with coefficients determined by the constants for {σi}m−1 
+
+> i=1
+
+.
+
+Remark 2. The above diversification method is possible due to our use of MILP. A similar method in SMT is nontrivial. The key difference is that, in MILP, truth values are encoded as integer variables and they can be summed up (as in Eq. (3)), whereas in SMT they are propositional variables and cannot be summed. Counting the number of subformulas with different truth values across models would require techniques such as MaxSMT or model counting, which we leave for future work. 
+
+4.2 Randomized Boolean Distance Method (RBD) 
+
+This subsection introduces a randomized variant of the Boolean distance. It promotes diversity by evaluating each candidate trace against an independently sampled reference, thereby decoupling the current solution from all previous ones. Specifically, for a fixed variability bound N , the valuation of all ψ ∈ Sub( φ)across the intervals ( Γi)Ni=1 form an N |Sub( φ)|-dimensional Boolean vector. We sample a reference valuation σref from the uniform distribution in BN |Sub( φ)| and solve an MILP problem that maximizes the Boolean distance between σref and the candidate trace. Let σ denote the candidate trace, the objective is 
+
+f := dB(σ, σ ref ),
+
+which yields a trace that is as far as possible, in Boolean distance, from the reference valuation. By Remark 1, f is affine in the decision variables of trace σ.
+
+Remark 3. The choice between maximization and minimization is immaterial: for any reference valuation σref ∈ BN |Sub( φ)|,
+
+dB (σ, σ ref ) = N |Sub( φ)| − dB(σ, ¯σref ),
+
+where ¯ σref denotes the bitwise complement of σref . Hence, maximizing distance from σref is equivalent to minimizing distance to ¯ σref .The following proposition provides a quantitative guarantee that the proba-bility of generating identical reference traces is small, which supports the diver-sity of traces. The proof is deferred to Appx. B. STLts-Div: Diversified Trace Synthesis from STL Using MILP 9
+
+Proposition 1. For a δ-stable partition Γ = ( γ0, · · · , γ N ) of the time horizon for a formula φ, let d := N |Sub( φ)|. Suppose m ≥ 2 reference valuations 
+
+σ1ref , . . . , σ m 
+
+> ref
+
+are drawn independently and uniformly from Bd. Let p denote the probability that at least two references coincide. Then 
+
+p = 1 − 2d!(2 d − m)! 2 md ,and the following upper bound holds: 
+
+p ≤ m(m − 1) 2d+1 .
+
+4.3 Value Distance Method (VD) 
+
+Although the Boolean distance can serve as a metric for diversification, we also consider a more direct metric: the distance between the trace values. For two piecewise-linear traces that share the same time sequence, their value distance 
+
+is defined as follows. 
+
+Definition 8. Let ς1, ς 2 be two time state sequences (Def. 2) with the same time sequence Γ = ( γ0, . . . , γ N ). Let V be a set of signal variables. For two piecewise-linear traces σ1, σ 2 : [ γ0, γ N ] → R|V | generated from ς1, ς 2, respectively, their 
+
+value distance is defined by 
+
+dV(σ1, σ 2) := 
+
+> N
+
+X
+
+> i=0
+
+∥σ1(γi) − σ2(γi)∥1 =
+
+> N
+
+X
+
+> i=0
+
+X
+
+> v∈V
+
+|σ1(γi)( v) − σ2(γi)( v)|.Here ∥·∥ 1 denotes the ℓ1-norm on R|V |.
+
+Essentially, the value distance is the cumulative distance between traces at (γi)Ni=0 of the time sequence Γ .
+
+Remark 4. Note that, although the time partitions Γ may vary across traces for BD and RBD (i.e., Γ σi may differ from Γ σj ), they are fixed for VD. This is because allowing variable partitions in VD may reduce meaningful diversity: two identical signals could appear artificially distant if compared at different time instants. The diversified trace synthesis procedure is iterative: at each step it maximizes the value distance between the candidate trace and all previously generated traces, subject to the constraint that all traces share the same time sequences. Let σm denote the piecewise-linear signal produced at iteration m, and let (γ(m)0 , . . . , γ (m) 
+
+> N
+
+) be the corresponding δ-stable partition at iteration m. The it-erative synthesis procedure is as follows. 
+
+– Initialization ( m = 1 ). Solve the original MILP problem with objective 
+
+f1 := 0. 10 M. Jouve-Genty et al. 
+
+– Iteration ( m > 1). Let C denote the original MILP constraints from Sect. 3. Solve the following MILP: maximize 
+
+> m−1
+
+X
+
+> k=1
+> N
+
+X
+
+> i=0
+
+X
+
+> v∈V
+
+Zk,i,v , (4) subject to ( C),γi = γ(m−1)  
+
+> i
+
+0 ≤ i ≤ N, Zk,i,v = abs (Yk,i,v ) 1 ≤ k ≤ m − 1, 0 ≤ i ≤ N, v ∈ V, Yk,i,v = xi,v − σk(γi)( v) 1 ≤ k ≤ m − 1, 0 ≤ i ≤ N, v ∈ V. 
+
+Here, xi,v is the MILP decision variable representing the value of signal variable v ∈ V on the interval [ γi−1, γ i]. At iteration m > 1, to i) ensure that synthesized traces share the same 
+
+δ-stable partition, and ii) simplify the encoding of absolute values in the objec-tive, we augment C with the constraints above. The relations Zk,i,v = abs (Yk,i,v )are implemented by standard MILP linearization (introducing auxiliary variables and linear inequalities), so the resulting problem remains an MILP. 
+
+Remark 5. Due to the use of absolute-value terms in the constraints, the MILP complexity increases with each iteration. Specifically, at iteration m, new vari-ables Ym,i,v and Zm,i,v are introduced for every i = 0 , . . . , N and v ∈ V , adding 2( N + 1) |V | variables per iteration. Consequently, the overall complexity of gen-erating m solutions grows faster than linearly with respect to the size of the individual MILP problem. Nevertheless, the value distance method is substantially faster than the two Boolean distance approaches when synthesizing a small number of traces. The value distance objective sums over signal variables, whereas the Boolean dis-tance objective sums over subformulas. Since |V | is typically much smaller than 
+
+|Sub( φ)| for realistic STL formulas, the value distance objective contains far fewer terms and is therefore cheaper to optimize. See Sect. 6 for experimental results. 
+
+## 5 Demonstration of STLts-Div 
+
+STLts-Div is a Python package for MILP-based diversified trace synthesis from STL. It can be installed by i) ensuring a working Gurobi installation, and ii) run-ning pip install stltspref . We use the name stltspref for the pip package to accommodate future extensions incorporating preference-based trace synthe-sis methods. The procedure to run STLts-Div is shown in Fig. 1. The user must provide the following input. STLts-Div: Diversified Trace Synthesis from STL Using MILP 11  
+
+> 1
+
+import gurobipy as gp  
+
+> 2
+
+from stltspref . problem import c r e at e _ st l _ m il p _ p ro b l e m  
+
+> 34
+
+bound = 10 # variability bound ( see Problem 1)  
+
+> 5
+
+milp = gp . Model () # Gurobi model  
+
+> 6
+
+prob = c re a t e _s t l _m i l p _p r o b le m ( milp , N = bound ) # initialize the MILP problem 
+
+(a) Create the MILP problem prob . 
+
+> 1
+
+# Define system model and its continuous states  
+
+> 2
+
+car = prob . create_system_model ()  
+
+> 3
+
+car . add_state ( 'x ' , 0 , 40) # position x in [0 ,40]  
+
+> 4
+
+car . add_state ( 'v ' , -5 , 5) # velocity v in [ -5 ,5]  
+
+> 5
+
+car . add_state ( 'a ' , -3 , 3) # acceleration in [ -3 ,3]  
+
+> 67
+
+# Set initial state and dynamics ( double - integrator model )  
+
+> 8
+
+car . set_initial_state ( x =(0 ,0) , v =(0 ,0) , a =(0 ,0) ) # initial value ranges  
+
+> 9
+
+car . add_dynamics ( 'a ' , -3 , 3 , constant = True )  
+
+> 10
+
+car . a d d _ d o u b l e _ i n t e g r a t o r _ d y n a m i c s ( 'x ' , 'v ' , 'a ')
+
+(b) Define the system model ˙ x = v, ˙v = a, a ∈ [−3, 3], and add it to prob . 
+
+> 1
+
+from stltspref . linear_expression import LinearExpression as L 
+
+> 2
+
+from stltspref . stl import Atomic , BoundedAlw , Ev  
+
+> 34
+
+danger = Atomic ( L . unit ( 'x ') <= 10) # atomic proposition  
+
+> 5
+
+stl_spec = Ev ( BoundedAlw ([0 , 5] , danger ) ) # STL specification  
+
+> 67
+
+prob . i n i t i a l i z e _ m i l p _ f o r m u l a t i o n ( stl_spec ) # add the spec to MILP 
+
+(c) Specify the STL formula ♢  □[0 ,5] x ≤ 10  and add it to prob . 
+
+> 1
+
+from stltspref . p re fe r en ti a l_ sy n th es i s import diversity_finder  
+
+> 23
+
+diversity_method = ' RBD ' # random Boolean distance method  
+
+> 4
+
+trace_num = 5 # synthesis 5 diverse traces  
+
+> 56
+
+diversity_finder ( prob , diversity_method , bound , trace_num ) 
+
+(d) Solve prob to synthesize diverse traces. 
+
+Fig. 1: Workflow for MILP-based trace synthesis using STLts-Div. 
+
+– A system model. STLts-Div supports models such as double-integrator dy-namics and rectangular hybrid automata (RHA) (cf. [20] for details); see Fig. 1b. 
+
+– An STL formula (encoded in a DSL style); see Fig. 1c; 
+
+– A diversification method: SP (Gurobi solution pool [11]), BD (Boolean dis-tance; Sect. 4.1), RBD (randomized Boolean distance; Sect. 4.2), or VD (value difference; Sect. 4.3); see Fig. 1d; 
+
+– The desired number of traces to synthesize (a positive integer); see Fig. 1d. 
+
+## 6 Experimental Analysis 
+
+In this section, we evaluate our tool across different benchmarks and STL speci-fications to assess the efficiency and effectiveness of each diversification method. 12 M. Jouve-Genty et al. 
+
+As a baseline, we also include the standard approach that extracts traces directly from the solution pool of Gurobi. 
+
+6.1 Experiment Setting Benchmarks. To evaluate the efficiency of our diversification tool, we used benchmarks from four categories: Danger-then-Stop (DSTOP), Rear-End Near Collision (RNC), Navigation (NAV), and Disturbance Scenarios in ISO 34502 
+
+(ISO). Each category shares the same system model but includes several distinct STL specifications, resulting in a total of 13 benchmarks. 
+
+Danger then stop (DSTOP) Consider two cars in a single lane, where the rear car Car r repeatedly approaches the front car Car f too closely, creating a potentially dangerous situation. Eventually, one of the cars comes to a stop. The system dynamics are given by ˙ xr = vr, ˙ vr = ar, ˙ xf = vf , ˙ vf = af , with ar, a f ∈ [−3, 3]. The STL specification DSTOP is defined as follows: 
+
+lead :≡ xf − xr ≥ 0, close :≡ xf − xr ≤ 10 , far :≡ xf − xr ≥ 40 ,
+
+DSTOP :≡ (□ lead ) ∧ (□[0 ,2] far ) ∧ (♢[0 ,10] close ) U[10 ,15] (vf ≤ 0 ∨ vr ≤ 0)  .
+
+Rear-End Near Collision (RNC1–3) The system model for RNC1–3 is identical to that of DSTOP. These benchmarks describe driving scenarios in which the rear car Car r approaches the front car Car f too closely. The corresponding STL specifications, RNC1 , RNC2 , and RNC3 , are defined as follows: 
+
+danger :≡ xf − xr ≤ 10 ,
+
+dyn inv :≡ xf − xr ≥ 0 ∧ 2 ≤ vf ≤ 27 ∧ 2 ≤ vr ≤ 27 ,
+
+trimming :≡ (♢ danger ) ⇒  (□[0 ,0.2] ar ≥ 0.5) U danger ,
+
+trimming2 :≡ (♢danger ) ⇒  (□[0 ,1] ar ≥ 1) U danger ,
+
+RNC1 :≡ □(dyn inv ∧ trimming ) ∧ ♢[0 ,9] □[0 ,1] danger ,
+
+RNC2 :≡  □(xf − xr ≥ 0) ∧
+
+♢[0 ,9] 
+
+ (□[0 ,1] danger ) ∧ (□[0 ,1] ar ≥ 1) ∧ (♢[1 ,5] ¬danger ),
+
+RNC3 :≡ □(dyn inv ∧ trimming2 ) ∧ ♢[0 ,9] □[0 ,1] danger .                                                     
+
+> (0 ,10)
+> (0 ,0) (10 ,0)
+> (10 ,10)
+> (0 ,5)
+> (10 ,4)
+> (5 ,0)
+> (5 ,10)
+> (3 ,0)
+> Æ
+> ℓ1
+> ˙x= 1 ˙y∈[0 .1,2]
+> x∈[0 ,5]
+> y∈[5 ,10]
+> ℓ2
+> ˙x∈[0 .1,2] ˙y=−1
+> x∈[5 ,10]
+> y∈[4 ,10]
+> ℓ3˙x=−1˙y∈[−2,−0.1]
+> x∈[5 ,10]
+> y∈[0 ,4]
+> ℓ4
+> ˙x∈[−2,−0.1] ˙y= 1
+> x∈[0 ,5]
+> y∈[0 ,5]
+
+Fig. 2: The NAV1–2 RHA 
+
+Navigation (NAV1–2) The system model for NAV1–2 is adapted from [7], a standard example of a rectangular hybrid automaton (RHA) widely used in prior work (e.g., [20,4]). The model describes the motion of a robot on a grid consisting of four rect-angular regions ℓ1, . . . , ℓ 4. Each region has its own dynamics (see Fig. 2). The environment includes an unsafe region unsafeR (red) and a goal region goalR 
+
+(green). The robot starts from an initial position (x0, y 0) where x0 ∈ [0 , 3] and y0 = 0 (blue line). The STL specifications are NAV1 :≡ ♢(□[0 ,3] (( x, y ) ∈ goalR )) ∧ □(x̸ ∈ unsafeR )STLts-Div: Diversified Trace Synthesis from STL Using MILP 13 
+
+and NAV2 ≡ □(( x, y ) ∈ ℓ3 ⇒ ♢[0 ,3] (x, y ) ∈ ℓ4). Here, NAV1 specifies a reach-avoid property, while NAV2 requires that whenever the robot enters region ℓ3, it must reach region ℓ4 within three seconds. 
+
+Disturbance Scenarios in ISO 34502 (ISO1, ISO3, . . . , ISO8) ISO 34502 is an international standard for testing autonomous vehicles. The system model is similar to that of RNC1–3, and the specifications ISO1 , ISO3 , . . . , ISO8 are obtained in [19]. ISO2 is omitted because it involves three vehicles. Each spec 
+
+ISO i follows the general structure defined in [19]:           
+
+> ISO i:≡initSafe ∧disturb i,
+> disturb i:≡initialCondition i∧behaviourSV i∧behaviourPOV i,
+
+where SV denotes the subject (“ego”) vehicle and POV the principal other ve-hicle. The subformulas initialCondition i, behaviourSV i, and behaviourPOV i
+
+vary across scenarios (indexed by i). Their detailed definitions are beyond the scope of this paper; please refer to [19] for full descriptions. 
+
+Experiment design. We evaluate four diversification strategies implemented in our tool—SP (solution pool), BD (Boolean distance), RBD (randomized Boolean distance), and VD (value distance)—for synthesizing diverse traces. For each benchmark and each method, we generate 8 traces. We set the variability bound as 10 uniformly for each benchmark. While measuring diversity via coverage metrics over the space of all possible traces would provide a comprehensive quantification of diversity, the infinite nature of the trace space (since signals evolve in continuous time) makes such an approach computationally intractable. Investigating tractable approximations is left for future work. Instead, we quan-tify diversity using the aggregate pairwise Euclidean distance (APED) over time, a common choice in the literature [5]: 
+
+DE := X
+
+> i<j
+
+Z T
+
+> 0
+
+σi(t) − σj (t) 2 dt, 
+
+where i and j index the traces ( i, j ∈ { 1, . . . , 8} in our experiments) and T is the time horizon. The synthesized traces are resampled over [0 , T ] with a time step of 0 .02, and the integral is computed numerically in Python. Our experiments were conducted on an Amazon EC2 c5.2xlarge instance (3.00 GHz Intel Xeon Platinum 8275CL, 16 GB RAM) running Ubuntu Server 20.04 LTS. 
+
+6.2 Evaluation 
+
+We evaluate our tool along from effectiveness and efficiency .
+
+Effectiveness. Table 1a reports APED for each method and benchmark under a 6-minute per-trace timeout; a dash “—” indicates that no feasible trace was found within the timeout. Across benchmarks, our diversification methods (BD, 14 M. Jouve-Genty et al. 
+
+Table 1: Aggregated pairwise Euclidean distance under two timeout settings. 
+
+(a) Timeout per trace: 360 s. 
+
+Benchmarks SP BD RBD VD 
+
+DSTOP ∼ 129k (4 .62 s) ∼ 1.6M (200 s) ∼ 934k (1178 s) ∼ 3M (107 s) 
+
+RNC1 0(3 .11 s) ∼ 1.3M (2207 s) ∼ 1.5M (1881 s) ∼ 1.6M (44 .0 s) 
+
+RNC2 0(5 .87 s) ∼ 2.8M (2523 s) ∼ 2.2M (1867 s) ∼ 4.8M (25 .4 s) 
+
+RNC3 0(3 .13 s) ∼ 1.7M (1473 s) ∼ 1.3M (158 s) ∼ 1.5M (53 .0 s) 
+
+NAV1 — — — —
+
+NAV2 — — — —
+
+ISO1 ∼ 18 (95 .9 s) ∼ 466k (2529 s) ∼ 403k (2882 s) ∼ 1.5M (2529 s) 
+
+ISO3 ∼ 153 (63 .8 s) ∼ 701k (2527 s) ∼ 71k (2882 s) ∼ 792k (2528 s) 
+
+ISO4 ∼ 772 (29 .6 s) ∼ 633k (2526 s) ∼ 174k (2881 s) ∼ 598k (2526 s) 
+
+ISO5 ∼ 34k (266 s) ∼ 1M (2561 s) ∼ 32k (2882 s) ∼ 1.7M (2361 s) 
+
+ISO6 ∼ 122 (19 .1 s) ∼ 413k (2529 s) — ∼ 1.6M (1653 s) 
+
+ISO7 — ∼ 230k (2556 s) — ∼ 911k (2555 s) 
+
+ISO8 ∼ 1.2k (66 .8 s) ∼ 447k (2527 s) ∼ 291k (2882 s) ∼ 896k (2444 s) 
+
+(b) Timeout per trace: 60 s. 
+
+Benchmarks SP BD RBD VD 
+
+DSTOP ∼ 130k (4 .33 s) ∼ 1.6M (157 s) ∼ 1M (237 s) ∼ 3M (102 s) 
+
+RNC1 0(3 .03 s) ∼ 1.3M (405 s) ∼ 1.4M (401 s) ∼ 1.6M (42 s) 
+
+RNC2 0(5 .52 s) ∼ 2.4M (423 s) ∼ 2.3M (477 s) ∼ 4.8M (24 .4 s) 
+
+RNC3 0(3 .05 s) ∼ 1.7M (365 s) ∼ 1.2M (395 s) ∼ 1.6M (50 .6 s) 
+
+NAV1 — — — —
+
+NAV2 — — — —
+
+ISO1 — ∼ 79k (429 s) — ∼ 1.4M (429 s) 
+
+ISO3 — 0(428 s) — ∼ 133k (426 s) 
+
+ISO4 ∼ 772 (32 .1 s) ∼ 177k (426 s) — ∼ 256k (425 s) 
+
+ISO5 — 0(464 s) — ∼ 1.5M (464 s) 
+
+ISO6 ∼ 122 (21 .2 s) 0(429 s) — ∼ 1.6M (389 s) 
+
+ISO7 — 0(457 s) — ∼ 271k (458 s) 
+
+ISO8 — ∼ 88k (427 s) 0(480 s) ∼ 431k (426 s) 
+
+Entries show APED; parentheses give the total time to produce 8 traces (in seconds); ‘—’ indicates that no feasible traces were produced within the timeout; numbers use suffixes k = 10 3 and M = 10 6;
+
+RBD, VD) consistently achieve substantially higher diversity than the baseline (SP)—typically about an order of magnitude larger APED. Occasionally the baseline attains APED > 0, reflecting that some specifi-cations are relatively permissive for the given system model: multiple distinct MILP assignments can satisfy φ while respecting the dynamics, yielding non-identical traces. The DSTOP , ISO5 , and ISO8 exhibit this behaviour. STLts-Div: Diversified Trace Synthesis from STL Using MILP 15 1 2 3 4 5 6 7 8                     
+
+> Round
+> 0
+> 20
+> 40
+> 60
+> Time (s)
+> dstop
+> SP baseline
+> SP
+> BD
+> RBD
+> VD 12345678
+> Round
+> 0
+> 20
+> 40
+> 60
+> Time (s)
+> rnc1
+> SP baseline
+> SP
+> BD
+> RBD
+> VD 12345678
+> Round
+> 0
+> 20
+> 40
+> 60
+> Time (s)
+> rnc2
+> SP baseline
+> SP
+> BD
+> RBD
+> VD 12345678
+> Round
+> 0
+> 20
+> 40
+> 60
+> Time (s)
+> rnc3
+> SP baseline
+> SP
+> BD
+> RBD
+> VD
+
+Fig. 3: Round time of DSTOP , RNC1 , RNC2 , RNC3 .
+
+Efficiency. Table 1a reports the total time required to generate the full set of traces. For NAV1 and NAV2 no feasible trace was found within our setting; this matches [20], which reports that NAV1 and NAV2 becomes solvable only with a much larger variability bound (e.g. N = 17 for NAV1 , versus our uniform bound N=10). Because our diversification is posed as an optimization problem, a solver time-out does not necessarily imply infeasibility—it may simply return a suboptimal or low-quality solution. To assess sensitivity to the time budget, we repeated the experiments with a reduced per-trace timeout of 60 seconds; results appear in Table 1b. For relatively simple benchmarks (e.g., DSTOP , RNC1 , RNC2 ), reducing the timeout has little effect on diversity for any method. In particular, RBD requires significantly less time while producing nearly the same APED. This suggests that, with a larger time budget (i.e., 360s per trace), the optimization process may spend most of its time attempting to approach the optimal solution without reaching it before the timeout. In practice, however, a near-optimal solution already provides sufficient diversity, which explains the similar APED values observed under both timeout settings. By contrast, on more challenging benchmarks (e.g., ISO1 , ISO8 , ISO4 ), per-formance diverges: RBD often fails to produce feasible traces, and BD frequently returns only trivial repeats after the first iteration (APED = 0). VD is the most robust under tight time limits: it continues to produce nontrivial, diverse traces even with the shorter timeout. To study how per-iteration runtime (i.e., the time to synthesize one trace) evolves with the iteration index, we record the runtime at each iteration for 
+
+DSTOP , RNC1 , RNC2 , and RNC3 and plot the results in Fig. 3. For VD, the per-16 M. Jouve-Genty et al. 
+
+Table 2: Comparison of diversification methods              
+
+> Criteria SP BD RBD VD Total runtime 1–100 Varying with timeout setting Varying with timeout setting Varying with timeout setting
+> Stable per-trace time
+> -Varying across iterations Varying across iterations Time increase per iteration
+> Diversity Compatibility with other tools
+> Support all MILP-based formulations Compatible only with full Boolean-variable formulations Compatible only with full Boolean-variable formulations Limited compatibility
+> Deterministic ✓✓✗✓
+> = good; = moderate; = poor; - = not applicable.
+
+iteration time increases steadily, consistent with our analysis in Sect. 4.3 that each round enlarges the MILP problem (additional auxiliary variables). In con-trast, BD and RBD show fluctuating runtimes with no clear trend: BD changes the coefficients of the accumulated objective each round, and RBD re-samples the reference, both of which alter the search landscape and lead to non-monotonic solver times. 
+
+Summary. Table 2 contrasts the three diversification strategies. Achieving di-versity incurs extra runtime for all of them. The ideas behind BD and RBD are broadly portable: for problems with only Boolean decision variables, adding (possibly randomized) Boolean distance terms can produce multiple diverse solu-tions. By contrast, VD depends on continuous state variables and absolute-value linearization, which enlarges the MILP problem and makes the approach less di-rectly compatible with other tools or settings. 
+
+## 7 Conclusion 
+
+We introduced diversification into MILP-based STL trace synthesis. We for-mulated several complementary objectives—e.g., Boolean distance, randomized Boolean distance, and value distance—that promote dissimilarity by maximizing an appropriate distance between the candidate trace and previously generated ones. We implemented these objectives in STLts-Div and evaluated effective-ness and efficiency on a suite of benchmarks, showing clear improvements over a solution-pool baseline. A complete MILP encoding of robust semantics remains open. Such an encod-ing could enable richer preference objectives and stronger guarantees, including true corner-case synthesis (robustness exactly 0) and additional forms of prefer-ential synthesis. STLts-Div: Diversified Trace Synthesis from STL Using MILP 17 
+
+## References 
+
+1. Alur, R., Feder, T., Henzinger, T.A.: The benefits of relaxing punctuality. Journal of the ACM (JACM) 43 (1), 116–146 (1996) 2. Atkins, E.M., Bradley, J.M.: Aerospace cyber-physical systems education. In: AIAA Infotech@ Aerospace (I@ A) Conference. p. 4809 (2013) 3. Bae, K., Lee, J.: Bounded model checking of signal temporal logic properties us-ing syntactic separation. Proceedings of the ACM on Programming Languages 
+
+3(POPL), 1–30 (2019) 4. Bu, L., Frehse, G., Kundu, A., Ray, R., Shi, Y., Zaffanella, E., et al.: Arch-comp22 category report: Hybrid systems with piecewise constant dynamics and bounded model checking. In: Proceedings of 9th International Workshop on Applied Verifi-cation of Continuous and Hybrid Systems (ARCH22). EPiC Series in Computing. vol. 90, pp. 44–57 (2022) 5. Cheng, M., Zhou, Y., Xie, X.: Behavexplor: Behavior diversity guided testing for autonomous driving systems. In: Proceedings of the 32nd ACM SIGSOFT Inter-national Symposium on Software Testing and Analysis. pp. 488–500 (2023) 6. Donz´ e, A., Raman, V., Frehse, G., Althoff, M.: Blustl: Controller synthesis from signal temporal logic specifications. ARCH@ CPSWeek 34 , 160–8 (2015) 7. Duggirala, P.S., Mitra, S.: Abstraction refinement for stability. In: 2011 IEEE/ACM Second International Conference on Cyber-Physical Systems. pp. 22– 31. IEEE (2011) 8. Ernst, G., Arcaini, P., Bennani, I., Chandratre, A., Donz´ e, A., Fainekos, G., Frehse, G., Gaaloul, K., Inoue, J., Khandait, T., et al.: Arch-comp 2021 category report: Falsification with validation of results. In: ARCH@ ADHS. pp. 133–152 (2021) 9. Fainekos, G.E., Pappas, G.J.: Robustness of temporal logic specifications for continuous-time signals. Theoretical Computer Science 410 (42), 4262–4291 (Sep 2009). https://doi.org/10.1016/j.tcs.2009.06.021 , http://dx.doi.org/10. 1016/j.tcs.2009.06.021 
+
+10. Gurobi Optimization, L.: Gurobi optimization, llc, gurobi optimizer reference man-ual. URL http://www. gurobi. com (2019) 11. Gurobi Optimization, LLC: Gurobi Optimizer Reference Manual (2024), 
+
+https://www.gurobi.com 
+
+12. Lee, J., Yu, G., Bae, K.: Efficient smt-based model checking for signal temporal logic. In: 2021 36th IEEE/ACM international conference on automated software engineering (ASE). pp. 343–354. IEEE (2021) 13. Lindemann, L., Dimarogonas, D.V.: Control barrier functions for signal temporal logic tasks. IEEE control systems letters 3(1), 96–101 (2018) 14. Maler, O., Nickovic, D.: Monitoring Temporal Properties of Continuous Sig-nals, p. 152–166. Springer Berlin Heidelberg (2004). https://doi.org/10.1007/ 978-3-540-30206-3_12 , http://dx.doi.org/10.1007/978-3-540-30206-3_12 
+
+15. Prabhakar, P., Lal, R., Kapinski, J.: Automatic trace generation for signal temporal logic. In: 2018 IEEE Real-Time Systems Symposium (RTSS). pp. 208–217. IEEE (2018) 16. Rabinovich, A.M.: On the decidability of continuous time specification formalisms. Journal of logic and computation 8(5), 669–678 (1998) 17. Raman, V., Donz´ e, A., Sadigh, D., Murray, R.M., Seshia, S.A.: Reactive synthesis from signal temporal logic specifications. In: Proceedings of the 18th international conference on hybrid systems: Computation and control. pp. 239–248 (2015) 18 M. Jouve-Genty et al. 18. Raman, V., Maasoumy, M., Donz´ e, A.: Model predictive control from signal tem-poral logic specifications: A case study. In: Proceedings of the 4th ACM SIGBED international workshop on design, modeling, and evaluation of cyber-physical sys-tems. pp. 52–55 (2014) 19. Reimann, J., Mansion, N., Haydon, J., Bray, B., Chattopadhyay, A., Sato, S., Waga, M., Andr´ e, ´E., Hasuo, I., Ueda, N., et al.: Temporal logic formalisation of iso 34502 critical scenarios: modular construction with the rss safety distance. In: Proceedings of the 39th ACM/SIGAPP Symposium on Applied Computing. pp. 186–195 (2024) 20. Sato, S., An, J., Zhang, Z., Hasuo, I.: Optimization-Based Model Checking and Trace Synthesis for Complex STL Specifications, p. 282–306. Springer Nature Switzerland (2024). https://doi.org/10.1007/978-3-031-65633-0_13 , http:// dx.doi.org/10.1007/978-3-031-65633-0_13 
+
+21. Su, H., Feng, S., Zhan, S., Zhan, N.: Switching controller synthesis for hybrid systems against stl formulas. In: International Symposium on Formal Methods. pp. 229–247. Springer (2024) 22. Su, H., Shankar, S., Pinisetty, S., Roop, P.S., Zhan, N.: Runtime enforcement of cps against signal temporal logic. In: Proceedings of the 28th ACM International Conference on Hybrid Systems: Computation and Control. pp. 1–11 (2025) 23. Tomlin, C.J., Lygeros, J., Sastry, S.S.: A game theoretic approach to controller design for hybrid systems. Proceedings of the IEEE 88 (7), 949–970 (2000) 24. Ye, P., Entcheva, E., Smolka, S.A., Grosu, R.: Modelling excitable cells using cycle-linear hybrid automata. IET systems biology 2(1), 24–32 (2008) 25. Zhang, Z., An, J., Arcaini, P., Hasuo, I.: Online causation monitoring of signal temporal logic. In: International Conference on Computer Aided Verification. pp. 62–84. Springer (2023) STLts-Div: Diversified Trace Synthesis from STL Using MILP 19 
+
+## Appendix A STL semantics 
+
+Definition 9 (Boolean semantics of STL). For a signal σ and an STL formula φ, the satisfaction relation σ ⊨ φ between them is defined as follows: 
+
+σ ⊨ p ⇐⇒ πp(σ(0)) ≥ 0, σ ⊨ ¬p ⇐⇒ πp(σ(0)) < 0,σ ⊨ φ1 ∧ φ2 ⇐⇒ σ ⊨ φ1 ∧ σ ⊨ φ2, σ ⊨ φ1 ∨ φ2 ⇐⇒ σ ⊨ φ1 ∨ σ ⊨ φ2,σ ⊨ φ1 UI φ2 ⇐⇒ ∃ t ∈ I, 
+
+
+
+σt ⊨ φ2 ∧ ∀ t′ ∈ [0 , t ], σ t′
+
+⊨ φ1
+
+
+
+,σ ⊨ φ1 RI φ2 ⇐⇒ ∀ t ∈ I, 
+
+
+
+σt ⊨ φ2 ∨ ∃ t′ ∈ [0 , t ], σ t′
+
+⊨ φ1
+
+
+
+.
+
+Definition 10 (Robust semantics of STL). For a signal σ and an STL for-mula φ, the robust semantics of STL returns a quantity [[ σ, φ ]] ∈ R ∪ { +∞, −∞} 
+
+that indicates the satisfaction level of σ to φ:
+
+[[ σ, ⊤]] = + ∞, [[ σ, ⊥]] = −∞ , [[ σ, p ]] = πp(σ(0)) , [[ σ, ¬p]] = −πp(σ(0)) ,
+
+[[ σ, φ 1 ∧ φ2]] = min([[ σ, φ 1]] , [[ σ, φ 2]]) , [[ σ, φ 1 ∨ φ2]] = max([[ σ, φ 1]] , [[ σ, φ 2]]) ,
+
+[[ σ, φ 1 UI φ2]] = sup 
+
+> t∈I
+
+  min  [[ σt, φ 2]] , inf 
+
+> t′∈[0 ,t ]
+
+[[ σt′
+
+, φ 1]]  ,
+
+[[ σ, φ 1 RI φ2]] = inf 
+
+> t∈I
+
+  max  [[ σt, φ 2]] , sup 
+
+> t′∈[0 ,t ]
+
+[[ σt′
+
+, φ 1]]  .
+
+## B Proof of propositions 
+
+Proposition 1. For a δ-stable partition Γ = ( γ0, · · · , γ N ) of the time horizon for a formula φ, let d := N |Sub( φ)|. Suppose m ≥ 2 reference valuations 
+
+σ1ref , . . . , σ m 
+
+> ref
+
+are drawn independently and uniformly from Bd. Let p denote the probability that at least two references coincide. Then 
+
+p = 1 − 2d!(2 d − m)! 2 md ,and the following upper bound holds: 
+
+p ≤ m(m − 1) 2d+1 .Proof. The samples are i.i.d. and uniformly distributed over a set of size 2 d.Hence Pr(all m traces are distinct) = 
+
+> m−1
+
+Y
+
+> k=1
+
+Pr  σk+1 ref /∈ { σ1ref , . . . , σ k 
+
+> ref
+
+}
+
+=
+
+> m−1
+
+Y
+
+> k=1
+
+
+
+1 − k
+
+2d
+
+
+
+= 2d!(2 d − m)! 2 md .20 M. Jouve-Genty et al. 
+
+Therefore, 
+
+p = 1 − Pr(all m traces are distinct) = 1 − 2d!(2 d − m)! 2 md .For the upper bound, 
+
+p = Pr( ∃i < j, σ i 
+
+> ref
+
+= σj 
+
+> ref
+
+) ≤ X
+
+> i<j
+
+Pr  σi 
+
+> ref
+
+= σj
+
+> ref
+
+ =
+
+m
+
+2
+
+ 12d = m(m − 1) 2d+1 .

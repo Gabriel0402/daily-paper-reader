@@ -1,0 +1,460 @@
+Title: SAMSEM -- A Generic and Scalable Approach for IC Metal Line Segmentation
+
+URL Source: https://arxiv.org/pdf/2603.16548v1
+
+Published Time: Wed, 18 Mar 2026 01:32:22 GMT
+
+Number of Pages: 24
+
+Markdown Content:
+IACR Transactions on Cryptographic Hardware and Embedded Systems ISSN XXXX-XXXX, Vol. 0, No. 0, pp. 1–24. DOI:XXXXXXXX 
+
+# SAMSEM – A Generic and Scalable Approach for IC Metal Line Segmentation 
+
+# Christian Gehrmann 1, Jonas Ricker 2, Simon Damm 2, Deruo Cheng 3, Julian Speith 1, Yiqiong Shi 3, Asja Fischer 2 and Christof Paar 1 
+
+> 1
+
+Max Planck Institute for Security and Privacy (MPI-SP), Bochum, Germany, {christian.gehrmann , julian.speith , christof.paar }@mpi-sp.org  
+
+> 2
+
+Ruhr University Bochum (RUB), Bochum, Germany, {jonas.ricker , simon.damm , asja.fischer }@rub.de  
+
+> 3
+
+Nanyang Technological University (NTU), Singapore, Singapore, {deruo.cheng , yqshi }@ntu.edu.sg 
+
+Abstract. In light of globalized hardware supply chains, the assurance of hardware components has gained significant interest, particularly in cryptographic applications and high-stakes scenarios. Identifying metal lines on scanning electron microscope (SEM) images of integrated circuits (ICs) is one essential step in verifying the absence of malicious circuitry in chips manufactured in untrusted environments. Due to varying manufacturing processes and technologies, such verification usually requires tuning parameters and algorithms for each target IC. Often, a machine learning model trained on images of one IC fails to accurately detect metal lines on other ICs. To address this challenge, we create SAMSEM by adapting Meta’s Segment Anything Model 2 (SAM2) to the domain of IC metal line segmentation. Specifically, we develop a multi-scale segmentation approach that can handle SEM images of varying sizes, resolutions, and magnifications. Furthermore, we deploy a topology-based loss alongside pixel-based losses to focus our segmentation on electrical connectivity rather than pixel-level accuracy. Based on a hyperparameter optimization, we then fine-tune the SAM2 model to obtain a model that generalizes across different technology nodes, manufacturing materials, sample preparation methods, and SEM imaging technologies. To this end, we leverage an unprecedented dataset of SEM images obtained from 48 metal layers across 14 different ICs. When fine-tuned on seven ICs, SAMSEM achieves an error rate as low as 0.72 % when evaluated on other images from the same ICs. For the remaining seven unseen ICs, it still achieves error rates as low as 
+
+5.53 % . Finally, when fine-tuned on all 14 ICs, we observe an error rate of 0.62 % .Hence, SAMSEM proves to be a reliable tool that significantly advances the frontier in metal line segmentation, a key challenge in post-manufacturing IC verification. 
+
+Keywords: Hardware Assurance · Metal Line Segmentation · SAM2 
+
+# 1 Introduction 
+
+Integrated circuits ( IC s) are deployed across all aspects of our digital society. They provide the foundation not only for our electronic devices, such as smartphones and computers, but also for many safety and security applications in critical infrastructure and defense. To this end, assurance of the absence of malicious circuitry in such IC s is essential to ensure the reliability and trustworthiness of their supply chain. This is particularly true for many cryptographic applications, as hardware Trojans in, e. g., a trusted platform module ( TPM ), could easily be leveraged to subvert security altogether. One means to achieve such assurance is through physical inspection, i. e., destructively opening up 
+
+Licensed under Creative Commons License CC-BY 4.0. 
+
+> arXiv:2603.16548v1 [cs.CR] 17 Mar 2026
+
+2 SAMSEM – A Generic and Scalable Approach for IC Metal Line Segmentation IC s, grinding them down layer by layer while continuously taking images of every layer. Nowadays, such images are captured using scanning electron microscopes ( SEM s) due to ever-shrinking IC feature sizes in modern IC s. These images are then analyzed and compared against a ground truth [ PMB +23 ], such as Graphic Data System II ( GDSII )design files, or used to extract a gate-level netlist [HCS +18] for further analysis. This destructive imaging process often results in hundreds of gigabytes of images that need to be analyzed in order to ensure the absence of malicious circuitry. To this end, machine-learning models are increasingly deployed to improve accuracy in image segmentation and recognition tasks while ensuring scalability [ RKA +23 , HCS +18 ]. For the polysilicon layer that implements the transistors of an IC , pattern-matching approaches are often deployed [ KSS +20 , ZWD +25 ]. In contrast, the metal layers mostly require segmentation of metal lines and vias [ KSS +20 , HCS +18 ]. However, while this segmentation of typically bright metal lines against a dark background may seem straightforward, it turns out to be rather complicated in practice for multiple reasons: (i) Manufacturing technologies do not only vary between IC s, but also between different layers of the same IC , resulting in vastly different shapes, see Figure 1 for examples of metal-layer images. A segmentation algorithm optimized for one layer of one IC may not generalize to other layers or other ICs without further adjustments. (ii) Delayering errors, artifacts from sample preparation, or dust particles can conceal critical connections and impede even advanced image analysis algorithms. (iii) Structures on modern IC are so dense that adjacent but unconnected metal lines may appear to be linked for an automated algorithm due to image distortions or noise, which are inherent to SEM images. (iv) The characteristics of SEM images differ vastly depending on the employed SEM ,its detectors, and image capturing settings such as magnification, dwelling time, resolution, and acceleration voltage. Image Ground Truth FCN SAMIC SAM2 Ours 
+
+Figure 1: Metal layer images from three different IC s as well as the corresponding ground-truth mask and the image segmentation masks produced from different methods. Non-obvious electrically significant differences ( ESD ) errors in the segmentation are marked with orange circles. C. Gehrmann, J. Ricker, S. Damm, D. Cheng, J. Speith, Y. Shi, A. Fischer, C. Paar 3Especially for netlist extraction, a process in which SEM images of all IC layers are analyzed to recover a gate-level netlist description of the implemented circuit, we can tolerate only very few segmentation errors. Such errors would significantly impair the analysis of the recovered netlist later on. Currently, the aforementioned issues are often addressed by manually annotating a subset of the images from each layer of every IC and then using these annotated images to train a machine learning model (or adjust parameters in a classical image processing pipeline) to segment the remainder of that layer [TUSP18, NTCG24], resulting in significant manual overhead. 
+
+Our Contributions. This work addresses a sub-problem in IC image analysis: developing a solution for metal line segmentation that generalizes well across different layers and IC swithout requiring manual intervention or retraining. This step is essential for reconstructing the interconnections of transistors and, by extension, standard cells on an IC , the analysis of which is crucial for hardware assurance. Figure 1 depicts segmentation issues observed for techniques for metal line segmentation from the literature when applied to previously unseen IC s. To address such generalization issues across metal layers and IC s, we present SAMSEM 1, which builds on top of Meta’s Segment Anything Model 2 ( SAM2 ) [ RGH +25 ] for image segmentation. While SAM2 strives for generalized segmentation in natural images, we fine-tune and evaluate the model on metal line segmentation using an unprecedented dataset comprising SEM images from 14 different IC s. To deal with varying resolutions, magnifications, and metal line structure sizes in SEM images, we develop a multi-scale segmentation approach and wrap it around the fine-tuned SAM2. For gate-level netlist extraction, we are less interested in pixel-accurate segmentation than in ensuring correct electrical connectivity. Therefore, for fine-tuning of the SAM2 model, we deploy a topology-based loss function in addition to standard pixel-based losses. In particular, by considering the structure’s topology in each image, this loss function explicitly penalizes both short and open connections between metal lines. This way, we emphasize correct electrical connections over pixel accuracy in the segmentation. In the context of hardware assurance, this reduces the number of short circuits and open connections observed in an extracted netlist, thereby significantly improving the effectiveness of later analysis steps on the gate-level netlist. Our experiments are performed on a small cluster of eight Nvidia H100 machine learning accelerators, and fine-tuning on a single Nvidia H100 takes around 72 hours when utilizing the full dataset. In summary, our main contributions are: 
+
+• Throughout our experiments, we utilize an unprecedented dataset of metal-layer images from 14 different IC s, spanning technology nodes from 200 nm down to 20 nm .
+
+• We develop SAMSEM by adapting the SAM2 foundation model to the domain of IC metal-layer image segmentation via multi-scale segmentation, a topology-based loss function, and fine-tuning. Thereby, we achieve an in-distribution error rate of 0.72 % 
+
+when fine-tuning and evaluating on seven different IC s, compared to 4.44 % for the best-known approach that we could reproduce. 
+
+• We demonstrate that SAMSEM generalizes well, even for unseen IC s, and therefore does not require retraining when analyzing new IC s. Our approach achieves an out-of-distribution error rate of 5.53 % on the seven previously unseen IC s, representing a significant improvement over the 24 .77 % error rate observed for the best-reproduced approach from the literature.      
+
+> 1Segment Any Metal-layer Scanning Electron Microscope image
+
+4 SAMSEM – A Generic and Scalable Approach for IC Metal Line Segmentation 
+
+• We publish a model fine-tuned on 90 % of all images across all 14 IC s, along with all our fine-tuning and benchmarking scripts, so that others can build upon our work. This final model achieves an in-distribution error rate of just 0.62 % .
+
+Structure of this Paper. We introduce the technical background and discuss related work on metal line segmentation, machine learning, and topology-based loss functions in Section 2. In Section 3, we describe our methodology, including our multi-scale segmentation pipeline, training and evaluation datasets, the topology-based loss function, and the fine-tuning process, along with details on hyperparameter optimization. Section 4 provides details on our evaluation procedures and gives results for our segmentation and generalization performance. Finally, we discuss limitations and draw conclusions in Section 5. 
+
+# 2 Technical Background and Related Work 
+
+In this section, we review relevant technical background and discuss related work on IC metal line segmentation in Section 2.1, Meta’s SAM2 in Section 2.2, and topology-based loss functions in Section 2.3. 
+
+# 2.1 Metal Line Segmentation 
+
+IC s are built from a polysilicon layer at the bottom that (for digital logic) implements transistors and many metal layers on top. These metal layers establish the electrical con-nection between the transistors on the polysilicon layer, thereby forming an interconnected circuit. Hence, a full extraction of all metal lines from IC images is an essential step toward hardware assurance. Machine-learning-based image segmentation algorithms are often employed to this end, which produce a segmentation mask that clearly distinguishes between metal lines and the background. However, the appearance of metal lines from different IC s, different layers of the same IC , and even under different SEM capture settings may vary significantly. Therefore, metal line segmentation algorithms must often be manually adjusted for the specific dataset on which they operate. 
+
+Related Work. Trindade et al. propose classical image processing for metal line segmen-tation [ TUSP18 ], which must be tuned for every new dataset. Furthermore, they introduce the ESD error as a metric to focus on relevant deviations of the segmentation output from the ground truth. The metric counts the open and short circuits in the segmentation, as well as the false positives ( FP s) (i. e., segmented metal lines that do not exist) and false negatives ( FN s) (i. e., undetected metal lines in the original images). This ESD metric is more relevant for circuit extraction than pixel-accuracy metrics, as it focuses on errors that result in a faulty extracted circuit description. Cheng et al. are the first to use machine learning for metal line segmentation by proposing a method based on hybrid K-means clustering and support vector machines [ CSL +18 ]. In the same year, Hong et al. introduced the first deep-learning-based technique and evaluated it using a metric similar to the ESD metric [ HCS +18 ]. Yu et al. built their segmentation solution around HRNet and also used the ESD metric for evaluation [ YTG +22 ]. A bit later, Tee et al. concluded that common training approaches do not properly capture the local nature of ESD er-rors [ THC +23 ]. Hence, they put forward a patch-based approach, aiming a discriminator network—comparing the ground truth to intermediate segmentation results—at small patches of the input images. None of the aforementioned approaches has been tested for whether they generalize to unseen IC s or even to other layers within the same IC s. Instead, they are evaluated on a small dataset often obtained from just a single layer of a single IC . We assume this is the case for economic reasons, as sample preparation and imaging are tedious and costly. C. Gehrmann, J. Ricker, S. Damm, D. Cheng, J. Speith, Y. Shi, A. Fischer, C. Paar 5Rothaug et al. approach metal line segmentation using unsupervised learning to reduce the manual workload when facing new datasets [ RKA +23 , RCK +25 ]. However, some of their parameters must still be adjusted for every new dataset. They also used the ESD metric for evaluation and released not only their code, but also their training dataset. To combat manual parameter adjustments altogether, Ng et al. proposed fine-tuning Meta’s Segment Anything Model ( SAM ), the predecessor of SAM2 , using a dataset from four different IC s, resulting in a model they coined Segment Anything Model for Integrated Circuit Image Analysis ( SAMIC ) [ NTCG24 ]. However, they did not evaluate SAMIC ’s out-of-distribution performance on IC s not seen during fine-tuning, used a significantly smaller dataset than us, did not employ topological loss functions, and did not address different scales of input images. In our experiments, we show that SAMSEM is superior to their approach by around one order of magnitude. 
+
+# 2.2 Segment Anything Model 2 
+
+The Segment Anything Model 2 ( SAM2 ) is a large foundation segmentation model devel-oped by Meta [ RGH +25 ]. It was primarily designed for a broad range of segmentation tasks on real-world images and videos, but can be fine-tuned for specific applications. Compared to other segmentation networks, SAM2 technically requires a prompt input, which can be a point, a mask, or a bounding box of the object to be segmented. 
+
+Figure 2: Model components of SAM2 and their interactions [RGH +25]. SAM2 comprises an image encoder , memory attention , mask decoder , prompt encoder ,
+
+memory encoder , and memory bank ; see Figure 2. The image encoder works in conjunction with the memory attention to generate the image embeddings for the mask decoder. Memory attention is used for videos and has no effect on image segmentation; hence, we disregard it. For image encoding, a Hiera image encoder [ RHB +23 ] is used, pre-trained with a masked autoencoder ( MAE ) [ HCX +22 ]. This image encoder extracts visual features from the input images and provides these feature embeddings as unconditioned tokens to the mask decoder (via the memory attention module). Next, the prompt encoder accepts a range of user input prompts, such as masks, points, and boxes. For our work, we focus on input points to generate positional encodings. The point prompt can be either positive or negative, indicating whether the foreground or background should be selected. The mask decoder generates the final segmentation masks based on the feature embeddings produced by the image encoder and the user prompts processed by the prompt encoder. While the produced segmentation mask is usually binary, confidence scores for each pixel indicating its likelihood of belonging to the segmented object can also be accessed. 
+
+Related Work. Numerous works have built upon SAM2 to improve its performance in specific domains. For example, Mandal et al. [ MKP25 ] proposed SAM2LoRA to efficiently fine-tune SAM2 for retinal fundus segmentation by only considering specific parameters for fine-tuning and freezing the remaining ones. To better cope with varying image resolutions, Liu et al. [ LYvD +24 ] present WSI-SAM, which aims to handle high-resolution whole-slide images in the context of pathology. Although their approach implies changes to the 6 SAMSEM – A Generic and Scalable Approach for IC Metal Line Segmentation SAM architecture, it does not require full retraining of the entire model. In a similar vein, Gao et al. [ GZYL24 ] improve SAM for salient object detection by better capturing multi-scale features and preserving fine-grained details. HQ-SAM by Ke et al. [ KYD +23 ]adds a learnable high-quality output token to SAM , and fuses features from different layers to produce much more accurate and detailed segmentation masks, especially for objects with intricate shapes Finally, Meta has released the Segment Anything Model 3 ( SAM3 ) [ CGH +25 ] shortly before the submission of our work. At the time of writing, SAM3 is available only for fine-tuning on request and is not yet publicly accessible. 
+
+# 2.3 Topology-Based Loss Functions 
+
+Pixel-based loss functions like the Dice loss [ SLV +17 ] or the intersection over union ( IoU ) loss [ RTG +19 ] are commonly used for training image-related machine learning models. These loss functions penalize pixel differences between the model output (e. g., a segmentation mask) and the ground truth. In contrast to pixel-based loss functions, topology-based loss functions prioritize topological accuracy over pixel-level accuracy. Such loss functions are often researched in the domain of biological cell boundary detection and automated street recognition in satellite images [ HLSC19 , HWL +21 ]. In our case, we are interested in correct electrical connections rather than the accurate segmentation of every pixel on an IC image. Hence, topology-based loss functions seem to be a natural fit. 
+
+Related Work. In their seminal work on topology-based image segmentation, Hu et al. propose a loss function based on Betti numbers that count structures such as the connected components and holes in an input image [ HLSC19 ]. They use persistence diagrams to measure the topological similarity between the ground truth and the model prediction. Later, Shit et al. proposed clDice as a loss function specifically designed for tubular struc-tures such as vascular networks and roads [ SPS +21 ]. The loss compares the centerline of a predicted tubular structure (i. e., its skeleton) to the ground truth. Liu et al. later enhanced a skeleton-based loss function with better awareness of structure boundaries [LMB +24]. The DMT loss proposed by Hu et al. uses discrete Morse theory to identify unwanted critical points in the predicted segmentation [ HWL +21 ]. Similar to Hu et al. [ HLSC19 ], persistence diagrams of the prediction are compared to the ground truth. Hu et al. further advance the field by using homotopy warping to consider not only the number of topological features, but also their geometric placement [ Hu22 ]. It identifies topologically critical pixels by warping the predicted mask into the ground truth. Stucki et al. built upon the initial publication of Hu et al. [ HLSC19 ]. Instead of simply measuring overall topological counts (i. e., Betti numbers), it matches individual topological features between the predicted segmentation and the ground truth in a spatially consistent way, defining a Betti matching error that can be used as a differentiable loss to improve the segmentation’s topological correctness [ SPS +23 ]. Similarly, Wen et al. encode spatial awareness with persistence diagrams to construct their loss function [ WZB +24 ]. Expanding on their own work, Stucki et al. adjust Betti matching to 3D segmentation by developing a faster implementation of the Betti matching loss, making topology-based loss functions practical for volumetric data [ SBPB24 ]. Berger et al. then extend Betti matching to multi-class segmentation by reducing an n-class segmentation to n single-class segmentation tasks and applying induced barcode matchings for each class [BLS +24]. Finally, Topograph by Lux et al. encodes the topology as a component graph, with nodes corresponding to pixels or regions thereof and edges representing adjacency [ LBW +25 ]. By building their loss functions solely on graph algorithms, they achieve better efficiency than most other algorithms while providing strong topological guarantees for segmentation. C. Gehrmann, J. Ricker, S. Damm, D. Cheng, J. Speith, Y. Shi, A. Fischer, C. Paar 7
+
+# 3 Methodology 
+
+We focus on segmenting metal lines while ignoring vias, since vias can typically be detected using thresholding or machine learning [ SLG20 ]. In this section, we describe how we construct SAMSEM to produce reliable segmentation results, even for unseen IC s. After motivating fine-tuning in Section 3.1 and introducing our multi-scale segmentation pipeline in Section 3.2, we describe our dataset comprising 14 IC s in Section 3.3. Next, in Section 3.4, we explain our fine-tuning, data augmentation, and (topological) loss function. We then report the best-suited parameters for our segmentation pipeline as determined through hyperparameter optimization in Section 3.5. Finally, we describe how we generate segmentation masks with SAMSEM in Section 3.6. 
+
+# 3.1 Motivation 
+
+SAM2 was trained on a large and diverse dataset of natural images. It was designed to segment RGB images of objects, animals, or people. SAMSEM is based on SAM2 , but targets the non-interactive segmentation of metal layer images from IC s taken with SEM s. These images differ significantly in that they are grayscale and exhibit repeating structures, but little variation in their features. Hence, when simply segmenting on our metal layer images, SAM2 (without fine-tuning) produces catastrophic results with a segmentation pixel accuracy (PA) of only 0.639 and an ESD error rate of 75 .6 % , see Table 2. To truly leverage the power of SAM2 for IC metal layer image segmentation, we must adapt the model to our specific domain and fine-tune the SAM2 model on representative data. 
+
+# 3.2 Segmentation Pipeline 
+
+We now discuss the segmentation pipeline of our metal-layer segmentation system based on SAM2 . The pipeline takes into account that SEM images of metal layers may differ significantly in shape, size, and resolution. 
+
+3.2.1 Model 1 – Segmenting Original-Size Images 
+
+Initially, we fine-tuned SAM2 by simply providing the original-size images obtained from an SEM , along with the ground truth. We refer to this model as model 1 . The SAM2 image encoder operates on 1024 × 1024 -pixel images; hence, images of other sizes are simply scaled to fit its resolution. In our setting, we often encounter high-resolution images of 
+
+10 , 000 × 10 , 000 pixels or more, as these are typical output sizes for SEM s. When fed to the image encoder, these images are simply scaled down to 1024 × 1024 pixels. However, such metal layer images often depict fine-grained structures that are then brought closer together (in terms of pixel distance) or even fused during downscaling. This, in turn, A
+
+causes short circuits in the segmentation when compared to the ground truth, thereby significantly increasing the ESD error rate; see the fused metal lines in Figure 3c.   
+
+> (a) Input image. (b) Ground truth. (c) Segmentation mask.
+
+Figure 3: A – (a) to (c) depict short circuits in the segmentation mask resulting from downscaling the input image to fit the shape expected by the image encoder. 8 SAMSEM – A Generic and Scalable Approach for IC Metal Line Segmentation 
+
+3.2.2 Model 2 – Segmenting Images in Smaller Patches 
+
+A straightforward approach to address this issue would be to simply cut the input images into smaller patches and feed only these patches into the SAM2 image encoder for segmen-tation. To this end, we fine-tuned a second model, named model 2 , on 512 × 512 -pixel patches only. The patches are cut out with at least 10 % overlap and upscaled to 1024 ×1024 
+
+pixels to fit the image encoder shape. The upscaling proved useful as it increases the pixel distance between closely neighboring metal lines. Model 2 significantly improves upon the issue observed in model 1 and thereby reduces the number of shorts in the segmentation. However, it also generates a different class of errors that drastically increases the number of false positives in the resulting segmentation mask. Analyzing these errors, we found some input image patches that comprise primarily, or even entirely, of either background or foreground structures. For these patches, our model 2 hallucinates segmentations that do not exist in the actual input images. Here, we observed two types of errors stemming from these hallucinations: Firstly,  
+
+> B
+
+the segmentation mask may end up being mostly inverse to the ground truth, e. g., background is segmented as a metal line, see Figures 4a to 4c. Secondly, C parts of the patch may be wrongly classified as a metal line with speckled transitions to background, see Figures 4d to 4f. Here, each white speckle would be interpreted as a false positive by the ESD metric, thereby vastly increasing our error rate.     
+
+> (a) Input image. (b) Ground truth. (c) Segmentation mask.
+> (d) Input image. (e) Ground truth. (f) Segmentation mask.
+
+Figure 4: B – (a) to (c) depict background being segmented as a metal line because of the lack of structures in the input image, resulting in FP s or short circuit. C – (d) to (f) show white speckles around the correctly identified metal line in the segmentation mask, resulting in vast amounts of false positives. 
+
+3.2.3 Multi-Scale Segmentation Approach 
+
+To address both issues at once, we introduce a multi-scale segmentation approach, as depicted in Figure 5. We simultaneously segment the full-size image using model 1 and 
+
+512 × 512 -pixel patches extracted from the input image using model 2 . This multi-scale approach ensures that our fully-automated segmentation algorithm performs well for both small and large structures in arbitrary metal layer images and operates reliably, independent of a SEM ’s magnification and resolution. By working on full-size images, we ensure that SAM2 is provided sufficient context for larger structures that extend beyond a single patch, while working on patches improves segmentation performance for fine-grained structures. This approach produces two segmentation masks for each input image: one C. Gehrmann, J. Ricker, S. Damm, D. Cheng, J. Speith, Y. Shi, A. Fischer, C. Paar 9composed of 512 × 512 -pixel patches and one directly corresponding to the segmentation of the original-sized image. Both masks are analyzed patch-by-patch to construct the final segmentation mask. Since SAM2 always produces segmentation masks of the size of the input image, the mask produced by model 1 is cut into patches of 512 × 512 pixels. The masks produced by model 2 are already of size 512 × 512 . Our decision algorithm, which we present hereafter, then composes the final segmentation mask by choosing patches from either model 1 or model 2 based on lightweight quality metrics. This choice is made for each segmentation mask patch, so the final mask can comprise patches from both approaches. Simply put, the decision algorithm favors segmentation mask patches from model 2 for fine-grained structures in images, while selecting patches from model 1 for images depicting larger structures or lacking structure altogether. Thereby, we combine the advantages of both approaches while mitigating the issues depicted in Figures 3 and 4. C
+
+# B
+
+# A
+
+# A
+
+# 1
+
+# 2
+
+Figure 5: Workflow of our multi-scale segmentation approach. 
+
+3.2.4 Deciding Between Patches from Model 1 or Model 2
+
+Our decision algorithm, which chooses between patches from models 1 and 2 , is based on classical computer vision techniques applied to the segmentation mask patches produced by either approach. Given that the errors B and C always produce reproducible patterns, detecting their presence is straightforward. To this end, we count the small components within a segmentation mask patch to determine the number of speckles in the segmentation. Our experiments have shown that many such speckles indicate a noisy segmentation that should be disregarded. For a detected component to be counted as a speckle, it must be at most 16 pixels in size, because larger components are usually valid segmentations. Figure 6 depicts the decision diagram for how a segmentation mask patch from models 1
+
+or model 2 is selected. Here, the property “speckled” refers to a patch containing at least 50 speckles for model 1 and 50 speckles for model 2 . Furthermore, two patches (one from each model) “agree” if at least 60 % of their pixels are identical. These thresholds were determined through a grid search in which we automatically tested different parameter values to minimize the number of ESD errors across segmentation patches. If both the patch from model 1 and the one from model 2 are considered “speckled”, an error is reported, and the respective patch of the original image is flagged for manual inspection. 
+
+# 3.3 Datasets 
+
+Our vast and diverse dataset contains images from 48 metal layers of 14 different IC s. To the best of our knowledge, previous work has operated on images of at most four IC s, 10 SAMSEM – A Generic and Scalable Approach for IC Metal Line Segmentation speckled 1
+
+> speckled
+
+2 speckled 2 
+
+> &agree
+
+21 
+
+> choose or
+
+1 2 
+
+> choose
+
+2choose 1 ERROR  
+
+> no
+> no
+> no
+> yes
+> yes yes
+> no
+> yes
+
+Figure 6: Decision diagram illustrating how patches from either model 1 or 2 are chosen, or an error is produced, based on their segmentation quality. cf. Ng et al. [ NTCG24 ]. Our dataset includes these four IC s, one IC published by Rothaug et al. [ RKA +23 ], and multiple layers from 9 additional IC s captured by our own team. While details on these IC s cannot be disclosed for legal reasons, they range from around 
+
+200 nm down to 20 nm structure size and are composed of varying materials. The metal layer images were captured using different SEM s, different capturing settings, and also different sample preparation techniques. As shown in Figure 1, the resulting dataset is quite diverse in the shapes, numbers, and sizes of the metal lines. This dataset diversity is essential for fine-tuning the SAM2 model so that it performs well even on IC s it has not seen during fine-tuning. Finally, the dataset enables us to effectively test both the in-distribution performance of SAMSEM on IC s it has seen during fine-tuning and its out-of-distribution performance on unseen ICs, see Section 4. 
+
+3.3.1 Dataset Composition 
+
+Overall, a small fraction of the metal layer images captured from each IC has been semi-automatically annotated and manually verified to generate a ground truth for training, validation, and testing. Hence, each image in our dataset is accompanied by a corresponding binary ground-truth mask. Table 1 lists the absolute number of annotated images for each IC , the number of 512 × 512 pixel image patches, and the number of metal layers from which these images have been taken. Due to the variety of capture techniques used for the different IC s, the full-size images vary widely in size. Hence, the number of patches is better suited for a comparison in terms of the amount of available data per IC . For IC s 8 to 14, rather few images have been annotated. Table 1: Number of images available from each IC , number of 512 × 512 pixel patches, and number of metal layers from which the images were taken. 
+
+IC 1 2 3 4 5 6 7
+
+# images 150 70 90 50 50 140 321 
+
+# patches 4050 1120 1950 1000 1000 2600 23,112 
+
+# layers 3 7 2 1 4 3 1
+
+IC 8 9 10 11 12 13 14 
+
+# images 12 5 5 3 3 28 10 
+
+# patches 756 342 254 189 48 2735 810 
+
+# layers 4 5 5 3 3 6 1C. Gehrmann, J. Ricker, S. Damm, D. Cheng, J. Speith, Y. Shi, A. Fischer, C. Paar 11 
+
+3.3.2 Dataset Splits 
+
+For fine-tuning (see Section 3.4), the hyperparameter optimization (see Section 3.5), and evaluation (see Section 4), we split the original-size images from IC s 1 to 7 into three distinct datasets: 70 % of the images of each IC are used for training, 10 % for validation and model selection during the hyperparameter search, and 20 % for testing and evaluation of the in-distribution segmentation accuracy on IC s that the model has seen during fine-tuning. To evaluate the out-of-distribution performance of SAMSEM on unseen IC s, all images of IC s 8 to 14 are used for testing. In particular, none of the images from IC s 8 to 14 are used for training, validation, or model selection. In a separate experiment, we use 
+
+90 % of all images from all 14 IC s to fine-tune our final model, using the hyperparameters determined beforehand (see Section 4.5). In this case, the remaining 10 % of the images are used to evaluate the segmentation accuracy of this final model. 
+
+# 3.4 Fine-Tuning 
+
+In this section, we provide details on how we fine-tune SAM2 for IC metal layer image segmentation. In particular, we discuss the need for fine-tuning, the data augmentation techniques we deployed, and our choice of loss functions. 
+
+3.4.1 Selection of Model Components 
+
+For SAMIC [ NTCG24 ], Ng et al. only fine-tuned the mask decoder of SAM (version 1). However, we argue that to thoroughly investigate the potential of SAM2 for metal line segmentation, we also need to consider the two remaining model components relevant to image segmentation, cf. Section 2.2. Hence, we now investigate the individual impact of the mask decoder, prompt encoder, and image encoder on SAMSEM’s segmentation performance. To this end, we fine-tune seven SAM2 models with all possible combinations of these three components, and compare them against the off-the-shelf SAM2 model as trained by Meta in Table 2. The evaluation setup is equivalent to the in-distribution tests performed later in Section 4.1, i. e., we train on the training set comprising 70 % of the images from IC s 1 to 7 and test on the test set containing 20 % of the images from the same IC s. We compare the impact of the components using standard pixel-based pixel accuracy ( PA ), Dice [ SLG20 ], and IoU [ RTG +19 ] metrics, as well as the ESD error rate. The ESD error rate is given as the relative number of ESD errors per metal line. Table 2: Ablation study for SAMSEM’s performance when fine-tuning only selected components of SAM2 . The first line refers to the default SAM2 model without fine-tuning. 
+
+fine-tuned components PA ↑ Dice ↑ IoU ↑ ESD ↓
+
+(%) 
+
+training time 
+
+mask prompt image decoder encoder encoder 
+
+□ □ □ 0.639 0.111 0.067 75.6 -
+
+■ □ □ 0.948 0.933 0.885 12.1 43 h 
+
+□ ■ □ 0.673 0.332 0.236 66.1 39 h 
+
+■ ■ □ 0.944 0.927 0.879 11.5 34 h 
+
+□ □ ■ 0.972 0.960 0.924 0.8 51 h 
+
+■ □ ■ 0.971 0.957 0.921 1.0 42 h 
+
+□ ■ ■ 0.969 0.954 0.917 1.4 43 h 
+
+■ ■ ■ 0.972 0.960 0.925 0.7 44 h 
+
+From Table 2, we conclude that the image encoder has the most impact on the segmentation accuracy, achieving an ESD error rate of 0.8 % . Fine-tuning the mask decoder also significantly reduces the error rate to 12 .1 % . The prompt encoder has little 12 SAMSEM – A Generic and Scalable Approach for IC Metal Line Segmentation impact on segmentation and still results in a 66 .1 % ESD error rate. Combining different encoders and decoders naturally produces better results than evaluating them in isolation. We also see that combining all three components yields the lowest ESD error rate of 0.7 % 
+
+and the best pixel accuracy, although this is only a marginal improvement over fine-tuning the image encoder alone. Still, given that there is no significant overhead in training time when combining all three approaches compared to fine-tuning the image encoder alone, we decided to fine-tune the mask decoder, prompt encoder, and image encoder together. 
+
+3.4.2 Fine-Tuning Process 
+
+SAM2 comes with four different “checkpoints”, i. e., model sizes. For SAMSEM, we chose to focus on the large checkpoint, which has the most tunable parameters, as it yielded the most promising results in initial experiments. Fine-tuning is performed using PyTorch v2.7.1 and CUDA 13.0. All fine-tuning runs are executed on a cluster of Nvidia H100 machine-learning accelerators, which comprises a mix of SXM cards with 80 GB and NVL cards with 94 GB of memory. For all our experiments, we set a fixed batch size of 12 , as this is the maximum that fits in the 80 GB of memory on the SXM cards. The fine-tuning process is as follows: First, we retrieve segmentation masks from the current model. To this end, we feed the input images of each batch to the image encoder. For each of these images, we then get embeddings of a point prompt from the prompt encoder. Here, we sample a random point (x, y ) from the ground-truth foreground (i. e., the point lies on a metal line) and use it as a positive prompt to the prompt encoder. Next, we feed the image and prompt embeddings to the mask decoder, which produces low-resolution masks. These masks are then postprocessed by internal SAM2 functions to obtain three prediction masks for each image in the batch, as we enabled multi-mask output for better segmentation results [ RGH +25 ]. Finally, we compute the loss between the ground truth and the segmentation mask, then perform backward propagation and optimize the targeted model components using AdamW [LH19]. 
+
+3.4.3 Data Augmentation 
+
+We leverage data augmentation during fine-tuning to make our fine-tuned SAM2 model more robust to small perturbations in input images and to expand the training dataset. To this end, we use Torchvision from PyTorch to apply transforms to the training data before feeding it to the fine-tuning algorithms. Below, we list the individual transforms that we deploy in the order in which they are applied to the input data: 1. RandomResizedCrop : size = 1024 , scale = [0 .99 − 0.5 · intensity , 0.99] 
+
+2. GaussianBlur : kernel_size = (5 , 9) , sigma = 5 .0 · intensity 
+
+3. ColorJitter : brightness = 0 .75 · intensity , contrast = 0 .5 · intensity 
+
+4. RandomVerticalFlip : probability = 0 .5 · intensity 
+
+5. RandomHorizontalFlip : probability = 0 .5 · intensity 
+
+6. GaussianNoise : mean = 0 .0, sigma = 0 .5 · intensity , clip = True The specific parameters were manually selected by domain experts to serve as the upper bound for data augmentation. The experts selected these parameters so that, for an intensity value of 1, the resulting images could still (but barely) be interpreted by a human analyst. All transforms share a common data augmentation intensity value that can be set to any value in (0 , 1] and is determined by our hyperparameter optimization, as shown in Section 3.5. During each iteration, we randomly apply all data augmentation transforms to the input image or none at all. The probability of applying data augmentation to an image is also determined through hyperparameter optimization. C. Gehrmann, J. Ricker, S. Damm, D. Cheng, J. Speith, Y. Shi, A. Fischer, C. Paar 13 
+
+3.4.4 Loss Functions 
+
+For our pixel-based loss function Lpixel , we choose a combination of the binary cross entropy ( BCE ) loss LBCE [MMZ23 ] and the Dice loss LDice [SLV +17 ] based on a blending parameter α ∈ (0 , 1) that is determined by our hyperparameter search: 
+
+Lpixel = α · LBCE + (1 − α) · LDice .
+
+SAMIC [NTCG24 ] additionally employs the IoU loss [ RTG +19 ], but our segmentation accuracy did not improveme when incorporating the IoU into Lpixel .We want to promote correct connectivity and penalize shorts and open circuits during training to reduce the ESD error rate. Since the ESD error computation itself is not differentiable, it cannot be used as a loss function right away. Instead, we need to find a differentiable loss term that behaves similarly to the ESD error. To this end, we supplement our pixel-based loss with a topological loss. After careful consideration and consultation with experts, we selected the Betti matching loss [ SPS +23 ], LBetti , for this purpose. We also explored two other topology-preserving loss functions, namely TopoLoss by Hu et al. [ HLSC19 ] and Topograph by Lux et al. [ LBW +25 ], but decided against them for runtime and effectiveness reasons. Generally, such loss functions focus on correct connectivity, but still need to be combined with pixel-based losses to enforce local accuracy. In the following, we only consider the application of Betti matching to images. The Betti matching loss is based on concepts from persistent homology, which examines how topological features emerge and disappear as a filtration parameter ϵ varies. In particular, it tracks when topological features, such as connected components, cycles, or holes, are born and die along the filtration. This filtration can, for example, be induced by thresholding a scalar-valued function such as the model’s prediction likelihoods. The number of detected topological structures (e. g., corresponding to metal lines in our images) then depends on the chosen threshold value. For each topological feature, a pair (b, d ) is stored that records its birth time b (i. e., the value of ϵ at which the feature first appears) and its death time d (i. e., the value of ϵ at which it merges into an older feature or becomes topologically trivial). Tracking many such features simultaneously produces a so-called persistence barcode, where each bar represents the birth and death times of a single feature. Betti numbers βk(ϵ) summarize this information by counting the number of k-dimensional topological features that are alive at a given value of ϵ. For images, we only consider 
+
+k ∈ { 0, 1}, where β0(ϵ) counts connected components and β1(ϵ) counts loops or holes. The Betti matching loss goes one step further by spatially matching topological features from one image (e.g., the ground truth G) to corresponding features in another image (e.g., the prediction mask L). To this end, persistence barcodes are computed for both images. For the loss computation, an optimal matching between the two persistence barcodes is determined, and the resulting matching error is calculated. This error is then used to construct a differentiable, efficient, and topology-aware loss function. The Betti matching loss LBetti is already implemented as a Python package 2 that is based on the work of Stucki et al. [ SPS +23 , SBPB24 ] and Berger et al. [ BLS +24 ], making it straightforward to use. It comes with a few tweakable parameters relevant to our hyperparameter search. Firstly, the filtration_type defines how the comparison image 
+
+C is computed as C ← min (G, L ), i. e., the element-wise minimum of ground truth G and prediction mask L, which in turn governs the Betti matching process. It can take the values superlevel (features appear as input values decrease), sublevel (features appear as input values increase), and bothlevels (applies both filtration types and combines results). Secondly, the parameter barcode_length_threshold governs the robustness of the Betti matching loss against short-lived topological features that may arise from unclean or noisy prediction masks. Lastly, push_unmatched_to_1_0 determines whether 
+
+> 2https://pypi.org/project/topolosses/
+
+14 SAMSEM – A Generic and Scalable Approach for IC Metal Line Segmentation unmatched birth points are pushed toward 1 while unmatched death points are pushed toward 0 ( True ) or whether both points are just pushed together ( False ). In the end, we construct our final segmentation loss Lseg used for fine-tuning as 
+
+Lseg = Lpixel + λ · LBetti 
+
+with λ ∈ [0 , 1] being a blending parameter determined by the hyperparameter search. 
+
+# 3.5 Hyperparameter Optimization 
+
+To determine the best-suited hyperparameters for fine-tuning SAM2 , we conducted a hyperparameter search using the hyperband pruner from the Optuna framework [ ASY +19 ]. This pruner attempts to minimize an objective function, specifically the relative number of ESD errors in relation to the total number of metal lines, as computed on our validation dataset from ICs 1 to 7. In total, the hyperparameter search ran for seven days. 
+
+3.5.1 Setup 
+
+Due to runtime limitations, we opted for a two-step hyperparameter optimization: (i) First, we searched for the best parameters related to data augmentation and pixel-based loss functions by repeatedly fine-tuning SAM2 on our training dataset from IC s 1 to 7. To this end, we set the maximum number of epochs per hyperparameter optimization run to 25 and allowed pruning only after 5 epochs. During this first step, we set λ = 0 and hence Lseg = Lpixel . This is in line with recommendations from Berger et al. to add Betti matching to the loss computation only after pixel-based losses have stabilized, to achieve performance gains. To identify the best parameter set, we evaluated each model created during the hyperparameter search after every epoch using our validation dataset from IC s1 to 7. We then selected the best-performing parameter set by analyzing the performance of all fine-tuned models at every epoch. Using these selected parameters, we fine-tuned the off-the-shelf SAM2 for 50 epochs. Here, we found that this fine-tuned model performs best after 35 training epochs; hence, we selected this version as a starting point for the second step. (ii) Finally, we enabled the Betti matching loss for continued fine-tuning of this selected model and started a second hyperparameter optimization to determine suitable hyperparameters for this topological loss function. The second hyperparameter optimization ran for 15 additional epochs, bringing the total to up to 50 fine-tuning epochs per trial across both steps. 
+
+3.5.2 Results 
+
+For the first hyperparameter optimization step (i), we ran 56 Optuna trials, each yielding a fine-tuned model trained for up to 25 epochs. In total, 49 fine-tuning trials were pruned by Optuna before completing all epochs. For the best trial, the objective function, i. e., the percentage of ESD errors in relation to the total number of metal lines, reached its minimum at epoch 22 with a value of 0.659 % .Based on our evaluation of this trial, we determined the probability of data augmentation being applied to be 38 .5 % and the data augmentation intensity to be 0.61 . For the pixel-based loss function Lpixel and the AdamW optimizer, we fix the learning rate at 1.111 ·10 −5,the weight decay at 2.059 · 10 −6, and a blending parameter value of α = 0 .6. Furthermore, we observed that the learning rate has the greatest impact on segmentation performance, with values above 10 −3 often leading to local minima, resulting in the fine-tuned model producing only completely black segmentation masks. In the second step (ii), we conducted a total of 75 Optuna trials over 5 days, with 58 trials being pruned before completion. For the best trial, we report λ = 0 .375 as the blending parameter for Lseg . Furthermore, we determined the optimal parameter C. Gehrmann, J. Ricker, S. Damm, D. Cheng, J. Speith, Y. Shi, A. Fischer, C. Paar 15 set for the Betti matching loss in our application. To this end, we choose sublevel as the filtration_type , 0.345 as the barcode_length_threshold , and enabled pushing unmatched birth points to 1 and death points to 0 ( push_unmatched_to_1_0 ). 
+
+# 3.6 Segmenting Images 
+
+Besides the input image, SAMSEM also requires at least one point prompt pinpointing the structure to segment. To generate an effective point prompt, we need to ensure that the positive prompt we provide is actually located on one of the metal lines in the input image. To this end, we use lightweight classical image analysis on the input images fed to both models 1 and 2 to identify parts that are highly likely to be foreground, i. e., belong to a metal line. We do not aim for a fully accurate segmentation at this point, we just need to identify some foreground areas, but not all of them. The binary mask is generated by aggressively thresholding the brightest pixels in the input image. In addition, we apply denoising, remove small objects, and apply light morphology to eliminate isolated pixels, fill tiny gaps, and smoothen object boundaries. We then place five random point prompts within the identified foreground areas and feed them to the fine-tuned model along with the input image. In our experiments, we observed that providing more point prompts does not improve segmentation results. SAMSEM then produces multiple segmentation masks, along with scores rating their quality. We always return the mask with the highest score as the final segmentation mask. 
+
+# 4 Evaluation 
+
+First, we evaluate SAMSEM’s in-distribution performance using previously unseen SEM images from IC s 1 to 7, as shown in Section 4.1. Next, we investigate SAMSEM’s out-of-distribution performance when faced with metal layer images from previously unseen IC sin Section 4.2. We then analyze failure cases in Section 4.3, test different dataset splits with reduced numbers of IC s used for fine-tuning to better understand how SAMSEM generalizes to unseen IC s in Section 4.4, and present its segmentation accuracy when trained on our full dataset of 14 ICs in Section 4.5. 
+
+# 4.1 In-Distribution Performance on Seen ICs 
+
+In this section, we evaluate the in-distribution performance of SAMSEM and compare it to previous work and established image segmentation approaches. To this end, we used the training datasets for IC s 1 to 7 that we established in Section 3.3 for all considered techniques. To compare the performance of SAMSEM with other techniques, we fine-tuned SAMIC [ NTCG24 ] using the code provided by Ng. et al. on request. Furthermore, we trained U-Net, DeepLabV3, and FCN using the code published by Rothaug et al. [ RKA +23 ]. At the time of writing, we were unable to execute the unsupervised method proposed by Rothaug et al. on our dataset, as it appeared to get stuck in local minima and just produced all-black segmentation masks during our experiments. We then evaluated each model on our test dataset from IC s 1 to 7 and measured the accuracy of the resulting segmentation against the ground truth. Refer to Table 3 for the results. Hence, in this experiment, we assess how well SAMSEM performs on metal-layer images similar in structure to those on which it was trained. As we are more interested in electrical correctness than in pixel-accuracy, we follow Trindade et al. [ TUSP18 ] and adopt their ESD metric for evaluation. We leverage the implementation of Rothaug et al. [ RKA +23 , RCK +25 ] to count the number of opens, shots, FP s, and FN s in the segmented images compared to the ground truth. To this end, we report the absolute number of ESD errors observed in our test set, the relative number of 16 SAMSEM – A Generic and Scalable Approach for IC Metal Line Segmentation Table 3: In-distribution performance of SAMSEM compared to other approaches. All models were trained and evaluated on the same training dataset from IC s 1–7. We report the ESD error rate in two forms: as the absolute number of ESD errors observed for our test set, and as the relative number of ESD errors per metal line, expressed as a percentage. The total number of metal lines in this test set is 36 , 413 . Furthermore, we present commonly used metrics for pixel-level segmentation accuracy.                                                                                               
+
+> ESD ↓pixel ↑
+> total %opens shorts FPs FNs PA Dice IoU
+> SAMSEM 263 0.72 27 146 59 31 0.972 0.960 0.925 - only pixel loss 323 0.88 29 211 54 29 0.972 0.961 0.926 - single model 289 0.79 22 185 59 23 0.972 0.961 0.925 - only 11914 5.25 223 1519 96 76 0.950 0.926 0.865 - only 2286 0.78 27 146 82 31 0.954 0.940 0.900 SAMIC 2178 5.98 412 1083 649 34 0.961 0.944 0.899 U-Net 1618 4.44 78 764 735 41 0.966 0.949 0.905 DeepLabV3 2187 6.01 236 1705 212 34 0.961 0.946 0.901 FCN 2067 5.68 277 1443 316 31 0.963 0.950 0.907
+
+ESD errors per metal line, and the counts of opens, shorts, FP s, and FN s. All evaluations are conducted on the original-size images. For SAMSEM, we also provide evaluation results for when only the pixel-based loss is used, as well as for each of the two models, 1 (operating on the original-size images) and  
+
+> 2
+
+(operating on 512 × 512 -pixel patches). Furthermore, we analyze the performance when fine-tuning a single model on both original-sized images and smaller patches. We are not yet evaluating SAMSEM’s out-of-distribution performance; hence, we test on the IC s we also used for training. 
+
+Results. From Table 3, we observe that SAMSEM is on-par with SAMIC, U-Net, DeepLabV3, and FCN for in-distribution segmentation in terms of the pixel-based metrics, but produces significantly fewer ESD errors. In particular, SAMSEM drastically reduces the number of opens, shorts, and FP s in the segmentation by about a factor of 6 relative to U-Net, which is the next-best approach. Furthermore, we clearly see the benefit of our multi-scale approach, as models 1 and 2 individually do not achieve comparable results. For in-distribution analysis, we do not observe a significant impact of using a single model that combines models 1 and 2 . The ESD error rate increases marginally, which could still be tolerated in exchange for a more straightforward fine-tuning process. Finally, we can see a clear benefit of using our Betti matching loss function over pixel-based losses alone. 
+
+# 4.2 Out-of-Distribution Performance on Unseen ICs 
+
+To assess how well SAMSEM performs on previously unseen IC s, we utilize the models previously trained on the training dataset from IC s 1 to 7 for the in-distribution evaluation in Section 4.1. This time, however, we test its out-of-distribution performance on all available images from IC s 8 to 14. As these IC s are not used for training, we can safely use all their metal-layer images for testing. For comparison, we again evaluate SAMIC, U-Net, DeepLabV3, and FCN on our dataset. Following the same evaluation procedure as described in Section 4.1, we report results from these experiments in Table 4. 
+
+Results. Examining the out-of-distribution results in Table 4, we can see that SAMSEM now fully plays to its strengths. While existing work exhibits, at best, an ESD error rate of 
+
+24 .77 % for unseen IC s, meaning that about every fourth segmented metal line is incorrect, SAMSEM achieves an error rate of just 5.53 % . Again, we see that using either model 1C. Gehrmann, J. Ricker, S. Damm, D. Cheng, J. Speith, Y. Shi, A. Fischer, C. Paar 17 Table 4: Out-of-distribution performance of SAMSEM compared to other approaches. All models were trained on the same training dataset from IC s 1–7 and evaluated on IC s 8–14. We report the ESD error rate in two forms: as the absolute number of ESD errors observed for our test set, and as the relative number of ESD errors per metal line, expressed as a percentage. The total number of metal lines in this test set is 15 , 153 .Furthermore, we present commonly used metrics for pixel-level segmentation accuracy.                                                                                               
+
+> ESD ↓pixel ↑
+> total %opens shorts FPs FNs PA Dice IoU
+> SAMSEM 838 5.53 531 170 104 33 0.959 0.939 0.888 - only pixel loss 789 5.21 351 234 164 40 0.959 0.944 0.896 - single model 908 5.99 410 235 204 59 0.958 0.937 0.886 - only 11607 10.60 340 1112 72 83 0.936 0.920 0.854 - only 21443 9.52 649 468 280 46 0.934 0.911 0.852 SAMIC 4116 27.16 2079 363 1608 66 0.934 0.935 0.831 U-Net 7704 44.90 1570 603 4435 196 0.907 0.830 0.753 DeepLabV3 3753 24.77 2462 154 437 700 0.904 0.787 0.714 FCN 5815 38.38 3158 303 2006 348 0.910 0.826 0.751
+
+or model 2 in isolation would not yield satisfactory results, although both still perform better than other approaches from the literature. Now, we can also observe degraded performance if we combine model 1 and 2 into a single one. In that case, the ESD error rate for generalization would increase by about 0.5 percentage points. Finally, when using only the pixel-based loss, we observed a slight improvement in segmentation accuracy. Looking more closely, we can observe that SAMSEM with Betti matching loss results in more open circuits, but fewer shorts and FP s than the model that was fine-tuned without any topological loss function. 
+
+# 4.3 Analysis of Failure Cases 
+
+We now take a closer look at the distribution of ESD errors across the test images used in our in-distribution ( IC s 1 to 7) and out-of-distribution ( IC s 8 to 14) evaluation. For in-distribution, we observe only one outlier image, exhibiting 92 ESD errors, as shown in Figure 7a. Although we observe more outliers in our out-of-distribution evaluation, we can still report decent results for most images, as shown in Figure 7b. Here, we count 7 images with more than 40 ESD errors and another 5 with more than 20 errors. 
+
+0 50 100 150 
+
+0
+
+20 
+
+40 
+
+60 
+
+80 
+
+100 
+
+image ID ESD errors 
+
+(a) In-distribution (ICs 1 to 7). 
+
+0 20 40 60 
+
+0
+
+20 
+
+40 
+
+60 
+
+80 
+
+100 
+
+image ID 
+
+> ESD errors
+
+(b) Out-of-distribution (ICs 8 to 14). 
+
+Figure 7: Distribution of the absolute number of ESD errors across all original-size images. We now examine some of these failure cases in more detail to identify the reasons behind the observed results. Across our sample, we mostly observe three sources of errors: 18 SAMSEM – A Generic and Scalable Approach for IC Metal Line Segmentation (i) For the outlier in Figure 7a, we observe a slight misalignment between the actual metal lines on the SEM images and the ground truth mask, as shown in Figure 8a. Here, the ESD metric simply counts invalid overlaps between a metal line in the ground truth and vias in the predicted segmentation mask as shorts. (ii) The first outlier in Figure 7b results from two via-related issues. Existing vias in that image cast a black shade around them, see Figure 8b. They partially obscure the underlying metal line and mislead SAMSEM into predicting background around the via. We observed the same issue for other outliers in the out-of-distribution test, which can be explained by the absence of any images with similar characteristics in our training set. For Figure 8b, we also observe that some vias are missing altogether, as they were accidentally removed during sample preparation. This results in narrow metal lines around the missing via that SAMSEM does not properly segment. (iii) Some failures around image 54 in Figure 7b are due to delayering defects, see Figure 8c for an example. Here, some metal lines were incorrectly removed during sample preparation, leaving only their outlines visible. These failures increase the ESD error rate across all affected images. 
+
+> (a) Misalignment of ground truth (green) and image.
+> (b) Dark shades around vias and missing vias.
+> (c) Delayering defects, only outlines of metal lines visible.
+
+Figure 8: Faulty images with artifacts or defects from sample preparation or imaging. Of course, not all ESD errors can be attributed to such sample preparation and image quality issues. However, our out-of-distribution test set from IC s 8 to 14 is of lower quality than IC s 1 to 7, which helps to explain the more frequent significant outliers in Figure 7b. 
+
+# 4.4 More ICs Result in Better Generalization 
+
+We now investigate how the number of IC s seen during fine-tuning affects the out-of-distribution segmentation performance on unseen IC s. To this end, we fine-tune SAM2 on different subsets of IC s 1 to 7, ranging from a single IC to six different IC s. For each number of IC s, we fine-tune on four different randomly chosen IC combinations and then always infer on the same out-of-distribution test set from IC s 8 to 14. As becomes evident from the resulting numbers of ESD errors in Figure 9, the more IC s are used for fine-tuning, the better the out-of-distribution performance. Intuitively, this was expected. However, our results also indicate that the ESD error rate has not yet saturated, and this downward trend is likely to continue when using even more ICs for fine-tuning. 
+
+# 4.5 Fine-Tuning on All 14 ICs 
+
+After carefully evaluating the in-distribution and out-of-distribution capabilities of SAM-SEM when fine-tuning on seven IC s, we fine-tuned on 90 % of all annotated images from C. Gehrmann, J. Ricker, S. Damm, D. Cheng, J. Speith, Y. Shi, A. Fischer, C. Paar 19     
+
+> 7
+> 2
+> 3
+> 6
+> 1,3
+> 3,7
+> 1,2
+> 3,4
+> 1,2,6
+> 1,5,7
+> 2,3,7
+> 2,3,5
+> 2,4,5,7
+> 1,2,4,6
+> 4–7
+> 1–4
+> 1–4,6
+> 2–6
+> 2,4–7
+> 1,2,4,5,7
+> 2–7
+> 1–5,7
+> 1–6
+> 1,3–7 0
+> 1,000
+> 2,000
+> 3,000 6 ICs 5 ICs 4 ICs 3 ICs 2 ICs 1 IC
+> IC combinations
+> number of ESD errors
+> opens shorts FPs FNs
+
+Figure 9: Different training data splits used for fine-tuning to investigate whether more diversity in ICs seen during fine-tuning significantly affects the segmentation accuracy of SAMSEM on unseen ICs. all 14 IC s. As our findings from Section 4.4 imply that SAMSEM’s generalization accuracy has not yet saturated, we expect this final model to achieve even better segmentation accuracy. To test its in-distribution performance, we allocated 10 % of all images from all IC s for testing. When evaluating on this 10 % test set, we obtain a PA of 0.971 (Dice: 0.960, IoU: 0.924) and an ESD error rate of 0.62 % (22 shorts, 50 opens, 41 FP s, and 6 FN s across 19 , 088 metal lines). Hence, we observe a slight improvement over the 0.72 % 
+
+in-distribution ESD error rate reported for seven IC s. Given that we now use all our IC sfor fine-tuning, we cannot re-evaluate out-of-distribution performance, as the model has already seen all IC s in our dataset. However, as we publish this final model as part of our work, interested readers can test it on their own IC images without further fine-tuning. 
+
+# 5 Discussion and Conclusion 
+
+We now discuss limitations of our approach in Section 5.1, potential avenues for future research in Section 5.2, and present our concluding remarks in Section 5.3. 
+
+# 5.1 Limitations 
+
+One major limitation is that our ground truth is based on manually annotated SEM image data. In rare cases, it was even difficult, if not impossible, for the human creating the ground truth to decide whether metal lines were connected. Hence, some remaining errors can be attributed to uncertainties in the ground truth. The only viable solution for this problem would be to use the design files of the analyzed IC s as a ground truth, which were not available to us for any of the targeted third-party ICs. The runtime of our experiments, sometimes spanning up to five days, presented a bottleneck that prevented us from conducting more complex experiments, simply because we lacked the required resources. We could, for example, not exhaustively test all parameters 20 SAMSEM – A Generic and Scalable Approach for IC Metal Line Segmentation of the Betti matching loss during hyperparameter optimization. For similar reasons, we were unable to conduct an in-depth exploration of other topology-based loss functions. While we publish our models and scripts as open source, we are unable to do so for the datasets of 13 of the 14 different IC s for legal reasons. Only the dataset we adopted from Rothaug et al. [ RKA +23 ] is made publicly available by the authors. In all other cases, copyright law, license agreements, and the risk of legal action by either the designers or manufacturers of the IC s result in an unfortunate legal situation that could threaten not only us as researchers but also the publishers of works like ours. 
+
+# 5.2 Future Work 
+
+While working on this publication, SAM3 has been released [ CGH +25 ]. At the time of writing, the model was only available on request. Furthermore, performance data published by Meta does not indicate a significant improvement in image segmentation; therefore, we do not expect a substantial benefit from switching to SAM3 . Nonetheless, the applicability of SAM3 to metal line segmentation remains to be investigated. We primarily see additional room for improvement in our generalization results. Here, the use of additional, higher-quality datasets featuring more annotated images could help further improve generalization performance, as suggested by our findings in Section 4.4. Ideally, such datasets could be made publicly available by IC designers or manufacturers, who also possess the GDSII ground truth corresponding to the images. Finally, future research should investigate whether techniques to mitigate sample preparation or imaging defects [ HCY +21 ], as depicted in Figure 8, can be incorporated into approaches like SAMSEM. To this end, larger datasets containing more erroneous SEM images, paired with reliable ground truth, would be required. 
+
+# 5.3 Conclusion 
+
+In this work, we introduced SAMSEM, a tool for IC metal layer image segmentation based on SAM2 . We demonstrated that our approach produces reliable segmentation masks with an ESD error rate of 0.62 % . SAMSEM works almost flawlessly for IC s that it has been fine-tuned on, significantly improving upon existing work. Furthermore, it shows promising results even for IC s that it was not previously exposed to. Therefore, we have shown that SAMSEM generalizes well across IC technology nodes and image capturing techniques. However, we also see that our approach could be further enhanced by fine-tuning on additional image datasets from more diverse IC s. Therefore, we strongly advocate for IC designers and manufacturers to make annotated image datasets publicly available as benchmarks to improve not only the reliability and accuracy of IC verification tools like ours, but also the reproducibility and comparability of research results. By publishing our final SAMSEM model trained on images from all 14 IC s, along with our training, inference, and evaluation scripts, as open source, we take a first step in this direction and hope to lower the barriers for researchers to enter this domain. 
+
+# References 
+
+[ASY +19] Takuya Akiba, Shotaro Sano, Toshihiko Yanase, Takeru Ohta, and Masanori Koyama. Optuna: A next-generation hyperparameter optimization framework. In Ankur Teredesai, Vipin Kumar, Ying Li, Rómer Rosales, Evimaria Terzi, and George Karypis, editors, Proceedings of the 25th ACM SIGKDD International Conference on Knowledge Discovery & Data Mining, KDD 2019, Anchorage, AK, USA, August 4-8, 2019 , pages 2623–2631. ACM, 2019. C. Gehrmann, J. Ricker, S. Damm, D. Cheng, J. Speith, Y. Shi, A. Fischer, C. Paar 21 [BLS +24] Alexander H. Berger, Laurin Lux, Nico Stucki, Vincent Bürgin, Suprosanna Shit, Anna Banaszak, Daniel Rueckert, Ulrich Bauer, and Johannes C. Paet-zold. Topologically faithful multi-class segmentation in medical images. In Marius George Linguraru, Qi Dou, Aasa Feragen, Stamatia Giannarou, Ben Glocker, Karim Lekadir, and Julia A. Schnabel, editors, Medical Image Comput-ing and Computer Assisted Intervention - MICCAI 2024 - 27th International Conference, Marrakesh, Morocco, October 6-10, 2024, Proceedings, Part VIII ,volume 15008 of Lecture Notes in Computer Science , pages 721–731. Springer, 2024. [CGH +25] Nicolas Carion, Laura Gustafson, Yuan-Ting Hu, Shoubhik Debnath, Ronghang Hu, Didac Suris, Chaitanya Ryali, Kalyan Vasudev Alwala, Haitham Khedr, Andrew Huang, et al. Sam 3: Segment anything with concepts. arXiv preprint arXiv:2511.16719 , 2025. [CSL +18] Deruo Cheng, Yiqiong Shi, Tong Lin, Bah-Hwee Gwee, and Kar-Ann Toh. Hybrid k-means clustering and support vector machine method for via and metal line detections in delayered IC images. IEEE Trans. Circuits Syst. II Express Briefs , 65-II(12):1849–1853, 2018. [GZYL24] Shixuan Gao, Pingping Zhang, Tianyu Yan, and Huchuan Lu. Multi-scale and detail-enhanced segment anything model for salient object detection. In Jianfei Cai, Mohan S. Kankanhalli, Balakrishnan Prabhakaran, Susanne Boll, Ramanathan Subramanian, Liang Zheng, Vivek K. Singh, Pablo César, Lexing Xie, and Dong Xu, editors, Proceedings of the 32nd ACM International Conference on Multimedia, MM 2024, Melbourne, VIC, Australia, 28 October 2024 - 1 November 2024 , pages 9894–9903. ACM, 2024. [HCS +18] Xuenong Hong, Deruo Cheng, Yiqiong Shi, Tong Lin, and Bah-Hwee Gwee. Deep learning for automatic IC image analysis. In 23rd IEEE International Conference on Digital Signal Processing, DSP 2018, Shanghai, China, Novem-ber 19-21, 2018 , pages 1–5. IEEE, 2018. [HCX +22] Kaiming He, Xinlei Chen, Saining Xie, Yanghao Li, Piotr Dollár, and Ross B. Girshick. Masked autoencoders are scalable vision learners. In IEEE/CVF Conference on Computer Vision and Pattern Recognition, CVPR 2022, New Orleans, LA, USA, June 18-24, 2022 , pages 15979–15988. IEEE, 2022. [HCY +21] Ling Huang, Deruo Cheng, Xulei Yang, Tong Lin, Yiqiong Shi, Kaiyi Yang, Bah-Hwee Gwee, and Bihan Wen. Joint anomaly detection and inpainting for microscopy images via deep self-supervised learning. In 2021 IEEE Inter-national Conference on Image Processing, ICIP 2021, Anchorage, AK, USA, September 19-22, 2021 , pages 3497–3501. IEEE, 2021. [HLSC19] Xiaoling Hu, Fuxin Li, Dimitris Samaras, and Chao Chen. Topology-preserving deep image segmentation. In Hanna M. Wallach, Hugo Larochelle, Alina Beygelzimer, Florence d’Alché-Buc, Emily B. Fox, and Roman Garnett, editors, 
+
+Advances in Neural Information Processing Systems 32: Annual Conference on Neural Information Processing Systems 2019, NeurIPS 2019, December 8-14, 2019, Vancouver, BC, Canada , pages 5658–5669, 2019. [Hu22] Xiaoling Hu. Structure-aware image segmentation with homotopy warping. In Sanmi Koyejo, S. Mohamed, A. Agarwal, Danielle Belgrave, K. Cho, and A. Oh, editors, Advances in Neural Information Processing Systems 35: Annual Conference on Neural Information Processing Systems 2022, NeurIPS 2022, New Orleans, LA, USA, November 28 - December 9, 2022 , 2022. 22 SAMSEM – A Generic and Scalable Approach for IC Metal Line Segmentation [HWL +21] Xiaoling Hu, Yusu Wang, Fuxin Li, Dimitris Samaras, and Chao Chen. Topology-aware segmentation using discrete morse theory. In 9th International Conference on Learning Representations, ICLR 2021, Virtual Event, Austria, May 3-7, 2021 . OpenReview.net, 2021. [KSS +20] Adam G. Kimura, Jon Scholl, James Schaffranek, Matthew Sutter, Andrew Elliott, Mike Strizich, and Glen David Via. A decomposition workflow for integrated circuit verification and validation. J. Hardw. Syst. Secur. , 4(1):34–43, 2020. [KYD +23] Lei Ke, Mingqiao Ye, Martin Danelljan, Yifan Liu, Yu-Wing Tai, Chi-Keung Tang, and Fisher Yu. Segment anything in high quality. In Alice Oh, Tristan Naumann, Amir Globerson, Kate Saenko, Moritz Hardt, and Sergey Levine, editors, Advances in Neural Information Processing Systems 36: Annual Conference on Neural Information Processing Systems 2023, NeurIPS 2023, New Orleans, LA, USA, December 10 - 16, 2023 , 2023. [LBW +25] Laurin Lux, Alexander H. Berger, Alexander Weers, Nico Stucki, Daniel Rueckert, Ulrich Bauer, and Johannes C. Paetzold. Topograph: An efficient graph-based framework for strictly topology preserving image segmentation. In 
+
+The Thirteenth International Conference on Learning Representations, ICLR 2025, Singapore, April 24-28, 2025 . OpenReview.net, 2025. [LH19] Ilya Loshchilov and Frank Hutter. Decoupled weight decay regularization. In 
+
+7th International Conference on Learning Representations, ICLR 2019, New Orleans, LA, USA, May 6-9, 2019 . OpenReview.net, 2019. [LMB +24] Chuni Liu, Boyuan Ma, Xiaojuan Ban, Yujie Xie, Hao Wang, Weihua Xue, Jingchao Ma, and Ke Xu. Enhancing boundary segmentation for topological accuracy with skeleton-based methods. In Proceedings of the Thirty-Third International Joint Conference on Artificial Intelligence, IJCAI 2024, Jeju, South Korea, August 3-9, 2024 , pages 1092–1100. ijcai.org, 2024. [LYvD +24] Hong Liu, Haosen Yang, Paul J. van Diest, Josien P. W. Pluim, and Mitko Veta. WSI-SAM: multi-resolution segment anything model (SAM) for histopathology whole-slide images. In Francesco Ciompi, Nadieh Khalili, Linda Studer, Milda Poceviciute, Amjad Khan, Mitko Veta, Yiping Jiao, Neda Haj-Hosseini, Hao Chen, Shan Raza, Fayyaz Minhas, Inti Zlobec, Nikolay Burlutskiy, Veronica Vilaplana, Biagio Brattoli, Henning Müller, and Manfredo Atzori, editors, 
+
+Proceedings of the MICCAI Workshop on Computational Pathology, Marrakesh, Morocco, 6 October 2024 , volume 254 of Proceedings of Machine Learning Research , pages 25–37. PMLR, 2024. [MKP25] Sayan Mandal, Divyadarshini Karthikeyan, and Manas Paldhe. Sam2lora: Composite loss-guided, parameter-efficient finetuning of SAM2 for retinal fundus segmentation. CoRR , abs/2510.10288, 2025. [MMZ23] Anqi Mao, Mehryar Mohri, and Yutao Zhong. Cross-entropy loss functions: Theoretical analysis and applications. In Andreas Krause, Emma Brunskill, Kyunghyun Cho, Barbara Engelhardt, Sivan Sabato, and Jonathan Scarlett, editors, International Conference on Machine Learning, ICML 2023, 23-29 July 2023, Honolulu, Hawaii, USA , volume 202 of Proceedings of Machine Learning Research , pages 23803–23828. PMLR, 2023. [NTCG24] Yong-Jian Ng, Yee-Yang Tee, Deruo Cheng, and Bah-Hwee Gwee. SAMIC: segment anything model for integrated circuit image analysis. In IEEE Region C. Gehrmann, J. Ricker, S. Damm, D. Cheng, J. Speith, Y. Shi, A. Fischer, C. Paar 23 
+
+10 Conference, TENCON 2024, Singapore, December 1-4, 2024 , pages 418–421. IEEE, 2024. [PMB +23] Endres Puschner, Thorben Moos, Steffen Becker, Christian Kison, Amir Moradi, and Christof Paar. Red team vs. blue team: A real-world hardware trojan detection case study across four modern CMOS technology generations. In 44th IEEE Symposium on Security and Privacy, SP 2023, San Francisco, CA, USA, May 21-25, 2023 , pages 56–74. IEEE, 2023. [RCK +25] Nils Rothaug, Deruo Cheng, Simon Klix, Nicole Auth, Sinan Böcker, Endres Puschner, Steffen Becker, and Christof Paar. Advancing training stability in unsupervised SEM image segmentation for IC layout extraction. J. Cryptogr. Eng. , 15(4):21, 2025. [RGH +25] Nikhila Ravi, Valentin Gabeur, Yuan-Ting Hu, Ronghang Hu, Chaitanya Ryali, Tengyu Ma, Haitham Khedr, Roman Rädle, Chloé Rolland, Laura Gustafson, Eric Mintun, Junting Pan, Kalyan Vasudev Alwala, Nicolas Carion, Chao-Yuan Wu, Ross B. Girshick, Piotr Dollár, and Christoph Feichtenhofer. SAM 2: Segment anything in images and videos. In The Thirteenth International Conference on Learning Representations, ICLR 2025, Singapore, April 24-28, 2025 . OpenReview.net, 2025. [RHB +23] Chaitanya Ryali, Yuan-Ting Hu, Daniel Bolya, Chen Wei, Haoqi Fan, Po-Yao Huang, Vaibhav Aggarwal, Arkabandhu Chowdhury, Omid Poursaeed, Judy Hoffman, Jitendra Malik, Yanghao Li, and Christoph Feichtenhofer. Hiera: A hierarchical vision transformer without the bells-and-whistles. In Andreas Krause, Emma Brunskill, Kyunghyun Cho, Barbara Engelhardt, Sivan Sabato, and Jonathan Scarlett, editors, International Conference on Machine Learning, ICML 2023, 23-29 July 2023, Honolulu, Hawaii, USA , volume 202 of 
+
+Proceedings of Machine Learning Research , pages 29441–29454. PMLR, 2023. [RKA +23] Nils Rothaug, Simon Klix, Nicole Auth, Sinan Böcker, Endres Puschner, Steffen Becker, and Christof Paar. Towards unsupervised SEM image segmentation for IC layout extraction. In Chip-Hong Chang, Ulrich Rührmair, Lejla Batina, and Domenic Forte, editors, Proceedings of the 2023 Workshop on Attacks and Solutions in Hardware Security, ASHES 2023, Copenhagen, Denmark, 30 November 2023 , pages 123–128. ACM, 2023. [RTG +19] Hamid Rezatofighi, Nathan Tsoi, JunYoung Gwak, Amir Sadeghian, Ian D. Reid, and Silvio Savarese. Generalized intersection over union: A metric and a loss for bounding box regression. In IEEE Conference on Computer Vision and Pattern Recognition, CVPR 2019, Long Beach, CA, USA, June 16-20, 2019 , pages 658–666. Computer Vision Foundation / IEEE, 2019. [SBPB24] Nico Stucki, Vincent Bürgin, Johannes C. Paetzold, and Ulrich Bauer. Efficient betti matching enables topology-aware 3d segmentation via persistent homology. 
+
+CoRR , abs/2407.04683, 2024. [SLG20] Aayush Singla, Bernhard Lippmann, and Helmut Graeb. Recovery of 2d and 3d layout information through an advanced image stitching algorithm using scanning electron microscope images. In 25th International Conference on Pattern Recognition, ICPR 2020, Virtual Event / Milan, Italy, January 10-15, 2021 , pages 3860–3867. IEEE, 2020. [SLV +17] Carole H. Sudre, Wenqi Li, Tom Vercauteren, Sébastien Ourselin, and M. Jorge Cardoso. Generalised dice overlap as a deep learning loss function for highly 24 SAMSEM – A Generic and Scalable Approach for IC Metal Line Segmentation unbalanced segmentations. In M. Jorge Cardoso, Tal Arbel, Gustavo Carneiro, Tanveer F. Syeda-Mahmood, João Manuel R. S. Tavares, Mehdi Moradi, Andrew P. Bradley, Hayit Greenspan, João Paulo Papa, Anant Madabhushi, Jacinto C. Nascimento, Jaime S. Cardoso, Vasileios Belagiannis, and Zhi Lu, editors, Deep Learning in Medical Image Analysis and Multimodal Learning for Clinical Decision Support - Third International Workshop, DLMIA 2017, and 7th International Workshop, ML-CDS 2017, Held in Conjunction with MICCAI 2017, Québec City, QC, Canada, September 14, 2017, Proceedings ,volume 10553 of Lecture Notes in Computer Science , pages 240–248. Springer, 2017. [SPS +21] Suprosanna Shit, Johannes C. Paetzold, Anjany Sekuboyina, Ivan Ezhov, Alexander Unger, Andrey Zhylka, Josien P. W. Pluim, Ulrich Bauer, and Bjoern H. Menze. cldice - A novel topology-preserving loss function for tubular structure segmentation. In IEEE Conference on Computer Vision and Pattern Recognition, CVPR 2021, virtual, June 19-25, 2021 , pages 16560– 16569. Computer Vision Foundation / IEEE, 2021. [SPS +23] Nico Stucki, Johannes C. Paetzold, Suprosanna Shit, Bjoern H. Menze, and Ulrich Bauer. Topologically faithful image segmentation via induced matching of persistence barcodes. In Andreas Krause, Emma Brunskill, Kyunghyun Cho, Barbara Engelhardt, Sivan Sabato, and Jonathan Scarlett, editors, In-ternational Conference on Machine Learning, ICML 2023, 23-29 July 2023, Honolulu, Hawaii, USA , volume 202 of Proceedings of Machine Learning Research , pages 32698–32727. PMLR, 2023. [THC +23] Yee-Yang Tee, Xuenong Hong, Deruo Cheng, Chye-Soon Chee, Yiqiong Shi, Tong Lin, and Bah-Hwee Gwee. Patch-based adversarial training for error-aware circuit annotation of delayered IC images. IEEE Trans. Circuits Syst. II Express Briefs , 70(9):3694–3698, 2023. [TUSP18] Bruno Machado Trindade, Eranga Ukwatta, Mike Spence, and Chris Pawlowicz. Segmentation of integrated circuit layouts from scan electron microscopy images. In 2018 IEEE Canadian Conference on Electrical & Computer Engineering, CCECE 2018, Quebec, QC, Canada, May 13-16, 2018 , pages 1–4. IEEE, 2018. [WZB +24] Bo Wen, Haochen Zhang, Dirk-Uwe G. Bartsch, William R. Freeman, Truong Q. Nguyen, and Cheolhong An. Topology-preserving image segmentation with spatial-aware persistent feature matching. CoRR , abs/2412.02076, 2024. [YTG +22] Zifan Yu, Bruno Machado Trindade, Michael Green, Zhikang Zhang, Pullela Sneha, Erfan Bank Tavakoli, Christopher Pawlowicz, and Fengbo Ren. Adata-driven approach for automated integrated circuit segmentation of scan electron microscopy images. In 2022 IEEE International Conference on Image Processing, ICIP 2022, Bordeaux, France, 16-19 October 2022 , pages 2851– 2855. IEEE, 2022. [ZWD +25] Mengdi Zhu, Ronald Wilson, Reiner N. Dizon-Paradis, Olivia P. Dizon-Paradis, Domenic J. Forte, and Damon L. Woodard. Genetic algorithm-assisted golden-free standard cell library extraction from SEM images. In 26th International Symposium on Quality Electronic Design, ISQED 2025, San Francisco, CA, USA, April 23-25, 2025 , pages 1–8. IEEE, 2025.

@@ -1,0 +1,702 @@
+Title: EviATTA: Evidential Active Test-Time Adaptation for Medical Segment Anything Models
+
+URL Source: https://arxiv.org/pdf/2603.14666v1
+
+Published Time: Tue, 17 Mar 2026 02:59:39 GMT
+
+Number of Pages: 10
+
+Markdown Content:
+> IEEE TRANSACTIONS ON MEDICAL IMAGING, VOL. XX, NO. XX, XXXX 2020 1
+
+# EviATTA: Evidential Active Test-Time Adaptation for Medical Segment Anything Models 
+
+Jiayi Chen, Yasmeen George, Winston Chong, and Jianfei Cai, Fellow, IEEE 
+
+Abstract — Deploying foundational medical Segment Anything Models (SAMs) via test-time adaptation (TTA) is challenging under large distribution shifts, where test-time supervision is often unreliable. While active test-time adap-tation (ATTA) introduces limited expert feedback to improve reliability, existing ATTA methods still suffer from unre-liable uncertainty estimation and inefficient utilization of sparse annotations. To address these issues, we propose Evidential Active Test-Time Adaptation (EviATTA), which is, to our knowledge, the first ATTA framework tailored for medical SAMs. Specifically, we adopt the Dirichlet-based Evidential Modeling to decompose overall predictive un-certainty into distribution uncertainty and data uncertainty. Building on this decomposition, we design a Hierarchical Evidential Sampling strategy, where image-wise distribu-tion uncertainty is used to select informative shifted sam-ples, while distance-aware data uncertainty guides sparse pixel annotations to resolve data ambiguities. We further introduce Dual Consistency Regularization, which enforces progressive prompt consistency on sparsely labeled sam-ples to better exploit sparse supervision and applies vari-ational feature consistency on unlabeled samples to sta-bilize adaptation. Extensive experiments on six medical image segmentation datasets demonstrate that EviATTA consistently improves adaptation reliability with minimal expert feedback under both batch-wise and instance-wise test-time adaptation settings. 
+
+Index Terms — Segment anything model, active test-time adaptation, medical image segmentation 
+
+I. I NTRODUCTION 
+
+Recently, medical segment anything models (SAM), such as SAM-Med2D [1], MedSAM [2], and their variants [3], [4], have emerged as strong foundation models for medical image segmentation. They provide flexible prompt-based interaction and show strong zero-shot generalization across organs and lesions [5]. However, their performance often degrades in real clinical deployment due to distribution shifts arising from variations in imaging modalities, acquisition protocols [6], patient populations [7], or anatomical structures [8]–[11]. Test-time adaptation (TTA) is a promising way to mitigate distribution shifts by adapting pretrained models during infer-ence without labels [12]. As shown in Fig. 1(a), existing TTA 
+
+This work was supported by the Medical Research Future Fund (MRFF) under Grant NCRI000074. (Corresponding author: Jiayi Chen) Jiayi Chen, Yasmeen George, and Jianfei Cai are with Department of Data Science & AI, Faculty of Information Technology, Monash University, VIC 3800, Australia (e-mail: {jiayi.chen, yasmeen.george, jianfei.cai }@monash.edu) Winston Chong is with Alfred Health, VIC 3004, Australia (e-mail: winston.chong@monash.edu) 
+
+methods mainly rely on self-training signals, such as entropy minimization [13]–[15] and consistency regularization [15]– [18]. Under large distribution shifts, these signals are often noisy and miscalibrated, leading to error accumulation and even negative adaptation [19]. Prior studies attempt to mitigate this issue with reliable sample selection [20], pseudo-label refinement [21], [22], and anti-forgetting mechanisms [23]. However, these methods remain limited to model-generated supervision, rendering the adaptation intrinsically unstable without reliable external guidance. To improve adaptation reliability, active test-time adaptation (ATTA) [24] integrates active learning [25] into TTA. As illus-trated in Fig. 1(b), ATTA selects a limited number of informa-tive test samples or pixels for annotation to reduce error accu-mulation. Most ATTA methods focus on image classification, where image-wise informativeness is evaluated using feature diversity [24], [26] and predictive uncertainty, typically quan-tified via entropy [24], [27], [28], softmax confidence [26], conformal score [29], or perturbation consistency [19]. While a few efforts extend ATTA to segmentation [30], [31], they are built on non-promptable architectures, leaving ATTA for promptable foundation models underexplored. Applying ATTA to medical SAMs raises two key chal-lenges: (1) Unreliable uncertainty estimation. Most ATTA methods estimate uncertainty using predictive entropy or softmax confidence. Under pronounced distribution shifts, model predictions often become overconfident and miscal-ibrated [32], [33], which makes these uncertainty proxies less reliable. As a result, active sample selection becomes less reliable, and critical samples that require correction are often overlooked. (2) Inefficient utilization of sparse anno-tations. Classification-oriented methods rely on image-wise annotations and therefore lack the spatial granularity needed by segmentation. Segmentation-oriented methods, in contrast, are usually developed on non-promptable architectures and treat sparse pixel labels as isolated supervision points [30]. Consequently, the former cannot precisely localize where to query annotations, and the latter cannot fully convert sparse annotations into dense, prompt-driven guidance in SAM. To address these challenges, we propose Evi dential Active 
+
+Test-Time Adaptation (EviATTA), which is, to our knowledge, the first ATTA framework tailored for medical SAMs. As illustrated in Fig. 1(c), we first introduce Dirichlet-based Evidential Modeling to decompose predictive uncertainty into distribution and data components [34], [35]. Based on this decomposition, we design a Hierarchical Evidential Sampling         
+
+> arXiv:2603.14666v1 [cs.CV] 15 Mar 2026 2IEEE TRANSACTIONS ON MEDICAL IMAGING, VOL. XX, NO. XX, XXXX 2020 More reliable adaptation with annotations
+> (b)Vanilla active test -time adaptation
+> Unreliable
+> overall uncertainty
+> SAM -Med2D
+
+❄      
+
+> 𝑈
+> Data selection
+> (𝑥 ,𝑔 !)
+> Unlabeled
+> Underutilized
+> sparse annotations
+> Model training
+> 𝑦 (𝑦 ("
+> #
+> (𝑥 $,𝑔 $
+> !)
+> Unlabeled
+> (𝑥 ",𝑔 "
+> !:#)
+> Sparse -labeled
+> SAM -Med2D
+
+🔥   
+
+> (a) Test -time adaptation
+> 𝑦 (
+> Unreliable
+> self -supervision
+> SAM -Med2D
+> Unlabeled
+> Model training
+> Unreliable adaptation
+
+🔥         
+
+> (𝑥 ,𝑔 !)
+> Reliable adaptation with minimal annotations
+> (c)Our EviATTA
+> 𝑈 &"' 𝑈 &()(
+> SAM -Med2D
+
+❄          
+
+> Reliable
+> decoupled uncertainty
+> Data selection
+> (𝑥 ,𝑔 !)
+> Unlabeled
+> Model training
+> 𝑦 ("
+> #*+
+> 𝑦 ("
+> #𝑦 ($
+> ,
+> 𝑦 ($
+> (𝑥 ",𝑔 "
+> !:#*+)
+> (𝑥 ",𝑔 "
+> !:#)(𝑥 $,𝑔 $
+> !)
+> Unlabeled
+> Fully -used sparse annotations
+> SAM -Med2D
+
+🔥  
+
+> Sparse -labeled
+> Fig. 1. Comparison of TTA, vanilla ATTA, and EviATTA. (a) TTA suffers from unreliable adaptation due to unreliable self-supervision. (b) Vanilla ATTA partially improves adaptation but still struggles with unreliable uncertainty estimation and inefficient utilization of sparse annotations. (c) EviATTA employs decoupled uncertainty for more reliable uncertainty estimation and leverages dual consistency regularization to exploit sparse annotations.
+
+strategy that utilizes image-wise distribution uncertainty to select highly shifted samples and employ distance-aware data uncertainty to guide sparse annotations. We further propose Dual Consistency Regularization to improve sparse label uti-lization and adaptation stability. For sparsely labeled samples, we treat annotated pixels as spatial point prompts and enforce progressive consistency between weak and strong prompts, thereby propagating sparse cues into dense supervision. Mean-while, we leverage variational feature consistency to regularize the adaptation dynamics. Our main contributions are summarized as follows:  
+
+> •
+
+We propose EviATTA, the first active test-time adaptation framework tailored for medical SAMs, which improves adaptation reliability with minimal annotation cost.  
+
+> •
+
+We introduce Dirichlet-based evidential modeling to de-compose predictive uncertainty into distribution and data components, and propose a hierarchical evidential sam-pling strategy for reliable sample and pixel selection.  
+
+> •
+
+We devise a dual consistency regularization scheme that treats sparse annotations as point prompts, improves sparse supervision utilization, and stabilizes adaptation.  
+
+> •
+
+Extensive experiments on six medical image segmen-tation datasets demonstrate that EviATTA consistently outperforms state-of-the-art methods in both batch-wise and instance-wise test-time adaptation settings. 
+
+II. R ELATED WORK 
+
+A. Test-Time Adaptation 
+
+Test-time adaptation is a paradigm to mitigate distribution shifts by adapting pre-trained models using unlabeled test samples. Existing TTA methods can be broadly categorized into two groups: entropy minimization [13], [14], [20] and consistency-based methods [15]–[17]. Entropy minimization methods adapt pretrained models by reducing the entropy of model predictions on test data. For instance, TENT [13] proposes a test-time entropy minimization strategy to update the affine parameters of batch normalization (BN) layers. SAR [20] filters noisy samples with large gradients and em-ploys sharpness-aware minimization to improve the stability of entropy minimization. Furthermore, COME [14] leverages a Dirichlet prior distribution to model subjective opinions and minimizes the entropy of opinions to boost reliability. 
+
+Consistency-based methods exploit self-consistency to pro-vide supervisory signals. CoTTA [16] adopts the teacher-student framework to enforce prediction consistency between a test sample and its augmentations. SPA [17] introduces geometry-preserving augmentations, including low-frequency amplitude masking and high-frequency noise injection, to optimize prediction consistency across deteriorated views. Ad-ditionally, GraTa [15] achieves effective adaptation by aligning the gradients of the empirical loss and pseudo loss. However, both entropy-minimization and consistency-based methods fundamentally rely on self-generated signals ( e.g. ,predictive entropy or pseudo labels), which tend to be miscal-ibrated and noisy under distribution shifts [36]. Consequently, the adaptation process is driven by unreliable or misleading signals, which leads to error accumulation and unreliable adaptation [32], [33]. Although several approaches incorporate reliable sample selection [20], pseudo label refinement [22], and anti-forgetting mechanisms [23], existing TTA methods struggle with error accumulation due to the lack of reliable supervision. This motivates the integration of minimal expert guidance to improve adaptation reliability [24], [37]. 
+
+B. Active Test-Time Adaptation 
+
+Active test-time adaptation (ATTA) incorporates active learning into test-time adaptation, where a limited number of informative samples or pixels are annotated to alleviate error accumulation and facilitate more reliable adaptation under distribution shifts [24]. Unlike active learning that queries samples during offline training [25], [38], active test-time adaptation selects samples during online inference under strict annotation budgets, making the problem more challenging and still underexplored. Recent efforts have investigated ATTA for general classification tasks. For instance, SimATTA [24] em-ploys incremental clustering on highly uncertain test samples for real-time sample selection. HiATTA [26] proposes a k-margin strategy to annotate low-confident and diverse sam-CHEN et al. : EVIATTA: EVIDENTIAL ACTIVE TEST-TIME ADAPTATION FOR MEDICAL SEGMENT ANYTHING MODELS 3(c) Dual Consistency Regularization               
+
+> Progressive Prompt Consistency with Replay
+> SAM -Med2D
+> Image
+> Encoder
+> Mask Decoder
+> Prompt Encoder LoRA
+> ❄❄
+> ❄
+> 🔥
+> 𝜇
+> 𝜎
+> (𝑥 !,𝑔 !
+> ":$)
+> (𝑥 !,𝑔 !
+> ":$%&)
+> Sparse -labeled
+> samples
+> 🔥
+> 𝑦 '!
+> $
+> 𝑦 '!
+> $%&
+> Unlabeled
+> samples
+> Image
+> Encoder
+> Mask Decoder
+> Prompt Encoder LoRA
+> ❄❄
+> ❄
+> 🔥
+> 𝜇
+> 𝜎
+> (𝑥 ',𝑔 '
+> ")
+> 𝑦 ''
+> (
+> 𝑦 ''
+> Variational Feature Consistency
+> Share weights
+> 🔥
+> (𝜎 =0)
+> (𝜎 ≠0)
+> (a) Dirichlet -based
+> Evidential Modeling
+> SAM -Med2D
+
+❄     
+
+> Dirichlet Parameter
+> Test samples
+> (𝑥 ,𝑔 ")
+> 𝛼
+> 0.48
+> (b) Hierarchical Evidential Sampling
+> (𝑥 !,𝑔 !
+> ":))
+> Sparse annotation
+> 𝑈 *+,+
+> (𝑥 !,𝑔 !
+> ")
+> Uncertainty decomposition
+
+⋮ ⋮  
+
+> 𝑈 *!-(𝑥 ,𝑔 !)𝑈 *+,+
+
+⋮
+
+> 𝛼
+
+⋮
+
+> Sample selection
+> 𝑈 .*!-
+
+⋮ 
+
+> Sparse -labeled
+> samples
+> 0.17
+> 0.25
+> Top
+> 𝑈 .*!-
+> 0.48 ℒ./0$.,
+> ℒ/1.2+3
+> ℒ4+/
+
+Fig. 2. Framework of EviATTA. It comprises three components: (a) Dirichlet-based Evidential Modeling, which formulates categorical prediction as following a Dirichlet distribution; (b) Hierarchical Evidential Sampling, which decomposes overall uncertainty into distribution and data uncertainties, selects samples via image-wise distribution uncertainty, and annotates pixels using pixel-wise data uncertainty; (c) Dual Consistency Regularization, which enforces progressive prompt consistency to leverage sparse annotations and variational feature consistency to stabilize adaptation. 
+
+ples and subsequently utilizes the labeled samples for hyper-parameter selection. EATTA [19] identifies valuable samples via feature perturbation and dynamically balances optimization between labeled and unlabeled data. BiTTA [27] estimates data uncertainty via predictive entropy and requests binary feedback on uncertain samples to verify model predictions. In contrast, only a few attempts extend ATTA to segmentation tasks [30], [31]. Both ATASeg [30] and ODES [31] estimate pixel-wise informativeness based on predictive entropy and region impurity to query sparse pixel annotations. ODES fur-ther introduces a sample selection strategy using BN statistics to prioritize samples with large distribution shifts, extending ATASeg to batch-wise adaptation. However, both methods are inherently built upon conventional non-promptable archi-tectures, leaving active test-time adaptation for promptable foundation models unexplored. Despite their effectiveness, existing ATTA approaches still suffer from unreliable uncertainty estimation and inefficient utilization of sparse annotations. In this paper, we propose a hierarchical evidential sampling strategy for more reliable uncertainty estimation and a dual consistency regularization scheme to exploit sparse annotation and stabilize adaptation. 
+
+III. M ETHOD 
+
+A. Overview 
+
+The overview of EviATTA is illustrated in Fig. 2. Given a pre-trained medical SAM, EviATTA aims to adapt it to a target domain in an online test-time setting with minimal annotation cost. The medical SAM Θ = {EI , E P , D } comprises an image encoder EI (·), a prompt encoder EP (·), and a mask decoder D(·). During active test-time adaptation, unlabeled test samples are processed sequentially in mini-batches B =
+
+{(xi, g0 
+
+> i
+
+)}Ni=1 , where N is the batch size, xi ∈ RH×W ×3 is the input image and g0 
+
+> i
+
+denotes the initial prompt. For each sample (xi, g0 
+
+> i
+
+), SAM produces an initial prediction ˆyi. Ac-cording to Dirichlet-based evidential modeling, we decompose the overall uncertainty into distribution and data uncertainties, laying a foundation for detailed uncertainty estimation. To ensure a more comprehensive and reliable uncertainty as-sessment, we then perform hierarchical evidential sampling to select top-K shifted samples via image-wise distribution uncertainty and annotate M ambiguous pixels per selected sample via distance-aware data uncertainty. The annotated pix-els are explicitly treated as point prompts, forming a sparsely labeled set BL = {(xi, g0: Mi )}Ki=1 , while the remaining sam-ples form the unlabeled set BU = B \ B L = {(xj , g0 
+
+> j
+
+)}N −Kj=1 .We further introduce dual consistency regularization to ex-ploit sparse annotations and stabilize adaptation. Specifically, sparsely labeled samples BL are adapted via progressive prompt consistency with replay, while unlabeled samples BU
+
+are regularized through variational feature consistency. 
+
+B. Dirichlet-based Evidential Modeling 
+
+As shown in Fig. 2(a), we introduce Dirichlet-based evi-dential modeling for medical SAMs to establish a theoretical foundation for detailed uncertainty decomposition. Formally, given an input image x from the target domain and its prompt 
+
+g, the medical SAM Θ processes them through an image encoder EI and a prompt encoder EP , yielding the image embedding EI (x) and prompt embedding EP (g). Then, the mask decoder D projects these embeddings to spatial logits 
+
+ˆy ∈ RH×W ×C , where ˆy = Θ( x, g) = D(EI (x), E P (g)) .The conventional SAM utilizes softmax or sigmoid operators to map the logits into deterministic categorical probabilities 
+
+ρ. However, relying on such point estimates makes the model prone to overconfidence during test-time adaptation with dis-tribution shifts [36]. To address with this issue, evidential modeling formulates the categorical prediction ρ as a random variable following a Dirichlet distribution. Given the input data 
+
+(x, g) and SAM Θ, the probability density function of ρ [34] is formulated as: 
+
+p(ρ|x, g, Θ) = 
+
+
+
+Γ( PCc=1 αc)
+
+QCc=1 Γ( αc)
+
+> C
+
+Y
+
+> c=1
+
+ραc−1 
+
+> c
+
+, (ρ ∈ ∆C )0 , (otherwise )
+
+(1) 4 IEEE TRANSACTIONS ON MEDICAL IMAGING, VOL. XX, NO. XX, XXXX 2020 
+
+where C is the number of classes, Γ( ·) denotes the Gamma function, and α ∈ RH×W ×C is the Dirichlet parameter for the input data (x, g). Based on subjective logic [39], the parameter 
+
+α is derived as α = e + 1 = A(ˆ y) + 1 , where A(·) is the non-negative activation function. In this study, we implement 
+
+A(·) as the exponential function exp (·).Accordingly, the posterior probability for class c [36] is 
+
+P (y = c|x, g, Θ) = 
+
+Z
+
+p(y = c|ρ) · p(ρ|x, g, Θ) dρ = αc
+
+S ,
+
+(2) where S = PCc=1 αc is the Dirichlet strength. 
+
+C. Hierarchical Evidential Sampling 
+
+As shown in Fig. 2(b), we then leverage the evidential framework to decompose the overall predictive uncertainty into distribution and data components to capture distribution shifts and inherent complexity, respectively. Subsequently, we propose a hierarchical evidential sampling strategy that simul-taneously considers image-wise distribution shifts and pixel-wise data ambiguity for more reliable uncertainty estimation.  
+
+> 1) Uncertainty Decomposition:
+
+Given the input data (x, g)
+
+and SAM Θ, the overall predictive uncertainty U ∈ RH×W
+
+is quantified as the entropy of posterior probability [40]. 
+
+U = H[P (y|x, g, Θ)] = −
+
+> C
+
+X
+
+> c=1
+
+ρc log ρc. (3) From an information-theoretic perspective, the overall un-certainty can be decomposed into distribution uncertainty and data uncertainty to measure the distribution shifts and inherent ambiguity, respectively [33], [40]. Specifically, the data uncertainty U data ∈ RH×W is estimated as the expected entropy of all possible predictions: 
+
+U data = E[H[P (y|ρ)]] = 
+
+> C
+
+X
+
+> c=1
+
+ρc(ψ(S +1) −ψ(αc +1)) , (4) where H denotes the entropy and ψ(·) is the Digamma func-tion. The distribution uncertainty U dis ∈ RH×W is formulated as the mutual information between categorical label y and probability ρ [36], [40], which is measured as the difference between the overall uncertainty and data uncertainty:            
+
+> Udis =U−Udata =
+> CX
+> c=1
+> ρc
+>  ψ(αc+1) −ψ(S+1) −log ρc
+> .(5)
+> 2) Sampling Strategy:
+
+To ensure reliable uncertainty assess-ment, it is crucial to consider both the distribution shifts from the pre-trained model and the data ambiguity of test samples. Therefore, we propose a hierarchical sampling strategy that first leverages image-wise distribution uncertainty to identify samples with notable distribution shifts, and then utilizes pixel-wise data uncertainty to pinpoint ambiguous regions for sparse annotation. Specifically, we quantify the image-wise distribution uncertainty U dis by spatially aggregating the dense distribution uncertainty map U dis , which is defined as: 
+
+U dis = 1
+
+H × W
+
+> H
+
+X
+
+> h=1
+> W
+
+X
+
+> w=1
+
+U h,w dis . (6) Accordingly, the top-K samples with the highest U dis are selected for further annotation. To minimize annotation costs, we leverage the promptable nature of SAM by adopting sparse annotations as auxiliary point prompts g. To identify the most informative pixels, we jointly consider individual data uncertainty and spatial coverage. Specifically, we binarize the data uncertainty map 
+
+U data via Otsu’s adaptive thresholding τ [41], explicitly partitioning the map into uncertain and confident regions. We then apply the distance transform Dist( ·) to compute a spatial distance map d ∈ RH×W , which encodes the shortest distance from each pixel within the uncertain region ( U data >τ ) to its nearest confident pixel. The distance map d is defined as: 
+
+d = Dist( I(U data > τ )) . (7) Subsequently, we derive a distance-aware data uncertainty map via element-wise multiplication d ⊙ U data . The coordinates 
+
+(h∗, w ∗) of the next annotated pixel correspond to the spatial location of the maximum value within this reweighted map: 
+
+(h∗, w ∗) = arg max 
+
+> h,w
+
+dh,w · U h,w data . (8) At the m-th iteration, the annotated pixel (h∗, w ∗) is in-corporated into the prompt set, updating it to g0: m. Con-sequently, the segmentation mask and data uncertainty map are dynamically re-estimated. Guided by the updated data uncertainty, the (m + 1) -th pixel is then queried via Eq. 8. This iterative procedure continues until a budget of M pixels is reached, inherently ensuring both high informativeness and broad spatial coverage for effective supervision. 
+
+D. Dual Consistency Regularization 
+
+Given the limited sparse annotations, we design a dual consistency regularization scheme (see Fig. 2(c)). It enforces progressive prompt consistency to extensively exploit sparse annotations and applies variational feature consistency to sta-bilize model adaptation.      
+
+> 1) Progressive Prompt Consistency with Replay:
+
+To ex-tensively exploit sparse annotations, we enforce consistency across predictions derived from progressively refined prompts. For an input image xi, let g0 
+
+> i
+
+denote the initial box prompt, and 
+
+g0: mi denote the prompt augmented with the first m annotated points. This formulation yields a sequence of weak-strong prompt pairs (g0: mi , g0: m+1  
+
+> i
+
+). By treating the prediction from the stronger prompt ˆym+1  
+
+> i
+
+= Θ( xi, g0: m+1  
+
+> i
+
+) as a dynamic target, we distill its knowledge into the weaker prediction 
+
+ˆymi = Θ( xi, gi0: m). The progressive prompt consistency is defined as:             
+
+> Lprompt =
+> M−1X
+> m=0
+> Iconf (ˆ ym+1
+> i,ˆymi)·KL  sg (ˆ ym+1
+> i)∥ˆymi
+> ,(9)
+
+Iconf (ˆ ym+1  
+
+> i
+
+, ˆymi ) = 1 max  
+
+> c
+
+(ˆ ym+1  
+
+> i,c
+
+) > max  
+
+> c
+
+(ˆ ymi,c ), (10) where Iconf (ˆ ym+1  
+
+> i
+
+, ˆymi ) is an indicator to identify pixels with higher confidence in ˆym+1  
+
+> i
+
+than in ˆymi . sg (·) denotes the stop-gradient operation. To consolidate the knowledge gained from minimal expert feedback, we maintain a replay buffer that CHEN et al. : EVIATTA: EVIDENTIAL ACTIVE TEST-TIME ADAPTATION FOR MEDICAL SEGMENT ANYTHING MODELS 5
+
+stores sparsely labeled samples along with their historical pre-dictions ˆyr , enforcing consistency with the current predictions 
+
+ˆy′ 
+
+> r
+
+. The replay loss is defined as: 
+
+Lreplay = Iconf (ˆ yr , ˆy′ 
+
+> r
+
+) · KL (sg (ˆ yr ) ∥ ˆy′ 
+
+> r
+
+), (11) where Iconf (ˆ yr , ˆy′ 
+
+> r
+
+) is an indicator to filter reliable pixels.    
+
+> 2) Variational Feature Consistency:
+
+For unlabeled sam-ples, we introduce variational feature consistency to stabi-lize adaptation. Rather than a deterministic embedding, we model the image feature as a latent Gaussian distribution 
+
+N (μ(xj ), σ 2(xj )) . Here, the mean μ(xj ) = EI (xj ) is the encoder output, and the standard deviation σ(xj ) is estimated via an auxiliary convolutional head [42]. Using the standard reparameterization trick, we sample a perturbed feature zj as: 
+
+zj = EI (xj ) + ϵ ⊙ σ(xj ), ϵ ∼ N (0, I), (12) where ⊙ denotes element-wise multiplication. The mask de-coder D then generates a variance-augmented prediction based on the sampled feature and the initial prompt g0 
+
+> j
+
+:
+
+ˆy′ 
+
+> j
+
+= D(zj , E P (g0 
+
+> j
+
+)) . (13) We subsequently enforce consistency between this perturbed output ˆy′ 
+
+> j
+
+and the original deterministic prediction ˆyj =
+
+D(EI (xj ), E P (gj )) . Thus, the variational feature consistency loss is defined as: 
+
+Lvar = Iconf (ˆ yj , ˆy′ 
+
+> j
+
+) · KL (sg (ˆ yj ) ∥ ˆy′ 
+
+> j
+
+), (14) where Iconf (ˆ yj , ˆy′ 
+
+> j
+
+) is the indicator to select reliable pixels. 
+
+E. Parameter-Efficient Training Scheme 
+
+During active test-time adaptation, we introduce LoRA modules to the output projection weight W O in each self-attention module of the image encoder, while keeping the prompt encoder and mask decoder frozen. The adapted output projection is formulated as 
+
+W = W O + ∆ W = W O + BA , (15) where A ∈ Rr×d and B ∈ Rd×r are low-rank matrices. The overall loss function integrates the progressive prompt consistency (including replay) for sparsely labeled samples and the variational feature consistency for unlabeled samples, formulated as follows: 
+
+L = Lprompt + Lreplay + Lvar . (16) 
+
+IV. E XPERIMENT 
+
+A. Datasets and Evaluation Metrics 
+
+We evaluated EviATTA on six medical image segmenta-tion datasets covering multiple modalities, organs, and le-sions: BraTS-SSA [44], BraTS-PED [44], FHPsAOP [45], REFUGE [46], RUNMC [47], and PANTHER [48]. BraTS-SSA [44] contains 60 adult glioma mpMRI scans from Sub-Saharan Africa, which yield 3,695 axial T2-FLAIR slices for whole-tumor segmentation. BraTS-PED [44] includes 99 mp-MRI scans of pediatric tumors, providing 3,739 T2-FLAIR slices for whole-tumor segmentation. FHPsAOP [45] contains 4,000 ultrasound images for symphysis-fetal head analysis. We focus on fetal head segmentation in this study. REFUGE [46] consists of 800 retinal fundus images for optic disc and cup segmentation. We focus on optic disc segmentation in this study. RUNMC [47] is a prostate segmentation dataset with 30 T2-weighted MRI scans, from which 420 axial slices are extracted for evaluation. PANTHER [48] includes 50 T2-weighted MR-Linac scans for pancreas and tumor segmen-tation. Both structures are treated as foreground, and 1,906 axial slices are used for experiments. The segmentation results are evaluated using four metrics, including Dice Similarity Coefficient (Dice, %), Jaccard Index (Jaccard, %), Average Surface Distance (ASD, in voxels), and 95% Hausdorff Distance (HD95, in voxels). Higher Dice and Jaccard scores indicate superior segmentation performance, whereas lower values are desirable for ASD and HD95. 
+
+B. Implementation Details 
+
+In this study, we adopt SAM-Med2D [1] as the backbone due to its strong zero-shot performance and public availability. All images are resized to 256 × 256 pixels. Following [1], we use the bounding box derived from the ground-truth as the initial prompt. We evaluate EviATTA under two adaptation regimes: (1) batch-wise adaptation with |B| =32 , and (2) instance-wise adaptation with |B| =1 . For both settings, we perform one-step optimization per test batch following [15]. We use Adam with a learning rate of 1e−4 for batch-wise adaptation and 1e−5 for instance-wise adaptation. LoRA mod-ules with rank r = 4 are inserted into the image encoder [49]. For batch-wise adaptation, we evaluate EviATTA under two annotation budgets. Specifically, 10% and 20% of samples in each test batch are selected, with M = 5 annotated pixels per selected sample. For instance-wise adaptation, we query the annotation of M = 5 points per test sample. We maintain a replay buffer of size 128, from which we randomly replay 16 samples per optimization step in batch-wise adaptation and a single sample in the instance-wise setting. All experiments are conducted on a single NVIDIA L40S GPU. 
+
+C. Comparison Methods 
+
+We compared EviATTA with eleven state-of-the-art (SOTA) methods, including a zero-shot baseline SAM-Med2D [1], six test-time adaptation methods, and four active test-time adap-tation methods. The test-time adaptation methods comprise test-time entropy minimization (TENT) [13], continual test-time domain adaptation (CoTTA) [16], sharpness-aware and reliable entropy minimization (SAR) [20], gradient alignment-based test-time adaptation (GraTa) [15], conservatively min-imizing entropy (COME) [14], and self-bootstrapping TTA (SPA) [17]. The active test-time adaptation methods cover random sampling (Random) [50], entropy sampling (En-tropy) [50], simple yet effective ATTA (SimATTA) [24], and effortless active test-time adaptation (EATTA) [19]. Owing to the absence of BN layers, ODES [31] cannot be applied to SAM for BN-based sample selection and is therefore excluded from the main experiments. 6 IEEE TRANSACTIONS ON MEDICAL IMAGING, VOL. XX, NO. XX, XXXX 2020 
+
+TABLE I PERFORMANCE COMPARISON WITH SOTA TTA AND ATTA METHODS UNDER BATCH -WISE SETTING . B EST RESULTS ARE HIGHLIGHTED AS FIRST ,SECOND , AND THIRD . 10% AND 20% INDICATE SELECTING 10% AND 20% SAMPLES PER BATCH FOR SPARSE ANNOTATION .
+
+Type Method BraTS-SSA BraTS-PED FHPsAOP Dice ↑ Jaccard ↑ ASD ↓ HD95 ↓ Dice ↑ Jaccard ↑ ASD ↓ HD95 ↓ Dice ↑ Jaccard ↑ ASD ↓ HD95 ↓
+
+Zero-shot SAM-Med2D [1] 82.34 71.64 2.73 13.10 84.84 75.32 2.12 7.77 73.87 60.84 11.16 29.58 TTA TENT [13] 81.67 70.81 2.75 13.82 86.30 77.39 1.96 7.55 67.66 52.36 12.76 34.24 CoTTA [16] 84.09 73.90 2.70 13.01 85.87 76.53 2.16 7.74 74.19 61.36 11.74 30.24 SAR [20] 82.08 71.31 2.76 13.72 85.36 76.00 2.09 7.69 68.42 53.23 12.7 33.81 GraTa [15] 82.42 71.55 2.90 12.90 84.02 74.04 2.29 7.94 75.92 62.53 11.03 29.52 COME [14] 84.00 73.85 2.64 12.77 86.35 77.38 2.01 7.39 75.52 62.36 10.95 29.15 SPA [17] 83.94 73.77 2.69 12.81 83.60 73.70 2.26 8.19 63.34 48.85 13.53 34.04 ATTA (10%) Random [43] 83.25 72.98 2.64 12.89 86.40 77.46 1.93 7.15 78.01 65.77 9.99 26.29 Entropy [43] 85.94 76.66 2.30 12.36 88.45 80.36 1.66 6.63 78.90 66.86 9.08 24.71 SimATTA [24] 84.87 75.18 2.47 12.46 86.94 78.26 1.85 7.00 77.16 64.01 10.34 27.34 EATTA [19] 85.22 75.64 2.35 12.58 88.31 80.13 1.68 6.74 73.03 58.79 11.24 30.01 EviATTA (Ours) 89.26 81.42 1.80 10.61 90.40 83.04 1.48 5.81 90.39 82.90 4.55 12.34 ATTA (20%) Random [43] 83.80 73.62 2.59 12.73 86.40 77.46 1.93 7.15 78.74 66.50 9.78 25.88 Entropy [43] 86.70 77.71 2.18 12.11 88.96 81.05 1.59 6.43 78.30 65.67 9.34 25.18 SimATTA [24] 85.15 75.56 2.40 12.41 87.30 78.77 1.80 7.02 78.02 65.17 9.81 26.11 EATTA [19] 85.47 76.00 2.36 12.42 88.60 80.50 1.65 6.63 74.96 60.90 10.69 28.87 EviATTA (Ours) 89.61 81.99 1.69 10.30 90.81 83.67 1.41 5.64 90.97 83.80 4.28 11.69 Method REFUGE RUNMC PANTHER Dice ↑ Jaccard ↑ ASD ↓ HD95 ↓ Dice ↑ Jaccard ↑ ASD ↓ HD95 ↓ Dice ↑ Jaccard ↑ ASD ↓ HD95 ↓
+
+Zero-shot SAM-Med2D 81.08 68.92 9.90 28.61 81.71 71.65 5.37 16.39 73.79 59.84 2.95 9.20 TTA TENT [13] 85.71 75.63 8.30 24.71 85.09 76.06 4.77 14.82 69.33 53.92 3.05 9.86 CoTTA [16] 79.39 66.68 9.93 29.00 79.95 69.25 5.68 17.32 75.78 62.23 2.84 8.77 SAR [20] 83.06 71.82 9.23 27.02 83.37 73.81 5.14 15.82 69.41 55.00 3.07 9.92 GraTa [15] 87.29 77.85 8.06 24.61 84.04 74.76 4.95 15.31 75.25 61.56 2.96 9.11 COME [14] 82.02 70.22 9.71 28.24 82.65 72.87 5.26 16.13 73.92 60.00 2.90 9.10 SPA [17] 85.11 74.73 8.72 26.32 76.76 65.58 5.53 16.79 72.03 58.48 11.75 30.56 ATTA (10%) Random [43] 86.97 77.54 7.64 23.35 84.67 75.62 4.86 14.92 77.59 64.45 2.82 8.55 Entropy [43] 88.71 80.24 6.37 19.37 88.89 81.22 3.69 11.35 76.73 63.26 2.64 8.60 SimATTA [24] 88.32 79.64 6.57 19.49 86.56 78.20 4.27 13.09 76.65 63.23 2.72 8.59 EATTA [19] 89.89 82.12 5.50 16.06 87.59 79.54 4.02 12.25 75.01 61.16 2.74 9.07 EviATTA (Ours) 91.25 84.37 4.33 11.68 90.15 82.82 3.36 9.50 80.14 67.72 2.49 7.74 ATTA (20%) Random [43] 86.67 77.11 7.66 23.69 87.16 78.95 4.28 13.07 77.92 64.85 2.80 8.56 Entropy [43] 90.09 82.45 5.23 15.35 90.07 82.99 3.17 9.82 77.91 64.78 2.56 8.42 SimATTA [24] 89.63 81.76 5.83 17.84 87.15 79.08 3.96 12.22 78.25 65.26 2.61 8.35 EATTA [19] 90.11 82.41 5.18 14.34 88.85 81.27 3.65 11.29 75.88 62.26 2.63 8.90 EviATTA (Ours) 91.70 85.11 3.99 10.55 90.77 83.75 3.09 8.82 81.13 69.04 2.42 7.53 
+
+D. Results under Batch-wise Adaptation 
+
+The results under batch-wise adaptation are reported in Table I, where ATTA (10%) and ATTA (20%) denote selecting 10% and 20% of samples per batch for sparse annotation, respectively. The top three results are highlighted as first , second , and third . Overall, TTA methods exhibit unstable performance under distribution shifts and can even cause negative adaptation. In contrast, ATTA methods consistently outperform both zero-shot and TTA baselines by introducing sparse yet reliable supervision. As the annotation budget increases from 10% to 20%, most ATTA methods further improve, and EviATTA remains the best-performing method on all six datasets across Dice, Jaccard, ASD, and HD95. On BraTS-SSA , TTA methods yield only marginal im-provements over the zero-shot baseline. The best TTA method (CoTTA) improves Dice by 1.75% and Jaccard by 2.26%, with negligible reductions in ASD and HD95. In contrast, EviATTA improves Dice by 6.92% and Jaccard by 9.78% over SAM-Med2D and surpasses the second-best ATTA method (Entropy) by 3.32% in Dice and 4.76% in Jaccard under ATTA (10%) .On BraTS-PED , which shows substantial shifts from adult BraTS data, EviATTA also achieves the best results, with Dice and Jaccard gains of 5.56% and 7.72% over the zero-shot baseline. On FHPsAOP , where TTA methods frequently degrade performance, existing ATTA baselines recover only moderate gains of approximately 5% in Dice and 6% in Jaccard, whereas EviATTA achieves substantially larger im-provements of 16.5% and 22.06%, respectively. EviATTA also consistently outperforms all baselines on REFUGE , RUNMC ,and PANTHER , achieving Dice improvements of 10.17%, 8.44%, and 6.35% under ATTA (10%) . Notably, increasing the annotation budget from ATTA (10%) to ATTA (20%) yields a further average Dice improvement of 0.57% for EviATTA across all six benchmarks, demonstrating its effectiveness in leveraging additional sparse annotations. 
+
+E. Results under Instance-wise Adaptation 
+
+Table II reports instance-wise adaptation results, where ATTA methods are restricted to pixel-wise selection. In this setting, TTA baselines suffer from significant instability, fre-quently underperforming even the zero-shot baseline. This indicates that unreliable self-supervision poses a risk of er-ror accumulation, ultimately leading to negative adaptation. CHEN et al. : EVIATTA: EVIDENTIAL ACTIVE TEST-TIME ADAPTATION FOR MEDICAL SEGMENT ANYTHING MODELS 7
+
+TABLE II PERFORMANCE COMPARISON WITH SOTA TTA AND ATTA METHODS UNDER INSTANCE -WISE SETTING .
+
+Type Method BraTS-SSA BraTS-PED FHPsAOP Dice ↑ Jaccard ↑ ASD ↓ HD95 ↓ Dice ↑ Jaccard ↑ ASD ↓ HD95 ↓ Dice ↑ Jaccard ↑ ASD ↓ HD95 ↓
+
+Zero-shot SAM-Med2D [1] 82.34 71.64 2.73 13.10 84.84 75.32 2.12 7.77 73.87 60.84 11.16 29.58 TTA TENT [13] 80.59 69.42 2.84 14.19 86.03 77.04 1.98 7.64 65.48 49.98 13.07 35.33 CoTTA [16] 84.61 74.61 2.68 12.91 86.01 76.7 2.16 7.68 72.06 58.78 12.48 31.65 SAR [20] 82.46 71.75 2.76 13.21 85.44 76.07 2.11 7.73 65.80 50.12 13.43 35.46 GraTa [15] 82.31 71.63 2.72 12.89 84.24 74.62 2.07 7.67 70.62 58.21 10.07 30.40 COME [14] 84.57 74.64 2.62 12.60 86.71 77.87 1.99 7.29 75.88 62.65 10.90 29.11 SPA [17] 84.19 74.11 2.69 12.70 83.48 73.54 2.25 8.23 72.03 58.48 11.75 30.56 ATTA Random [43] 85.96 76.51 2.35 12.19 88.71 80.50 1.70 6.57 86.61 76.94 6.41 17.57 Entropy [43] 86.06 76.97 2.10 12.02 89.10 81.36 1.52 6.41 83.93 73.32 6.95 19.46 SimATTA [24] 87.06 78.43 1.94 11.15 89.76 82.36 1.43 5.77 83.35 72.58 7.00 19.34 EATTA [19] 86.62 77.75 2.04 12.00 89.20 81.54 1.51 6.38 82.19 71.17 7.38 20.89 EviATTA (Ours) 89.83 82.28 1.63 10.19 90.35 82.85 1.59 6.06 91.43 84.34 4.32 12.07 Method REFUGE RUNMC PANTHER Dice ↑ Jaccard ↑ ASD ↓ HD95 ↓ Dice ↑ Jaccard ↑ ASD ↓ HD95 ↓ Dice ↑ Jaccard ↑ ASD ↓ HD95 ↓
+
+Zero-shot SAM-Med2D [1] 81.08 68.92 9.90 28.61 81.71 71.65 5.37 16.39 73.79 59.84 2.95 9.20 TTA TENT [13] 88.57 80.00 6.45 18.49 84.42 75.18 4.97 15.32 66.48 51.96 3.16 10.39 CoTTA [16] 78.99 66.15 9.94 28.98 80.82 70.39 5.55 17.00 75.62 62.04 2.88 8.89 SAR [20] 86.52 76.96 7.58 22.59 83.00 73.07 5.48 16.79 66.36 51.72 3.24 10.35 GraTa [15] 87.19 78.01 7.13 20.69 81.92 73.41 3.93 11.97 72.74 58.79 2.92 9.53 COME [14] 83.04 71.68 9.41 27.47 82.48 72.65 5.29 16.19 73.88 59.94 2.91 9.13 SPA [17] 85.89 75.90 8.33 25.29 78.25 67.37 5.52 16.90 72.60 58.45 2.98 9.39 ATTA Random [43] 87.92 79.11 5.94 17.78 90.09 83.10 3.17 9.84 79.29 66.57 2.90 8.88 Entropy [43] 91.78 85.26 3.73 10.29 89.40 82.65 2.81 8.76 80.62 68.42 2.58 8.26 SimATTA [24] 92.59 86.46 3.28 8.13 89.92 83.43 2.71 8.59 80.25 67.91 2.49 7.98 EATTA [19] 90.93 83.91 4.48 13.91 87.24 79.92 3.18 10.12 79.62 67.13 2.46 8.40 EviATTA (Ours) 94.62 89.88 2.26 5.45 93.16 87.66 2.17 6.26 80.97 68.83 2.53 7.89 
+
+In contrast, EviATTA demonstrates superior performance in both volumetric overlap and boundary accuracy. Compared to the zero-shot baseline, EviATTA achieves an average Dice improvement of 10.46% and an average HD95 reduction of 9.56 voxels across six benchmarks. Furthermore, it consis-tently outperforms the second-best ATTA method, yielding an additional average Dice gain of 2.27% and an average HD95 reduction of 1.88 voxels across all datasets. These substantial performance gains can be attributed to the proposed pixel selection strategy and dual consistency regularization, which empower EviATTA to annotate informative pixels and fully exploit sparse annotations. 
+
+F. Ablation Study 
+
+Table III presents a component-wise ablation on BraTS-SSA. Without adaptation, the zero-shot SAM-Med2D yields 82.34% in Dice and 13.10 voxels in HD95. Solely treating sparse annotations as spatial prompts provides marginal over-lap gains and fails to improve boundary quality, which indi-cates that sparse supervision alone is insufficient. In contrast, introducing progressive prompt consistency Lprompt markedly boosts Dice to 88.02% and reduces HD95 to 11.35 voxels. The addition of the replay scheme Lreplay further enhances Dice by 0.27% and drops HD95 by 0.22 voxels, which confirms its efficacy in maximizing sparse annotation utility. Finally, incorporating variational feature consistency Lvar achieves the best performance, reaching 89.26% in Dice and 10.61 voxels in HD95. Overall, the full EviATTA framework delivers a gain of 6.92% in Dice and a reduction of 2.49 voxels in HD95 compared to the zero-shot baseline. These results validate the complementary effect of all proposed components. 
+
+TABLE III EFFECT OF EACH COMPONENT .
+
+Annotation Consistency Regularization BraTS-SSA 
+
+Lprompt Lreplay Lvar Dice ↑ Jaccard ↑ ASD ↓ HD95 ↓
+
+82.34 71.64 2.73 13.10 
+
+✓ 83.25 72.83 2.67 13.15 
+
+✓ ✓ 88.02 79.46 2.10 11.35 
+
+✓ ✓ ✓ 88.29 79.95 2.00 11.13 
+
+✓ ✓ ✓ ✓ 89.26 81.42 1.80 10.61 
+
+V. D ISCUSSION 
+
+The following experiments adopt a batch-wise setup, with 10% of the most informative samples sparsely annotated. 
+
+A. Effect of Sampling Strategy 
+
+Table IV analyzes the impact of different sampling strategies on BraTS-SSA. Compared to the zero-shot baseline, random sampling at both sample-level and pixel-level yields only marginal gains, improving Dice by 0.91%. Replacing random scores with overall predictive uncertainty ( U/U ) boosts Dice by 2.69% and reduces HD95 by 0.53 voxels, underscoring the efficacy of uncertainty-guided annotation. We then inves-tigate decoupling uncertainty into distribution ( Udis ) and data (Udata ) components. Applying either decomposed uncertainty across both levels surpasses the overall uncertainty, yielding an approximate 1.44% rise in Dice and a 0.7-voxel reduction in HD95. The optimal performance is achieved by the asym-metric configuration ( Udis /U data ), which reaches 89.26% in Dice and 10.61 voxels in HD95. This configuration delivers a gain of 3.32% in Dice and a reduction of 1.75 voxels in 8 IEEE TRANSACTIONS ON MEDICAL IMAGING, VOL. XX, NO. XX, XXXX 2020 
+
+HD95 compared to the overall uncertainty setting, which also outperforms the swapped variant Udata /U dis . These findings confirm that sample selection should use Udis to capture distribution shifts, whereas pixel annotation should rely on 
+
+Udata to resolve inherent data ambiguities. Finally, we provide qualitative support in Fig. 3 to highlight that decomposed uncertainties focus on different regions, while Udata more precisely localizes erroneous regions for sparse annotation. 
+
+TABLE IV EFFECT OF SAMPLING STRATEGY .
+
+Uncertainty Estimation BraTS-SSA Sample-wise Pixel-wise Dice ↑ Jaccard ↑ ASD ↓ HD95 ↓
+
+- - 82.34 71.64 2.73 13.10 Random Random 83.25 72.98 2.64 12.89 
+
+U U 85.94 76.66 2.30 12.36 
+
+Udata Udata 87.34 78.36 2.35 11.71 
+
+Udis Udis 87.38 78.39 2.33 11.66 
+
+Udata Udis 89.06 81.09 1.85 10.71 
+
+Udis Udata 89.26 81.42 1.80 10.61 (a) Image (b) Prediction (c) 𝑈 (d) 𝑈 !"# (e) 𝑈 !$%$ 
+
+Fig. 3. Visualization of uncertainty map. U denotes predictive uncer-tainty. Udis and Udata represent distribution and data uncertainties. 
+
+B. Effect of Pixel Annotation Budget 
+
+We explore the effect of pixel annotation budget on BraTS-SSA. As reported in Fig. 4, the segmentation performance generally improves with more annotated pixels, since more pixel annotations serve as point prompts to provide stronger spatial supervision. Compared with existing ATTA methods, EviATTA consistently yields higher Dice and Jaccard and lower ASD and HD95 under different annotation budgets. The results indicate that EviATTA identifies more informa-tive samples and pixels and extensively exploits the limited sparse annotations. To balance segmentation performance and annotation costs, we set the annotation budget to five points per selected sample in this study. 0 1 2 3 4 5 6 7 8 9 10           
+
+> Number of Annotated Pixels
+> 82
+> 84
+> 86
+> 88
+> 90
+> Dice (%)
+> Random
+> Entropy
+> SimATTA
+> EATTA
+> Ours
+> 012345678910
+> Number of Annotated Pixels
+> 10
+> 11
+> 12
+> 13
+> HD95 (voxel)
+> Random
+> Entropy
+> SimATTA
+> EATTA
+> Ours
+
+Fig. 4. Effect of pixel annotation budgets on BraTS-SSA. 
+
+C. Effect of Replay Buffer 
+
+Fig. 5 shows the effect of the replay buffer on BraTS-SSA. Without replay, EviATTA achieves a Dice of 87.89% and HD95 of 11.51 voxels. Introducing a buffer of 32 samples improves Dice by 0.93% and reduces HD95 by 0.47 voxels. The performance remains stable across different buffer sizes and peaks when the buffer size is set to 128. Therefore, we adopt a buffer size of 128 in the experiments. These results demonstrate that the replay buffer effectively leverages the limited sparse annotations. 
+
+Fig. 5. Effect of buffer size on BraTS-SSA. 
+
+D. Effect of LoRA Placement 
+
+Table V compares different LoRA placements on the query (W Q), key ( W K ), value ( W V ), and output ( W O ) projec-tions. Without LoRA, EviATTA achieves 83.25% in Dice, 72.83% in Jaccard, 2.67 voxels in ASD, and 13.15 voxels in HD95. Introducing LoRA into any individual projection consistently improves performance, confirming the efficacy of parameter-efficient adaptation at test time. Specifically, applying LoRA to W V or W O proves more effective than tuning W Q or W K , improving Dice by ∼2% and reduc-ing HD95 by ∼1 voxel. Among all configurations, applying LoRA to W O achieves the highest volumetric overlap and boundary precision, improving Dice by 6.01% and reducing HD95 by 2.54 voxels compared with the baseline. In contrast, simultaneously adapting multiple projections does not yield cumulative gains. W Q+W K shows no improvement over single-projection settings, while W Q+W V performs slightly worse than using W V alone. Therefore, we adopt LoRA on the output projection in all experiments. 
+
+TABLE V EFFECT OF LORA P LACEMENT 
+
+Weight Matrix BraTS-SSA 
+
+W Q W K W V W O Dice ↑ Jaccard ↑ ASD ↓ HD95 ↓
+
+83.25 72.83 2.67 13.15 
+
+✓ 87.23 78.43 2.27 11.60 
+
+✓ 87.23 78.44 2.27 11.60 
+
+✓ 89.09 81.13 1.86 10.69 
+
+✓ 89.26 81.42 1.80 10.61 
+
+✓ ✓ 87.22 78.40 2.27 11.62 
+
+✓ ✓ 88.90 80.93 1.94 10.77 
+
+E. Effect of Initial Prompt 
+
+As shown in Fig. 7, we evaluate the effect of initial prompt quality on adaptation across six benchmarks. We compare two prompt settings: a perfect prompt and a perturbed prompt, where the perturbed prompt is generated by adding random noise to the coordinates of the perfect bounding box. Prompt CHEN et al. : EVIATTA: EVIDENTIAL ACTIVE TEST-TIME ADAPTATION FOR MEDICAL SEGMENT ANYTHING MODELS 9GT SAM -Med2D TENT CoTTA SAR GraTa COME SPA Random Entropy SimATTA EATTA EviATTA  
+
+> BraTS -SSA BraTS -PED FHPsAOP REFUGE RUNMC PANTHER
+> Test -Time Adaptation Active Test -Time Adaptation
+
+Fig. 6. Qualitative segmentation results of different methods across six medical image segmentation datasets. 
+
+perturbation causes clear performance degradation for zero-shot SAM-Med2D. In contrast, ATTA methods are more stable because sparse expert annotations provide corrective supervi-sion during adaptation. Across all datasets and both prompt settings, EviATTA consistently achieves the best performance, demonstrating robustness against varying prompt qualities. (a) Perfect prompt (b) Perturbed prompt 
+
+Fig. 7. Effect of initial prompt on six datasets. 
+
+F. Visualization of Point Prompts 
+
+Fig. 8 provides a qualitative comparison under different numbers of point prompts, where green and red points de-note positive and negative prompts, respectively. Conventional ATTA methods tend to query low-impact pixels, leading to limited refinement. In contrast, EviATTA selects more informative and structurally critical points, enabling more effective error correction with minimal annotations. Under the same annotation budget, EviATTA produces the most accurate masks, which qualitatively validates its reliable uncertainty estimation and effective utilization of sparse annotations. 1 Point 2 Points 3 Points     
+
+> EviATTA (Ours)
+> Image
+> GT
+> Random Entropy SimATTA EATTA
+
+Fig. 8. Segmentation results under different numbers of point prompts. 
+
+G. Visualization of Segmentation Results 
+
+Fig. 6 presents qualitative comparisons of segmentation results across six datasets. The zero-shot SAM-Med2D often produces incomplete structures and boundary errors, which are only partially addressed by unsupervised TTA methods. While ATTA baselines improve visual quality with sparse annotations, their refinements remain inconsistent across dif-ferent cases. In contrast, EviATTA consistently generates more complete structures and cleaner boundaries with fewer errors across diverse anatomical structures and imaging modalities. These visual results align well with our quantitative findings, confirming that EviATTA improves adaptation reliability with minimal annotation effort. 
+
+VI. C ONCLUSION 
+
+We have proposed EviATTA, the first ATTA method for medical SAMs to alleviate error accumulation with minimal annotation cost. First, we introduced Dirichlet-based evidential 10 IEEE TRANSACTIONS ON MEDICAL IMAGING, VOL. XX, NO. XX, XXXX 2020 
+
+modeling to decompose overall uncertainty into distribution and data uncertainties. Then, we designed a hierarchical evidential sampling strategy, which considers both sample-wise distribution uncertainty and pixel-wise data uncertainty to annotate the most informative pixels. We further proposed a dual consistency regularization to exploit sparse annotations and maintain adaptation stability. Extensive experiments on six benchmarks have demonstrated the superiority of EviATTA in improving adaptation reliability with minimal expert feedback. In future work, we will extend EviATTA to 3D volumetric and video data to build a unified ATTA framework for medical foundation segmentation models. 
+
+REFERENCES 
+
+[1] J. Cheng et al. , “SAM-Med2D,” arXiv preprint arXiv:2308.16184 , 2023. [2] J. Ma, Y. He, F. Li, L. Han, C. You, and B. Wang, “Segment anything in medical images,” Nature Communications , vol. 15, no. 1, p. 654, 2024. [3] J. Wu et al. , “Medical SAM adapter: Adapting segment anything model for medical image segmentation,” Medical image analysis , vol. 102, p. 103547, 2025. [4] J. Zhu, A. Hamdi, Y. Qi, Y. Jin, and J. Wu, “Medical SAM 2: Segment medical images as video via segment anything model 2,” arXiv preprint arXiv:2408.00874 , 2024. [5] Y. Huang et al. , “Segment anything model for medical images?” Medical Image Analysis , vol. 92, p. 103061, 2024. [6] B. Ma et al. , “TSAR: A two-stage approach to motion artifact reduction in octa images,” Pattern Recognition , p. 112364, 2025. [7] Y. Xia, B. Ma, Q. Dou, and Y. Xia, “Enhancing federated learning per-formance fairness via collaboration graph-based reinforcement learning,” in MICCAI . Springer, 2024, pp. 263–272. [8] K. Chen et al. , “Test-time adaptation for foundation medical segmen-tation model without parametric updates,” in ICCV , 2025, pp. 20 075– 20 084. [9] Y. Fu, Z. Chen, Y. Ye, X. Lei, Z. Wang, and Y. Xia, “CoSAM: self-correcting sam for domain generalization in 2d medical image segmentation,” arXiv preprint arXiv:2411.10136 , 2024. [10] B. Ma, Y. Feng, G. Chen, C. Li, and Y. Xia, “Federated adaptive reweighting for medical image classification,” Pattern Recognition , vol. 144, p. 109880, 2023. [11] T. Huang, T. Zhou, W. Xie, S. Wang, Q. Dou, and Y. Zhang, “On-the-fly improving segment anything for medical image segmentation using auxiliary online learning,” IEEE Transactions on Medical Imaging ,2025. [12] J. Liang, R. He, and T. Tan, “A comprehensive survey on test-time adaptation under distribution shifts,” International Journal of Computer Vision , vol. 133, no. 1, pp. 31–64, 2025. [13] D. Wang, E. Shelhamer, S. Liu, B. Olshausen, and T. Darrell, “TENT: Fully test-time adaptation by entropy minimization,” in ICLR , 2021. [14] Q. Zhang, Y. Bian, X. Kong, P. Zhao, and C. Zhang, “COME: Test-time adaption by conservatively minimizing entropy,” in ICLR , 2024. [15] Z. Chen, Y. Ye, Y. Pan, and Y. Xia, “Gradient alignment improves test-time adaptation for medical image segmentation,” in AAAI , vol. 39, no. 3, 2025, pp. 2429–2437. [16] Q. Wang, O. Fink, L. Van Gool, and D. Dai, “Continual test-time domain adaptation,” in CVPR , 2022, pp. 7201–7211. [17] S. Niu, G. Chen, P. Zhao, T. Wang, P. Wu, and Z. Shen, “Self-bootstrapping for versatile test-time adaptation,” in ICML , 2025. [18] J. Wu et al. , “SAM-aware test-time adaptation for universal medical image segmentation,” arXiv preprint arXiv:2506.05221 , 2025. [19] G. Wang and C. Ding, “Effortless active labeling for long-term test-time adaptation,” in CVPR , 2025, pp. 25 633–25 642. [20] S. Niu et al. , “Towards stable test-time adaptation in dynamic wild world,” in ICLR , 2023. [21] D. Chen, D. Wang, T. Darrell, and S. Ebrahimi, “Contrastive test-time adaptation,” in CVPR , 2022, pp. 295–305. [22] Y. Hu, C. Qiao, X. Geng, and N. Xu, “Selective label enhancement learning for test-time adaptation,” in ICLR , 2025. [23] S. Niu et al. , “Efficient test-time model adaptation without forgetting,” in ICML , 2022, pp. 16 888–16 905. [24] S. Gui, X. Li, and S. Ji, “Active test-time adaptation: Theoretical analyses and an algorithm,” in ICLR , 2024. [25] H. Wang, Q. Jin, S. Li, S. Liu, M. Wang, and Z. Song, “A comprehensive survey on deep active learning in medical image analysis,” Medical Image Analysis , vol. 95, p. 103201, 2024. [26] Y. Li, Y. Su, X. Yang, K. Jia, and X. Xu, “Exploring human-in-the-loop test-time adaptation by synergizing active learning and model selection,” 
+
+Transactions on Machine Learning Research , 2025. [27] T. Lee, S. Chottananurak, J. Kim, J. Shin, T. Gong, and S.-J. Lee, “Test-time adaptation with binary feedback,” in ICML , 2025. [28] J. Tan, F. Lyu, C. Ni, W. Feng, F. Hu, and R. Yao, “Exposing mixture and annotating confusion for active universal test-time adaptation,” in 
+
+ICLR , 2026. [29] T. Shi, F. Lyu, and S. Peng, “Annotation-efficient active test-time adaptation with conformal prediction,” arXiv preprint arXiv:2509.25692 ,2025. [30] L. Yuan, S. Li, Z. He, and B. Xie, “Few clicks suffice: Ac-tive test-time adaptation for semantic segmentation,” arXiv preprint arXiv:2312.01835 , 2023. [31] M. S. Islam et al. , “ODES: Online domain adaptation with expert guidance for medical image segmentation,” in MICCAI . Springer, 2025, pp. 359–370. [32] D. Watson, J. O’Hara, N. Tax, R. Mudd, and I. Guy, “Explaining predictive uncertainty with information theoretic shapley values,” in 
+
+NeurIPS , vol. 36, 2023, pp. 7330–7350. [33] J. Chen, B. Ma, H. Cui, and Y. Xia, “Think twice before selection: Federated evidential active learning for medical image analysis with domain shifts,” in CVPR , 2024, pp. 11 439–11 449. [34] M. Sensoy, L. Kaplan, and M. Kandemir, “Evidential deep learning to quantify classification uncertainty,” in NeurIPS , vol. 31, 2018. [35] J. Chen, B. Ma, H. Cui, and Y. Xia, “FedEvi: Improving federated medical image segmentation via evidential weight aggregation,” in 
+
+MICCAI . Springer, 2024, pp. 361–372. [36] M. Xie, S. Li, R. Zhang, and C. H. Liu, “Dirichlet-based uncertainty calibration for active domain adaptation,” in ICLR , 2023. [37] S. Hu, Z. Liao, Z. Liu, and Y. Xia, “Towards clinician-preferred segmentation: Leveraging human-in-the-loop for test time adaptation in medical image segmentation,” arXiv preprint arXiv:2405.08270 , 2024. [38] J. Chen, B. Ma, H. Cui, J. Zhang, and Y. Xia, “Active learning based on temporal difference of gradient flow in thoracic disease diagnosis,” 
+
+IEEE Journal of Biomedical and Health Informatics , 2025. [39] A. Jøsang, Subjective logic . Springer, 2016, vol. 3. [40] A. Malinin and M. Gales, “Predictive uncertainty estimation via prior networks,” in NeurIPS , vol. 31, 2018. [41] N. Otsu et al. , “A threshold selection method from gray-level his-tograms,” Automatica , vol. 11, no. 285-296, 1979. [42] B. Ma, J. Zhang, Y. Xia, and D. Tao, “VNAS: variational neural architecture search,” International Journal of Computer Vision , vol. 132, no. 9, pp. 3689–3713, 2024. [43] B. Settles, “Active learning literature survey,” 2009. [44] M. Adewole et al. , “The brain tumor segmentation (BraTS) challenge 2023: Glioma segmentation in sub-saharan africa patient population (BraTS-Africa),” ArXiv , pp. arXiv–2305, 2023. [45] Z. Kus ¸ and M. Aydin, “MedSegBench: A comprehensive benchmark for medical image segmentation in diverse data modalities,” Scientific Data ,vol. 11, no. 1, p. 1283, 2024. [46] J. I. Orlando et al. , “REFUGE challenge: A unified framework for evaluating automated methods for glaucoma assessment from fundus photographs,” Medical Image Analysis , vol. 59, p. 101570, 2020. [47] N. Bloch et al. , “NCI-ISBI 2013 challenge: Automated segmentation of prostate structures,” The Cancer Imaging Archive, 2015. [Online]. Available: http://doi.org/10.7937/K9/TCIA.2015.zF0vlOPv [48] A. S. Betancourt Tarifa, F. Mahmood, U. Bernchou, and P. J. Koopmans, “PANTHER challenge: Public training dataset,” Zenodo, Apr. 2025. [Online]. Available: https://doi.org/10.5281/zenodo.15192302 [49] J. Chen, B. Ma, Y. Pan, B. Pu, H. Cui, and Y. Xia, “Personalized federated side-tuning for medical image classification,” in MICCAI .Springer, 2025, pp. 452–462. [50] S. Budd, E. C. Robinson, and B. Kainz, “A survey on active learning and human-in-the-loop deep learning for medical image analysis,” Medical Image Analysis , vol. 71, p. 102062, 2021.
