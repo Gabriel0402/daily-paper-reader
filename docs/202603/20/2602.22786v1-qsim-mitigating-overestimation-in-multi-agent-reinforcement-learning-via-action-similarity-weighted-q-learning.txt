@@ -1,0 +1,1557 @@
+Title: QSIM: Mitigating Overestimation in Multi-Agent Reinforcement Learning via Action Similarity Weighted Q-Learning
+
+URL Source: https://arxiv.org/pdf/2602.22786v1
+
+Published Time: Fri, 27 Feb 2026 01:40:40 GMT
+
+Number of Pages: 19
+
+Markdown Content:
+# QSIM: Mitigating Overestimation in Multi-Agent Reinforcement Learning via Action Similarity Weighted Q-Learning 
+
+## Yuanjun Li 1, Bin Zhang 2, Hao Chen 2, Zhouyang Jiang 1, Dapeng Li 3,4 , Zhiwei Xu 1* 
+
+> 1
+
+Shandong University 
+
+> 2
+
+The Key Laboratory of Cognition and Decision Intelligence for Complex Systems, Institute of Automation, Chinese Academy of Sciences 
+
+> 3
+
+Li Auto Inc. 
+
+> 4
+
+Tsinghua University liyuanjun@mail.sdu.edu.cn, zhiwei xu@sdu.edu.cn 
+
+Abstract 
+
+Value decomposition (VD) methods have achieved re-markable success in cooperative multi-agent reinforcement learning (MARL). However, their reliance on the max operator for temporal-difference (TD) target calculation leads to systematic Q-value overestimation. This issue is particularly severe in MARL due to the combinatorial explosion of the joint action space, which often results in unstable learning and suboptimal policies. To address this problem, we propose QSIM , a similarity weighted Q-learning framework that reconstructs the TD target using action similarity. Instead of using the greedy joint action directly, QSIM forms a similarity weighted expectation over a structured near-greedy joint action space. This formulation allows the target to integrate Q-values from diverse yet behaviorally related actions while assigning greater influence to those that are more similar to the greedy choice. By smoothing the target with structurally relevant alternatives, QSIM effectively mitigates overestimation and improves learning stability. Extensive experiments demonstrate that QSIM can be seamlessly integrated with various VD meth-ods, consistently yielding superior performance and stability compared to the original algorithms. Furthermore, empirical analysis confirms that QSIM significantly mitigates the systematic value overestimation in MARL. Code is available at https://github.com/MaoMaoLYJ/pymarl-qsim. 
+
+## Introduction 
+
+Cooperative Multi-Agent Reinforcement Learning (MARL) has emerged as a powerful framework for addressing com-plex group decision-making problems across domains such as robotic swarm control (Tang et al. 2023; Shi et al. 2025), autonomous driving coordination (Zhang et al. 2024; Zheng and Gu 2024), and network resource management (Stepanov et al. 2024; Chafii et al. 2023). To handle the inherent non-stationarity in multi-agent learning, the Centralized Training with Decentralized Execution (CTDE) paradigm has be-come the standard approach (Lowe et al. 2017; Sunehag et al. 2017). Within this framework, Value Decomposition (VD) methods (Rashid et al. 2020b) dominate by factoriz-ing the joint action-value function into individual utilities, 
+
+> *
+
+Corresponding author Copyright © 2026, Association for the Advancement of Artificial Intelligence (www.aaai.org). All rights reserved. 2 4 6 8 10 12 14 
+
+> Number of Agents ( N)
+> 0.4
+> 0.6
+> 0.8
+> 1.0
+> Estimated Q-Value
+
+2ln| |N  
+
+> [max
+> uQu]
+> max
+> u[Qu]
+> Bias
+
+Figure 1: Theoretical curves showing how the upper bound of overestimation bias scales with the number of agents N .Further details are given in Theorem 1. thereby effectively resolving the credit assignment problem. Despite their success, these methods suffer from a funda-mental limitation: their reliance on the max operator when computing the Temporal-Difference (TD) target. It is well-known in single-agent reinforcement learning that maximiz-ing over noisy value estimates leads to overestimation (Has-selt 2010), and this effect becomes even more pronounced in multi-agent settings (Ding et al. 2024). As illustrated in Figure 1, theoretical analysis suggests that the upper bound of the overestimation bias continuously increases with the number of agents N , leading to severe learning instability and convergence to suboptimal policies in large-scale scenarios. Existing VD methods typically overlook this systemic overestimation error by constructing the TD target based on a single, biased greedy joint action. Therefore, addressing this intrinsic overestimation issue is critical. The standard practice in VD methods derives the TD tar-get y directly from the Bellman optimality equation, namely 
+
+y = r + γ max u′ Qtar (s′, u′). These methods fundamentally rely on the Individual-Global-Max (IGM) principle (Son et al. 2019), which ensures that the greedy joint action u∗
+
+can be efficiently obtained through decentralized maximiza-tion. While this design enables the method to comply with the CTDE paradigm, it remains limited by estimation noise in the learned action-value functions. Such noise induces the max operator to preferentially select actions with positively biased estimates (Thrun and Schwartz 2014). As a result, the 
+
+> arXiv:2602.22786v1 [cs.MA] 26 Feb 2026
+
+calculated target Qtar (s′, u∗) becomes biased and system-atically overestimates the true expected return. A common remedy is to replace the hard maximization with an expec-tation, following the intuition of Expected SARSA (Sutton, Barto et al. 1998). However, implementing such an expec-tation in MARL is highly impractical: the joint action space grows exponentially with the number of agents, making the expectation both computationally prohibitive and sensitive to errors from rarely sampled actions (Pan et al. 2021). This presents a critical dilemma in that the greedy target remains tractable yet biased, whereas computing a full expectation is theoretically sound but infeasible in practice. To resolve this dilemma, we propose QSIM , a framework that mitigates overestimation via action similarity weighted Q-learning. QSIM reformulates the TD target by leveraging the local structure of the joint action space. Instead of relying on a single greedy point estimate or an intractable global ex-pectation, QSIM operates within a constructed near-greedy 
+
+joint action subspace. This subspace is composed of single-agent deviations from the greedy policy, characterizes the local topological neighborhood around the greedy action while maintaining linear computational complexity. Within this subspace, QSIM computes a weighted TD target, where the integration is governed by learned action similarity. We posit that actions leading to similar future transitions should share similar values. By assigning higher influence to ac-tions that are semantically aligned with the greedy choice, QSIM effectively dampens the noise responsible for overes-timation while preserving the optimality of the policy. Our main contributions are summarized as follows: • A self-supervised autoencoder is introduced, utilizing a feature encoder to effectively capture the semantic mean-ing of individual actions. The learned representation pro-vides a reliable similarity metric that quantifies the rela-tionship between joint actions. • We propose a tractable near-greedy joint action space that scales linearly with the number of agents, upon which a similarity weighted TD target is computed. This design converts the high-variance greedy estimate into a more stable expectation, theoretically proven to constitute a lower bound on the standard greedy estimate, thereby guaranteeing the mitigation of overestimation bias. • Extensive experiments on multi-agent benchmarks, in-cluding SMAC (Samvelyan et al. 2019), SMACv2 (El-lis et al. 2023), MPE (Lowe et al. 2017) and Matrix Games (Papoudakis et al. 2020), show that integrating QSIM into different value decomposition frameworks consistently improves both performance and training sta-bility over the original methods, while substantially mit-igating the overestimation inherent in Q-learning. 
+
+## Related Work 
+
+Value-based MARL Following the CTDE paradigm, VDN (Sunehag et al. 2017) established the foundation of value decomposition by approximating the joint Q-value as a sum of individual utilities. QMIX (Rashid et al. 2020b) ad-vanced this line of work by introducing a monotonic mixing network that guarantees consistency with the IGM princi-ple. Subsequent research sought to alleviate the representa-tional limitations of monotonic factorization. For example, WQMIX (Rashid et al. 2020a) applies a weighted objective that emphasizes higher-quality joint actions. QTRAN (Son et al. 2019) reformulates value factorization as a constrained optimization problem. In addition, QPLEX (Wang et al. 2020a) leverages a duplex dueling architecture to increase expressiveness within the IGM framework. Beyond discrete value-based methods, VMIX (Su, Adams, and Beling 2021) extends decomposition to actor-critic frameworks by apply-ing monotonic mixing to a central critic. RIIT (Hu et al. 2023) further demonstrates that well-optimized monotonic baselines often remain competitive. Despite these advances, most prior works concentrate on improving the expressive-ness of the value factorization itself. QSIM focuses on a complementary issue by enhancing the quality of the TD target and mitigating the systematic overestimation bias that emerges during training. 
+
+Mitigating Value Overestimation It is well established that applying the max operator to noisy value estimates in-duces a systematic positive bias (Thrun and Schwartz 2014), and this issue becomes even more pronounced in MARL because of the combinatorial explosion of the joint ac-tion space (Ding et al. 2024). Standard single-agent bias mitigation methods like Double Q-learning (Van Hasselt et al. 2016) or Softmax Bellman operators (Song, Parr, and Carin 2019) are often insufficient for multi-agent tasks due to the exponential complexity of the action space. Conse-quently, several MARL-specific methods have been devel-oped. RES (Pan et al. 2021) computes the TD target via a regularized softmax average. λWD QMIX (Zhao et al. 2024) employs weighted double estimators to reduce bias. And Comix (Liu et al. 2025) constructs a Sandwich framework that constrains the value function between learnable upper and lower bounds. While QSIM adopts the similar near-greedy subspace as RES, it fundamentally differs in how the target is aggregated. Whereas RES relies on a softmax oper-ator that can overemphasize overestimated Q-values, QSIM introduces an action similarity mechanism to guide the inte-gration. This ensures that actions functionally aligned with the greedy policy contribute more to the target, effectively reducing noise from irrelevant actions. 
+
+Action Representation Learning A major challenge in MARL is the curse of dimensionality stemming from the exponentially growing joint action space. Action represen-tation learning offers a promising solution by learning struc-tured, low-dimensional embeddings that capture relation-ships among actions. In single-agent domains, prior work decompose policies via abstract embeddings (Chandak et al. 2019) or model dependencies using hypergraphs (Tavakoli, Fatemi, and Kormushev 2021). In multi-agent settings, ROMA (Wang et al. 2020b) uses latent representations to induce dynamic roles, and RODE (Wang et al. 2021) clus-ters actions to build a hierarchical decomposition of the joint space. Unlike these methods, which utilize representation learning primarily for policy decomposition or hierarchi-cal control, QSIM employs it for calculating action similar-ity. This similarity then guides the value update, smoothing the TD target with semantically relevant neighboring actions and stabilizing learning. In summary, QSIM integrates these insights to form a modular framework compatible with diverse VD methods, offering a novel perspective on robust value estimation in high-dimensional multi-agent systems. 
+
+## Background 
+
+MARL Problem Definition 
+
+Cooperative MARL is typically formalized as a Decentral-ized Partially Observable Markov Decision Process (Dec-POMDP) (Oliehoek, Amato et al. 2016), defined by the tuple 
+
+⟨N , S, U, T , R, O, γ ⟩. N is a finite set of N agents, and S is the global state space. Each agent i ∈ N draws actions from an individual action space Ai. At each timestep t, the envi-ronment is in state st ∈ S , and each agent receives a local observation oti ∈ O i. Based on its action-observation history 
+
+τ ti , each agent i selects an action ati ∈ A i, forming a joint action ut = ( at
+
+> 1
+
+, . . . , a tN ) ∈ U , where U = Q 
+
+> i∈N
+
+Ai rep-resents the joint action space. The system then transitions to the next state st+1 according to the state transition function 
+
+T (st+1 |st, ut) and yields a shared reward rt = R(st, ut).The objective is to discover a joint policy π that maximizes the expected discounted return J(π) = Eπ [P∞ 
+
+> t=0
+
+γtrt],where γ ∈ (0 , 1] is the discount factor. This objective is approached by learning the optimal joint action-value function Q∗
+
+> tot
+
+. For a policy π, the joint action-value function Qπ 
+
+> tot
+
+is defined as the expected return follow-ing the joint action ut conditioned on the joint history τ t:
+
+Qπ
+
+> tot
+
+(τ t, ut) = Eπ
+
+" ∞X
+
+> k=t
+
+γk−trk | τ t, ut
+
+#
+
+. (1) The joint history τ t = ( τ t
+
+> 1
+
+, . . . , τ tN ) comprises the individ-ual histories τ ti = ( o1 
+
+> i
+
+, a 1 
+
+> i
+
+, . . . , o t−1 
+
+> i
+
+, a t−1 
+
+> i
+
+, o ti), encapsulat-ing all information available to agent i at timestep t.
+
+Centralized Training with Decentralized Execution 
+
+The CTDE framework (Lowe et al. 2017) effectively blends the strengths of centralized and decentralized paradigms. This approach trains decentralized agent policies in a cen-tralized fashion, allowing unrestricted access to global infor-mation during the training phase. While CTDE algorithms have proven successful in many multi-agent problems (Ma-hajan et al. 2019; Li et al. 2025), they face scalability chal-lenges as the joint action-observation space expands expo-nentially with the number of agents, potentially leading to inefficient learning in large-scale scenarios. Value decomposition has emerged as a key approach within the CTDE framework. It employs a mixing network to compose individual utility functions Qi(τi, a i) into a fac-tored joint action-value function Qtot (τ , u). Most value de-composition methods are built upon the IGM assumption, which states that the global optimum of the factored value function coincides with the set of local optima for the indi-vidual utility functions: 
+
+arg max  
+
+> u
+
+Qtot (τ , u) = 
+
+
+
+arg max a1 Q1(τ1, a 1)arg max a2 Q2(τ2, a 2)
+
+...
+
+arg max aN QN (τN , a N )
+
+ . (2) This property is essential for enabling efficient decentralized execution. The parameters θ of the networks are trained by minimizing the TD-error loss over episodes sampled from a replay buffer: 
+
+L(θ) = E
+
+h
+
+(y − Qtot (τ , u; θ)) 2i
+
+, (3) where the TD target y is defined as: 
+
+y = r + γ max  
+
+> u′
+
+Qtar (τ ′, u′; θ−). (4) 
+
+Qtot (τ , u; θ) denotes the value produced by the main net-work, and the target value Qtar (τ ′, u′; θ−) is generated by a target network with frozen parameters θ−. The target pa-rameters are periodically updated from the main network to improve training stability (Mnih et al. 2015). 
+
+Overestimation in Q-learning 
+
+Maximization bias arises from applying the max operator to noisy value estimates. Let ˆQ(s, a ) = Q∗(s, a ) + ϵa be the learned approximation corrupted by zero-mean noise ϵa.The standard TD target y = r+γ max a′ ˆQ(s′, a ′) introduces a positive bias due to Jensen’s inequality: 
+
+E[max 
+
+> a′
+
+ˆQ(s′, a ′)] = E[max  
+
+> a′
+
+(Q∗(s′, a ′) + ϵa′ )] 
+
+≥ max  
+
+> a′
+
+E[Q∗(s′, a ′) + ϵa′ ]= max  
+
+> a′
+
+Q∗(s′, a ′).
+
+(5) This inequality demonstrates that the target systematically overestimates the true maximum action value. This bias becomes substantially more severe in MARL due to the combinatorial explosion of the joint action space. Consider a system with N agents, each possessing an action space of size |A| , resulting in a joint action space size of 
+
+|U| = |A| N . To quantify the impact of this exponential ex-pansion on value estimation, we analyze the bias under the standard assumption that estimation errors follow a Gaus-sian distribution (Smith and Winkler 2006). 
+
+Theorem 1. Let the estimated joint Q-value be modeled as 
+
+ˆQ(u) = Q∗(u) + ϵu for any joint action u ∈ U , where 
+
+ϵu ∼ N (0 , σ 2) denotes independent zero-mean Gaussian noise. The maximization bias is upper bounded as follows: 
+
+
+
+E
+
+h
+
+max 
+
+> u
+
+ˆQ(u)
+
+i
+
+− max  
+
+> u
+
+Q∗(u)
+
+
+
+≤ σ
+
+q
+
+2 ln |A| N .
+
+A detailed proof is provided in Appendix D. The the-orem establishes that the upper bound of the overestima-tion bias grows proportionally to √N (since pln |A| N =pN ln |A| ). Figure 1 illustrates this theoretical trend. As the number of agents increases, the potential gap between the expected greedy estimate and the true value expands ac-cordingly. This confirms that the exponential growth of the multi-agent action space significantly amplifies overestima-tion, ultimately weakening the decentralized policies trained under these biased central estimates. ia,io s
+
+> i
+
+f
+
+ˆio′
+
+> Feature
+> Encoder
+> Prediction Network
+> One-Hot
+> Action
+> Observation
+> State
+
+( )2ˆ  
+
+> Niiioo′−′
+
+## ∑
+
+> Encoder Loss
+
+Autoencoder  
+
+> Action
+> Embedding
+> Agent 1
+> Mixing Network
+
+s′      
+
+> …
+> QSIM ()ji j iYwy=
+
+## ∑ c
+
+( )( ) ,j ji tar iQy r   
+
+> γ′=+cc
+> τ
+> i
+
+τ ′ 1
+
+τ ′  N
+
+τ ′   
+
+> Agent iAgent N …
+
+( )1 1 ,  
+
+> τ ′ Q⋅
+
+( ),i i  
+
+> τ ′ Q⋅
+
+( ),N N  
+
+> τ ′ Q⋅
+> 1a∗
+> Na∗jia
+
+## ( ),j ji i ia ∗−=c u  
+
+> ………
+
+( )1 1 1,Q a  
+
+> τ∗′
+
+( ), ji i iQ a 
+
+> τ ′
+
+( ),N N NQ a   
+
+> τ∗′
+> ……
+> ……
+
+( ), jtar iQ ′ c
+
+> τ
+
+( )2QSIM ( , )tot Y Q−τ u  
+
+> Qtot Loss
+
+Weighted TD Target 
+
+> Near-greedy
+> Joint Action
+
+,io s′ ′
+
+> i
+
+f ∗ jif
+
+> Cosine
+> i j
+
+S
+
+> i j
+
+w
+
+> i
+
+a∗ jia 
+
+> Feature Encoder
+> Action
+> Similarity
+> Softmax κ
+
+σ
+
+> Target Weight
+
+Action Similarity 
+
+(a)  (b)  (c) Figure 2: QSIM framework. (a) Autoencoder: Self-supervised learning of action representations. (b) Action Similarity: Com-puting cosine similarity between deviating action aji and greedy action a∗ 
+
+> i
+
+to derive softmax-normalized weights. (c) Weighted TD Target: Constructing near-greedy joint actions cji and aggregating their TD target into the final weighted TD target YQSIM .
+
+## QSIM Framework 
+
+To mitigate the maximization bias in VD methods, we in-troduce the QSIM framework. It replaces the high-variance greedy TD target with a robust, similarity weighted expecta-tion over a tractable near-greedy joint action space. By tran-sitioning from a biased point estimate to a smoothed ex-pectation, QSIM dampens the noise responsible for over-estimation, promoting stable and accurate value updates. The framework consists of three components: (1) a self-supervised autoencoder learning functional action represen-tations; (2) an action similarity mechanism for deriving inte-gration weights from learned action embeddings; (3) a sim-ilarity weighted aggregation scheme for the final TD target. The overall architecture is illustrated in Figure 2. 
+
+Learning Action Representations 
+
+To quantify semantic similarity between actions, we learn embeddings that describe how each action influences future observations. The key idea is that the meaning of an ac-tion is reflected in the state changes it causes. We employ a self-supervised autoencoder parameterized by ϕ, utilizing the next observation as a training signal. This module is vi-sualized in Figure 2(a). Formally, the architecture consists of a feature encoder 
+
+Eϕ and a predictive network Pϕ. For each agent i, the en-coder Eϕ processes the local observation oi, the global state 
+
+s, and the chosen action ai. As implemented, oi and s are encoded in parallel with ai before being merged to produce a low-dimensional state-action embedding fi formulated as: 
+
+fi = Eϕ(oi, s, a i). (6) To ensure these embeddings capture global transition dy-namics, the embeddings from all agents f = ( f1, . . . , f N )
+
+are concatenated and passed to the prediction network Pϕ.This network reconstructs the next joint local observation 
+
+ˆo′ = (ˆ o′
+
+> 1
+
+, . . . , ˆo′ 
+
+> N
+
+):
+
+ˆo′ = Pϕ(f ). (7) The autoencoder is optimized by minimizing the Mean Squared Error (MSE) between the predicted and actual next observations: 
+
+LAE (ϕ) = E
+
+" NX
+
+> i=1
+
+(ˆ o′ 
+
+> i
+
+− o′
+
+> i
+
+)2
+
+#
+
+. (8) Minimizing this loss encourages each fi to encode pre-dictive information about the transition, yielding a reliable metric for action similarity. Empirically, this objective con-verges rapidly, as illustrated in Appendix A.2, enabling QSIM to utilize stable and informative similarity metrics from the early stages of training. 
+
+Near-greedy Joint Action Space 
+
+Traditional VD methods rely on a single greedy TD target. While computing an expectation over the full space U is theoretically appealing, it is computationally intractable and highly sensitive to estimation noise due to sparse visitation. To address these issues, we construct a tractable near-greedy joint action space C anchored on the greedy joint action, fo-cusing the expectation on the most plausible region. Follow-ing the Double Q-learning, we first identify the greedy ac-tion u∗ using the main network, which is efficiently com-puted via local greedy selections under the IGM principle. Given τ ′, the greedy joint action u∗ is defined as: 
+
+u∗ = arg max 
+
+> u∈U
+
+Qtot (τ ′, u; θ). (9) The near-greedy joint action space C is then formed by considering all possible single-agent deviating actions from 
+
+u∗. Specifically, it is the union of joint actions where exactly one agent i deviates to an available action ai ∈ A i, while all other agents N−i maintain their greedy actions u∗−i:
+
+C =
+
+> N
+
+[
+
+> i=1
+
+{(ai, u∗−i) | ai ∈ A i}. (10) The size of the near-greedy action space grows linearly with the number of agents, |C| = N ×|A| , in sharp contrast to the exponential growth of the full joint action space |U| = |A| N .Additional discussion of the near-greedy space C is provided in Appendix A.3. Finally, each near-greedy joint action c ∈ C is evaluated to generate a TD target candidate y(c):
+
+y(c) = r + γQ tar (τ ′, c; θ−), (11) where Qtar (τ ′, c; θ−) denotes the global joint action-value predicted by the target network. This process yields a diverse set of target candidates, which are subsequently aggregated as detailed in the next section. 
+
+Weighted Q-learning with Action Similarity 
+
+Upon constructing the near-greedy joint action space C and generating the set of TD target candidates, the final phase of QSIM is to synthesize these candidates into a single robust learning signal. This is achieved by computing a weighted expectation in which each weight reflects the functional sim-ilarity between a near-greedy joint action and the greedy joint action. This weighting scheme ensures that the value update is regularized by diverse actions, while giving higher importance to actions that are most functionally aligned with the greedy choice. 
+
+Similarity Calculation First, we leverage the feature en-coder Eϕ to quantify the functional semantics of actions in the next timestep. For each agent i, let a∗ 
+
+> i
+
+denote its compo-nent in the greedy joint action u∗, and aji ∈ A i denote any available action. Conditioned on the next global state s′ and local observation o′
+
+> i
+
+, we compute the greedy action embed-ding f ∗ 
+
+> i
+
+and the deviating action embedding f ji :
+
+f ∗ 
+
+> i
+
+= Eϕ(o′
+
+> i
+
+, s ′, a ∗ 
+
+> i
+
+),f ji = Eϕ(o′
+
+> i
+
+, s ′, a ji ). (12) The similarity score Sij is then computed using cosine sim-ilarity between these embeddings: 
+
+Sij = Cosine (f ∗ 
+
+> i
+
+, f ji ) = f ∗ 
+
+> i
+
+· f ji
+
+∥f ∗ 
+
+> i
+
+∥∥ f ji ∥ . (13) To extend the learned individual action similarity met-rics to the joint action space, the specific composition of the near-greedy space C is first formalized. A near-greedy joint action cji ∈ C denotes the configuration where agent i
+
+selects an deviating action aji ∈ A i, while all other agents maintain their greedy actions u∗−i:
+
+cji = ( aji , u∗−i). (14) Given this, the relationship between joint action similarity and individual action similarity is established as follows: 
+
+Definition 1 (Action Similarity). The functional similarity between a near-greedy joint action cji and the greedy joint action u∗ is defined as the local action similarity of the de-viating agent: 
+
+Sim (cji , u∗) ≜ Sim (aji , a ∗ 
+
+> i
+
+) = Sij . (15) This definition ensures that the similarity score is fully determined by the deviating action of the specific agent modifying its policy, as the behaviors of all other agents remain constant. 
+
+Similarity Weighted Aggregation We transform the raw similarity scores into a normalized probability distribution to derive the integration weights. This is achieved using a soft-max function with an inverse temperature parameter κ ≥ 0:
+
+wij = exp( κ · Sij )
+
+P|A i| 
+
+> k=1
+
+exp( κ · Sik ) . (16) The hyperparameter κ controls the sharpness of the weight distribution. As κ → ∞ , the distribution becomes increas-ingly peaked, approximating a hard max operator in which the action most similar to the greedy choice dominates. Conversely, as κ → 0, the distribution becomes uniform, yielding a uniform weight expectation over the near-greedy joint action space. Finally, the QSIM weighted TD target YQSIM is computed as the weighted value of the target candidates over the near-greedy space C. Let wij denote the weight associated with the near-greedy joint action cji . The final target is given by: 
+
+YQSIM = X 
+
+> cji∈C
+
+wij · y(cji ), (17) where y(cji ) is the candidate target defined in Eq. (11). This aggregated target YQSIM replaces the standard greedy target in the TD loss function provided in Eq. (3). By incorporating value estimates from the neighborhood of the greedy pol-icy, the resulting update provides a principled mechanism for mitigating overestimation bias. 
+
+Theorem 2. The value estimation component of the QSIM TD target, denoted as VQSIM (s′), constitutes a lower bound on the standard greedy value estimate VGreedy (s′). Formally, since P 
+
+> c∈C
+
+w(c) = 1 and w(c) ≥ 0, it holds that: 
+
+VQSIM (s′) ≤ VGreedy (s′).
+
+This theorem demonstrates that the QSIM operator sys-tematically reduces the value estimate compared to the greedy max operator. A complete proof is provided in Ap-pendix A.4. By leveraging this similarity weighted expectation, QSIM effectively exploits the local structure of the value function around the greedy policy. Instead of relying on a single po-tentially unstable point estimate, it synthesizes a consen-sus target from functionally similar actions. This approach not only provides a strictly lower-variance learning signal to mitigate overestimation but also ensures that the value up-date remains grounded in the agents’ semantic behavior. The complete training procedure is summarized in Algorithm 1 as shown in Appendix A.1. 0.0 0.5 1.0 1.5                                 
+
+> 0
+> 25
+> 50
+> 75
+> 100
+> Median Win Rate(%)  2s3z
+> 0.0 0.5 1.0
+> 0
+> 25
+> 50
+> 75
+> 100
+> 1c3s5z
+> 0.0 0.5 1.0
+> 0
+> 25
+> 50
+> 75
+> 100
+> 2c_vs_64zg
+> 0.0 0.5 1.0 1.5
+> 0
+> 25
+> 50
+> 75
+> 100
+> 3s5z
+> 0.0 0.5 1.0 1.5 2.0
+> T (mil)
+> 0
+> 25
+> 50
+> 75
+> 100
+> Median Win Rate(%)  8m_vs_9m
+> 0.0 0.5 1.0 1.5 2.0
+> T (mil)
+> 0
+> 25
+> 50
+> 75
+> 100
+> 10m_vs_11m
+> 0.0 0.5 1.0 1.5 2.0
+> T (mil)
+> 0
+> 25
+> 50
+> 75
+> 100
+> MMM2
+> 0.0 1.0 2.0 3.0 4.0 5.0
+> T (mil)
+> 0
+> 25
+> 50
+> 75
+> 100
+> 3s5z_vs_3s6z
+> QSIM-QMIX(ours) QMIX VDN QPLEX RODE CW-QMIX OW-QMIX RES RIIT
+
+Figure 3: Performance comparison on SMAC maps. 
+
+Task QSIM-QMIX QMIX VDN QPLEX RODE CW-QMIX OW-QMIX RES RIIT Steps 
+
+2s3z 99.4 (0.2) 97.9 (0.7) 95.8 (1.4) 98.8 (0.6) 95.6 (1.6) 94.8 (2.6) 95.4 (1.3) 98.3 (0.5) 98.1 (0.9) 1.5e6 
+
+1c3s5z 97.5 (0.8) 93.8 (4.1) 89.0 (2.8) 96.5 (1.9) 93.8 (13.9) 93.5 (3.2) 95.8 (1.4) 77.9 (28.6) 97.3 (3.0) 1.0e6 
+
+2c vs 64zg 86.3 (2.0) 84.0 (17.8) 60.6 (19.0) 53.8 (36.0) 73.3 (27.5) 66.3 (2.2) 71.0 (15.6) 84.0 (3.4) 49.4 (15.4) 1.0e6 
+
+3s5z 96.5 (1.1) 90.2 (2.6) 76.9 (7.6) 93.1 (2.2) 49.4 (15.2) 82.9 (5.0) 88.3 (2.4) 88.1 (28.0) 90.8 (3.6) 1.5e6 
+
+8m vs 9m 96.6 (2.2) 69.4 (8.4) 91.5 (2.0) 78.3 (3.3) 82.5 (43.4) 55.8 (8.8) 64.8 (17.0) 84.4 (6.2) 37.3 (9.3) 2.0e6 
+
+10m vs 11m 97.9 (1.4) 76.0 (9.9) 93.8 (2.9) 77.9 (9.3) 95.6 (2.3) 76.3 (8.6) 70.8 (7.6) 16.5 (24.7) 49.4 (7.8) 2.0e6 
+
+MMM2 75.6 (8.4) 38.3 (27.9) 3.1 (19.8) 4.2 (20.8) 31.5 (24.2) 45.2 (20.5) 49.8 (31.3) 72.4 (33.4) 67.1 (10.1) 2.0e6 
+
+3s5z vs 3s6z 57.1 (8.8) 15.0 (13.9) 23.1 (21.8) 56.5 (23.8) 1.5 (20.7) 0.4 (14.9) 41.9 (24.0) 0.4 (32.1) 65.6 (22.9) 5.0e6 Table 1: Performance comparison on the SMAC benchmark, where results are reported as the final median test win rate (%) with standard deviation over 5 random seeds. 
+
+## Experiments 
+
+We evaluate the proposed QSIM framework primarily using the QMIX backbone, denoted as QSIM-QMIX . Our empir-ical analysis addresses five key research questions: 1. Performance & Stability: Does QSIM-QMIX outperform existing VD baselines in both win rate and stability? 2. Generality: Does integrating QSIM with other VD back-bones (VDN, QPLEX) consistently yield gains across di-verse environments? 3. Ablation: How critical are the near-greedy action space and the similarity weighted aggregation scheme? 4. Overestimation: Does QSIM effectively mitigate the overestimation bias? We analyze the error between es-timated ˆQtot and actual discounted return. 5. Action Representation Visualization: Do the learned ac-tion embeddings capture meaningful action semantics? 
+
+Benchmarks and Baselines Our empirical evaluation spans four diverse benchmarks: SMAC (Samvelyan et al. 2019), SMACv2 (Ellis et al. 2023), MPE (Lowe et al. 2017) and Matrix Games (Papoudakis et al. 2020). Comparative analysis is conducted against a comprehensive suite of base-lines, including VDN (Sunehag et al. 2017), QMIX (Rashid et al. 2020b), WQMIX (Rashid et al. 2020a), QPLEX (Wang et al. 2020a), RES (Pan et al. 2021), RODE (Wang et al. 2021), and RIIT (Hu et al. 2023). 
+
+Experimental Setup Experiments are conducted over 5 random seeds. Plots report median performance (solid line) with 25th–75th percentile interquartile ranges (shaded area), where smaller shaded areas indicate higher stability. Addi-tional training details are provided in Appendix B. 
+
+Performance on SMAC 
+
+We evaluate on SMAC, a benchmark requiring fine-grained micromanagement under partial observability. The combi-natorial explosion in SMAC poses a severe challenge for value estimation. To ensure a comprehensive evaluation, we select eight maps spanning a spectrum of difficulty: two easy ( 2s3z , 1c3s5z ), four hard ( 2c vs 64zg , 3s5z , 8m vs 9m ,
+
+10m vs 11m ), and two super-hard ( MMM2 , 3s5z vs 3s6z ). Figure 3 and Table 1 collectively illustrate the superior performance and stability of QSIM-QMIX. In high-dimensional scenarios where standard VD methods are prone to instability driven by maximization bias, QSIM-QMIX achieves higher mean win rates with significantly lower standard deviation. To further evaluate the robustness and generalization capabilities of QSIM, we extend our experiments to the SMACv2 benchmark (Ellis et al. 2023). SMACv2 introduces significant environmental stochasticity, including randomized unit types and start positions. This dynamic setting requires agents to develop adaptable coop-erative strategies capable of handling unseen configurations. Detailed empirical results on SMACv2 are provided in Appendix C.1. 0.0 0.5 1.0 1.5 2.0                                        
+
+> 0
+> 5
+> 10
+> Median Win Rate (%)  VDN
+> 0.0 0.5 1.0 1.5 2.0
+> 0
+> 50
+> 100
+> QMIX
+> 0.0 0.5 1.0 1.5 2.0
+> 0
+> 25
+> 50
+> QPLEX
+> 0.0 0.1 0.2 0.3 0.4 0.5
+> 20
+> 120
+> 220
+> Median Return
+> 0.0 0.1 0.2 0.3 0.4 0.5
+> 20
+> 120
+> 220
+> 0.0 0.1 0.2 0.3 0.4 0.5
+> 20
+> 120
+> 220
+> 0.0 0.1 0.2 0.3 0.4 0.5
+> T (mil)
+> 120
+> 150
+> 180
+> Median Return
+> 0.0 0.1 0.2 0.3 0.4 0.5
+> T (mil)
+> 120
+> 150
+> 180
+> 0.0 0.1 0.2 0.3 0.4 0.5
+> T (mil)
+> 120
+> 150
+> 180
+> SMAC
+> MMM2
+> MPE
+> simple_tag
+> Matrix Game
+> climbing
+> QSIM (ours) Origin
+
+Figure 4: Comparison of QSIM-enhanced variants with their original baselines across different benchmarks. 
+
+Generality of QSIM 
+
+A pivotal advantage of QSIM is its modular design, allow-ing seamless integration into various VD methods. To em-pirically verify this generality, we extend our evaluation beyond QMIX, integrating QSIM with two other promi-nent VD backbones: VDN and QPLEX. We then compare the resulting variants (QSIM-VDN, QSIM-QMIX, QSIM-QPLEX) with their original counterparts across multiple en-vironments. Detailed information about the experimental en-vironment is shown in Appendix E. Figure 4 summarizes the comparative results on three representative scenarios covering different domains. Com-prehensive results for additional scenarios are provided in Appendix C.2. Across all tested environments, the QSIM-enhanced variants consistently outperform or match the original baselines. These findings demonstrate that QSIM is broadly compatible with existing value decomposition frameworks and reliably boosts their performance. By pro-viding a more robust learning signal, QSIM improves the sample efficiency and stability of arbitrary value decompo-sition architectures, regardless of the task complexity. 
+
+Ablation Study 
+
+We conduct an ablation study to isolate the contributions of two core mechanisms, namely the construction of the near-greedy joint action space and the similarity weighted scheme. To this end, we introduce QSIM-Mean, a variant that retains the near-greedy space structure but replaces the similarity weight with a uniform weight w(c) = 1 /|C| . This is equivalent to setting the inverse temperature κ = 0 in Eq. (16), thereby assigning the same weight to each near-greedy joint action c. Additional QSIM variants and ex-tended ablation studies are provided in Appendix C.3. As shown in Figure 5, the results across SMAC tasks re-veal a clear performance ordering in which QSIM-QMIX 0.0 0.5 1.0 1.5 2.0        
+
+> T (mil)
+> 0
+> 50
+> 100
+> Median Win Rate (%)  MMM2
+> 012345
+> T (mil)
+> 0
+> 40
+> 80
+> 3s5z_vs_3s6z
+> QSIM-QMIX QSIM-Mean QMIX
+
+Figure 5: Ablation study comparing the full QSIM-QMIX model against the unweighted QSIM-Mean variant and the original QMIX baseline. outperforms QSIM-Mean, and both variants outperform QMIX. This observation provides two important insights. First, the improvement of QSIM-Mean over QMIX high-lights the structural benefit brought by the near-greedy ac-tion space. Since C consists of single-agent deviations, it captures the local neighborhood of the greedy policy. Ag-gregating over these near-greedy actions provides a more diverse and better-regularized learning signal. Compared with the single-point greedy estimate used by QMIX, this smoothed expectation is more robust and helps avoid pre-mature convergence to suboptimal solutions. Second, the further gains achieved by QSIM-QMIX over QSIM-Mean underscore the importance of similarity weighting. While simple averaging reduces computational overhead, it naively aggregates all actions, inevitably including irrelevant or counter-productive deviating actions. By assigning higher weights to actions functionally similar to the greedy policy, QSIM effectively filters out noisy or implausible deviations. This selective aggregation yields a more informative target, enabling faster and more stable convergence. 0 1 2 3 4 5 6 7 8 9 10 11 12 13 
+
+> Action ID
+> 0
+> 1
+> 2
+> 3
+> 4
+> 5
+> 6
+> 7
+> 8
+> 9
+> 10
+> 11
+> 12
+> 13
+> Action ID
+> Cosine Similarity
+> high
+> low
+
+(a) (b) (c)       
+
+> No-op (0) Stop (1) Move Up (2) Move Down (3) Move Right (4) Move Left (5) Attack (6~13)
+
+Figure 6: Visualization of learned action embeddings for a Stalker agent in the SMAC 3s5z scenario. (a) The action space of a Stalker agent in the 3s5z scenario. (b) A projection of the learned action embeddings produced via t-SNE. (c) Similarity matrix between all actions of the Stalker agent. 
+
+Mitigation of Q-Value Overestimation 
+
+To evaluate QSIM’s ability to mitigate the systematic Q-value overestimation in VD methods, we analyze the esti-mation error δq , defined as the error between the estimated joint Q-value ˆQtot and the actual discounted return: 
+
+δq = ˆQtot (τt, ut) −
+
+> ∞
+
+X
+
+> k=t
+
+γk−trk, (18) where the summation term approximates the actual joint Q-value Qπ 
+
+> tot
+
+in Eq. (1). We compare the resulting estimation error δq of QSIM-QMIX with that of QMIX on several chal-lenging SMAC maps by examining how the error evolves over training steps. 0.0 0.5 1.0 1.5 2.0      
+
+> T (mil)
+> -1
+> 0
+> 1
+> Median Estimation Error  MMM2
+> 0.0 0.5 1.0 1.5 2.0
+> T (mil)
+> -1
+> 0
+> 1
+> 2
+> 10m_vs_11m
+> QSIM-QMIX QMIX
+
+Figure 7: Comparison of Q-value estimation error δq on SMAC maps. As illustrated in Figure 7, QSIM consistently exhibits lower estimation error δq compared with QMIX. The base-line QMIX suffers from a substantial accumulation of posi-tive bias, stemming directly from its reliance on the standard max operator. In contrast, QSIM mitigates this bias by sub-stituting the greedy target with a similarity weighted target. Consequently, the learned value estimates align more closely with the true returns, demonstrating that QSIM effectively mitigates overestimation and provides more accurate value estimates and a stable critic for VD methods. 
+
+Visualization of Learned Action Representations 
+
+To assess whether the QSIM’s feature encoder Eϕ learns ac-tion embeddings that capture meaningful action semantics, we visualize the representation space for a Stalker agent in SMAC 3s5z scenario, as shown in Figure 6. The t-SNE pro-jection (Maaten and Hinton 2008) in Figure 6(b) reveals that actions with similar functional effects form coherent clusters. For instance, “Attack” actions are grouped tightly, distinct from “Move” and “No-op”. The similarity heatmap in Figure 6(c) further supports this structure, showing high similarity scores among functionally related actions, with “Attack” actions displaying strong pairwise affinity high-lighted in red. These results confirm that the learned action embeddings provide a reliable and interpretable metric for our similarity-based weighting scheme. 
+
+## Conclusion 
+
+In this paper, we proposed QSIM to mitigate the system-atic Q-value overestimation in VD methods. By replacing the greedy TD target in Bellman optimality equation with a similarity weighted TD target aggregated over a constructed near-greedy joint action space, QSIM effectively mitigates the maximization bias inherent in Q-learning. Extensive em-pirical evaluations on SMAC, SMACv2, MPE, and Matrix Games demonstrate that QSIM serves as a generalized mod-ule compatible with various VD methods. The results con-firm that QSIM consistently improves the performance and stability of existing algorithms while significantly reducing the Q-value estimation error. For future work, we plan to extend the paradigm of simi-larity weighted expectation to a broader range of multi-agent domains. Promising directions include integrating the QSIM mechanism into multi-agent actor-critic algorithms or adapt-ing it for offline reinforcement learning settings, where ro-bust value estimation is equally critical for learning stable policies from fixed datasets. Acknowledgments 
+
+This work was supported by the National Natural Science Foundation of China (Grant No. 62506210). 
+
+## References 
+
+Chafii, M.; Naoumi, S.; Alami, R.; Almazrouei, E.; Bennis, M.; and Debbah, M. 2023. Emergent communication in multi-agent reinforcement learning for future wireless net-works. IEEE Internet of Things Magazine , 6(4): 18–24. Chandak, Y.; Theocharous, G.; Kostas, J.; Jordan, S.; and Thomas, P. 2019. Learning action representations for rein-forcement learning. In International conference on machine learning , 941–950. PMLR. Ding, L.; Du, W.; Zhang, J.; Guo, L.; Zhang, C.; Jin, D.; and Ding, S. 2024. Better value estimation in Q-learning-based multi-agent reinforcement learning. Soft Computing , 28(6): 5625–5638. Ellis, B.; Cook, J.; Moalla, S.; Samvelyan, M.; Sun, M.; Ma-hajan, A.; Foerster, J.; and Whiteson, S. 2023. Smacv2: An improved benchmark for cooperative multi-agent reinforce-ment learning. Advances in Neural Information Processing Systems , 36: 37567–37593. Hasselt, H. 2010. Double Q-learning. Advances in neural information processing systems , 23. Hu, J.; Wang, S.; Jiang, S.; and Wang, W. 2023. Rethinking the Implementation Tricks and Monotonicity Constraint in Cooperative Multi-agent Reinforcement Learning. In The Second Blogpost Track at ICLR 2023 .Li, D.; Lou, N.; Xu, Z.; Zhang, B.; and Fan, G. 2025. Effi-cient Communication in Multi-Agent Reinforcement Learn-ing with Implicit Consensus Generation. In Proceedings of the AAAI Conference on Artificial Intelligence , volume 39, 23240–23248. Liu, K.; Zhang, T.; Xu, X.; and Zhao, Y. 2025. Counterfac-tual value decomposition for cooperative multi-agent rein-forcement learning. Neural Networks , 190: 107692. Lowe, R.; Wu, Y. I.; Tamar, A.; Harb, J.; Pieter Abbeel, O.; and Mordatch, I. 2017. Multi-agent actor-critic for mixed cooperative-competitive environments. Advances in neural information processing systems , 30. Maaten, L. v. d.; and Hinton, G. 2008. Visualizing data us-ing t-SNE. Journal of machine learning research , 9(Nov): 2579–2605. Mahajan, A.; Rashid, T.; Samvelyan, M.; and Whiteson, S. 2019. Maven: Multi-agent variational exploration. Advances in neural information processing systems , 32. Mnih, V.; Kavukcuoglu, K.; Silver, D.; Rusu, A. A.; Ve-ness, J.; Bellemare, M. G.; Graves, A.; Riedmiller, M.; Fidje-land, A. K.; Ostrovski, G.; et al. 2015. Human-level control through deep reinforcement learning. nature , 518(7540): 529–533. Oliehoek, F. A.; Amato, C.; et al. 2016. A concise introduc-tion to decentralized POMDPs , volume 1. Springer. Pan, L.; Rashid, T.; Peng, B.; Huang, L.; and Whiteson, S. 2021. Regularized softmax deep multi-agent q-learning. 
+
+Advances in Neural Information Processing Systems , 34: 1365–1377. Papoudakis, G.; Christianos, F.; Sch¨ afer, L.; and Albrecht, S. V. 2020. Benchmarking multi-agent deep reinforcement learning algorithms in cooperative tasks. arXiv preprint arXiv:2006.07869 .Rashid, T.; Farquhar, G.; Peng, B.; and Whiteson, S. 2020a. Weighted qmix: Expanding monotonic value func-tion factorisation for deep multi-agent reinforcement learn-ing. Advances in neural information processing systems , 33: 10199–10210. Rashid, T.; Samvelyan, M.; De Witt, C. S.; Farquhar, G.; Fo-erster, J.; and Whiteson, S. 2020b. Monotonic value func-tion factorisation for deep multi-agent reinforcement learn-ing. Journal of Machine Learning Research , 21(178): 1–51. Samvelyan, M.; Rashid, T.; De Witt, C. S.; Farquhar, G.; Nardelli, N.; Rudner, T. G.; Hung, C.-M.; Torr, P. H.; Fo-erster, J.; and Whiteson, S. 2019. The starcraft multi-agent challenge. arXiv preprint arXiv:1902.04043 .Shi, R.; Yu, X.; Wang, Y.; Tian, Y.; Liu, Z.; Wu, W.; Zhang, X.-P.; and Veloso, M. M. 2025. Symmetry-Informed MARL: A Decentralized and Cooperative UAV Swarm Con-trol Approach for Communication Coverage. IEEE Trans-actions on Mobile Computing .Smith, J. E.; and Winkler, R. L. 2006. The optimizer’s curse: Skepticism and postdecision surprise in decision analysis. 
+
+Management Science , 52(3): 311–322. Son, K.; Kim, D.; Kang, W. J.; Hostallero, D. E.; and Yi, Y. 2019. Qtran: Learning to factorize with transformation for cooperative multi-agent reinforcement learning. In Interna-tional conference on machine learning , 5887–5896. PMLR. Song, Z.; Parr, R.; and Carin, L. 2019. Revisiting the soft-max bellman operator: New benefits and new perspective. In 
+
+International conference on machine learning , 5916–5925. PMLR. Stepanov, E.; Smeliansky, R.; Plakunov, A.; Borisov, A.; Zhu, X.; Pei, J.; and Yao, Z. 2024. On fair traffic alloca-tion and efficient utilization of network resources based on MARL. Computer Networks , 250: 110540. Su, J.; Adams, S.; and Beling, P. 2021. Value-decomposition multi-agent actor-critics. In Proceedings of the AAAI confer-ence on artificial intelligence , volume 35, 11352–11360. Sunehag, P.; Lever, G.; Gruslys, A.; Czarnecki, W. M.; Zam-baldi, V.; Jaderberg, M.; Lanctot, M.; Sonnerat, N.; Leibo, J. Z.; Tuyls, K.; et al. 2017. Value-decomposition net-works for cooperative multi-agent learning. arXiv preprint arXiv:1706.05296 .Sutton, R. S.; Barto, A. G.; et al. 1998. Reinforcement learn-ing: An introduction , volume 1. MIT press Cambridge. Tang, H.; Zhang, H.; Shi, Z.; Chen, X.; Ding, W.; and Zhang, X.-P. 2023. Autonomous swarm robot coordina-tion via mean-field control embedding multi-agent rein-forcement learning. In 2023 IEEE/RSJ International Con-ference on Intelligent Robots and Systems (IROS) , 8820– 8826. IEEE. Tavakoli, A.; Fatemi, M.; and Kormushev, P. 2021. Learning to Represent Action Values as a Hypergraph on the Action Vertices. In International Conference on Learning Repre-sentations (ICLR 2021) .Thrun, S.; and Schwartz, A. 2014. Issues in using function approximation for reinforcement learning. In Proceedings of the 1993 connectionist models summer school , 255–263. Psychology Press. Van Hasselt, H.; Guez, A.; Silver, D.; et al. 2016. Deep rein-forcement learning with double q-learning. In Proceedings of the AAAI conference on artificial intelligence , volume 30. Wang, J.; Ren, Z.; Liu, T.; Yu, Y.; and Zhang, C. 2020a. Qplex: Duplex dueling multi-agent q-learning. arXiv preprint arXiv:2008.01062 .Wang, T.; Dong, H.; Lesser, V.; and Zhang, C. 2020b. Roma: Multi-agent reinforcement learning with emergent roles. arXiv preprint arXiv:2003.08039 .Wang, T.; Gupta, T.; Mahajan, A.; Peng, B.; Whiteson, S.; and Zhang, C. 2021. RODE: LEARNING ROLES TO DE-COMPOSE MULTI-AGENT TASKS. In 9th International Conference on Learning Representations, ICLR 2021 .Zhang, R.; Hou, J.; Walter, F.; Gu, S.; Guan, J.; R¨ ohrbein, F.; Du, Y.; Cai, P.; Chen, G.; and Knoll, A. 2024. Multi-agent reinforcement learning for autonomous driving: A survey. 
+
+arXiv preprint arXiv:2408.09675 .Zhao, L.-y.; Chang, T.-q.; Guo, L.-b.; Zhang, J.; Zhang, L.; and Ma, J.-d. 2024. An overestimation reduction method based on the multi-step weighted double estimation us-ing value-decomposition multi-agent reinforcement learn-ing. Neural Processing Letters , 56(3): 152. Zheng, Z.; and Gu, S. 2024. Safe multi-agent reinforcement learning with bilevel optimization in autonomous driving. 
+
+IEEE Transactions on Artificial Intelligence .A Further Details and Analysis of QSIM 
+
+A.1 Pseudocode for QSIM 
+
+The complete training procedure for QSIM integrated with a generic value decomposition method is detailed in Algorithm 1. Algorithm 1: QSIM: Weighted Q-learning with Action Similarity  
+
+> 1:
+
+Initialize network parameters θ, target parameters θ−, encoder parameters ϕ, learning rates αϕ, α θ , replay buffer D = {} . 
+
+> 2:
+
+while step < step max do  
+
+> 3:
+
+Collect experience and store in D. 
+
+> 4:
+
+if |D| > batch-size then  
+
+> 5:
+
+Sample a batch of transitions {(s, u, r, s ′, u′, . . . )} from D. 
+
+> 6:
+
+Update the autoencoder parameters ϕ by minimizing the reconstruction loss LAE according to Eq. (8).  
+
+> 7:
+
+Identify the greedy joint action u∗ at the next state s′ using the main network.  
+
+> 8:
+
+Generate action embeddings for greedy and deviating actions via the feature encoder Eϕ using Eq. (12).  
+
+> 9:
+
+Calculate the cosine similarity scores between each deviating action and the greedy action using Eq. (13).  
+
+> 10:
+
+Derive the normalized weights w(c) using the softmax function with inverse temperature κ using Eq. (16).  
+
+> 11:
+
+Construct the near-greedy joint action space C based on Eq. (10).  
+
+> 12:
+
+Calculate the candidate TD target y(c) for each near-greedy joint action c ∈ C using Eq. (11).  
+
+> 13:
+
+Compute the final similarity weighted TD target YQSIM as formulated in Eq. (17).  
+
+> 14:
+
+Update the network parameters θ by minimizing the TD error between YQSIM and Qtot (τ , u; θ) defined in Eq. (3).  
+
+> 15:
+
+end if  
+
+> 16:
+
+if step % update interval = 0 then  
+
+> 17:
+
+Update target network parameters: θ− ← θ. 
+
+> 18:
+
+end if  
+
+> 19:
+
+end while 
+
+A.2 Autoencoder Training Convergence 
+
+In this section, we examine the training stability of the action representation learning module. We track the evolution of the next-observation prediction loss LAE as defined in Eq. (8) across three diverse benchmark domains: SMAC, MPE, and Matrix Games. As illustrated in Figure 8, we observe a consistent trend across all scenarios: the reconstruction loss decreases sharply and sta-bilizes within the very early stages of training. This universal fast convergence indicates that the auxiliary task is sample-efficient and robust to varying task complexities. Crucially, this rapid stabilization ensures that the generated state-action embeddings become informative almost immediately. Consequently, the similarity weighted aggregation mechanism receives high-quality guidance from the outset of the policy learning phase, rather than being misled by unstable or random features. 0.0 0.1 0.2 0.3 0.4 0.5             
+
+> T (mil)
+> 0.00
+> 0.05
+> 0.10
+> 0.15
+> 0.20
+> Loss_AE
+> SMAC
+> 0510 15 20 25 30
+> T (k)
+> 0.0
+> 0.3
+> 0.6
+> 0.9
+> 1.2
+> MPE
+> 0510 15 20 25 30
+> T (k)
+> 0.00
+> 0.06
+> 0.12
+> 0.18
+> 0.24
+> Matrix Games
+
+Figure 8: The evolution of autoencoder loss LAE across SMAC, MPE, and Matrix Games scenarios. The consistent rapid drop in the early stages indicates efficient learning of environmental dynamics across diverse task complexities. 
+
+A.3 Additional Details on the Near-greedy Action Space 
+
+The construction of the near-greedy joint action space C, is a cornerstone of the QSIM framework. While a straightforward adaptation of Expected SARSA would involve computing an expectation over the entire joint action space U, such an approach encounters two prohibitive obstacles in the multi-agent domain. First, the Computational Intractability: The size of U scales exponentially with the number of agents ( |U| = |A| N ), rendering full expectation computation infeasible for all but the simplest scenarios. Second, the Estimation Unreliability: As highlighted in prior work (Pan et al. 2021), in high-dimensional spaces, the Q-values Qtot (s, u) for the majority of joint actions are rarely visited and thus poorly estimated. Naively incorporating these unreliable estimates into the target calculation introduces significant noise, potentially corrupting the learning signal. To address these challenges, we construct a tractable subspace C centered around the greedy joint action u∗, as visualized in Figure 9. Leveraging the IGM principle inherent in value decomposition, the greedy joint action u∗ serves as a high-quality “anchor” in the action space. By limiting C to the union of all single-agent deviations from u∗, we ensure that the included joint actions remain in the local neighborhood of the optimal policy. These actions are topologically close to the anchor and are significantly more likely to possess reliable value estimates compared to arbitrary samples from the vast full space U.This construction offers an optimal trade-off between efficiency and stability. It reduces the complexity from exponential to linear ( |C| = N × |A| ), ensuring scalability. Simultaneously, it provides a robust basis for the weighted TD target by focusing the expectation on the most trustworthy region of the value function. 1a∗
+
+> N
+
+a∗
+
+
+
+
+
+> i
+
+a∗
+
+> N
+
+a∗
+
+
+
+
+
+> i
+
+a∗
+
+> 11
+
+a 1a∗
+
+> N
+
+a∗
+
+
+
+
+
+#  jia 
+
+> 1
+
+a∗
+
+
+
+
+
+> i
+
+a∗
+
+> AN
+
+a 1
+
+> N
+
+a
+
+
+
+
+
+> 1
+> i
+
+a
+
+> 11
+
+a 1
+
+> A
+
+a
+
+> 1
+> N
+
+a
+
+
+
+
+
+#  1
+
+> i
+
+a 
+
+> 1
+> N
+
+a
+
+
+
+
+
+> 1
+> i
+
+a
+
+> 11
+
+a 11a
+
+> 1
+> N
+
+a
+
+
+
+
+
+#  Aia
+
+> 1
+> N
+
+a
+
+
+
+
+
+> 1
+> i
+
+a
+
+> 11
+
+a 11a
+
+> AN
+
+a
+
+
+
+
+
+#  1
+
+> i
+
+a       
+
+> arg max ( , )tot Qs∗=uuu
+
+## { }             
+
+> 1(,) | :()
+> NiiiiiaaNA∗−==∈×
+
+##   u 11{( ) | }: ( ), , ,          
+
+> NiNiiiNAaaai
+> ===…∈∀ ∈
+
+# ∏   
+
+## (a)  (b)  (c) 
+
+Figure 9: Schematic visualization of the action space construction. (a) A single greedy joint action u∗. (b) The proposed near-greedy joint action space C, constructed via single-agent deviations around the greedy anchor. (c) The exponentially large, intractable full joint action space U.
+
+A.4 Bias Analysis of QSIM 
+
+A primary motivation for QSIM is to mitigate the overestimation bias inherent in the construction of the TD target. Here, we provide a detailed analysis of the value estimation component of the TD target, demonstrating that the QSIM operator is inherently less prone to overestimation than the standard greedy max operator. Let Qtar (τ ′, ·; θ−) denote the joint action-values for the next joint history τ ′ produced by the target network with parameters 
+
+θ−. The standard TD target relies on a greedy value estimate. We denote this greedy estimate as VGreedy (s′):
+
+VGreedy (s′) = max  
+
+> u′
+
+Qtar (τ ′, u′; θ−) = Qtar (τ ′, u∗; θ−),
+
+where u∗ is the greedy joint action defined in Eq. (9). The core of the overestimation bias stems from the fact that this max operator is applied over noisy Q-value estimates. In contrast, for QSIM, the TD target is yQSIM = r + γV QSIM (s′). The value estimation component VQSIM (s′) is a similarity weighted expectation over the near-greedy action space C:
+
+VQSIM (s′) = X
+
+> c∈C
+
+w(c)Qtar (τ ′, c; θ−).
+
+Theorem 2. The value estimation component of the QSIM TD target, denoted as VQSIM (s′), constitutes a lower bound on the standard greedy value estimate VGreedy (s′). Formally, since P 
+
+> c∈C
+
+w(c) = 1 and w(c) ≥ 0, it holds that: 
+
+VQSIM (s′) ≤ VGreedy (s′).
+
+Proof. By definition, VQSIM (s′) is a convex combination of the target Q-values within the near-greedy space C, as the weights 
+
+w(c) are derived from a softmax function and satisfy w(c) ≥ 0 and P 
+
+> c∈C
+
+w(c) = 1 .For any specific action c ∈ C , the inequality Qtar (τ ′, c; θ−) ≤ max c∈C Qtar (τ ′, c; θ−) naturally holds. We can then expand the expectation term: 
+
+VQSIM (s′) = X
+
+> c∈C
+
+w(c)Qtar (τ ′, c; θ−)
+
+≤ X
+
+> c∈C
+
+w(c)
+
+
+
+max  
+
+> c∈C
+
+Qtar (τ ′, c; θ−)
+
+
+
+=
+
+
+
+max  
+
+> c∈C
+
+Qtar (τ ′, c; θ−)
+
+ X
+
+> c∈C
+
+w(c)= max  
+
+> c∈C
+
+Qtar (τ ′, c; θ−).
+
+Next, we recall the construction of the near-greedy joint action space C defined in Eq. (10). The set C is formed by single-agent deviations from the greedy joint action u∗. This definition inherently implies that the greedy joint action itself is included in the set (i.e., the case where the deviating agent simply selects its greedy action, or effectively, the union covers the anchor point). Therefore, u∗ ∈ C .Since u∗ is defined as the global maximizer (or the approximation thereof found by the mixing network), the maximum value within the subset C is exactly the value of the greedy action: 
+
+max  
+
+> c∈C
+
+Qtar (τ ′, c; θ−) = Qtar (τ ′, u∗; θ−) = VGreedy (s′).
+
+Substituting this back into the inequality, we conclude: 
+
+VQSIM (s′) ≤ VGreedy (s′).
+
+This theoretical result provides the basis for QSIM’s stability. In deep Q-learning, value estimates Qtar are inevitably cor-rupted by function approximation errors. The max operator used in VGreedy is highly sensitive to this noise, often selecting an action whose value is overestimated. This leads to VGreedy (s′) being a systematically biased estimator. By replacing the hard max with a weighted average, QSIM produces a more conservative estimate that smooths out the noise from any single action’s Q-value. This inherent dampening of noise spikes directly counteracts the maximization bias at its source, leading to more stable and accurate TD targets. 
+
+A.5 Computational Efficiency and Runtime Analysis 
+
+We evaluated the runtime impact of the extra components in QSIM, specifically the action-representation autoencoder. De-spite the addition of this module, the computational cost remains minimal due to its lightweight MLP-based architecture, with each MLP consisting of only two linear layers and a ReLU activation function. Benchmarking results on the SMAC en-vironment show that QSIM-QMIX’s average training time (231.964ms/step) is nearly indistinguishable from that of QMIX (231.186ms/step). These results demonstrate that QSIM introduces negligible runtime overhead while significantly improving learning stability and performance, proving its practical viability for large-scale MARL tasks. 
+
+## B Experiment Details 
+
+B.1 Hyperparameters 
+
+We implement QSIM within the widely adopted PyMARL ecosystem. Specifically, the experiments on SMAC are conducted using the original PyMARL framework (Samvelyan et al. 2019), while the evaluations for SMACv2, MPE and Matrix Games are implemented based on EPyMARL (Papoudakis et al. 2020). Table 2 summarizes the common hyperparameters used for both the baseline algorithms and QSIM across these four benchmark environments. These settings are selected to match standard configurations in the literature, ensuring a fair comparison. Consistent with standard practice, all algorithms utilize an ϵ-greedy exploration strategy, where ϵ is linearly annealed from 1.0 to 0.05 over the duration defined by the Epsilon Anneal Steps. Finally, Table 3 lists the specific hyperparameters introduced by the QSIM framework. Regarding the Similarity Threshold , we set this value to 0 to refine the weighting process. After computing the pairwise cosine similarity matrix S, actions with a similarity score Sij < 0 are considered functionally dissimilar or contradictory to the greedy action. We believe these actions provide little to no constructive information for value estimation. Therefore, they are masked before the softmax normalization, ensuring that the weighted TD target calculation is focused solely on the relevant subspace of actions that share positive semantic alignment with the optimal policy. 
+
+B.2 Hardware and Software Infrastructure 
+
+All experiments were conducted on a high-performance computing cluster to ensure efficiency and reproducibility. The specific hardware and software configurations are detailed as follows: Parameter SMAC SMACv2 MPE Matrix Games 
+
+Network Type GRU GRU GRU FC Learning Rate 0.0005 0.0005 0.0005 0.0005 Buffer Size 5000 5000 5000 5000 Epsilon Anneal Steps 50,000 50,000 200,000 50,000 Target Update Interval 200 (Hard) 200 (Hard) 200 (Hard) 0.01 (Soft) Reward Standardization False True True True Discount Factor 0.99 0.99 0.99 0.99 Table 2: Common hyperparameters used in different environments. 
+
+Parameter Value 
+
+Autoencoder Hidden Dimension 128 Inverse Temperature κ 3Similarity Threshold 0Table 3: QSIM-specific hyperparameters. • Hardware Setup: The experiments were executed on computing nodes equipped with NVIDIA H100 PCIe GPUs (80GB VRAM) and an Intel(R) Xeon(R) Platinum 8488C CPU. • Software Environment: Our framework is implemented in Python 3.8.20. We utilize PyTorch 2.1.0 as the deep learning backend. The system environment is configured with NVIDIA Driver 570.195.03 and CUDA 12.8 to support the computa-tional requirements. 
+
+## C Additional Results 
+
+C.1 Performance on SMACv2 
+
+To further evaluate the robustness of QSIM in highly stochastic and non-stationary environments, we extend our experiments to the StarCraft Multi-Agent Challenge v2 ( SMACv2 ). SMACv2 significantly enhances environmental stochasticity through procedural content generation, specifically by randomizing unit start locations and unit types in each episode. This dynamic setting necessitates that agents learn generalized policies capable of adapting to unseen configurations, providing a rigorous testbed for assessing the algorithm’s adaptability and stability under uncertainty. We evaluate QSIM-QMIX against baselines on three representative scenarios: terran 5 vs 5 , terran 10 vs 10 and pro-toss 10 vs 10 . The comparative results are visualized in Figure 10. 0 1 2 3 4 5                
+
+> T (mil)
+> 0
+> 20
+> 40
+> 60
+> 80
+> Median Win Rate (%)
+> terran_5_vs_5
+> 012345
+> T (mil)
+> 0
+> 20
+> 40
+> 60
+> 80
+> terran_10_vs_10
+> 012345
+> T (mil)
+> 0
+> 20
+> 40
+> 60
+> protoss_10_vs_10
+> QSIM-QMIX(ours) QMIX VDN QPLEX CW-QMIX OW-QMIX RIIT
+
+Figure 10: Performance comparison on SMACv2 maps. As observed, QSIM-QMIX continues to outperform the baseline algorithms, demonstrating its versatility. However, we note that the performance margin over QMIX is narrower compared to the original SMAC results. We attribute this phenomenon to the inherent stochasticity of SMACv2. In QSIM, the effectiveness of the similarity weighting relies on the autoencoder learning stable and consistent semantic representations of actions. In SMACv2, the meaning or outcome of an action (e.g., “Attack”) can vary drastically across episodes depending on the randomized unit types and positions. This variability introduces noise into the learned action embeddings, making the similarity metric less distinct than in deterministic environments. Nevertheless, despite this challenge, QSIM still provides a more robust learning signal than the standard greedy approach, confirming its efficacy even under conditions of high environmental randomness. 
+
+C.2 Additional Generality Experiments 
+
+Due to space constraints in the main text, we present the generality evaluation results for the remaining scenarios in this section. Figure 11 illustrates the performance of QSIM integrated with QMIX, VDN, and QPLEX on the SMAC map 10m vs 11m and the MPE scenario simple adversary .Consistent with the findings in Section , the QSIM-enhanced algorithms exhibit superior convergence speed and final perfor-mance compared to their vanilla counterparts. These results further corroborate the universal effectiveness of the QSIM module across varying environment types and backbone algorithms. 0.0 0.5 1.0 1.5 2.0                         
+
+> 0
+> 50
+> 100
+> Median Win Rate (%)  VDN
+> 0.0 0.5 1.0 1.5 2.0
+> 0
+> 50
+> 100
+> QMIX
+> 0.0 0.5 1.0 1.5 2.0
+> 0
+> 50
+> 100
+> QPLEX
+> 0.0 0.1 0.2 0.3 0.4 0.5
+> T (mil)
+> 55
+> 75
+> 95
+> Median Return
+> 0.0 0.1 0.2 0.3 0.4 0.5
+> T (mil)
+> 55
+> 75
+> 95
+> 0.0 0.1 0.2 0.3 0.4 0.5
+> T (mil)
+> 40
+> 70
+> 100
+> SMAC
+> 10m_vs_11m
+> MPE
+> simple_adversary
+> QSIM (ours) Origin
+
+Figure 11: Performance comparison of QSIM-enhanced algorithms on 10m vs 11m and simple adversary .
+
+C.3 Additional Ablation Study 
+
+Beyond the core components analyzed in the main text, we investigate two additional structural variants to assess the impact of specific design choices in the QSIM framework: • QSIM-NoState: In this variant, we modify the input to the self-supervised autoencoder. Instead of feeding the global state 
+
+s alongside the local observation oi and action ai, we remove the global state. The encoder solely relies on (oi, a i) to predict the next local observation. This ablation tests whether local information is sufficient for learning meaningful action semantics. • QSIM-TopN: In this variant, we alter the aggregation scheme for the weighted TD target. Instead of computing a weighted average over the entire near-greedy action space C, we only select the top-N actions with the highest similarity scores. The weights are then renormalized over this truncated subset. This allows us to investigate whether actions with lower functional similarity contribute constructively to the value update, or if the estimation benefits from strictly excluding them. The comparative results are presented in Figure 12. First, the distinct performance gap between QSIM and QSIM-NoState highlights the critical role of the global state s in action representation learning. By incorporating the global view, the autoen-coder can better capture complex environmental dynamics that are partially unobservable from a local perspective, thereby producing more accurate and semantically meaningful action embeddings. Second, regarding the aggregation strategy, we observe that QSIM consistently outperforms QSIM-TopN. This finding is pivotal: it suggests that actions with lower similarity scores are not merely noise or irrelevant. Instead, they provide a necessary regularization effect that smooths the value landscape. Aggressively truncating these actions diminishes this smoothing benefit and re-introduces higher variance into the target calculation. Consequently, we adopt the strategy of aggregating over the entire near-greedy action space C to ensure the most robust and stable TD target construction. 
+
+C.4 Sensitivity Analysis of κ
+
+The inverse temperature parameter κ in Eq. (16) governs the sharpness of the similarity-based weighting distribution in QSIM. A lower κ approaches a uniform average, while a higher κ approximates the greedy max operator. To identify the optimal configuration, we conduct a sensitivity analysis on SMAC maps comparing distinct fixed values (e.g., 0.5, 1, 3, 5, 8) against a dynamic scheduling variant, QSIM-klinear . The results are visualized in Figure 13. 0.00 0.25 0.50 0.75 1.00 1.25 1.50 1.75 2.00 
+
+T (mil) 
+
+> 0
+> 20
+> 40
+> 60
+> 80
+> 100
+> Median Win Rate (%)
+
+MMM2 
+
+> QSIM-QMIX
+> QSIM-NoState
+> QSIM-TopN(N=4)
+> QMIX
+
+Figure 12: Ablation study on QSIM-NoState and QSIM-TopN. 0.00 0.25 0.50 0.75 1.00 1.25 1.50 1.75 2.00 
+
+T (mil) 
+
+> 0
+> 20
+> 40
+> 60
+> 80
+> 100
+> Median Win Rate (%)
+
+MMM2 
+
+> QSIM-QMIX(k=0.5)
+> QSIM-QMIX(k=1)
+> QSIM-QMIX(k=3)
+> QSIM-QMIX(k=5)
+> QSIM-QMIX(k=8)
+> QSIM-QMIX(klinear)
+> QMIX
+
+Figure 13: Sensitivity analysis of the inverse temperature parameter κ on MMM2 .In QSIM-klinear, κ linearly increases from 1 to 10 over the course of training, designed to transition from a high-variance smoothing regime (prioritizing exploration) to a more aggressive optimality focus (prioritizing exploitation) as the policy ma-tures. However, our empirical results indicate that while dynamic scheduling offers theoretical benefits, a carefully tuned fixed value provides more stable performance. Specifically, we observe that setting κ = 3 consistently yields the superior results across the majority of scenarios, striking the most effective balance between mitigating overestimation and retaining policy precision. Consequently, we adopt κ = 3 as the default hyperparameter for our main experiments. 
+
+## D Theoretical Analysis of Maximization Bias 
+
+In this section, we provide the detailed proof for the scaling of the maximization bias upper bound under Gaussian noise assumptions, as presented in Theorem 1 of the main text. 
+
+D.1 Problem Setup and Theorem 
+
+Consider the joint action space U with size M = |U| = |A| N . Let the estimated joint Q-value be modeled as ˆQ(u) = 
+
+Q∗(u) + ϵu, where ϵu ∼ N (0 , σ 2) are Gaussian noise terms. To analyze the pure maximization bias, we consider the worst-case scenario where true values are identical: Q∗(u) = μ for all u.
+
+Theorem 1. The maximization bias is upper bounded as follows: 
+
+E
+
+h
+
+max 
+
+> u
+
+ˆQ(u)
+
+i
+
+− max  
+
+> u
+
+Q∗(u) ≤ σ
+
+q
+
+2 ln |A| N .
+
+D.2 Proof 
+
+Proof. Let the standardized noise variables be Zu ∼ N (0 , 1) , such that ˆQ(u) = μ + σZ u. The bias is defined as: Bias = E
+
+h
+
+max 
+
+> u
+
+ˆQ(u)
+
+i
+
+− μ = σE
+
+h
+
+max  
+
+> u
+
+Zu
+
+i
+
+.
+
+Let Zmax = max u Zu. To bound E[Zmax ], we introduce a scalar t > 0 and consider the exponential function f (x) = etx .Since f (x) is a convex function, we can apply Jensen’s inequality: 
+
+etE[Zmax ] ≤ E etZ max  .Next, we utilize the monotonic property of the exponential function. Since etx is strictly increasing for t > 0, the exponential of the maximum value is equivalent to the maximum of the exponential values: 
+
+E etZ max  = E
+
+h
+
+max  
+
+> u
+
+etZ u
+
+i
+
+.
+
+Since the exponential term etZ u is always positive, the maximum of these terms is strictly bounded by their sum (i.e., max i xi ≤P 
+
+> i
+
+xi for xi > 0). Applying the linearity of expectation, we obtain: 
+
+E
+
+h
+
+max  
+
+> u
+
+etZ u
+
+i
+
+≤ E
+
+" MX
+
+> u=1
+
+etZ u
+
+#
+
+=
+
+> M
+
+X
+
+> u=1
+
+E etZ u  .
+
+Now, we recall the property of the Moment Generating Function (MGF) for a standard normal variable Z ∼ N (0 , 1) , which states that E[etZ ] = et2/2. Substituting this into the sum: 
+
+> M
+
+X
+
+> u=1
+
+E etZ u  =
+
+> M
+
+X
+
+> u=1
+
+et2/2 = M e t2/2.
+
+Combining the steps above, we have the inequality: 
+
+etE[Zmax ] ≤ M e t2/2.
+
+Taking the natural logarithm on both sides yields: 
+
+tE[Zmax ] ≤ ln M + t2
+
+2 =⇒ E[Zmax ] ≤ ln Mt + t
+
+2 .
+
+To find the tightest bound, we minimize the right-hand side with respect to t. Setting the derivative to zero yields the optimal 
+
+t∗ = √2 ln M . Substituting t∗ back into the inequality: 
+
+E[Zmax ] ≤ ln M
+
+√2 ln M +
+
+√2 ln M
+
+2 = √2 ln M . 
+
+Substituting this bound back into the bias equation* and recognizing that M = |A| N :Bias = σE[Zmax ] ≤ σ√2 ln M = σ
+
+q
+
+2 ln( |A| N ).
+
+It is a well-established result in Extreme Value Theory that this upper bound is asymptotically tight for Gaussian random variables as M → ∞ . That is, the expected maximum converges to this bound: E[Zmax ] ≈ √2 ln M . Given the exponential size of the joint action space in MARL, this bound accurately characterizes the worst-case scaling behavior of the bias. Consequently, we establish the upper bound relationship in Theorem 1: 
+
+E
+
+h
+
+max 
+
+> u
+
+ˆQ(u)
+
+i
+
+− max  
+
+> u
+
+Q∗(u) ≤ σ
+
+q
+
+2 ln |A| N .
+
+## E Introduction for Environments 
+
+In this section, we provide detailed descriptions of the three benchmark environments utilized in our experiments: the StarCraft Multi-Agent Challenge (SMAC), Multi-Agent Particle Environments (MPE), and Matrix Games. 
+
+E.1 StarCraft Multi-Agent Challenge (SMAC) 
+
+SMAC is a high-dimensional micro-management benchmark based on the StarCraft II engine.A visual comparison of the scenarios in SMAC and SMACv2 is provided in Figure 14. For the SMAC benchmark, we select eight representative maps spanning three difficulty levels; the specific unit configura-tions for both allied and enemy teams are summarized in Table 4. For the SMACv2 benchmark, our evaluation focuses on the Terran and Protoss races using the stochastic unit types and start position distribution. The specific generation probabilities for different unit types and distribution settings are detailed in Table 5. (a) SMAC (b) SMACv2 
+
+Figure 14: Visualization of scenarios in SMAC and SMACv2. 
+
+Map Name Ally Units Enemy Units Difficulty 
+
+2s3z 2 Stalkers & 3 Zealots 2 Stalkers & 3 Zealots Easy 
+
+1c3s5z 1 Colossus, 3 Stalkers & 5 Zealots 1 Colossus, 3 Stalkers & 5 Zealots Easy 
+
+2c vs 64zg 2 Colossi 64 Zerglings Hard 
+
+3s5z 3 Stalkers & 5 Zealots 3 Stalkers & 5 Zealots Hard 
+
+8m vs 9m 8 Marines 9 Marines Hard 
+
+10m vs 11m 10 Marines 11 Marines Hard 
+
+MMM2 1 Medivac, 2 Marauders & 7 Marines 1 Medivac, 3 Marauders & 8 Marines Super-Hard 
+
+3s5z vs 3s6z 3 Stalkers & 5 Zealots 3 Stalkers & 6 Zealots Super-Hard Table 4: Parameter configurations of SMAC scenarios. 
+
+Race Unit Types Probability of Unit Type Generation Probability of Start Position 
+
+Terran Marine 0.45 Surrounded: 0.5 Reflect: 0.5 Marauder 0.45 Medivac 0.10 Protoss Stalker 0.45 Surrounded: 0.5 Reflect: 0.5 Zealot 0.45 Colossus 0.10 Table 5: Parameter configurations of SMACv2 scenarios. 
+
+E.2 Multi-Agent Particle Environments (MPE) 
+
+In addition to the high-dimensional SMAC tasks, we utilize two scenarios from the Multi-Agent Particle Environments (MPE) to test mixed cooperative-competitive dynamics. The visualizations are shown in Figure 15. Details of the MPE environment parameters used in the experiments are shown in Table 6. • simple adversary : This environment consists of 1 adversary (red), 2 cooperative agents (blue), and 2 landmarks (black and green). While all agents can observe the positions of others and landmarks, only the cooperative agents know which landmark is the true target (green). The cooperative team is rewarded based on the proximity of their closest agent to the target, but penalized based on the adversary’s distance to it. This dynamic necessitates complex coordination: the blue agents must learn to split up and cover both landmarks to effectively deceive the red adversary. • simple tag : This scenario represents a predator-prey dynamic. The adversary (green) is faster and incurs a negative reward upon collision with the agents (red). The slower agents, in turn, are rewarded for colliding with the adversary. Large black circles serve as obstacles that block movement. This scenario forces the slower agents to coordinate their actions to corner and trap the faster prey. 
+
+Scenario Agents Action dim State dim Observation dim 
+
+simple adversary 2 Agent & 1 Adversary 5 28 10 & 8 
+
+simple tag 3 Agent & 1 Adversary 5 62 14 & 16 Table 6: Parameter configurations of MPE scenarios. 
+
+E.3 Matrix Games 
+
+We employ the classic climbing scenario from Matrix Games to evaluate algorithm convergence speed and the ability to escape local optima. The payoff matrix is presented in Table 7. This game poses a significant challenge for coordination. The agents must conceptually “climb” from the local optimum at joint action (A, C ) or (B, B ) towards the global optimum at (C, A ). Specifically, in this matrix formulation, the global optimal reward is 11 at (C, A ), while a local optimum exists at (B, B ) with a reward of 7. The difficulty arises from the severe penalty of -30. If the agents coordinate at (B, B ), a single deviation by either agent leads to this catastrophic penalty. Consequently, many algorithms fail to stabilize at the optimal solution or get stuck at safer, near-greedy equilibria to avoid the risk. 
+
+n1
+
+n2 A B CA 0 6 5B -30 7 0C 11 -30 0Table 7: Payoff matrix for the challenging climbing game.    
+
+> (a) simple adversary (b) simple tag
+
+Figure 15: Visualization of MPE scenarios.
