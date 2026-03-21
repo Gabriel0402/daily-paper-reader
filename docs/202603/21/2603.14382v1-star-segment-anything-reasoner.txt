@@ -1,0 +1,1459 @@
+Title: StAR: Segment Anything Reasoner
+
+URL Source: https://arxiv.org/pdf/2603.14382v1
+
+Published Time: Tue, 17 Mar 2026 05:20:47 GMT
+
+Number of Pages: 37
+
+Markdown Content:
+## StAR: Segment Anything Reasoner 
+
+Seokju Yun 1, Dongheon Lee 2, Noori Bae 2, Jaesung Jun 2, Chanseul Cho 2, and Youngmin Ro 2 
+
+> 1
+
+KAIST AI  
+
+> 2
+
+University of Seoul 
+
+https://github.com/ysj9909/StAR 
+
+Abstract. As AI systems are being integrated more rapidly into di-verse and complex real-world environments, the ability to perform holis-tic reasoning over an implicit query and an image to localize a target is becoming increasingly important. However, recent reasoning segmenta-tion methods fail to sufficiently elicit the visual reasoning capabilities of the base model. In this work, we present Segmen t A nything Reasoner (StAR ), a comprehensive framework that refines the design space from multiple perspectives—including parameter-tuning scheme, reward func-tions, learning strategies and answer format—and achieves substantial improvements over recent baselines. In addition, for the first time, we successfully introduce parallel test-time scaling to the segmentation task, pushing the performance boundary even further. To eXtend the scope and depth of reasoning covered by existing benchmark, we also con-struct the ReasonSeg-X, which compactly defines reasoning types and in-cludes samples that require deeper reasoning. Leveraging this dataset, we train StAR with a rollout-expanded selective-tuning approach to activate the base model’s latent reasoning capabilities, and establish a rigorous benchmark for systematic, fine-grained evaluation of advanced methods. With only 5k training samples, StAR achieves significant gains over its base counterparts across extensive benchmarks, demonstrating that our method effectively brings dormant reasoning competence to the surface. 
+
+Keywords: Reasoning Segmentation · Reinforcement Learning · Test-time Scaling 
+
+1 Introduction 
+
+Embodied AI agents are increasingly expected to operate beyond bounded lab setups, in diverse daily scenes where user intent is often implicit and incom-plete. In this regime, recognizing object categories is not sufficient; an agent must reason about the user’s goal in context and localize the relevant regions that support safe and effective action. Reasoning segmentation [23] formalizes this requirement by demanding adaptive cognitive reasoning that interprets an implicit query in accordance with the context of a given image. In particular, beyond a superficial interpretation of the scene, the ability to (i) flexibly ap-ply information given in the query or world knowledge, (ii) comprehensively  
+
+> arXiv:2603.14382v1 [cs.CV] 15 Mar 2026 2S. Yun et al.
+
+understand the background context and relations among entities, or (iii) rea-son step-by-step over multiple components has become an important challenge toward general artificial intelligence (see Fig. 1). Following the groundwork laid by LISA [23], several reasoning segmentation methods [3,5,8,14,17,23,29–32,35,40,55,67] have demonstrated promising results by integrating the versatile reasoning capabilities of multimodal large language models (MLLMs) [1, 2, 27, 28, 52] with the robust mask generation ability of the SAM series [20, 38]. Furthermore, inspired by the expanded reasoning capacity boundary of leading MLLMs and the remarkable effectiveness of Reinforcement Learning with Verifiable Rewards (RLVR) [11, 24], recent methods [14, 29, 30] adopt Group Relative Policy Optimization (GRPO) [43] for MLLMs, effectively enhancing the ability to localize target regions through visual reasoning. For example, VisionReasoner [30] introduces a decoupled “reasoning module-mask generator” framework and successfully applies GRPO using a compact reward design with a multi-object matching algorithm. However, despite their empirical success, the bottleneck of current RLVR frameworks remains underexamined. This raises a fundamental question: Does the current RLVR framework maximally elicit visual reasoning potential that does not readily man-ifest? If not, which component is responsible for the bottleneck? 
+
+To systematically answer this question, we investigate all components that constitute the pillars of RLVR and try to identify design decisions that fully leverage the base model’s pre-trained capacity. We start from VisionReasoner employing Qwen2.5-VL 7B [2] as the MLLM backbone, and gradually “retrofit” the framework to resolve the reasoning bottleneck in each component. Specifically, our exploration centers on the following pivotal dimensions: 
+
+– Parameter-tuning scheme : full-parameter tuning requiring careful hyper-parameter adjustment → LoRA [13] training with an appropriate configura-tions (high-rank and large learning rate) for efficiently enhancing reasoning. 
+
+– Reward design : MLLM-level + SAM-level fine-grained reward function for mask-aware gradients and rollout scalability. 
+
+– Learning strategy : vanilla GRPO + rollout-expanded selective-tuning for propagating more informative training signals through broadened exploration. 
+
+– Answer format : bbox/point prediction + label prediction for promoting rea-soning faithfulness and visually grounded reasoning. Through this process, we uncover several key bottlenecks that severely compro-mise performance. We then eliminate these bottlenecks in a computationally efficient manner, simply yielding large performance improvements. As a result, we propose a comprehensive framework, Segmen t A nything Reasoner ( StAR ). Enabling LLMs to improve their outputs by allocating additional test-time compute [46] is a critical step in post-training. A simple yet effective approach is majority voting [56], which generates N responses in parallel and selects the most frequent one as the final answer. However, while this strategy is natu-rally applicable to tasks such as mathematical reasoning—where the equality of two answers can be easily determined—it is not well-suited to pixel-level prediction tasks. Therefore, instead of a per-pixel voting scheme, we adopt a StAR: Segment Anything Reasoner 3I can’t locate the store 
+
+> I want to visit inside
+> the building. Where can
+> I ask for assistance?
+> Identify the container
+> intended for a tiny sip to
+> help a customer evaluate the
+> product before committing
+> to a full -sized purchase,
+> excluding the cups arranged
+> for regular servings.
+> Purpose /
+> Functional
+> Commonsense /
+> Knowledge -Intensive
+> Locate the clay piece
+> representing the U.S. state
+> that is closest to Russia
+> across the Bering Strait and
+> is not connected to the
+> contiguous United States.
+> The symbol
+> indicating that the
+> device is Class II
+> (double insulated).
+> Comparative /
+> Relational
+> Segment the handprint that is
+> visually identifiable as the latest
+> one added by the child among the
+> prints on the paper.
+> The person who appears to be
+> the highest -ranking among the
+> soldiers guarding this village.
+> Compositional /
+> Multi -Hop
+> Among the health insurance companies shown in the graph,
+> find the company with the second -highest net income in
+> 2008. After finding it, segment the company name (x -label)
+> and the tag showing its 2009 net income.
+
+Fig. 1: We establish a reasoning segmentation benchmark, ReasonSeg-X , that demands a broad range of reasoning skills. Our dataset addresses goal-oriented reasoning and the ability to flexibly invoke world knowledge, while also covering complex relational reasoning and step-by-step reasoning capabilities. Our model, StAR (equipped with Qwen3-VL 32B [1]), demonstrates remarkable performance across all these aspects (right image). Additional results are provided in the supplementary material. 
+
+mask-level strategy that selects a representative mask set via IoU-based clus-tering. By leveraging the diverse and vast reasoning pattern space of StAR, our test-time scaling (TTS) approach consistently improves performance across extensive benchmarks, enabling StAR to tackle increasingly complex problems through more inference-time compute. Moreover, our parallel sampling approach opens a new research direction that lies on the opposite axis of the recent SAM 3 agentic pipeline [5] centered on sequential refinement .LISA [23] also introduced ReasonSeg benchmark, where images are anno-tated with implicit text instructions and target masks. Unfortunately, Reason-Seg has the following limitations: (i) some samples exhibit low mask quality or contain reasoning errors; (ii) its limited reasoning depth makes it difficult to effectively evaluate methods leveraging frontier MLLMs; and (iii) because the benchmark does not clearly define the reasoning scope and type it covers, it cannot systematically assess recent methods across diverse aspects. To mitigate these, we first introduce a Refined version of ReasonSeg (ReasonSeg-R) that addresses issue (i), aiming to prevent currently proposed methods from being misled by incomplete evaluations and thereby support proper research progress (see Fig. 2). In addition, we construct an eXtended version of ReasonSeg, termed 
+
+ReasonSeg-X , which deepens the reasoning depth and systematically expands the coverage of reasoning, complementing issues (ii)–(iii). A distinguishing char-acteristic of the ReasonSeg-X is its balanced coverage of samples across four rea-4 S. Yun et al. 
+
+soning types (purpose/functional, commonsense/knowledge-intensive, compara-tive/relational, and compositional/multi-hop reasoning—see Fig. 1). We utilize this dataset to support StAR in developing its reasoning segmentation capabil-ities across various dimensions. We conduct experiments on several reasoning segmentation benchmarks, in-cluding ReasonSeg [23], MMR [17], MUSE [40], and our proposed ReasonSeg-X/R, and observe that our StAR (i) showcases substantial performance gains over their base counterparts by preserving the base model’s inherent capacity and effectively adapting it to the segmentation task, and (ii) maximizes the efficacy of scaling test-time compute and model size by surfacing “latent, hard-to-elicit” reasoning capabilities through a train-time exploration scaling strategy that increases exposure to diverse reasoning patterns. 
+
+2 ReasonSeg-X Benchmark 
+
+LISA [23] introduces ReasonSeg, which handles implicit query requiring intricate reasoning, rather than explicit query such as category names. Building on this, PixelLM [40] proposes MUSE dataset to facilitate multi-target reasoning, while MMR [17] further extends the scope by curating samples that incorporate part-level reasoning. However, while these studies primarily consider segmentation-level formulation (mask prediction format), we focus on the largely underex-plored aspects of reasoning depth and reasoning type design . Through this, we define the following four compact reasoning taxonomy: 
+
+– Purpose/Functional (P/F) : a reasoning type that requires the ability to locate a target object needed to achieve a specific purpose, or intended for a particular use. 
+
+– Commonsense/Knowledge-Intensive (C/KI) : a reasoning type that par-ticularly requires commonsense or domain-specific knowledge to localize the target region. Moreover, this covers everyday world knowledge as well as human-like visual priors accumulated through experience. 
+
+– Comparative/Relational (C/R) : a reasoning type in which the target must be localized through comparisons or relationships between entities in the im-age. This type includes comparative reasoning over diverse attributes as well as holistic reasoning about inter-entity relations. 
+
+– Compositional/Multi-Hop (C/MH) : a reasoning type that requires step-by-step composition of multiple evidences, involving challenging cases that integrate complex constraints or apply various reasoning skills sequentially. When designing this reasoning taxonomy, we aim to make each type as mu-tually exclusive as possible; however, in some cases the boundary inevitably becomes blurred. For example, “finding an object for a particular use” almost always involves commonsense/knowledge (P/F ↔ C/KI). Nevertheless, to foster an agent’s goal-directed reasoning ability, we construct P/F by distinguishing it from C/KI in a strict and careful manner. Moreover, C/R and C/MH samples exhibit reasoning depth that has been rarely covered in existing datasets, thereby posing new challenges to current methods. Examples are shown in Fig. 1. StAR: Segment Anything Reasoner 5the person who   
+
+> graduate
+> something that
+> prevents the animal
+> from getting out
+> the area on the
+> basket used for
+> lifting
+> the part of this animal's
+> body that comes into
+> contact with the air
+> something used for
+> playing video or music
+> something used for
+> storing recorded video or
+> music
+
+Fig. 2: ReasonSeg-R examples. We correct masks for cases that are mismatched to the query and also refine mask quality. In addition, we modify query expressions that may inadvertently include regions outside the mask ( e.g. , the video player monitor). 
+
+To generate our dataset, we curate diverse and context-rich images from OpenImages [22] and, based on the reasoning type design above, meticulously annotate them with implicit query and high-quality target mask. For each gen-erated sample, we perform cross-validation among annotators and employ GPT-5 [45] and Gemini 3 [9] for additional verification to further establish reasoning validity. The resulting dataset, ReasonSeg-X , comprises 1,169 data samples, split into 240/156/773 samples for train /val /test . Sample counts by reasoning type (in the aforementioned type order) are 53/33/88/66 for train , 37/36/48/35 for val , and 201/181/253/138 for test .
+
+ReasonSeg-R . ReasonSeg is the first benchmark specifically designed for rea-soning segmentation, providing an important foundation for follow-up studies. However, our inspection reveals that some data samples suffer from poor mask quality or contain reasoning errors (see Fig. 2). Therefore, to facilitate a more re-liable assessment in this research area, we provide a refined version of ReasonSeg, termed ReasonSeg-R . Specifically, we rigorously verify query-reasoning-mask cor-respondence and further check whether each mask accurately covers the target region along its boundary. As a result, we refine the masks of 113 samples and the queries of 3 samples, while excluding 13 unsuitable samples. In addition, since many recent methods do not use the ReasonSeg train set, we merge the 
+
+val and test sets for a streamlined evaluation process. Additional details on our presented datasets can be found in the supplementary material. 
+
+3 Methodology 
+
+3.1 Pipeline Overview and Preliminaries 
+
+In this section, we detail the components that constitute the foundation of the StAR framework. Following prior works [29, 30], StAR adopts a reasoning-segmentation decoupled design: an MLLM performs reasoning over the input query-image pair to predict bbox/point coordinates, which are subsequently used as visual prompts for SAM 2 [38] to extract the final masks. The pipeline of our 6 S. Yun et al. … I'm hoping to find a convenient   
+
+> mode of transportation that can
+> also help me exercise . Can you
+> help me find the corresponding
+> part in the picture?
+
+Multi -Modal 
+
+LLM 
+
+LoRA 
+
+❄
+
+🔥 
+
+SAM 2
+
+❄ Mask 
+
+Generation     
+
+> 𝑛 Rollouts Answer
+> …
+> …
+> Reward
+> Functions 𝑟 !"#
+> 𝑟 !"$
+> 𝑟 !"%
+> 𝑟 !
+> …
+> 𝑟 %
+> 𝑟 $
+> 𝑟 #
+> 𝑟 &
+> Group
+> Computation 𝐴 !"#
+> 𝐴 !"$
+> 𝐴 !"%
+> 𝐴 !
+> …
+> 𝐴 %
+> 𝐴 $
+> 𝐴 #
+> 𝐴 &
+
+Update 
+
+Policy  
+
+> Stage
+
+1  
+
+> Stage  2
+> <think>
+> …
+> </think>
+> <answer>
+> [{obj_1},
+> …
+> {obj_k}]
+> </answer>
+> {“label” :
+> “-”,
+> “bbox_2d” :
+> [x1 ,y1 ,x2 ,y2 ],
+> “point_2d” :
+> [x,y]}
+> {obj_k} Tiered mask IoU
+> Bbox/point L1/IoU
+> Format Reward Accuracy Reward
+
+…          
+
+> bbox/point
+> Expand rollout generation 𝑛 ,
+> Select the most informative 𝑚 responses
+> 𝑛 ↑(e.g., 128 or 256)
+> 𝑚 (e.g., 8 or 16)
+> (𝑚 =𝑛 )
+
+❄🔥 Trainable Frozen 
+
+> {𝑴 }
+> Response’s
+> advantage
+
+Fig. 3: Overview of the StAR framework pipeline. We pinpoint and resolve rea-soning bottlenecks from all perspectives of the existing reasoning segmentation frame-work (highlighted in red text). See text for details. 
+
+framework is illustrated in Fig. 3. Specifically, given a text query T and the input image I, the reasoning module FMLLM generates a chain-of-thought (CoT) reasoning [57] trace and then predicts the bounding boxes {Bi}Npred 
+
+i=1 and rep-resentative points {Pi}Npred 
+
+i=1 for the target regions associated with the query. Lastly, these predictions are passed to the segmentation module FSAM to pro-duce the final binary masks {Mi}Npred 
+
+i=1 . This procedure can be formulated as: 
+
+({Bi, Pi})Npred 
+
+i=1 = FMLLM (I, T), (1) 
+
+{Mi}Npred 
+
+i=1 = FSAM (I, ({Bi, Pi})Npred 
+
+i=1 ). (2) With this forward pipeline, we keep SAM 2 frozen and apply RLVR directly on the MLLM to enhance its visual reasoning capability. 
+
+Group Relative Policy Optimization (GRPO). We adopt GRPO [43], a variant of Proximal Policy Optimization [41], as our core RLVR algorithm. In-stead of using a value function, it estimates the advantage using a normalized reward within a group of responses to the same prompt. Specifically, for each question q, GRPO first samples a group of n rollouts {oi}ni=1 from the old policy 
+
+πθold ; each rollout is then evaluated with reward functions, producing a reward vector {ri}ni=1 . Finally, GRPO optimizes the policy model by maximizing the following objective: 
+
+JGRP O (θ) = E[q ∼ P (Q), {oi}ni=1 ∼ πθold (O|q)] 1
+
+n
+
+nX
+
+i=1 
+
+
+
+min 
+
+ πθ (oi|q)
+
+πθold (oi|q) Ai, clip 
+
+ πθ (oi|q)
+
+πθold (oi|q) , 1 − ϵ, 1 + ϵ
+
+
+
+Ai
+
+
+
+− βDKL (πθ || πref )
+
+
+
+, (3) where ϵ and β are hyperparameters, and Ai is the advantage, calculated using a group of rewards {ri}ni=1 corresponding to the outputs inside each group: 
+
+Ai = ri − mean ({ri}ni=1 )
+
+std ({ri}ni=1 ) . (4) StAR: Segment Anything Reasoner 740 50 64 70  
+
+> 42.2 64.8
+> 44.4
+> 45.4
+> 45.6
+> 45.9
+> 47.1
+> 47.6
+> (48.7)
+> 48.6
+> (49.8)
+> 49.2
+> (50.3)
+> 69.7
+> (70.7)
+> 187
+> sec/iter
+> 80
+> 90
+> 165
+> 99
+> 176
+> 170
+> 364
+> 363
+> 200
+> #tokens
+> 138
+> 163
+> 132
+> 154
+> 135
+> 148
+> 129
+> 147
+
+VisionReasoner -7B 
+
+StAR -7B                         
+
+> ReasonSeg -X/ReasonSeg -R
+> gIoU in %
+> FFT →LoRA 𝑟 16
+> LoRA 𝒓 16 →64
+> MLLM -level acc. reward
+> rollout 𝑛 8→16
+> + mask IoU reward
+> rollout 𝑛 8
+> + mask IoU reward
+> rollout 𝒏 8→16
+> stage 2 training
+> vanilla GRPO
+> stage 2 training
+> + REST ( 𝒏 16 →256, 𝒎 16)
+> bbox/point + label prediction
+> Param. -tuning
+> Scheme
+> Reward
+> Design
+> Learning
+> Strategy
+> Answer
+> Format
+
+(a)    
+
+> 20
+> 30
+> 40
+> 50
+> 60
+> P/F
+> 50.1
+> 45.1
+> C/KI
+> 50.7
+> 39.0
+> C/R
+> 39.4
+> 31.1
+> C/MH
+> 24.5 23.8
+> 20
+> 30
+> 40
+> 50
+> 60
+> P/F
+> 55.6
+> 51.2
+> C/KI
+> 60.0
+> 50.2
+> C/R
+> 44.5
+> 36.4
+> C/MH
+> 24.5 25.1
+> 20
+> 30
+> 40
+> 50
+> 60
+> P/F
+> 58.2
+> 52.2
+> C/KI
+> 60.2
+> 52.4
+> C/R
+> 45.7
+> 40.4
+> C/MH
+> 28.0 28.8
+
+VisionReasoner -7B 
+
+StAR -7B stage -1
+
+StAR -7B 
+
+(b) 
+
+> gIoU
+> cIoU
+
+/ / 
+
+Fig. 4: (a) We progressively retrofit all pillars of the standard RLVR framework (Vi-sionReasoner) toward our performant and robust model (StAR), without introduc-ing significant computational overhead. The foreground bars show performance on ReasonSeg-X test , while results on ReasonSeg-R are shown with gray bars. The perfor-mance values in parentheses are obtained with our majority voting strategy (Sec. 3.3). Gray-marked design decisions (y-axis label texts) indicate comparison-only variants that are not adopted. (b) The proposed RLVR design space better preserves and ex-ploits the base MLLM’s diverse reasoning capabilities (VisionReasoner → StAR stage-1). Moreover, Stage 2 training on the ReasonSeg-X train set with rollout-expanded selective-tuning (REST) effectively elicits the MLLM’s hidden reasoning potential, im-proving performance particularly on complex reasoning ( e.g. , C/MH). The resulting model, StAR, outperforms the baseline by a large margin across all reasoning types. 
+
+Training Pipeline. We train our model via two stages , employing GRPO throughout both phases. Stage 1 is primarily designed to elicit flexible localiza-tion capabilities while maximally preserving pre-trained visual perception abil-ities. Accordingly, we utilize the training set collected by VisionReasoner [30], 
+
+excluding the reasoning data samples (LISA ++ [61]). Thus, the Stage-1 training set is sourced from LVIS [12], RefCOCOg [63], and gRefCOCO [26], and consists of 5k samples in total. Stage 2 aims to further strengthen the model’s reasoning segmentation capabilities by effectively bringing out the base model’s hidden reasoning potential. To this end, we continue finetuning the Stage-1 model on our proposed ReasonSeg-X train set (240 samples), resulting in StAR , the final model tailored for complex and versatile visual reasoning. 
+
+3.2 Roadmap to Segment Anything Reasoner (StAR) 
+
+In this section, we present the design evolution that “retrofits” VisionReasoner [30] by alleviating key reasoning bottlenecks. Our explorations focus on investigating performance-degrading factors along each design axis and mitigating them in a 8 S. Yun et al. 
+
+computationally efficient manner. We start from VisionReasoner-7B and study a series of design decisions summarized as (1) parameter-tuning scheme, (2) re-ward design, (3) RL strategy, and (4) answer format. As illustrated in Fig. 4 (a), our design trajectory toward StAR addresses bottlenecks across all axes and yields non-trivial performance gains ( +7.0/4.9% gIoU on ReasonSeg-X/R). 
+
+Parameter-tuning scheme. Unlike supervised fine-tuning scenarios for dense knowledge transfer and for acquiring new reasoning patterns, applying RLVR to the reasoning segmentation (RS) task requires following a principle: “ preserve 
+
+knowledge and reasoning patterns, and learn to leverage them for segmenta-tion ”. Yet RLVR-based RS methods [14,30], as well as most existing open-source reasoning models [34,50,58,64], typically rely on expensive full-parameter tuning .This approach is notoriously resource-intensive and often requires extra model copies—such as a reference model for KL penalty—greatly increasing memory usage; moreover, adjusting all weights risks substantially damaging the base model’s underlying knowledge. We therefore investigate parameter-efficient tun-ing to maximally maintain the base model’s inherent capacity while efficiently enhancing reasoning capabilities. Low-rank adaptation (LoRA) [13] uses a low-rank decomposition to model sparse updates [25], thereby largely preserving the base model’s world knowledge and demonstrating robust performance [4, 48, 53, 65]. Building on these observa-tions, we attempt to employ LoRA in the RLVR setting. However, when using the default hyperparameter configuration, we observe a substantial performance drop compared to the full-parameter tuning baseline. To better promote task adaptation, we increase the learning rate from 1 × 10 −6 to 1 × 10 −5 and exclude the KL penalty term. With this configuration and a LoRA rank of 16, we achieve comparable or even superior performance while reducing training costs by more than 2 × compared to VisionReasoner. We then increase the LoRA rank from 16 to 64 to expand the expressiveness of the update matrices, allowing the model to tackle more complex reasoning [15]. Overall, our derived tuning scheme achieves surprisingly strong performance (42.2% → 45.4%/64.8% → 66.1%) by following the aforementioned principle. 
+
+Reward design. Reward functions are central to RLVR. However, the accuracy reward functions used in VisionReasoner are not tightly aligned with the task’s ultimate goal—mask generation—increasing the risk of reward hacking (Fig. 5, 
+
+left ). In addition, the prevailing “hard” reward (1 if IoU exceeds a fixed threshold, otherwise 0) neither reflects incremental improvements throughout training nor enables fine-grained evaluation. To remedy these issues, inspired by [14], we incorporate SAM into the RLVR training loop and introduce a piecewise mask-IoU reward to provide mask-aware feedback. This design provides graded signals that directly encourage incremental improvements in mask quality (Fig. 5, right ). We employ a tiered mask reward function based on IoU to discretize segmen-tation quality into multiple levels. The reward is computed as follows (additions relative to SAM-R1 [14] are marked in red): StAR: Segment Anything Reasoner 9… What object in the picture can provide a safe and        
+
+> enclosed space for a toddler to play in.
+> GT mask Predicted mask
+> MLLM -level reward: 3 (max)
+> (bbox IoU/L1, point L1)
+> Mask IoU: 0
+> : bbox prediction
+> : point prediction
+> Identify the person whose role looks like supervision or control,
+> inferred from how the two bodies are connected.
+> SAM -level reward: 1
+> (Tierd mask IoU)
+> Mask IoU: 0.44
+> SAM -level reward: 2
+> (Tierd mask IoU)
+> Mask IoU: 0.60
+> SAM -level reward: 5
+> (Tierd mask IoU)
+> Mask IoU: 0.90
+> …
+
+Fig. 5: Motivation for the mask IoU reward. Left : Misalignment between the MLLM-level reward function and the task’s final objective potentially induces confusing learning signals. Right : Distinguishing between diverse mask defects via a fine-grained tiered mask reward promotes stable and stepwise optimization.                          
+
+> mask reward =
+> 
+> 5,IoU >0.90 ,
+> 4,0.80 <IoU ≤0.90 ,
+> 3,0.70 <IoU ≤0.80 ,
+> 2,0.50 <IoU ≤0.70 ,
+> 1,0.30 <IoU ≤0.50 ,
+> 0,otherwise .
+
+(5) Along with this SAM-level reward, we also retain the reward functions from Vi-sionReasoner that evaluate the accuracy of the MLLM’s predictions. Specifically, we use (i) a bbox IoU reward that assigns 1 when the predicted bbox exceeds 0.5 IoU with the GT bbox, and (ii) a bbox/point L1 reward that assigns 1 when the L1 distance between predicted and GT bbox/point is below 10/30 pixels. We then solve the multi-object matching problem over Npred predictions and NGT 
+
+instance annotations using a batched Hungarian algorithm [30]. Based on the resulting assignment, the final accuracy reward is calculated and then divided by 
+
+max {Npred , N GT } to suppress over- and under-segmentation errors. Additionally, VisionReasoner’s Thinking/Answer/Non-repeat reward functions are applied to ensure a structured and reliable output format. Maintaining MLLM-level accuracy rewards bolsters coarse localization capa-bilities, particularly by imposing stronger penalties on reasoning failures. More-over, as illustrated in Fig. 5 right , our fine-grained mask reward delivers a 
+
+curriculum-like training signal : early training emphasizes locating the target via high-quality reasoning, while later stages focus on accurately segmenting target region boundaries. With this comprehensive reward design, increasing rollout utilization (8 → 16) brings meaningful performance gains—unlike VisionRea-soner—suggesting that our rewards discriminate rollouts more finely and offer the richest feedback. Notably, by reallocating the resources saved by LoRA train-ing to rollout scaling, we improve performance (45.4% → 47.1%/66.1% → 66.6%) while keeping overall training costs modest. 
+
+Reinforcement learning (RL) strategy. While Stage 1 training primar-ily leverages referring segmentation datasets and focuses on utilizing the base model’s perceptual capacity for localization, Stage 2 mainly aims to cultivate the ability to solve complex reasoning problems using our proposed dataset. How-ever, Stage 2 GRPO training often suffers from advantage vanishing : for samples 10 S. Yun et al. without         
+
+> REST
+> 27.5 26.8
+> 10
+> 20
+> 30
+> 40
+> 50
+> 28.0 27.9
+> 35.5 38.4 37.0 39.5
+> 47.2 47.9
+> 42.8
+> 34.9
+> 24.5
+> C/MH type
+> gIoU in %
+> with
+> REST
+> without
+> REST
+> with
+> REST
+> with
+> REST
+> Qwen2.5 -7B Qwen3 -8B Qwen3 -32B
+> direct prediction
+> majority voting
+> stage 1 baseline all -incorrect samples
+> with REST
+> all -incorrect samples
+> without REST
+> all -correct samples
+> with REST
+> all -correct samples
+> without REST
+
+Fig. 6: Left : Rollout-expanded selective-tuning (REST) substantially improves sample utilization. In particular, for hard samples, it develops the model’s intricate reasoning by exploring a vast space of reasoning paths. “Correct” is defined as IoU > 0.5, and results are reported with the Qwen3-VL 8B model. Right : REST effectively boosts performance on problems that require multi-step reasoning; moreover, its gains syn-ergistically scale with the base model’s reasoning capability boundaries. 
+
+that are too easy or too hard, the model generates group responses with con-sistent rewards, severely reducing learning efficiency. As depicted in Fig. 6 left ,during vanilla GRPO training, on average, more than half of the batch samples exhibit a near-zero-variance reward distribution. Moreover, the sparse positive feedback on extremely challenging problems prevents fully drawing out the base model’s hidden reasoning potential. To mitigate this, we propose Rollout-Expanded Selective-Tuning (REST) as a drop-in modification to GRPO. REST decouples exploration from learn-ing : we first expand the rollout pool from the conventional small-n regime ( e.g., 
+
+8-16) to a large-N regime ( e.g., 128-256) to explore a much wider set of rea-soning trajectories. Instead of updating on all N rollouts, REST then performs 
+
+advantage-extremal selection , updating only on an informative subset of size m:the m/ 2 rollouts with the largest advantages and the m/ 2 rollouts with the small-est advantages. Selecting both tails aligns with the reward variance-maximization strategies [39, 59], yielding stronger contrastive signals for policy improvement. Furthermore, REST cleverly exploits the compute/memory asymmetry in LLM RL. The rollout generation is highly parallel, requires minimal activation storage, and is typically high-throughput when batched—so generating many rollouts can be amortized efficiently. By contrast, policy updates are memory-and communication-intensive because of optimizer states and cross-device syn-chronization. Consequently, exploring a 16 × larger reasoning pattern space ( n
+
+16 → 256) increases the end-to-end training wall-clock time by only about 2 ×
+
+(Fig. 4 (a)). In other words, REST keeps the expensive part nearly constant while scaling the cheaper, batched inference part. Importantly, for hard prompts, REST increases the chance of observing rare successful reasoning paths, efficiently eliciting and internalizing “latent, dormant” intricate reasoning skills (Fig. 6). Leveraging our dataset with REST for Stage-2 training boosts performance on ReasonSeg-X/R by 1.5/1.6%, respectively. 
+
+Answer format. Reasoning segmentation is inherently semantic-first : the model must interpret the query, perform compositional visual-language inference, and identify target regions consistent with that semantics. However, the endpoint of StAR: Segment Anything Reasoner 11 
+
+the task is geometric , which can implicitly bias generation toward a “geometry-only” mode where the model focuses on producing plausible coordinates with-out committing to a grounded semantic identification. Meanwhile, recent stud-ies [47, 60] reveal that as CoT reasoning progresses, visual attention tends to markedly diminish, which in turn exacerbates hallucination. We therefore intro-duce Label Prediction (LP) as a simple and lightweight answer-format augmen-tation. Rather than predicting only geometry for each target, the model is addi-tionally required to emit a short semantic label that describes the localized entity (e.g. , {“label”: “the owner of the largest dog”, “bbox_2d”: ..., “point_2d”: ...}). Crucially, while this modification merely adjusts the prompt/response schema, it systematically reshapes generation dynamics by introducing an explicit semantic “naming” step immediately before coordinate prediction. Interestingly, predicted labels often paraphrase expressions in the query or take the form of answering the query, thereby semantically anchoring the pre-dicted region to the query and ultimately enhancing reasoning faithfulness. LP also increases StAR-7B’s attention mass over visual tokens during coordinate prediction from 5.3% to 6.3%. This suggests that, in contrast to methods that explicitly strengthen visual dependency during training/inference [16,18], a sim-ple form of strategic prompting—requiring label prediction—can efficiently and effortlessly facilitate visually-grounded reasoning. As a result, this remarkably simple solution improves performance from 48.6/68.2% to 49.2/69.7%. This de-sign trajectory brings us to our final model, StAR .
+
+3.3 Majority Voting for Segmentation 
+
+Majority voting [56] has proven effective for tasks with a discrete answer space, where “voting” is naturally well-defined. Here, we introduce a mask-level clus-tering strategy that adapts majority voting to pixel-level, multi-object prediction. 
+
+Given a pool of mask candidates collected from all parallelly generated responses, we group all candidates into clusters using a greedy procedure: for each candi-date, we compute its IoU with the representative mask of existing clusters; if the IoU exceeds a certain threshold ( = 0 .85 ), we assign it to that cluster, other-wise we create a new cluster. We then decide the number of target instances ˆK
+
+by the mode of the per-response predicted target counts, and if no-target pre-diction is in the majority, we also output “no target object”. Subsequently, we rank clusters by vote count and select the top min( ˆK, #clusters ) clusters. For each selected cluster, we choose the single most confident instance mask, lever-aging SAM’s mask quality score [38] for robust aggregation. Finally, we com-pose the overall prediction by taking the union of the selected instance masks. 
+
+This strategy is generally applicable to any MLLM-based segmenta-tion framework and brings substantial performance gains when paired with our StAR’s vast reasoning capacity boundary (see Tab. 1). 
+
+Further details and a discussion of the methodology can be found in the sup-plementary material. 12 S. Yun et al. 
+
+Table 1: Performance results on the ReasonSeg (RS) series. “MV” denotes our majority voting strategy adapted for segmentation. We compare our StAR against state-of-the-art baselines: LISA [23], SegLLM [55], READ [35], CoReS [3], RSVP [31], CoPRS [32], SAM-R1 [14], SAM-Veteran [8], VisionReasoner [30] and SAM 3 Agent [5]. 
+
+Method Base model (Size) RS RS-R RS-X RS-X test 
+
+test – val overall P/F C/KI C/R C/MH gIoU cIoU gIoU cIoU gIoU cIoU gIoU cIoU gIoU cIoU gIoU cIoU gIoU cIoU gIoU cIoU 
+
+Supervised/Reinforcement Finetuning Methods   
+
+> LISA (ft) Llama2 13B
+
+51.5 51.3 52.5 53.3 23.8 24.3 25.1 26.0 27.9 30.6 28.2 29.2 26.8 25.8 13.8 16.8   
+
+> SegLLM LLaVA1.5 7B
+
+52.4 48.4 – – – – – – – – – – – – – –  
+
+> READ (ft) LLaVA1.5 13B
+
+62.2 62.8 – – – – – – – – – – – – – –  
+
+> CoReS (ft) LLaVA1.5 13B
+
+65.5 – – – – – – – – – – – – – – –  
+
+> RSVP GPT-4o
+
+60.3 60.0 – – – – – – – – – – – – – –  
+
+> CoPRS Qwen2.5-VL 7B
+
+59.8 55.1 – – – – – – – – – – – – – –  
+
+> SAM-R1 Qwen2.5-VL 7B
+
+60.2 54.3 – – – – – – – – – – – – – –  
+
+> SAM-Veteran Qwen2.5-VL 7B
+
+62.6 56.1 – – – – – – – – – – – – – –  
+
+> VisionReasoner Qwen2.5-VL 7B
+
+63.6 55.7 64.8 56.8 44.1 37.6 42.2 33.8 50.1 45.1 50.7 39.0 39.4 31.1 24.5 23.8 
+
+StAR stage-1 Qwen2.5-VL 7B 66.7 60.8 69.0 65.6 48.5 42.7 47.4 40.6 55.6 51.2 60.0 50.2 44.5 36.4 24.5 25.1 
+
+Training-free Inference-time Scaling Methods   
+
+> SAM 3 Agent Qwen2.5-VL 7B
+
+62.6 56.2 63.1 58.0 34.1 28.0 34.4 29.5 41.7 37.9 37.7 31.8 35.3 26.0 17.9 21.9   
+
+> SAM 3 Agent Qwen2.5-VL 72B
+
+71.8 65.2 72.4 65.3 52.0 43.0 49.8 40.3 57.8 50.5 55.5 45.4 49.6 34.0 30.8 35.1 
+
+StAR Qwen2.5-VL 7B 67.5 61.3 69.7 66.2 50.5 48.0 49.2 43.6 58.2 52.2 60.2 52.4 45.7 40.4 28.0 28.8 
+
+StAR + MV Qwen2.5-VL 7B 68.5 65.0 70.7 67.2 51.3 48.4 50.3 44.9 60.6 56.9 61.8 54.4 46.2 40.1 27.9 30.5 
+
+StAR Qwen3-VL 8B 70.6 63.8 73.8 69.2 60.8 57.2 57.9 50.1 69.1 55.9 66.2 60.3 54.4 45.0 37.0 41.4 
+
+StAR + MV Qwen3-VL 8B 71.8 66.5 74.9 69.7 62.6 60.1 59.6 53.1 69.0 58.6 68.5 66.4 56.7 47.9 39.5 41.7 
+
+StAR Qwen3-VL 32B 72.1 67.3 73.8 68.0 61.5 54.2 61.7 59.2 71.7 71.6 66.7 66.9 58.2 50.8 47.2 51.5 
+
+StAR + MV Qwen3-VL 32B 72.7 68.1 75.0 70.6 64.7 57.5 64.1 60.8 74.0 69.6 70.2 71.0 60.7 54.2 47.9 50.3 
+
+Table 2: Comparison on the Multi-target and Multi-granularity Reasoning (MMR) dataset. * indicates models trained on a training set that includes the MMR dataset. 
+
+Method Base model (Size) val test Obj & Part Obj & Part Obj Part 
+
+gIoU cIoU gIoU cIoU gIoU cIoU gIoU cIoU LISA [23] Llama2 13B 15.4 20.0 16.1 19.8 26.1 27.9 7.4 8.4 LISA ∗ [23] Llama2 13B 22.3 33.4 23.0 29.2 40.2 45.2 10.7 16.4 M2SA ∗ [17] LLaVA 7B 27.8 48.6 30.9 46.8 41.0 55.6 13.5 27.0 M2SA ∗ [17] Llama2 13B 28.4 49.1 31.6 47.6 42.3 57.6 13.6 27.2 
+
+VisionReasoner [30] Qwen2.5-VL 7B 26.7 21.4 28.4 21.7 37.2 26.5 11.5 8.7 StAR Qwen2.5-VL 7B 29.8 26.3 32.4 27.2 44.4 33.3 14.3 11.7 StAR + MV Qwen2.5-VL 7B 30.6 27.1 33.0 27.8 45.6 34.7 14.9 12.0 StAR Qwen3-VL 8B 31.5 27.0 33.9 26.8 45.0 33.6 15.3 11.8 StAR + MV Qwen3-VL 8B 32.4 27.6 34.6 27.7 46.2 34.0 15.8 11.9 
+
+4 Experiments 
+
+4.1 Experimental Setup Datasets. We follow VisionReasoner [30] for stage 1 training, using 5k ex-plicit/referring expression segmentation (RES) [12, 26, 63] samples, and use our proposed ReasonSeg-X train set (240 samples) for stage 2. Extending the widely used ReasonSeg [23], we introduce ReasonSeg-R/X to evaluate model perfor-mance from multiple perspectives and across varying difficulty levels. We further adopt the MMR [17] dataset to assess multi-target and multi-granularity reason-ing segmentation capabilities. For out-of-domain evaluation, results on the RES datasets [63] and MUSE [40] are presented in the supplementary material. 
+
+Implementation details. We use Qwen2.5-VL 7B [2] and Qwen3-VL 8/32B [1] as our base models, with SAM 2 Large as the mask generator. We set the batch StAR: Segment Anything Reasoner 13 Q: Find all the people who are 
+
+in front of the person who 
+
+took this photo, and all of their 
+
+reflections in the mirror. 
+
+StAR -7B (IoU = 0.96) 
+
+VisionReasoner (IoU = 0.62) Q: Identify the person 
+
+with the most dogs. 
+
+<think>The query asks to identify the person with the most 
+
+dogs. In the image, we need to count the number of dogs 
+
+each person is associated with and determine who has the 
+
+highest count. </think> 
+
+<answer>[{"label": ”person with the most dogs”, …}]</answer> 
+
+StAR -7B (IoU = 0.98) VisionReasoner (IoU = 0.30) 
+
+Q: Find the group of 
+
+menu -item lines on 
+
+this receipt that 
+
+marks the first 
+
+instance where the 
+
+diners’ orders diverge 
+
+after initially 
+
+ordering the same 
+
+item for everyone. 
+
+StAR -8B (IoU = 0.87) 
+
+<think> Looking at the receipt, I need to find where the diners' orders first diverge after initially 
+
+ordering the same item for everyone. 
+
+Analyzing the items: 
+
+-The first few items are "NYE Wine Pairing" - appears multiple times, suggesting everyone ordered this 
+
+-Then "NEW YEAR'S EVE MENU" - appears multiple times, suggesting everyone ordered this 
+
+-Then "Frangelico" - appears multiple times, suggesting everyone ordered this 
+
+-Then "Espresso" and "Cappuccino" - these appear in different combinations 
+
+The "Frangelico" items are listed multiple times (4 times), suggesting everyone ordered it. After that, 
+
+we see "Espresso" and "Cappuccino" appearing in different combinations. The first instance where 
+
+orders diverge is when we see "Espresso" and "Cappuccino" appearing together, with different quantities 
+
+or combinations . This is the first point where not everyone ordered the same item. </think> 
+
+<answer>[{"label": ”divergent menu -item group”, …}] </answer> 
+
+Q: Solve 1 -(a) on the red -background test sheet, and express the sum 
+
+of the coefficients of the resulting function using calculator buttons. 
+
+For example, if the sum is 25, you should locate the buttons 2 and 5. 
+
+StAR -32B (IoU = 0.76) 
+
+<think>The query asks to solve part 1 -(a) on the red -background test sheet, which is visible in 
+
+the image. The problem states: 'f(x) = x ² + 5 and g(x) = 2x + 3. (a) Write fg (x) in terms of x.’ 
+
+To solve this, we compute the composite function f(g(x)) = f(2x + 3) = (2x + 3) ² + 5. Expanding: 
+
+(2x + 3) ² = 4x ² + 12x + 9, so fg (x) = 4x ² + 12x + 9 + 5 = 4x ² + 12x + 14. 
+
+The coefficients are 4 (for x ²), 12 (for x), and 14 (constant). 
+
+The sum of the coefficients is 4 + 12 + 14 = 30. 
+
+The query asks to express this sum (30) using calculator buttons — i.e., locate the buttons '3' 
+
+and '0' on the calculator. 
+
+Looking at the calculator in the image, the '3' button is located in the third row, second column 
+
+from the left (below '6'), and the '0' button is in the bottom row, first column (leftmost). 
+
+Thus, the target objects are the '3' and '0' buttons on the calculator, which correspond to the 
+
+digits of the sum 30. … </think> 
+
+<answer>[{"label": ”calculator button 3”, …}, {"label": ”calculator button 0”, …}] </answer> 
+
+Fig. 7: Qualitative results on our ReasonSeg-X test set demonstrate that StAR mod-els, via multi-step reasoning, can effectively tackle complex segmentation scenarios ne-cessitating various capabilities, such as comparative/relational reasoning, physics-based 3D awareness, comprehensive pattern analysis, and multi-hop algebraic expansion. 
+
+size to 16 and the learning rate to 1 × 10 −5 (5 × 10 −6 for stage 2). We use LoRA rank 64 for all base models, and apply REST only during stage 2 finetuning. By default, the sampling number of reasoning paths in our majority voting is set to 32. Detailed training settings are provided in the supplementary material. 
+
+4.2 Comparison with State-of-the-Arts 
+
+Following previous works [23, 30], we adopt gIoU and cIoU as our evaluation metrics: gIoU is the average of per-sample IoUs, while cIoU is computed as the cumulative intersection over the cumulative union. 
+
+Results on the ReasonSeg(-R/X) datasets. In Tab. 1, we compare StAR against previous SOTA baselines. Notably, our Stage-1 model shows that it can leverage inherent reasoning capabilities without using reasoning data , sur-passing methods using the same base model by a large margin. Finetuning on our dataset with REST further strengthens performance especially on complex reasoning. Remarkably, StAR-7B with our majority voting attains overall com-parable performance on the ReasonSeg-X test set to the SAM 3 Agent (72B), suggesting that parallel test-time scaling is also a promising direction. Moreover, by fully exploiting the base model’s reasoning pattern space, our approach ben-efits increasingly from larger base model size, and our test-time scaling strategy improves performance in nearly all scenarios. Fig. 7 illustrates that StAR models 14 S. Yun et al. 
+
+Table 3: Left : We evaluate performance under varying degrees of REST exploration 
+
+(the number of rollout generations n), focusing on the efficacy of the inference-time strategy ; the per-step training time for StAR-7B is reported below. Right : We find that reversing the prediction order at test time—after training the model to predict the label before bbox/point coordinates— causes a large performance degradation. 
+
+Default settings are marked in blue .                                                  
+
+> RS-X test gIoU (%) REST n
+> 16 64 128 256 StAR-7B 48.4 49.2 49.4 49.2
+> +MV 49.3 49.5 49.8 50.3
+> StAR-8B 57.1 56.9 57.3 57.9
+> +MV 58.1 58.3 59.0 59.6
+> Sec/iter 170 214 260 364
+> Model Answer Format Prediction Order RS-R RS-X test
+> gIoU cIoU gIoU cIoU StAR-7B label first 69.7 66.2 49.2 43.6
+> label last 68.2 63.0 46.3 40.1 StAR-8B label first 73.8 69.2 57.9 50.1
+> label last 73.1 70.8 55.8 47.7
+
+are capable of intricate reasoning through step-by-step thinking interleaved with visual inspection. Meanwhile, it is worth noting that while the performance gap between StAR-8B and StAR-32B is not evident on ReasonSeg-R, it becomes pronounced on ReasonSeg-X, which involves more complex reasoning ( e.g. , C/R and C/MH). This indicates that our benchmark presents a necessary direction for the advancement of future methods. 
+
+Results on the MMR dataset. In Tab. 2, we evaluate our models in multi-target and multi-granularity setting [17]. StAR models demonstrate strong zero-shot performance, outperforming VisionReasoner as well as models trained on the MMR dataset (primarily on gIoU). These results further validate StAR’s flexible segmentation capabilities in addition to its reasoning strengths. 
+
+4.3 Additional Analysis Inference-aware finetuning for majority voting. Current finetuning algo-rithms are agnostic to, and thus decoupled from, the test-time strategy. Tab. 3 
+
+left show that REST enables the model to surface high-quality reasoning pat-terns that express its dormant capability to solve complex reasoning problems, thereby improving performance—especially under majority voting. Moreover, these gains increase synergistically with both the exploration degree and the base model’s reasoning potential ( i.e. , model size, pre-trained capacity). 
+
+Answer prediction order. As shown in Tab. 3 right , we note that label predic-tion per se is not the crucial factor. Instead, the benefit comes from reformulating localization as a semantically-conditioned coordinate prediction step, in which the initially predicted label text serves as an anchor for subsequent grounding. Conversely, we also observe that for a model trained to predict the label last, prompting label-first prediction at test time substantially improves performance. Model efficiency comparisons can be found in the supplementary material. 
+
+5 Conclusion and Discussion 
+
+In this work, we present StAR, a comprehensive framework that effectively sur-faces the base model’s latent reasoning capabilities. We further, for the first StAR: Segment Anything Reasoner 15 
+
+time, explore parallel test-time scaling in the reasoning segmentation task and tightly couple training methodologies with inference-time compute strategies. Finally, we construct ReasonSeg-X, a highly challenging evaluation benchmark, establishing a clear and systematic target for future works. 
+
+Integrating StAR with agentic systems. Prior work suggests that for hard questions, appropriately balancing the ratio of sequential to parallel compute is crucial [46]. In this spirit, using StAR as a region-proposal module within a verification-centric sequential pipeline—such as SAM 3 Agent—could be an im-portant next step toward solving harder problems. Concretely, one can envision an agent that toggles the StAR adapter to propose candidate target regions for a given query, after which the base model verifies the proposed regions. This integration is intriguing from several perspectives: (i) It can effectively exploit the verification-generation gap [42], where models are often better at ver-ifying answers than generating them. Verifying StAR-proposed regions using the base model’s generalization capability may particularly improve performance on difficult cases. (ii) Majority voting can be applied at the region-proposal stage to obtain more diverse proposals, naturally combining parallel scaling (proposal di-versity) with sequential scaling (verification). (iii) Leveraging the StAR adapter for proposals can significantly reduce search cost compared to using SAM 3 alone, improving reliability. Moreover, toggling the StAR adapter on/off across stages enables combining StAR’s strong reasoning capability with the base model’s generalizable verification strength without large memory overhead. 
+
+Scope of selective tuning. While our current “selective tuning” is applied at the rollout level, it can be extended to improve the learning signal in a more fine-grained and selective manner. For example, instead of using all tokens in a selected rollout for policy updates, one could prioritize tokens that are more central to reasoning— e.g., those with higher entropy [54]. Alternatively, within negative-advantage trajectories, gradients could be masked for partially correct reasoning segments to reduce training noise [7]. In reasoning segmentation, this direction is particularly natural because the task can be decomposed into a rea-soning stage and a geometric prediction stage, which induces two fundamental failure modes: reasoning failure and localization failure. As a result, even when reasoning is successful but coordinate prediction fails, the trajectory may still be penalized in the reasoning portion. Separating these stages and applying token-level selective tuning—potentially further partitioning the reasoning pro-cess into finer sub-parts—could therefore provide a promising avenue to improve the training signal. 
+
+Efficiency. By scaling only amortizable components, REST can explore a large reasoning pattern space efficiently during training. However, it can still incur a non-trivial increase in overall training time. An important next step is to devise techniques that anticipate which rollout paths are unlikely to contribute to pol-icy updates, thereby pruning wasted computation and reducing cost. Moreover, 16 S. Yun et al. 
+
+stronger rollout decoding strategies that improve rollout utility in large-sampling regimes could reduce the required rollout budget n while preserving exploration. We also expect these directions to become even more synergistic when integrated with selective token tuning. StAR: Segment Anything Reasoner 17 
+
+## Supplementary Materials for StAR: Segment Anything Reasoner 
+
+For a comprehensive understanding of our proposed StAR framework, we have provided this supplementary material. The following table of contents gives a concise overview and directs readers to specific sections of interest. 
+
+# Contents 
+
+A. Implementation Details . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 17 B. Prompt Design . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 18 C. ReasonSeg-X Annotation Details . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 19 D. Related Work . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 21 E. Model Efficiency Comparison . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 23 F. Additional Experiments . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 23 
+
+F.1. Results on MUSE Dataset . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 23 F.2. Results on RES Datasets . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 24 
+
+G. Additional Methodology Details and Discussion . . . . . . . . . . . . . . . . . . 24 
+
+G.1. LoRA Finetuing . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 24 G.2. Reward Function. . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .25 G.3. Rollout-Expanded Selective-Tuning . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 25 G.4. Label Prediction . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 26 G.5. Majority Voting for Segmentation . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 27 
+
+H. Additional Qualitative Results . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 29 
+
+A Implementation Details 
+
+We train our models using the verl [44] codebase. LoRA is applied to all lin-ear layers of the language model, with a default rank of 64. We disable the KL penalty term and use a weight decay coefficient of 0.001 for all models. For rollout-expanded selective-tuning (REST), we sample 256 rollouts and perform policy updates on only 16 selected responses; for the StAR-32B model, we re-duce the rollout budget to 128 for efficiency. For all majority voting sampling results, we use temperature 1.0 and top-p 0.9. We train all models for 1 epoch in Stage 1 and 10 epochs in stage 2. The end-to-end training of StAR-7B (up to stage 2) requires approximately 33 hours on 8 A6000 GPUs, comparable to VisionReasoner, which requires ∼29 hours. 
+
+SAM 3 Agent [5] evaluation. We first attempt to reproduce the reported results on existing datasets by running the official code. Given that the original imple-mentation is restricted to sample-level inference, we develop a comprehensive 18 S. Yun et al. 
+
+test pipeline incorporating an iterative loop for full dataset evaluation. During this process, we identify occasional failures in mask production, primarily stem-ming from the omission of <tool> tags or the exhaustion of the max round. Therefore, to promote faithful evaluation on our proposed datasets, we allow a single retry for such failure cases. All other aspects of the evaluation strictly follow the official code. We also tested Qwen3-VL models, but due to substan-tially more failures than Qwen2.5-VL and inconsistencies with reported results, we exclude them from performance comparisons.  
+
+> Table S.1: Prompt template for stage 1 training. “ {Question} ” is replaced by user query. Prompt Template "Please find “ {Question} ” with bbox(es) and point(s)." "Also provide a short label for each object." "Compare the difference between object(s) and find the most closely matched object(s)." "Return ALL matching instances; double-check none are missed." "Output the thinking process in <think> </think> and final answer in <answer> </answer> tags." "Output the bbox(es) and point(s) inside the interested object(s), along with a short label, in JSON format."
+> i.e., <think> thinking process (step-by-step reasoning) here </think> <answer>[{"label": "chair", "bbox_2d": [10,100,200,210], "point_2d": [30,110]}, {"label": "train track", "bbox_2d": [225,296,706,786], "point_2d": [302,410]}]</answer>
+
+B Prompt Design 
+
+The prompt templates for Stage 1 training and for Stage 2 training/inference are presented in Tab. S.1 and Tab. S.2, respectively. Our prompt design builds on VisionReasoner’s template (including zero-shot CoT prompting), while in-troducing several targeted refinements. We first augment the template with in-structions for label prediction and with warnings against under-segmentation. We then introduce two key modifications. First, inspired by the effectiveness of solving complex problems by breaking them into subproblems and tackling them sequentially [51, 66], we explicitly instruct the model to follow a stepwise process—understand the query, apply it to the image, and then locate the tar-get—rather than simply “find the closely matched object”. This modification can be seen by comparing the blue-highlighted texts in Tab. S.1 and Tab. S.2. StAR: Segment Anything Reasoner 19  
+
+> Table S.2: Prompt template for stage 2 training and inference. “ {Question} ” is re-placed by user query. Prompt Template "Please find “ {Question} ” with bbox(es) and point(s)." "Also provide a short label for each object." "First, understand and summarize what the query —“ {Question} ”— is likely re-ferring to (which object or concept)." "Then apply this to the image and find the matched target object(s)." "Return ALL matching instances; if there are no matches, return an empty list (<answer>[]</answer>). double-check none are missed." "Output the thinking process in <think> </think> and final answer in <answer> </answer> tags." "Output the bbox(es) and point(s) inside the interested object(s), along with a short label, in JSON format."
+> i.e., <think> thinking process (step-by-step reasoning) here </think> <answer>[{"label": "chair", "bbox_2d": [10,100,200,210], "point_2d": [30,110]}, {"label": "train track", "bbox_2d": [225,296,706,786], "point_2d": [302,410]}]</answer>
+
+Second, to address no-target scenarios in test time, we instruct the model to output an empty list when the queried object is absent from the image (marked in orange in Tab. S.2). In summary, considering task complexity, we utilize the prompt template in Tab. S.1 for Stage 1 training, and the prompt template in Tab. S.2 for Stage 2 training and inference. 
+
+C ReasonSeg-X Annotation Details 
+
+Since our goal is to deepen the reasoning depth beyond existing datasets, anno-tation is inherently non-trivial and expected to be time-consuming. We initially attempted a GPT-assisted semi-automatic pipeline; however, even with metic-ulously crafted prompts for GPT-5, the generated problems fell short of our requirements in both reasoning-type compliance and reasoning depth criterion. Consequently, in most cases, we follow a manual annotation protocol: we anno-tate queries for collected images and generate binary masks using SAM 2 model from our manually specified bbox/point. Specifically, our annotation procedure is as follows: 
+
+– We closely inspect each selected image, assign a reasoning type, and carefully annotate the query and its corresponding binary mask(s). In this step, we focus on (i) designing queries that require a comprehensive understanding of the scene and (ii) ensuring that the sample satisfies the assigned reasoning type while demanding sufficiently deep reasoning. 20 S. Yun et al. <think> The query is to find "customer" in the image. A customer is typically a person who is present at a bar or restaurant to purchase goods or 
+
+services. In the image, there is a bartender behind the bar, wearing a white hat and apron, actively working. However, there are no vis ibl e customers 
+
+seated at the bar or standing nearby. The bar stools are empty, and no one is seen interacting with the bartender as a patron. Therefore, there are no 
+
+identifiable customers in the image. 
+
+I have carefully scanned the entire image, including the foreground, background, and areas around the bar. There are no people who appear to be 
+
+customers — only the bartender and possibly some people in the photos on the wall (which are not actual customers in the scene). 
+
+Thus, no matching instances of a customer are present in the image. </think> <answer>[]</answer> 
+
+Q: Customer. 
+
+Q: Among the years shown in the graph, find the year in which the proportion of horror films among all films 
+
+clearly decreased compared to the previous year, and mark both the year (x -label text) and the bar for that year. 
+
+… But the bar chart shows a decrease in 2008 compared to 2007 (from 
+
+~285 to ~230), but we don’t have proportion data for 2008. So we cannot 
+
+confirm if the proportion decreased . However, the question says “clearly 
+
+decreased”, implying we must find a year where the proportion is visibly 
+
+lower than the previous year. … But wait — perhaps the question is 
+
+misinterpreted. Maybe it’s asking for a year where the *number* of horror 
+
+films decreased compared to the previous year? Because the graph only 
+
+provides absolute numbers for each year, ... 
+
+StAR -32B 
+
+Direct Prediction 
+
+StAR -32B 
+
++MV (#votes 24) 
+
+no -target 
+
+prediction 
+
+Q: The patient’s family caregiver. 
+
+<think> The query asks for \\\"the patient’s family caregiver. \\\" In the context of a hospital room, a family caregiver is typi cally a family 
+
+member (e.g., spouse, parent, child) who is providing care or support to the patient. However, in this image, the person stan din g next to the 
+
+patient is wearing a floral jacket, a white turtleneck, and has a stethoscope around her neck — all indicators of a healthcare professional, likely 
+
+a nurse or doctor. There is no visible family member in the image who appears to be a caregiver in a non -professional role. Therefore, there is 
+
+no object matching the description of a family caregiver. The person present is a medical professional, not a family member. Thus, the correct 
+
+answer is an empty list. </think> <answer>[]</answer> 
+
+Q: Find all people who are wearing sunglasses or a hat. 
+
+<think> The query asks to find all people who are wearing sunglasses or a hat. I need to carefully examine each person in the gr oup photo to check 
+
+for either of these items. - First, I scan for hats : none of the individuals in the image are wearing hats. Everyone’s head is uncovered. - Next, I 
+
+scan for sunglasses : I look for dark lenses over the eyes. Most people are wearing regular eyeglasses (e.g., the man in the back row with glasse s, 
+
+the woman in the front row with glasses, etc.), but none appear to be wearing sunglasses. Sunglasses typically have dark lens es and are worn for 
+
+sun protection, whereas the eyeglasses here are clear or tinted lightly for vision correction. - I double -check each person, especially those in the 
+
+front and middle rows, but no one is wearing sunglasses or a hat. Therefore, there are no matches for the query. Final answer: empty list. </think> 
+
+<answer>[]</answer> 
+
+Fig. S.1: Examples of no-target samples in ReasonSeg-X. StAR-32B reliably identifies cases where the queried object does not exist in the image. The first row further shows that majority voting can mitigate several failure modes of one-shot prediction. No-tably, the model exhibits diverse reasoning skills, such as fine-grained local inspection, sequential search over multiple constraints, and verification of intermediate conclusions. 
+
+– To improve the reliability of query–reasoning–mask correspondence, annota-tors cross-validate samples and filter or revise those that violate criteria such as logical soundness, clarity, and precision. 
+
+– To further identify human errors, we employ GPT-5 and Gemini 3 to assess reasoning consistency and mask correspondence/quality and incorporate their feedback when finalizing the dataset. We strive to balance the reasoning type distribution. In addition, to support research on realistic reasoning segmentation, we include no-target samples where the queried object is absent from the image; examples are shown in Fig. S.1. Also, additional examples of the ReasonSeg-R refinement process are provided in Fig. S.2. The resulting dataset enables more faithful evaluation of a model’s reasoning segmentation capability. StAR: Segment Anything Reasoner 21 the objects that 
+
+> don't have wings spread
+> When playing video games, what object in the
+> picture is commonly held and used to control the
+> actions of the characters on the screen?
+> When playing video games, which parts of the
+> device in the picture are used to control the
+> actions of the characters?
+> delete
+> the parts of two washing
+> machines that can be opened and
+> clothes can be put inside
+> There may be a designated area
+> where the dog can walk and play
+> freely. What area in the picture can
+> be used by the dog for this purpose?
+
+Fig. S.2: We further illustrate typical refinement decisions. In the leftmost example, we decide to remove the sample because both the mask quality and the query’s required reasoning are visually and semantically ambiguous. 
+
+D Related Work 
+
+Reasoning Segmentation. LISA [23] is the first work to introduce the rea-soning segmentation task—requiring binary mask generation via complex rea-soning—together with the ReasonSeg benchmark dataset. It further proposes a new <seg> token and an embedding-as-mask paradigm, where the token em-bedding is provided to SAM [20] to produce the final segmentation mask. Subse-quent studies [3,17,35,55,67] further develop this paradigm and demonstrate im-proved results. Meanwhile, inspired by the effectiveness of Reinforcement Learn-ing with Verifiable Rewards (RLVR) [11] in enhancing the reasoning performance of LLMs, Seg-Zero [29] and VisionReasoner [30] design segmentation-specific re-ward functions and apply RLVR ( e.g., GRPO [43]) to MLLMs, yielding large performance improvements. In particular, by departing from rigid output for-mats and adopting coordinate prediction, these methods open a new direction that fully exploits MLLMs’ natural language generation strengths while remain-ing seamlessly compatible with the standard GRPO pipeline. Building on this, several GRPO-based methods have been introduced: SAM-R1 [14] incorporates SAM into the training loop and employs a tiered mask IoU reward; CoPRS [32] generates a positional prior instantiated as a heatmap, from which masks are decoded; and DPAD [62] prompts the MLLM to produce a descriptive caption and leverages it to induce focused perception by contrasting the target against its surrounding context. Our work differs from the aforementioned methods by fundamentally allevi-ating reasoning bottlenecks in the core components of RLVR. Moreover, beyond SAM-R1, we leverage a compact reward design that combines a more fine-grained mask reward with MLLM-level reward functions, and we further investigate roll-out scalability. DPAD’s descriptive captioning shares some resemblance to our proposed label prediction; however, DPAD is not easily reconciled with multi-target scenarios and can complicate the training pipeline by requiring additional models such as CLIP [37]. By contrast, label prediction is tightly coupled with per-object geometry prediction, encouraging the model to disentangle objects 22 S. Yun et al. 
+
+and implicitly fostering contrastive perception during accuracy-reward optimiza-tion (see Fig. S.3). Finally, we propose ReasonSeg-X , a challenging benchmark for systematically evaluating reasoning segmentation capabilities. 
+
+Inference-time Scaling. Language models have shown that reasoning per-formance can be improved progressively by allocating additional inference-time compute [46]. Broadly, existing test-time scaling strategies fall along two axes. The first comprises sequential scaling approaches, including not only within-turn expansion such as CoT [57], but also iterative refinement/correction [21, 33, 36] of a model’s own outputs. Although effective, sequential scaling can in-duce overthinking [10], and in multimodal reasoning settings, concise reasoning traces often outperform verbose ones [47, 60]. This motivates a complementary axis— parallel compute scaling. The simplest and most lightweight approach is majority voting [56], which selects the most frequent answer among multiple out-puts. Majority voting is typically confined to tasks with discrete answer spaces where voting is well-defined ( e.g., mathematical problem-solving and question answering). Although very recent studies [19, 49] devise ways to apply this to open-ended tasks like code generation and deep research, applying them to pixel-level recognition remains largely unexplored. We therefore propose a flexible strategy that adapts majority voting to multi-target reasoning segmentation. In contrast to existing sequential scaling methods in the reasoning segmentation task that rely on refining or verifying intermediate results [5, 8, 31], our parallel scaling approach offers a more potent means of enhancing performance. 
+
+Table S.3: Model inference efficiency results. “MV” denotes our majority voting strat-egy. Results for SAM 3 Agent and majority voting are measured with batch size 1, while all other results are measured with batch size 32. 
+
+Method ReasonSeg-R ReasonSeg-X test gIoU cIoU #Tokens Latency gIoU cIoU #Tokens Latency 
+
+> Measured on an NVIDIA RTX A6000
+
+VisionReasoner [30] 64.8 56.8 160 4.0s 42.2 33.8 200 5.2s StAR-7B 69.7 66.2 138 3.5s 49.2 43.6 147 3.7s 
+
++ MV 70.7 67.2 139 ×32 32.3s 50.3 44.9 149 ×32 33.7s StAR-8B 73.8 69.2 203 2.9s 57.9 50.1 267 3.7s 
+
++ MV 74.9 69.7 205 ×32 33.5s 59.6 53.1 265 ×32 40.8s 
+
+> Measured on an NVIDIA H200
+
+SAM 3 Agent-7B [5] 63.1 58.0 – 21.8s 34.4 29.5 – 30.3s SAM 3 Agent-72B [5] 72.4 65.3 – 210.1s 49.8 40.3 – 423.8s StAR-32B 73.8 68.0 268 2.8s 61.7 59.2 337 3.4s 
+
++ MV 75.0 70.6 280 ×32 43.1s 64.1 60.8 355 ×32 49.5s StAR: Segment Anything Reasoner 23 
+
+Table S.4: Left: Performance comparison on the MUSE [40] dataset. In [40], evaluation includes scores obtained by prompting GPT-3.5, which can hinder consistent and re-producible measurement in follow-up studies. We instead simply adopt a standard IoU calculation scheme to improve evaluation accessibility and focus on comparison with VisionReasoner [30]. Right: Performance comparison on Referring Expression Segmen-tation (RES) benchmarks measured by cIoU. * denotes our reproduced results with the official code and model checkpoint.    
+
+> Method MUSE val
+> gIoU cIoU
+> LISA-7B
+
+42.0 46.1 PixelLM-7B 42.6 50.7 POPEN-7B 45.4 55.2 LISA-13B 43.6 50.2 PixelLM-13B 44.8 54.1 POPEN-13B 48.0 59.1 VisionReasoner 50.5 47.6 StAR-7B 55.2 53.0   
+
+> +MV
+
+56.6 54.6 StAR-8B 57.5 55.7   
+
+> +MV
+
+58.2 56.7       
+
+> Method RefCOCO RefCOCO +RefCOCOg
+> testA testA test
+> LISA-7B
+
+76.5 67.4 68.5 SegLLM 81.5 73.0 73.6 READ 80.2 73.7 71.4 CoReS 78.6 70.0 70.7 CoPRS-7B 85.3 80.3 76.2 SAM-R1 79.2 74.7 73.1 SAM-Veteran 80.8 76.6 73.4 VisionReasoner* 76.6 72.1 67.2 SAM 3 Agent-7B 64.3 57.0 58.8 SAM 3 Agent-72B 74.9 70.8 70.2 StAR-7B 78.6 74.0 71.0    
+
+> +MV ( N=16)
+
+79.0 74.7 71.5 StAR-8B 78.7 74.4 73.3    
+
+> +MV ( N=16)
+
+79.3 75.2 73.8 
+
+E Model Efficiency Comparison 
+
+In Tab. S.3, we compare inference efficiency on ReasonSeg-R/X with recent baselines. By analyzing inference token counts along the roadmap in Fig. 4 (a), we assume that LoRA [13] helps StAR internalize the underlying reason-ing patterns behind correct responses—eschewing simple memorization of ver-bose outputs—while our train-time exploration strategy (REST) increases ex-posure to concise, well-structured reasoning trajectories. As a result, StAR-7B reduces inference latency by 28.9% and cuts token usage by 26.5% compared to the VisionReasoner-7B. Furthermore, when paired with performant base models such as Qwen3-VL [1], our approach exhibits flexible adaptivity by dynamically modulating reasoning depth according to task complexity. Also, our parallel com-pute scaling method provides an efficient alternative to multi-round tool-calling agents [5]. 
+
+F Additional Experiments 
+
+F.1 Results on MUSE Dataset 
+
+In Tab. S.4 left , we benchmark our models—primarily against VisionReasoner—to assess multi-target reasoning segmentation capability [40]. StAR-7B markedly 24 S. Yun et al.                                                                     
+
+> Table S.5: Performance comparison between LoRA rank 16 vs. 64 on ReasonSeg-R/X.
+> StAR-7B RS-R RS-X test
+> –overall P/F C/KI C/R C/MH
+> gIoU cIoU gIoU cIoU gIoU cIoU gIoU cIoU gIoU cIoU gIoU cIoU
+> rank 16 68.9 64.2 46.8 40.2 54.4 49.3 57.1 47.7 44.3 37.3 27.0 26.8
+> +MV 70.4 64.7 48.8 41.6 58.0 53.1 60.8 51.3 44.5 37.7 27.7 26.3 rank 64 69.7 66.2 49.2 43.6 58.2 52.2 60.2 52.4 45.7 40.4 28.0 28.8
+> +MV 70.7 67.2 50.3 44.9 60.6 56.9 61.8 54.4 46.2 40.1 27.9 30.5
+
+surpasses the VisionReasoner baseline, and its gains are consistently strength-ened by our majority voting strategy. Together, these results indicate that our model can reason in goal-directed settings to flexibly localize multiple targets. 
+
+F.2 Results on RES Datasets 
+
+Evaluation results on the Referring Expression Segmentation (RES) [63] datasets are shown in Tab. S.4 right . Despite training on only ∼1.8k samples from the Re-fCOCOg train split, our model achieves competitive performance, particularly compared to VisionReasoner and SAM 3 Agents. Moreover, when equipped with a more performant base model and majority voting, StAR attains performance comparable to methods that leverage the RefCOCOg train set more aggres-sively ( e.g., SAM-R1 [14], SAM-Veteran [8], and SegLLM [55]). These results demonstrate that our models remain robust across varying reasoning depths. 
+
+G Additional Methodology Details and Discussion 
+
+G.1 LoRA Finetuing 
+
+Previous work [15] demonstrates that higher-rank parameter updates are par-ticularly important for complex reasoning tasks. Building on this insight, we examine how LoRA [13] rank affects reasoning segmentation performance. As reported in Tab. S.5, the model trained with LoRA rank 16 already surpasses strong baselines such as VisionReasoner by a large margin, and increasing the rank to 64 yields further gains. Considering that ReasonSeg-X demands more complex reasoning than ReasonSeg-R, we derive two takeaways: (i) the benefit of higher rank is more pronounced on the more challenging cases; and (ii) for shal-lower reasoning problems, lower rank can still achieve comparable performance when supplemented with additional test-time compute, but increasing the rank becomes necessary to effectively handle harder problems. We find that memory usage and training time are largely insensitive to the LoRA rank, since the change in trainable parameters remains extremely small compared to the total model size (even rank 64 accounts for <2% of all parame-ters). Moreover, leveraging LoRA allows us to double the per-device batch size, StAR: Segment Anything Reasoner 25                       
+
+> Table S.6: Performance comparison with different mask-accuracy reward functions. Our reward design facilitates stable policy updates by finely distinguishing trajectory’s advantages.
+> Mask Reward Function
+> RS-R RS-X RS-X test
+> –val overall
+> gIoU cIoU gIoU cIoU gIoU cIoU
+> SAM-R1’s [14] 69.3 65.3 49.6 43.2 48.1 42.6 Ours 69.7 66.2 50.5 48.0 49.2 43.6
+
+which reduces training time by more than half; we reinvest the saved compute budget into rollout scaling to bring further performance gains. Beyond efficiency, LoRA-trained StAR provides modularity —for example, an agent in a real-world environment can toggle the StAR adapter to propose target objects/regions for safe action planning without storing extra full model copies. 
+
+G.2 Reward Function 
+
+In this section, we analyze the effect of our additions to the SAM-R1 [14] mask IoU reward function (marked in red in Eq. 5). Results in Tab. S.6 indicate that our fine-grained mask reward delivers a more discriminative training signal, leading to improved performance. A plausible explanation for this improvement, as depicted in Fig. 5 right , is that the reward-1 interval ( 0.30 < IoU ≤ 0.50 ) helps detect reasoning correctness and facilitates incremental learning from reasoning to localization, while the more finely partitioned higher-reward intervals assess mask quality more precisely and thus provide richer learning signals. 
+
+G.3 Rollout-Expanded Selective-Tuning 
+
+REST facilitates exploration by breaking the conventional coupling between the number of generated rollouts n and the number of trajectories used for policy updates m. Specifically, REST samples a large pool of rollouts (e.g., 128 or 256) and updates the policy using only a small, informative subset: the 8 highest-advantage and 8 lowest-advantage trajectories ( n = 256, m = 16). Although similar approaches have been introduced, previous analyses were confined to wall-clock training budgets [59]; in contrast, we analyze the effectiveness in terms of the learning signal and further align training technique with the test-time compute strategy. When all rollouts for a sample are uniformly correct or uniformly incor-rect, advantages tend to collapse to near-zero, substantially reducing learning efficiency. As shown in Fig. 6, expanding rollout generation and selecting only meaningful trajectories reduces the prevalence of such samples by 35% on aver-age. For particularly difficult problems, broadened exploration enables the model 26 S. Yun et al. Showroom    
+
+> floor
+> StAR -7B VisionReasoner -7B
+> Q: Cars are often displayed at exhibitions or showrooms for people to
+> admire. What area in the picture might be used for displaying cars?
+> black
+> SUV black
+> sedan
+> Q: The cars that are not taxi
+> conductor
+> Q: In a musical performance, there is
+> often a person who leads and directs
+> the musicians or singers. Who in the
+> picture could be fulfilling this role?
+> StAR -8B
+> StAR -8B without label prediction
+> spare
+> wheel
+> Q: The spare wheel
+
+Fig. S.3: Label prediction examples. 
+
+to learn dormant reasoning patterns that do not readily manifest within pre-trained capacity, yielding notable gains on hard reasoning problems. Conversely, training on the lowest-advantage paths also promotes suppression of incorrect outputs, redistributing probability mass toward other plausible paths [68]. Fi-nally, training in a large-sampling regime makes majority voting more effective, since the training procedure shapes the model distribution under the similar sam-pling regime used at test time (see Tab. 3 left). 
+
+G.4 Label Prediction 
+
+In this part, we discuss the practical effect of label prediction with illustrative examples in Fig. S.3. When examining baseline predictions, we frequently observe a failure mode where, if the (small) target object is located far from the image center, the model segments a large central object without semantic verification (first row). This results in a pronounced drop in cIoU (the cumulative intersection over the cumulative union), which is sensitive to false-positive predictions on large objects. Label prediction effortlessly mitigates this failure mode, improving ReasonSeg-R performance from 68.2% to 69.7% in gIoU and from 62.2% to 66.2% in cIoU .The second row further illustrates that label prediction can prevent the model from making predictions driven by pre-trained knowledge rather than actually “looking” at the image. In addition to these benefits, it helps distinguish mul-tiple objects in multi-target scenarios and provides semantic anchoring for the StAR: Segment Anything Reasoner 27 
+
+target region by reusing query phrases or adopting an answer-like form. Impor-tantly, all these benefits are obtained without additional regularization losses or computational efficiency degradation. 
+
+G.5 Majority Voting for Segmentation 
+
+In this section, we detail our mask-clustering-based majority voting strategy and analyze additional experimental results. A key conceptual shift in our method is that the voting unit is not a pixel but an instance mask . This reformula-tion makes majority voting well-defined for multi-target reasoning segmentation, where responses may contain different numbers of predicted instances, different object orderings, and only partially overlapping mask predictions. Our method proceeds as follows: 
+
+Collecting mask candidate pool. Given an input image and query, we draw 
+
+N stochastic responses from the reasoning model FMLLM . The n-th response predicts a set of geometric prompts {(B(n) 
+
+> i
+
+, P(n) 
+
+> i
+
+)}N (n)pred  
+
+> i=1
+
+, which are then passed to the segmentation model FSAM to obtain instance masks {M(n) 
+
+> i
+
+}N (n)pred  
+
+> i=1
+
+. Since 
+
+FSAM also provides a mask-quality score s(n) 
+
+> i
+
+for each mask, we keep only the highest-scoring mask for each bbox/point pair and pool all such masks across sampled responses. 
+
+Greedy mask clustering and cluster validity check. We first cluster pooled masks by IoU-based spatial agreement. For a candidate mask M and the repre-sentative Rk of the k-th cluster, we compute their similarity as 
+
+IoU( M, Rk) = |M ∩ Rk||M ∪ Rk| .
+
+We adopt a greedy procedure: a candidate is assigned to the first cluster whose representative satisfies IoU( M, Rk) ≥ τIoU , and otherwise initializes a new clus-ter. Importantly, the support of a cluster Gk is measured by the number of 
+
+distinct sampled responses that contribute at least one mask to it, denoted by 
+
+Vk, rather than by the raw number of masks in the cluster. We then compute a vote ratio 
+
+ρk = Vk
+
+Nvalid 
+
+,
+
+where Nvalid is the number of sampled responses whose predicted coordinates are successfully parsed. We retain only clusters with ρk ≥ τvote , and discard the rest; if all clusters are removed by this filtering step, we revert to the full unfiltered cluster set. 28 S. Yun et al.  
+
+> Fig. S.4: Our majority voting strategy is robust to various hyperparameters and im-proves performance across base model scales.
+
+Selecting final targets and aggregating masks. We first determine the predicted number of targets ˆK as the mode of the per-response predicted target counts, while returning no target object if empty prediction is the majority among valid responses. Then, the remaining clusters are ranked by vote count Vk, and we select the top min( ˆK, |G| ) clusters. For each selected cluster, we choose the mask with the highest SAM mask-quality score as the representative mask: 
+
+M⋆k = argmax  
+
+> M(n)
+> i∈G k
+
+ s(n)
+
+> i
+
+.
+
+The final prediction is obtained by taking the union of the selected representative masks: 
+
+cM =
+
+> min( ˆK, |G| )
+
+[
+
+> k=1
+
+M⋆k.
+
+Unless otherwise specified, we use N = 32 , τIoU = 0 .85 , τvote = 0 .2, and a no-target threshold of 0.5.Our majority voting provides a natural mechanism—similar to Best-of-N sampling—for balancing exploration and exploitation by jointly controlling the sampling temperature T and the number of sampled responses N [6]. Fig. S.4 presents empirical results on this exploration–exploitation interplay. Across all sampling budgets, our approach yields consistent performance gains. In partic-ular, with a stronger base model ( e.g., Qwen3-VL), we already obtain >1% im-provement on ReasonSeg-X test using only 8 responses, highlighting enhanced exploitation by our training methodologies. This robustness to the sampling number enables adaptive performance tuning under a given inference budget. Beyond increasing the number of samples, a larger T induces a more stochas-tic policy, increasing diversity and exploration. We find that in large-sampling regimes, elevating T further amplifies gains, suggesting that additional explo-ration is especially beneficial when many candidates are sampled (Fig. S.4 right ). Based on these observations, applying majority voting to StAR-8B with T =1.25 and N =64 increases ReasonSeg-X test performance to even 60.5%. Overall, these results indicate that our inference-time scaling method can be robustly config-ured according to task complexity and compute constraints. StAR: Segment Anything Reasoner 29 Q: Find the object that can be used as a base or support when having a meal. 
+
+SAM 3 Agent -7B 
+
+Exceeded maximum 
+
+number of allowed 
+
+generation requests 
+
+(100) – empty outputs. 
+
+StAR -7B (IoU = 0.99) VisionReasoner (IoU = 0.00) 
+
+Q: A cello is played by resting its endpin on the floor. When bowing during performance, force can cause it to slide 
+
+forward or be pushed. In addition, if the ground is soft, the endpin can sink into the ground during performance and 
+
+change height. Therefore, what object is used to hold the endpin in place and ensure stability during performance? 
+
+StAR -7B (IoU = 0.98) VisionReasoner (IoU = 0.00) SAM 3 Agent -7B (IoU = 0.00) 
+
+Q: Among the three clocks, select and segment the one whose time -zone has the smallest absolute offset from UTC. 
+
+StAR -7B (IoU = 0.99) SAM 3 Agent -7B (IoU = 0.98) VisionReasoner (IoU = 0.29) 
+
+Q: Segment all individuals appearing in the frame that is last in chronological order. 
+
+StAR -7B (IoU = 0.81) VisionReasoner (IoU = 0.29) SAM 3 Agent -7B (IoU = 0.00) 
+
+Fig. S.5: Visual comparison results on our ReasonSeg-X test set (P/F and C/KI). 
+
+H Additional Qualitative Results 
+
+Figures S.5 and S.6 highlight that StAR-7B reliably surpasses VisionReasoner-7B and SAM 3 Agent-7B across a range of reasoning scenarios. Moreover, Fig-ures S.7, S.8, and S.9 demonstrate that StAR-8/32B can draw on diverse rea-soning skills to tackle challenging problems across all reasoning types. 30 S. Yun et al. Q: Locate the structure that is installed to prevent the ball from easily entering the hole. 
+
+StAR -7B (IoU = 0.99) VisionReasoner (IoU = 0.00) SAM 3 Agent -7B (IoU = 0.00) 
+
+Q: Find the set of 
+
+items that represent 
+
+the same brand and 
+
+have the same color. 
+
+StAR -7B (IoU = 1.0) VisionReasoner (IoU = 0.40) SAM 3 Agent -7B (IoU = 1.0) 
+
+Q: Exclude any node that has at least one incident red dotted edge, then among the remaining nodes, choose the node with 
+
+the highest number of incident solid blue edges. 
+
+StAR -7B (IoU = 0.76) VisionReasoner (IoU = 0.33) SAM 3 Agent -7B 
+
+Parsing error 
+
+Q: Among the countries shown on this map, segment the country that shares borders with the greatest number of other countries .
+
+GT Mask StAR -7B (IoU = 0.42) VisionReasoner (IoU = 0.00) SAM 3 Agent -7B 
+
+Exceeded maximum 
+
+number of allowed 
+
+generation requests 
+
+(100) – empty outputs. 
+
+Fig. S.6: Visual comparison results on our ReasonSeg-X test set (C/R and C/MH). StAR: Segment Anything Reasoner 31 Q: Find the items that stores use to showcase clothing to passersby 
+
+> Purpose/Functional
+
+<think> The query is asking to find "items that stores use to showcase clothing to passersby." 
+
+This typically refers to mannequins or dress forms, which are used to display clothing in a 
+
+visually appealing way to attract customers. Looking at the image, I can see two mannequins in 
+
+the background near the window , dressed in formal gowns (one red, one white), which are 
+
+clearly used to showcase clothing . </think> <answer>[{"label": ”manequin”, …}, …] </answer> 
+
+StAR -8B (IoU = 0.97) 
+
+Q: Find the component needed to efficiently transport beverages using a forklift. 
+
+<think> … I need to identify what object in the image would be used to move cases of beverages 
+
+with a forklift. 
+
+In the image, I can see a large red Coca -Cola delivery truck with an open compartment filled 
+
+with cases of bottled beverages. Inside this compartment, there are black plastic pallets 
+
+holding the cases of drinks. These pallets are specifically designed to be easily lifted and 
+
+moved by forklifts . The pallets are the key component needed to efficiently transport 
+
+beverages using a forklift, as they provide a stable, stackable platform that forklifts can easily 
+
+lift and move. </think> <answer>[{"label": ”forklift pallet”, …}]</answer> 
+
+StAR -8B (IoU = 0.99) 
+
+Q: Which button 
+
+would you press if 
+
+your car had to stop 
+
+unexpectedly to warn 
+
+approaching drivers? 
+
+StAR -8B (IoU = 0.98) 
+
+<think> The query is asking for the button that would be pressed to warn 
+
+approaching drivers if the car had to stop unexpectedly. This is typically the 
+
+hazard warning light button, which is often represented by a triangle with an 
+
+exclamation mark or a similar symbol. In the image, I can see a red triangle 
+
+button on the right side of the dashboard, just below the infotainment 
+
+screen. This is the standard location for the hazard lights button in many car 
+
+models. </think> <answer>[{"label": ”hazard warning light button”, …}]</answer> 
+
+Q: The person who needs sunglasses. StAR -8B (IoU = 0.99) 
+
+<think> …This likely refers to someone who appears to be in bright sunlight and would benefit from 
+
+wearing sunglasses, typically someone who is looking up or has their face exposed to the sun. In the 
+
+image, I can see several people: - A man in a plaid shirt in the foreground holding a white hat over 
+
+his eyes, which suggests he might be trying to shield himself from the sun. 
+
+- A man in a black leather jacket looking down at clothes. …The man in the plaid shirt appears to be 
+
+the most likely the candidate because he's holding his hat over his eyes, which is a common 
+
+behavior when someone is trying to protect themselves from bright sunlight. … </think> 
+
+Q: In Western Christian iconography, which creature here serves as 
+
+the emblem of the hermit -scholar famed for translating scripture? StAR -32B (IoU = 0.97) 
+
+<think> …This refers to Saint Jerome, who is traditionally depicted as a hermit -scholar and is most 
+
+famous for translating the Bible into Latin (the Vulgate). His emblematic animal is the **lion**, 
+
+which is said to have been tamed by him and is often shown at his side in art. In the provided 
+
+triptych, the right panel shows a figure in red and white robes, likely Saint Jerome, standing beside 
+
+a **lion**. The lion is visible at his feet, looking up at him. This is a classic attribute of Saint 
+
+Jerome in Christian art. Therefore, the creature in question is the **lion** in the right panel, 
+
+associated with Saint Jerome. I will now extract the bounding box and point for the lion. </think> 
+
+> Commonsense /
+> Knowledge -Intensive
+
+Fig. S.7: Qualitative results of StAR-8B/32B on our ReasonSeg-X (P/F and C/KI). 32 S. Yun et al. Q: A person who rejects a received proposal. 
+
+StAR -32B (IoU = 0.98) 
+
+Q: Segment the gear that completes fewer revolutions than the other meshed gear during the same time interval. StAR -8B (IoU = 0.97) 
+
+<think> Looking at the query: "segment the gear that completes fewer revolutions than the other meshed gear during the same t ime interval“ 
+
+This is asking to identify the gear that has fewer teeth (or is smaller) than the other gear it's meshed with. In gear system s, the gear with fewer teeth will complete more 
+
+revolutions than the gear with more teeth when they are meshed together , because the smaller gear has to turn more times to cover the same distance as the larger gear. In 
+
+the image, I can see two gears meshed together : 1. A smaller, darker gear in the center with fewer teeth (appears to have around 10 -12 teeth). 2. A larger, lighter -colored 
+
+gear surrounding it with many more teeth Since the smaller gear has fewer teeth, it will complete MORE revolutions than the l arg er gear during the same time interval. The 
+
+query asks for the gear that completes FEWER revolutions, which would be the larger gear. The larger gear is the one that for ms the outer ring in the image, with its teeth 
+
+visible at the bottom. </think> <answer>[{"label": ”gear that completes fewer revolutions”, …}]</answer> 
+
+<think>The query asks for "a person who rejects a received proposal." In the cartoon, there are two men in a business setting . T he man on the left is holding a document 
+
+and speaking, while the man on the right is listening. The caption says: "This really is an innovative approach, but I'm afra id we can't consider it. It's never been done 
+
+before." This statement is clearly spoken by the man on the left, who is holding the proposal (the paper) and rejecting it based on it s n ovelty. Therefore, the man on the 
+
+left is the one who rejects the proposal. The man on the right is the recipient or listener, not the rejecter. So, the correc t t arget is the man on the left. <think> 
+
+<answer>[{"label": ”person who rejects a received proposal”, …}]</answer> 
+
+Q: Players from the team being penalized by the referee StAR -8B (IoU = 0.99) 
+
+<think> Looking at the image, I need to identify the players from the team being penalized by the referee. The referee is showing a r ed card, which means he is sending off 
+
+a player. The player receiving the red card is the one being penalized. Looking at the players, I can see: - A player in a white jersey with the number 10 (Zinedine Zidane) is 
+
+standing directly in front of the referee, looking at him with a concerned expression, which suggests he is the one being sen t o ff. - There are other players around him, 
+
+including one in a white jersey with number 18 (Mathieu Debuchy) and one in a blue jersey with number 8 (Gareth Bale). The player in the white jersey with number 10 is the 
+
+one being penalized, as he is the focus of the referee's action. The other players are likely teammates or opponents, but the question asks for players from the team being 
+
+penalized, which would be the team that the referee is sending off a player from. The player in the white jersey with number 10 is clearly the one being penalized, and the 
+
+player in the white jersey with number 18 appears to be a teammate standing nearby. The player in the blue jersey is from the opposing team. </think> 
+
+<answer>[{ "label": ”player being penalized (number 10)” , …}, { "label": ”player from penalized team (number 18)” , …}] </answer> 
+
+Q: Identify all characters on the right panel who have filled the 
+
+goal value the most compared to the target shown on the left. 
+
+<think> The query asks to identify characters on the right panel (the main game grid) who have filled the goal value the most compare d t o
+
+the target shown on the left panel. First, I analyze the left panel: - There are four character types with goals: - Purple onion: 24/20 →
+
+exceeded by 4 - Strawberry: 24/20 → exceeded by 4 - Sun: 27/20 → exceeded by 7 - Water drop: 19/20 → short by 1. 
+
+The goal is to find which character on the right panel has contributed the most to filling its goal. Since the sun has the highest excess 
+
+(27/20), it is the character that has filled its goal the most . Now, I scan the right panel to find all instances of the sun character (yellow 
+
+star with a smiley face). I locate the sun characters in the following positions (row, column, 0 -indexed): - Row 1, Col 1 - Row 1 , Col 3 - Row 3, 
+
+Col 5 - Row 4, Col 0 - Row 5, Col 5 - Row 6, Col 5 These are all the sun characters on the grid. … </think> … 
+
+StAR -32B 
+
++ Direct Prediction 
+
+StAR -32B 
+
++ Majority Voting 
+
+Fig. S.8: Qualitative results of StAR-8B/32B on our ReasonSeg-X (C/R). StAR: Segment Anything Reasoner 33 <think> The query asks to locate the area depicting the home feature that women ranked **first** for helping improve relation shi ps. According to the 
+
+'Women Rankings' section on the right side of the infographic, the top -ranked feature for women is **'Plenty of storage'** at 21 %. Now, I need to 
+
+find the visual depiction of 'Plenty of Storage' in the main house diagram. Looking at the left side of the house illustratio n, there is a labeled box with 
+
+the text 'Plenty of Storage #2' pointing to a section of the house that shows shelves and storage units (like cabinets or clo set s) . This is the visual 
+
+representation of the feature. The instruction says to segment **only the image portions, not the text**. So, I should isolate the visual part of the 
+
+house that represents 'Plenty of Storage' — the actual drawing of the storage shelves — and exclude the text box that labels it. … Onl y the visual 
+
+depiction of the storage unit is to be segmented. </think> <answer>[{"label": ”storage unit”, …}]</answer> 
+
+Q: Locate the area depicting the home feature that women ranked first for 
+
+helping improve relationships. Segment only the image portions, not the text. StAR -32B (IoU = 0.92) 
+
+<think> The query asks: "I have an event scheduled for 39 hours from now and want to add it to my calendar —what date should I se lect?" The current time 
+
+shown in the image is 1:05 PM on December 20, 2009 (since the 20th is highlighted). To find the date 39 hours from now: 
+
+- 39 hours = 1 day and 15 hours. 
+
+- Adding 1 day to December 20, 2009, gives December 21, 2009. 
+
+- Adding 15 hours to 1:05 PM (which is 13:05) gives 4:05 AM the next day ( December 21 ). 
+
+- Therefore, the event should be scheduled for December 21, 2009. In the calendar view, December 21 is visible in the second row of the grid, under the 
+
+"Mon" column, and is not highlighted (the 20th is highlighted). ... </think> <answer>[{"label": ”date to select for 39 hours fro m now”, …}]</answer> 
+
+Q: I have an event scheduled for 39 
+
+hours from now and want to add it to my 
+
+calendar —what date should I select? 
+
+StAR -32B 
+
++ Direct Prediction 
+
+StAR -32B 
+
++ Majority Voting 
+
+Q: Locate the die at the greatest elevation 
+
+above the surface (i.e., the one on top of the 
+
+tallest stack) and all dice that share its color. 
+
+<think> The query asks to locate the die at the greatest elevation above the surface — meaning the die on top of the tallest sta ck — and then find all other 
+
+dice that share its color. First, I examine the stacks of dice in the image: 
+
+- On the left, there is a stack of 4 dice: blue on top, then black, red, and yellow at the bottom. 
+
+- On the right, there is a stack of 3 dice: black on top, then red, then blue. 
+
+…The tallest stack has 4 dice, so the die at the greatest elevation is the **blue die** on top of the left stack. Now, I need to find all dice that share the 
+
+color **blue**. Looking at the image: The top die of the left stack is blue. The bottom die of the right stack is blue. \\n- Ther e is also a loose yellow die in 
+
+the bottom -left corner — not blue. There are no other blue dice visible. Thus, there are **two blue dice**: … </think> 
+
+<answer>[{"label": ” blue die on top of tallest stack”, …}, {"label": ” blue die at bottom of right stack”, …}] </answer> 
+
+StAR -32B (IoU = 0.99) 
+
+<think> … Let me break this down: 1. I need to find the cheapest item (lowest price). 2. I need to find the most expensive it em (highest price). 3. I need to find one more item 
+
+such that the total cost equals exactly 500 yen. … Looking at the price tags in the image: - ¥110 ( 竹子天 ぷら - bamboo tempura) - ¥120 ( エビマヨ - shrimp mayo) - ¥70 ( コロッケ -
+
+croquettes) - ¥300 ( はち 天ぷら - honey tempura) - ¥200 ( かに 玉 - crab ball) - ¥260 ( かにサラダ - crab salad) - ¥150 ( 野菜天 ぷら - vegetable tempura) - ¥200 ( 海老天 ぷら - shrimp 
+
+tempura) - ¥80 (11 月天 ぷら - November tempura) - ¥130 ( 海老天 ぷら - shrimp tempura, different type) The cheapest item is ¥70 ( コロッケ - croquettes). The most expensive item 
+
+is ¥300 ( はち 天ぷら - honey tempura). Now, I need to find a third item that, when added to ¥70 + ¥300 = ¥370, equals ¥500. So, ¥500 - ¥370 = ¥130. Loo king at the price tags, I 
+
+see ¥130 ( 海老天 ぷら - shrimp tempura, different type) and ¥150 ( 野菜天 ぷら - vegetable tempura) and ¥80 (11 月天 ぷら - November tempura). ¥130 is the exact amount needed to 
+
+make ¥500 total (70 + 300 + 130 = 500). Therefore, the three items being purchased are: \n1. ¥70 ( コロッケ - croquettes) \n2. ¥300 ( はち 天ぷら - honey tempura) \n3. ¥130 ( 海老 
+
+天ぷら - shrimp tempura) </think> <answer>[{"label": ”¥70 price tag”, …}, {"label": ”¥300 price tag”, …}, {"label": ”¥130 price tag”, …} ] </answer> 
+
+Q: With 500 yen, after purchasing the cheapest and the most expensive food items and then one 
+
+more item with no change remaining, locate the price tags of all the foods being purchased. 
+
+StAR -8B (IoU = 0.99) 
+
+Fig. S.9: Qualitative results of StAR-8B/32B on our ReasonSeg-X (C/MH). 34 S. Yun et al. 
+
+References 
+
+1. Bai, S., Cai, Y., Chen, R., Chen, K., Chen, X., Cheng, Z., Deng, L., Ding, W., Gao, C., Ge, C., Ge, W., Guo, Z., Huang, Q., Huang, J., Huang, F., Hui, B., Jiang, S., Li, Z., Li, M., Li, M., Li, K., Lin, Z., Lin, J., Liu, X., Liu, J., Liu, C., Liu, Y., Liu, D., Liu, S., Lu, D., Luo, R., Lv, C., Men, R., Meng, L., Ren, X., Ren, X., Song, S., Sun, Y., Tang, J., Tu, J., Wan, J., Wang, P., Wang, P., Wang, Q., Wang, Y., Xie, T., Xu, Y., Xu, H., Xu, J., Yang, Z., Yang, M., Yang, J., Yang, A., Yu, B., Zhang, F., Zhang, H., Zhang, X., Zheng, B., Zhong, H., Zhou, J., Zhou, F., Zhou, J., Zhu, Y., Zhu, K.: Qwen3-vl technical report. arXiv preprint arXiv:2511.21631 (2025) 2, 3, 12, 23 2. Bai, S., Chen, K., Liu, X., Wang, J., Ge, W., Song, S., Dang, K., Wang, P., Wang, S., Tang, J., et al.: Qwen2. 5-vl technical report. arXiv preprint arXiv:2502.13923 (2025) 2, 12 3. Bao, X., Sun, S., Ma, S., Zheng, K., Guo, Y., Zhao, G., Zheng, Y., Wang, X.: Cores: Orchestrating the dance of reasoning and segmentation. In: ECCV (2024) 2, 12, 21 4. Biderman, D., Ortiz, J.G., Portes, J., Paul, M., Greengard, P., Jennings, C., King, D., Havens, S., Chiley, V., Frankle, J., et al.: Lora learns less and forgets less. TMLR (2024) 8 5. Carion, N., Gustafson, L., Hu, Y.T., Debnath, S., Hu, R., Suris, D., Ryali, C., Alwala, K.V., Khedr, H., Huang, A., et al.: Sam 3: Segment anything with concepts. In: ICLR (2026) 2, 3, 12, 17, 22, 23 6. Chow, Y., Tennenholtz, G., Gur, I., Zhuang, V., Dai, B., Kumar, A., Agarwal, R., Thiagarajan, S., Boutilier, C., Faust, A.: Inference-aware fine-tuning for best-of-n sampling in large language models. In: ICLR (2025) 28 7. Deng, W., Ren, Y., Li, M., Sutherland, D.J., Li, X., Thrampoulidis, C.: On the effect of negative gradient in group relative deep reinforcement optimization. In: NeurIPS (2025) 15 8. Du, T., Li, H., Fan, Z., Zhang, J., Pan, P., Zhang, Y.: SAM-veteran: An MLLM-based human-like SAM agent for reasoning segmentation. In: ICLR (2026) 2, 12, 22, 24 9. Gemini Team, Google DeepMind: Gemini 3: A new era of intelligence with gemini 3. Tech. rep. (2025), https://blog.google/products-and-platforms/products/ gemini/gemini-3/ , technical Report 5 10. Ghosal, S.S., Chakraborty, S., Reddy, A., Lu, Y., Wang, M., Manocha, D., Huang, F., Ghavamzadeh, M., Bedi, A.S.: Does thinking more always help? mirage of test-time scaling in reasoning models. In: NeurIPS (2025) 22 11. Guo, D., Yang, D., Zhang, H., Song, J., Zhang, R., Xu, R., Zhu, Q., Ma, S., Wang, P., Bi, X., et al.: Deepseek-r1: Incentivizing reasoning capability in llms via reinforcement learning. arXiv preprint arXiv:2501.12948 (2025) 2, 21 12. Gupta, A., Dollar, P., Girshick, R.: Lvis: A dataset for large vocabulary instance segmentation. In: CVPR (2019) 7, 12 13. Hu, E.J., yelong shen, Wallis, P., Allen-Zhu, Z., Li, Y., Wang, S., Wang, L., Chen, W.: LoRA: Low-rank adaptation of large language models. In: ICLR (2022) 2, 8, 23, 24 14. Huang, J., Xu, Z., Zhou, J., Liu, T., Xiao, Y., Ou, M., Ji, B., Li, X., Yuan, K.: SAM-r1: Leveraging SAM for reward feedback in multimodal segmentation via reinforcement learning. In: NeurIPS (2025) 2, 8, 12, 21, 24, 25 StAR: Segment Anything Reasoner 35 15. Huang, Q., Ko, T., Zhuang, Z., Tang, L., Zhang, Y.: HiRA: Parameter-efficient hadamard high-rank adaptation for large language models. In: ICLR (2025) 8, 24 16. Huang, S., Qu, X., Li, Y., Luo, Y., He, Z., Liu, D., Cheng, Y.: Spotlight on token perception for multimodal reinforcement learning. In: ICLR (2026) 11 17. Jang, D., Cho, Y., Lee, S., Kim, T., Kim, D.: MMR: A large-scale benchmark dataset for multi-target and multi-granularity reasoning segmentation. In: ICLR (2025) 2, 4, 12, 14, 21 18. Jung, M., Lee, S., Kim, E., Yoon, S.: Visual attention never fades: Selective pro-gressive attention recalibration for detailed image captioning in multimodal large language models. In: ICML (2025) 11 19. Kang, Z., Zhao, X., Song, D.: Scalable best-of-n selection for large language models via self-certainty. In: The Thirty-ninth Annual Conference on Neural Information Processing Systems (2025), https://openreview.net/forum?id=29FRqmVQK8 22 20. Kirillov, A., Mintun, E., Ravi, N., Mao, H., Rolland, C., Gustafson, L., Xiao, T., Whitehead, S., Berg, A.C., Lo, W.Y., et al.: Segment anything. In: ICCV (2023) 2, 21 21. Kumar, A., Zhuang, V., Agarwal, R., Su, Y., Co-Reyes, J.D., Singh, A., Baumli, K., Iqbal, S., Bishop, C., Roelofs, R., Zhang, L.M., McKinney, K., Shrivastava, D., Paduraru, C., Tucker, G., Precup, D., Behbahani, F., Faust, A.: Training language models to self-correct via reinforcement learning. In: ICLR (2025) 22 22. Kuznetsova, A., Rom, H., Alldrin, N., Uijlings, J., Krasin, I., Pont-Tuset, J., Ka-mali, S., Popov, S., Malloci, M., Kolesnikov, A., Duerig, T., Ferrari, V.: The open images dataset v4: Unified image classification, object detection, and visual rela-tionship detection at scale. IJCV (2020) 5 23. Lai, X., Tian, Z., Chen, Y., Li, Y., Yuan, Y., Liu, S., Jia, J.: Lisa: Reasoning segmentation via large language model. In: CVPR (2024) 1, 2, 3, 4, 12, 13, 21 24. Lambert, N., Morrison, J., Pyatkin, V., Huang, S., Ivison, H., Brahman, F., Mi-randa, L.J.V., Liu, A., Dziri, N., Lyu, S., et al.: Tulu 3: Pushing frontiers in open language model post-training. arXiv preprint arXiv:2411.15124 (2024) 2 25. Liang, J., Huang, W., Wan, G., Yang, Q., Ye, M.: Lorasculpt: Sculpting lora for harmonizing general and specialized knowledge in multimodal large language mod-els. In: CVPR (2025) 8 26. Liu, C., Ding, H., Jiang, X.: Gres: Generalized referring expression segmentation. In: CVPR (2023) 7, 12 27. Liu, H., Li, C., Li, Y., Li, B., Zhang, Y., Shen, S., Lee, Y.J.: Llava-next: Improved reasoning, ocr, and world knowledge (2024), https://llava-vl.github.io/blog/ 2024-01-30-llava-next/ 228. Liu, H., Li, C., Wu, Q., Lee, Y.J.: Visual instruction tuning. In: NeurIPS (2023) 2 29. Liu, Y., Peng, B., Zhong, Z., Yue, Z., Lu, F., Yu, B., Jia, J.: Seg-zero: Reasoning-chain guided segmentation via cognitive reinforcement. arXiv preprint arXiv:2503.06520 (2025) 2, 5, 21 30. Liu, Y., Qu, T., Zhong, Z., Peng, B., Liu, S., Yu, B., Jia, J.: Visionreasoner: Unified reasoning-integrated visual perception via reinforcement learning. In: ICLR (2026) 2, 5, 7, 8, 9, 12, 13, 21, 22, 23 31. Lu, Y., Cao, J., Wu, Y., Li, B., Tang, L., Ji, Y., Wu, C., Wu, J., Zhu, W.: RSVP: Reasoning segmentation via visual prompting and multi-modal chain-of-thought. In: ACL (2025) 2, 12, 22 32. Lu, Z., Li, L., Wang, J., Feng, Y., Chen, B., Chen, K., Wang, Y.: Coprs: Learning positional prior from chain-of-thought for reasoning segmentation. In: ICLR (2026) 2, 12, 21 36 S. Yun et al. 33. Madaan, A., Tandon, N., Gupta, P., Hallinan, S., Gao, L., Wiegreffe, S., Alon, U., Dziri, N., Prabhumoye, S., Yang, Y., Gupta, S., Majumder, B.P., Hermann, K., Welleck, S., Yazdanbakhsh, A., Clark, P.: Self-refine: Iterative refinement with self-feedback. In: NeurIPS (2023) 22 34. Muennighoff, N., Yang, Z., Shi, W., Li, X.L., Fei-Fei, L., Hajishirzi, H., Zettle-moyer, L., Liang, P., Candès, E., Hashimoto, T.B.: s1: Simple test-time scaling. In: EMNLP (2025) 8 35. Qian, R., Yin, X., Dou, D.: Reasoning to attend: Try to understand how< seg> token works. In: Proceedings of the Computer Vision and Pattern Recognition Conference. pp. 24722–24731 (2025) 2, 12, 21 36. Qu, Y., Zhang, T., Garg, N., Kumar, A.: Recursive introspection: Teaching lan-guage model agents how to self-improve. In: NeurIPS (2024) 22 37. Radford, A., Kim, J.W., Hallacy, C., Ramesh, A., Goh, G., Agarwal, S., Sastry, G., Askell, A., Mishkin, P., Clark, J., et al.: Learning transferable visual models from natural language supervision. In: ICML (2021) 21 38. Ravi, N., Gabeur, V., Hu, Y.T., Hu, R., Ryali, C., Ma, T., Khedr, H., Rädle, R., Rolland, C., Gustafson, L., Mintun, E., Pan, J., Alwala, K.V., Carion, N., Wu, C.Y., Girshick, R., Dollar, P., Feichtenhofer, C.: SAM 2: Segment anything in images and videos. In: ICLR (2025) 2, 5, 11 39. Razin, N., Wang, Z., Strauss, H., Wei, S., Lee, J.D., Arora, S.: What makes a reward model a good teacher? an optimization perspective. In: NeurIPS (2025) 10 40. Ren, Z., Huang, Z., Wei, Y., Zhao, Y., Fu, D., Feng, J., Jin, X.: Pixellm: Pixel reasoning with large multimodal model. In: CVPR (2024) 2, 4, 12, 23 41. Schulman, J., Wolski, F., Dhariwal, P., Radford, A., Klimov, O.: Proximal policy optimization algorithms. arXiv preprint arXiv:1707.06347 (2017) 6 42. Setlur, A., Rajaraman, N., Levine, S., Kumar, A.: Scaling test-time compute with-out verification or RL is suboptimal. In: ICML (2025) 15 43. Shao, Z., Wang, P., Zhu, Q., Xu, R., Song, J., Bi, X., Zhang, H., Zhang, M., Li, Y., Wu, Y., et al.: Deepseekmath: Pushing the limits of mathematical reasoning in open language models. arXiv preprint arXiv:2402.03300 (2024) 2, 6, 21 44. Sheng, G., Zhang, C., Ye, Z., Wu, X., Zhang, W., Zhang, R., Peng, Y., Lin, H., Wu, C.: Hybridflow: A flexible and efficient rlhf framework. arXiv preprint arXiv: 2409.19256 (2024) 17 45. Singh, A., Fry, A., Perelman, A., Tart, A., Ganesh, A., El-Kishky, A., McLaughlin, A., Low, A., Ostrow, A., Ananthram, A., et al.: Openai gpt-5 system card. arXiv preprint arXiv:2601.03267 (2025) 5 46. Snell, C.V., Lee, J., Xu, K., Kumar, A.: Scaling LLM test-time compute optimally can be more effective than scaling parameters for reasoning. In: ICLR (2025) 2, 15, 22 47. Tian, X., Zou, S., Yang, Z., He, M., Waschkowski, F., Wesemann, L., Tu, P.H., Zhang, J.: More thought, less accuracy? on the dual nature of reasoning in vision-language models. In: ICLR (2026) 11, 22 48. Wang, H., Li, Y., Wang, S., Chen, G., Chen, Y.: Milora: Harnessing minor singular components for parameter-efficient llm finetuning. In: NAACL (2025) 8 49. Wang, H., Du, C., Kawaguchi, K., Pang, T.: Think in parallel, answer as one: Logit averaging for open-ended reasoning. In: ICLR (2026) 22 50. Wang, H., Qu, C., Huang, Z., Chu, W., Lin, F., Chen, W.: VL-rethinker: Incen-tivizing self-reflection of vision-language models with reinforcement learning. In: NeurIPS (2025) 8 StAR: Segment Anything Reasoner 37 51. Wang, L., Xu, W., Lan, Y., Hu, Z., Lan, Y., Lee, R.K.W., Lim, E.P.: Plan-and-solve prompting: Improving zero-shot chain-of-thought reasoning by large language models. In: ACL (2023) 18 52. Wang, P., Bai, S., Tan, S., Wang, S., Fan, Z., Bai, J., Chen, K., Liu, X., Wang, J., Ge, W., et al.: Qwen2-vl: Enhancing vision-language model’s perception of the world at any resolution. arXiv preprint arXiv:2409.12191 (2024) 2 53. Wang, S., Asilis, J., Akgül, Ö.F., Bilgin, E.B., Liu, O., Neiswanger, W.: Tina: Tiny reasoning models via loRA. In: ICLR (2026) 8 54. Wang, S., Yu, L., Gao, C., Zheng, C., Liu, S., Lu, R., Dang, K., Chen, X.H., Yang, J., Zhang, Z., Liu, Y., Yang, A., Zhao, A., Yue, Y., Song, S., Yu, B., Huang, G., Lin, J.: Beyond the 80/20 rule: High-entropy minority tokens drive effective reinforcement learning for LLM reasoning. In: NeurIPS (2025) 15 55. Wang, X., Zhang, S., Li, S., Li, K., Kallidromitis, K., Kato, Y., Kozuka, K., Darrell, T.: SegLLM: Multi-round reasoning segmentation with large language models. In: ICLR (2025) 2, 12, 21, 24 56. Wang, X., Wei, J., Schuurmans, D., Le, Q.V., Chi, E.H., Narang, S., Chowdhery, A., Zhou, D.: Self-consistency improves chain of thought reasoning in language models. In: ICLR (2023) 2, 11, 22 57. Wei, J., Wang, X., Schuurmans, D., Bosma, M., brian ichter, Xia, F., Chi, E.H., Le, Q.V., Zhou, D.: Chain of thought prompting elicits reasoning in large language models. In: NeurIPS (2022) 6, 22 58. Xu, G., Jin, P., Wu, Z., Li, H., Song, Y., Sun, L., Yuan, L.: Llava-cot: Let vision language models reason step-by-step. In: ICCV (2025) 8 59. Xu, Y.E., Savani, Y., Fang, F., Kolter, J.Z.: Not all rollouts are useful: Down-sampling rollouts in llm reinforcement learning. arXiv preprint arXiv:2504.13818 (2025) 10, 25 60. Xu, Z., Liu, C., Wei, Q., Wu, J., Zou, J., Wang, X.E., Zhou, Y., Liu, S.: More thinking, less seeing? assessing amplified hallucination in multimodal reasoning models. In: NeurIPS (2025) 11, 22 61. Yang, S., Qu, T., Lai, X., Tian, Z., Peng, B., Liu, S., Jia, J.: Lisa++: An improved baseline for reasoning segmentation with large language model. arXiv preprint arXiv:2312.17240 (2023) 7 62. Yang, T., Zhou, Q., Li, Y., Wang, Q.: Discriminative perception via anchored description for reasoning segmentation. In: CVPR (2026) 21 63. Yu, L., Poirson, P., Yang, S., Berg, A.C., Berg, T.L.: Modeling context in referring expressions. In: ECCV (2016) 7, 12, 24 64. Yu, Q., Zhang, Z., Zhu, R., Yuan, Y., Zuo, X., Yue, Y., Dai, W., Fan, T., Liu, G., Liu, L., et al.: Dapo: An open-source llm reinforcement learning system at scale. arXiv preprint arXiv:2503.14476 (2025) 8 65. Yun, S., Chae, S., Lee, D., Ro, Y.: Soma: Singular value decomposed minor com-ponents adaptation for domain generalizable representation learning. In: CVPR (2025) 8 66. Zhou, D., Schärli, N., Hou, L., Wei, J., Scales, N., Wang, X., Schuurmans, D., Cui, C., Bousquet, O., Le, Q.V., Chi, E.H.: Least-to-most prompting enables complex reasoning in large language models. In: ICLR (2023) 18 67. Zhu, L., Chen, T., Xu, Q., Liu, X., Ji, D., Wu, H., Soh, D.W., Liu, J.: Popen: Preference-based optimization and ensemble for lvlm-based reasoning segmenta-tion. In: CVPR (2025) 2, 21 68. Zhu, X., Xia, M., Wei, Z., Chen, W.L., Chen, D., Meng, Y.: The surprising effec-tiveness of negative reinforcement in LLM reasoning. In: NeurIPS (2025) 26
