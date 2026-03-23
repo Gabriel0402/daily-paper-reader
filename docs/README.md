@@ -6,79 +6,85 @@
 </div>
 
 ## 每次日报
-- 最新运行日期：2026-03-22
-- 运行时间：2026-03-22 19:59:37 UTC
+- 最新运行日期：2026-03-23
+- 运行时间：2026-03-23 19:47:23 UTC
 - 运行状态：成功
-- 本次总论文数：19
-- 精读区：7
+- 本次总论文数：21
+- 精读区：9
 - 速读区：12
 
 ### 今日简报（AI）
-今日深度解析 19 篇前沿成果，重点聚焦生成式 3D 世界驱动的机器人 VLA 模型与跨模态动作迁移。
-满分论文揭示了大规模仿真环境对 Sim-to-Real 强化学习的质变提升，而 3D 与触觉先验则显著优化了人机技能转移。
-建议关注生成式 AI 如何重塑机器人训练环境，以及多模态融合在复杂工业协作与导航任务中的落地应用。
-- 详情：[/202603/22/README](/202603/22/README)
+今日深度追踪 21 篇机器人前沿进展，聚焦 VLA 模型在触觉操控与分布式强化学习框架上的重大突破。
+满分论文 HapticVLA 实现了无需实时触觉的精准操控，而 AcceRL 则通过异步世界模型显著加速了 VLA 的训练演进。
+推荐优先研读这两项满分成果，深入理解大模型如何解决长程任务与复杂环境下的策略路由难题。
+- 详情：[/202603/23/README](/202603/23/README)
 
 ### 精读区论文标签
-1. [Scaling Sim-to-Real Reinforcement Learning for Robot VLAs with Generative 3D Worlds](/202603/22/2603.18532v1-scaling-sim-to-real-reinforcement-learning-for-robot-vlas-with-generative-3d-worlds)  
+1. [HapticVLA: Contact-Rich Manipulation via Vision-Language-Action Model without Inference-Time Tactile Sensing](/202603/23/2603.15257v1-hapticvla-contact-rich-manipulation-via-vision-language-action-model-without-inference-time-tactile-sensing)  
    标签：评分：10.0/10、query:vlm-rl
-   evidence：结合生成式3D世界的机器人VLA强化学习
-2. [OCRA: Object-Centric Learning with 3D and Tactile Priors for Human-to-Robot Action Transfer](/202603/22/2603.14401v1-ocra-object-centric-learning-with-3d-and-tactile-priors-for-human-to-robot-action-transfer)  
+   evidence：用于接触密集型机器人操作的视觉-语言-动作模型
+2. [AcceRL: A Distributed Asynchronous Reinforcement Learning and World Model Framework for Vision-Language-Action Models](/202603/23/2603.18464v2-accerl-a-distributed-asynchronous-reinforcement-learning-and-world-model-framework-for-vision-language-action-models)  
+   标签：评分：10.0/10、query:vlm-rl
+   evidence：用于视觉-语言-动作模型的分布式强化学习框架
+3. [dinov3.seg: Open-Vocabulary Semantic Segmentation with DINOv3](/202603/23/2603.19531v1-dinov3seg-open-vocabulary-semantic-segmentation-with-dinov3)  
+   标签：评分：10.0/10、query:mmseg
+   evidence：使用视觉语言模型的开放词汇语义分割
+4. [Anticipatory Planning for Multimodal AI Agents](/202603/23/2603.16777v1-anticipatory-planning-for-multimodal-ai-agents)  
    标签：评分：9.0/10、query:vlm-rl
-   evidence：利用视觉基础模型进行人到机器人的动作迁移
-3. [Seeing Beyond: Extrapolative Domain Adaptive Panoramic Segmentation](/202603/22/2603.15475v1-seeing-beyond-extrapolative-domain-adaptive-panoramic-segmentation)  
-   标签：评分：9.0/10、query:mmseg
-   evidence：用于场景理解的跨域全景语义分割
-4. [Toward Deep Representation Learning for Event-Enhanced Visual Autonomous Perception: the eAP Dataset](/202603/22/2603.16303v1-toward-deep-representation-learning-for-event-enhanced-visual-autonomous-perception-the-eap-dataset)  
-   标签：评分：9.0/10、query:mmseg
-   evidence：事件增强的视觉自动驾驶感知数据集
-5. [Cross-Domain Demo-to-Code via Neurosymbolic Counterfactual Reasoning](/202603/22/2603.18495v1-cross-domain-demo-to-code-via-neurosymbolic-counterfactual-reasoning)  
+   evidence：具有轨迹预测功能的多模态智能体强化学习框架
+5. [PhysQuantAgent: An Inference Pipeline of Mass Estimation for Vision-Language Models](/202603/23/2603.16958v1-physquantagent-an-inference-pipeline-of-mass-estimation-for-vision-language-models)  
    标签：评分：9.0/10、query:vlm-rl
-   evidence：用于VLM演示中机器人任务规程可验证适配的神经符号推理
-6. [SCISSR: Scribble-Conditioned Interactive Surgical Segmentation and Refinement](/202603/22/2603.18544v1-scissr-scribble-conditioned-interactive-surgical-segmentation-and-refinement)  
+   evidence：利用视觉语言模型进行机器人操作中的质量估计
+6. [GoAgent: Group-of-Agents Communication Topology Generation for LLM-based Multi-Agent Systems](/202603/23/2603.19677v1-goagent-group-of-agents-communication-topology-generation-for-llm-based-multi-agent-systems)  
+   标签：评分：9.0/10、query:vlm-rl
+   evidence：基于大语言模型的多智能体系统通信拓扑
+7. [Evaluating Vision Foundation Models for Pixel and Object Classification in Microscopy](/202603/23/2603.19802v1-evaluating-vision-foundation-models-for-pixel-and-object-classification-in-microscopy)  
    标签：评分：9.0/10、query:mmseg
-   evidence：调整SAM模型用于交互式手术场景分割
-7. [In-Field 3D Wheat Head Instance Segmentation From TLS Point Clouds Using Deep Learning Without Manual Labels](/202603/22/2603.14309v1-in-field-3d-wheat-head-instance-segmentation-from-tls-point-clouds-using-deep-learning-without-manual-labels)  
-   标签：评分：8.0/10、query:mmseg
-   evidence：遥感中基于TLS点云的3D实例分割
+   evidence：评估SAM和视觉基础模型在显微镜语义分割中的应用
+8. [X-World: Controllable Ego-Centric Multi-Camera World Models for Scalable End-to-End Driving](/202603/23/2603.19979v1-x-world-controllable-ego-centric-multi-camera-world-models-for-scalable-end-to-end-driving)  
+   标签：评分：9.0/10、query:vlm-rl
+   evidence：用于端到端驾驶和世界模型的VLA策略
+9. [IndoorR2X: Indoor Robot-to-Everything Coordination with LLM-Driven Planning](/202603/23/2603.20182v1-indoorr2x-indoor-robot-to-everything-coordination-with-llm-driven-planning)  
+   标签：评分：9.0/10、query:vlm-rl
+   evidence：LLM驱动的多机器人任务规划与协作
 
 ### 速读区论文标签
-1. [IMR-LLM: Industrial Multi-Robot Task Planning and Program Generation using Large Language Models](/202603/22/2603.02669v1-imr-llm-industrial-multi-robot-task-planning-and-program-generation-using-large-language-models)  
+1. [Generalization in Online Reinforcement Learning for Mobile Agents](/202603/23/2603.07432v1-generalization-in-online-reinforcement-learning-for-mobile-agents)  
    标签：评分：8.0/10、query:vlm-rl
-   evidence：大语言模型驱动的工业多机器人任务规划
-2. [TagaVLM: Topology-Aware Global Action Reasoning for Vision-Language Navigation](/202603/22/2603.02972v1-tagavlm-topology-aware-global-action-reasoning-for-vision-language-navigation)  
+   evidence：使用强化学习在交互式环境中训练视觉语言模型（VLM）智能体
+2. [TempoFit: Plug-and-Play Layer-Wise Temporal KV Memory for Long-Horizon Vision-Language-Action Manipulation](/202603/23/2603.07647v1-tempofit-plug-and-play-layer-wise-temporal-kv-memory-for-long-horizon-vision-language-action-manipulation)  
    标签：评分：8.0/10、query:vlm-rl
-   evidence：具备全局动作推理的视觉语言导航
-3. [PROSPECT: Unified Streaming Vision-Language Navigation via Semantic--Spatial Fusion and Latent Predictive Representation](/202603/22/2603.03739v1-prospect-unified-streaming-vision-language-navigation-via-semantic--spatial-fusion-and-latent-predictive-representation)  
+   evidence：长程VLA操作的时序记忆改造
+3. [RoboRouter: Training-Free Policy Routing for Robotic Manipulation](/202603/23/2603.07892v2-roborouter-training-free-policy-routing-for-robotic-manipulation)  
    标签：评分：8.0/10、query:vlm-rl
-   evidence：用于导航的流式视觉-语言-动作策略
-4. [Observing and Controlling Features in Vision-Language-Action Models](/202603/22/2603.05487v1-observing-and-controlling-features-in-vision-language-action-models)  
+   evidence：针对VLA和机器人操作的策略路由
+4. [RoboRouter: Training-Free Policy Routing for Robotic Manipulation](/202603/23/2603.07892v3-roborouter-training-free-policy-routing-for-robotic-manipulation)  
    标签：评分：8.0/10、query:vlm-rl
-   evidence：视觉-语言-动作模型的可解释性研究
-5. [Fine-tuning is Not Enough: A Parallel Framework for Collaborative Imitation and Reinforcement Learning in End-to-end Autonomous Driving](/202603/22/2603.13842v1-fine-tuning-is-not-enough-a-parallel-framework-for-collaborative-imitation-and-reinforcement-learning-in-end-to-end-autonomous-driving)  
+   evidence：包含 VLA 模型在内的机器人操纵策略路由
+5. [Selective Noise Suppression and Discriminative Mutual Interaction for Robust Audio-Visual Segmentation](/202603/23/2603.14203v1-selective-noise-suppression-and-discriminative-mutual-interaction-for-robust-audio-visual-segmentation)  
    标签：评分：7.0/10、query:mmseg
-   evidence：强化学习用于端到端自动驾驶
-6. [Zero-Forgetting CISS via Dual-Phase Cognitive Cascades](/202603/22/2603.13874v1-zero-forgetting-ciss-via-dual-phase-cognitive-cascades)  
+   evidence：音视频分割的多模态融合
+6. [S2GS: Streaming Semantic Gaussian Splatting for Online Scene Understanding and Reconstruction](/202603/23/2603.14232v1-s2gs-streaming-semantic-gaussian-splatting-for-online-scene-understanding-and-reconstruction)  
    标签：评分：7.0/10、query:mmseg
-   evidence：持续语义分割与认知级联
-7. [Pixel-level Scene Understanding in One Token: Visual States Need What-is-Where Composition](/202603/22/2603.13904v1-pixel-level-scene-understanding-in-one-token-visual-states-need-what-is-where-composition)  
+   evidence：用于在线场景理解的流式语义场
+7. [All-day Multi-scenes Lifelong Vision-and-Language Navigation with Tucker Adaptation](/202603/23/2603.14276v1-all-day-multi-scenes-lifelong-vision-and-language-navigation-with-tucker-adaptation)  
+   标签：评分：7.0/10、query:vlm-rl
+   evidence：多场景环境下的视觉语言导航
+8. [Show Me When and Where: Towards Referring Video Object Segmentation in the Wild](/202603/23/2603.14300v1-show-me-when-and-where-towards-referring-video-object-segmentation-in-the-wild)  
    标签：评分：7.0/10、query:mmseg
-   evidence：动态环境下机器人智能体的视觉状态表示
-8. [Human-like Object Grouping in Self-supervised Vision Transformers](/202603/22/2603.13994v1-human-like-object-grouping-in-self-supervised-vision-transformers)  
-   标签：评分：7.0/10、query:mmseg
-   evidence：视觉基础模型中的涌现对象分割
-9. [FMS$^2$: Unified Flow Matching for Segmentation and Synthesis of Thin Structures](/202603/22/2603.13659v1-fms2-unified-flow-matching-for-segmentation-and-synthesis-of-thin-structures)  
+   evidence：野外环境下的指代视频对象分割
+9. [ASAP: Attention-Shift-Aware Pruning for Efficient LVLM Inference](/202603/23/2603.14549v2-asap-attention-shift-aware-pruning-for-efficient-lvlm-inference)  
+   标签：评分：6.0/10、query:vlm-rl
+   evidence：大型视觉语言模型的高效推理
+10. [Medical Image Spatial Grounding with Semantic Sampling](/202603/23/2603.14579v2-medical-image-spatial-grounding-with-semantic-sampling)  
    标签：评分：6.0/10、query:mmseg
-   evidence：用于细长结构分割的流匹配方法
-10. [Learning Generalizable 3D Medical Image Representations from Mask-Guided Self-Supervision](/202603/22/2603.13660v1-learning-generalizable-3d-medical-image-representations-from-mask-guided-self-supervision)  
+   evidence：用于医学影像空间定位与分割的VLM
+11. [Make it SING: Analyzing Semantic Invariants in Classifiers](/202603/23/2603.14610v1-make-it-sing-analyzing-semantic-invariants-in-classifiers)  
    标签：评分：6.0/10、query:mmseg
-   evidence：用于医学影像的基础模型和上下文分割
-11. [Bodhi VLM: Privacy-Alignment Modeling for Hierarchical Visual Representations in Vision Backbones and VLM Encoders via Bottom-Up and Top-Down Feature Search](/202603/22/2603.13728v2-bodhi-vlm-privacy-alignment-modeling-for-hierarchical-visual-representations-in-vision-backbones-and-vlm-encoders-via-bottom-up-and-top-down-feature-search)  
-   标签：评分：6.0/10、query:mmseg
-   evidence：视觉语言模型与视觉骨干的分层表示
-12. [QTrack: Query-Driven Reasoning for Multi-modal MOT](/202603/22/2603.13759v1-qtrack-query-driven-reasoning-for-multi-modal-mot)  
-   标签：评分：6.0/10、query:mmseg
-   evidence：多模态多目标跟踪中的查询驱动时空推理
+   evidence：将网络特征映射到多模态视觉语言模型
+12. [Progress-Based Fault Detection and Health-Aware Task Allocation for Heterogeneous Multi-Robot Systems](/202603/23/2603.14622v1-progress-based-fault-detection-and-health-aware-task-allocation-for-heterogeneous-multi-robot-systems)  
+   标签：评分：6.0/10、query:vlm-rl
+   evidence：多机器人任务分配与基于逻辑的故障检测
 
 
 <div class="dpr-home-promo-card">
