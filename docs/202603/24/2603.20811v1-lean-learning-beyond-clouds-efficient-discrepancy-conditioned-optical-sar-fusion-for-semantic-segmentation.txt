@@ -1,0 +1,747 @@
+Title: Lean Learning Beyond Clouds: Efficient Discrepancy-Conditioned Optical-SAR Fusion for Semantic Segmentation
+
+URL Source: https://arxiv.org/pdf/2603.20811v1
+
+Published Time: Tue, 24 Mar 2026 00:53:52 GMT
+
+Number of Pages: 14
+
+Markdown Content:
+> IEEE TGRS, VOL. X, NO. X, MARCH 2026 1
+
+# Lean Learning Beyond Clouds: Efficient Discrepancy-Conditioned Optical-SAR Fusion for Semantic Segmentation 
+
+Chenxing Meng †, Wuzhou Quan †, Yingjie Cai, Liqun Cao, Liyan Zhang, Mingqiang Wei, Senior Member, IEEE 
+
+Abstract —Cloud occlusion severely degrades the semantic integrity of optical remote sensing imagery. While incorporat-ing Synthetic Aperture Radar (SAR) provides complementary observations, achieving efficient global modeling and reliable cross-modal fusion under cloud interference remains challenging. Existing methods rely on dense global attention to capture long-range dependencies, yet such aggregation indiscriminately propagates cloud-induced noise. Improving robustness typically entails enlarging model capacity, which further increases com-putational overhead. Given the large-scale and high-resolution nature of remote sensing applications, such computational de-mands hinder practical deployment, leading to an efficiency-reliability trade-off. To address this dilemma, we propose EDC, an efficiency-oriented and discrepancy-conditioned optical-SAR semantic segmentation framework. A tri-stream encoder with Carrier Tokens enables compact global context modeling with reduced complexity. To prevent noise contamination, we intro-duce a Discrepancy-Conditioned Hybrid Fusion (DCHF) mecha-nism that selectively suppresses unreliable regions during global aggregation. In addition, an auxiliary cloud removal branch with teacher-guided distillation enhances semantic consistency under occlusion. Extensive experiments demonstrate that EDC achieves superior accuracy and efficiency, improving mIoU by 0.56% and 0.88% on M3M-CR and WHU-OPT-SAR, respec-tively, while reducing the number of parameters by 46.7% and accelerating inference by 1.98 ×. Our implementation is available at https://github.com/mengcx0209/EDC. 
+
+Index Terms —Remote sensing, semantic segmentation, cloud removal, multimodal fusion, optical imaging, synthetic aperture radar 
+
+I. I NTRODUCTION 
+
+# SEMANTIC segmentation of optical remote sensing (RS) imagery is a cornerstone of Earth observation, enabling pixel-wise understanding of land-cover semantics [1]. While traditional models such as support vector machines and con-ditional random fields once dominated the field, they have largely been superseded by deep learning (DL) methods, which have achieved unprecedented performance in complex scenar-ios [2], [3]. However, DL-based models remain challenged by cloud occlusion, which invalidates optical observations over large regions [4], [5]. Persistent cloud cover, especially in tropical and coastal regions, leads to severe spectral and spatial information loss, hindering timely and accurate land cover monitoring [6]–[8]. 
+
+C. Meng, W. Quan, Y. Cai, L. Cao, L. Zhang, M. Wei are with the School of Computer Science and Technology, Nanjing University of Aeronautics and Astronautics, Nanjing, China, (e-mail: a1757845799@gmail.com; q.wuzhou@gmail.com; cyjeven@gmail.com; liquncao95@gmail.com; zhangliyan@nuaa.edu.cn; mingqiang.wei@gmail.com).  
+
+> †
+
+These authors contributed equally to this work. Corresponding author: Mingqiang Wei. 300 400 500 600 700 800 900 1000 
+
+> Inference Throughput (img/s)
+> 40
+> 42
+> 44
+> 46
+> 48
+> 50
+> 52
+> 54
+> 56
+> mIoU (%) on M3M-CR
+> Heavy baselines
+> Lightweight baselines DCSA-Net
+> (275.3, 40.09, 80.01M)
+> AMM-FuseNet
+> (464.3, 48.29, 62.30M)
+> MCANet
+> (952.3, 50.62, 131.76M)
+> FTransUNet
+> (410.4, 50.63, 203.40M)
+> CMX
+> (968.3, 50.58, 66.57M)
+> CloudSeg
+> (491.2, 53.64, 203.21M)
+> EDC (Ours)
+> (971.2, 54.20, 108.36M)
+
+Fig. 1. Efficiency–accuracy comparison on M3M-CR. Bubble size indicates model parameter scale. The annotation beside each bubble gives the triplet (throughput, mIoU, parameters). EDC lies on the favorable Pareto frontier, achieving the best mIoU and the highest inference throughput simultaneously. 
+
+Cloud occlusion introduces two related challenges: the loss of semantic context and unreliable local features. Remote sens-ing scenes exhibit strong spatial continuity, where land-cover categories (e.g., agricultural parcels, river networks, and urban blocks) extend over large areas and follow structured spatial patterns. As a result, reliable interpretation often depends on contextual information beyond the local region. When large-scale cloud occlusion occurs, optical cues within the affected areas become corrupted, making local observations insufficient for accurate prediction. Thus, accurate prediction requires long-range contextual dependencies that leverage information from distant clear-sky regions. However, modeling such long-range context is typically computationally expensive, creating a practical challenge for efficient deployment [9], [10]. As illustrated in Fig. 1, heavy baselines improve accuracy at the cost of substantially lower inference throughput, whereas lightweight alternatives retain high speed but often sacrifice segmentation quality. This tension is particularly evident in global context model-ing. Dense self-attention provides a natural mechanism to cap-ture global dependencies, but its quadratic complexity quickly becomes prohibitive as image resolution increases [11]. Even with sequence reduction strategies (e.g., reducing the length of K/V with a spatial reduction ratio R [12], [13]), the attention cost still grows rapidly for high-resolution dense prediction and large receptive fields. To enable robust global reasoning,  
+
+> arXiv:2603.20811v1 [cs.CV] 21 Mar 2026 IEEE TGRS, VOL. X, NO. X, MARCH 2026 2
+
+recent methods such as CloudSeg [14] and FTransUNet [15] rely on heavy backbones, typically large-scale hierarchical Transformers or hybrid architectures. As shown in Tab. IV, these models often contain hundreds of millions of parameters (e.g., CloudSeg at ∼203M) and require substantial FLOPs per patch, which severely limits inference throughput. In contrast, lightweight architectures usually lack sufficient receptive fields to infer consistent labels under large cloud masses, resulting in fragmented predictions in heavily occluded regions [16], [17]. The second equally critical limitation lies in the reliability of feature fusion. Cloud occlusion induces spatially varying signal-to-noise ratios: clear-sky regions provide high-fidelity spectral cues, whereas cloud-covered regions are dominated by noise. However, conventional fusion paradigms often adopt indiscriminate aggregation, treating all spatial locations as equally informative and failing to differentiate between clear and occluded regions. As a result, cloud-corrupted optical artifacts are fused with stable SAR cues, contaminating the cross-modal representation and reducing the benefit that SAR could otherwise provide in occluded areas. To address these challenges, we propose EDC , an efficiency-oriented and discrepancy-conditioned progressive spatial-spectral fusion framework that balances segmentation accuracy and computational efficiency. First, on the efficiency front, we introduce the Efficiency-Oriented Multi-Scale En-coder (EOME), a carrier-token-based tri-stream encoder that learns optical, SAR, and cross-modal representations. By routing global context through compact carrier tokens rather than dense token-to-token attention, EOME achieves efficient long-range modeling for inferring semantics in cloud-occluded regions. Second, we propose a Discrepancy-Conditioned Hy-brid Fusion (DCHF) mechanism for reliable optical–SAR fusion under cloud occlusion. DCHF leverages pixel-wise cross-modal discrepancy as a reliability cue to suppress cloud-contaminated optical responses and stabilize both spatial in-teraction and channel recalibration during fusion. Finally, we adopt a Dual-Task Learning strategy coupled with teacher-guided distillation [18]–[20]. An auxiliary cloud removal head forces the network to learn cloud-invariant surface represen-tations, while feature distillation transfers clear-sky semantic patterns from a cloud-free teacher to the student on reliable clear pixels, improving representation alignment and stabi-lizing semantic learning under cloud interference. Extensive experiments demonstrate that EDC improves segmentation accuracy while achieving 1.98 × higher inference throughput than representative heavy baselines. As illustrated in Fig. 1, EDC lies on a favorable efficiency–accuracy Pareto frontier, achieving the highest mIoU while also delivering the highest inference throughput on M3M-CR dataset with a moderate parameter budget. In summary, our main contributions are: 1) We propose EDC, a cloud-resilient segmentation frame-work that balances accurate global context modeling with com-putational efficiency. The framework integrates an efficiency-oriented encoder, discrepancy-conditioned fusion, and a dual-task distillation strategy. 2) We design the Efficiency-Oriented Multi-Scale Encoder (EOME), a carrier-token-based tri-stream encoder that cap-tures large-area semantic context with significantly reduced computational cost. 3) We introduce the Discrepancy-Conditioned Hybrid Fu-sion (DCHF) module, a discrepancy-conditioned gating mech-anism that suppresses cloud-contaminated optical responses and stabilizes cross-modal fusion. II. R ELATED WORK 
+
+A. Efficient Semantic Segmentation in Remote Sensing 
+
+Semantic segmentation serves as a fundamental task in RS interpretation [21]. Early approaches were predominantly built upon Convolutional Neural Networks (CNNs). Seminal architectures, such as FCN [22], U-Net [23], and DeepLab series [24], have demonstrated remarkable success in extract-ing hierarchical features. However, information interaction in CNNs is implicitly propagated through hierarchical stacking. This mechanism hinders the direct modeling of long-range dependencies, resulting in an effective receptive field (ERF) that is often localized and fails to capture the holistic context of large-scale geospatial objects [25]. To overcome the locality of convolutions, Vision Transformers (ViTs) [26] model global context via self-attention, but the quadratic complexity with re-spect to token length makes them expensive for high-resolution RS imagery. Although efficiency-oriented variants [12], [27] utilize a sequence reduction strategy to shrink the spatial dimension of key and value sequences, thereby reducing the computational overhead, the cost of global interaction remains a major bottleneck as resolution grows, limiting throughput in dense prediction [28]. This bottleneck is further amplified in multimodal fusion, where multi-stream encoders substantially increase computation [27]. This dilemma has spurred research into hybrid architectures that seek a better trade-off between efficiency and global modeling [29], [30]. Recent hybrid designs [31] decompose global modeling into window-based local attention and a small set of carrier tokens for cross-window exchange. This design decouples local feature extraction from long-range dependency modeling, enabling efficient global context aggregation with-out dense full-resolution attention. Motivated by the efficiency requirement of multi-stream processing, we adopt a carrier-token-based tri-stream encoder for cloud-resilient representa-tion learning. 
+
+B. Multimodal Fusion and Reliability Modeling for Cloud Resilience 
+
+Cloud occlusion poses a persistent challenge in optical re-mote sensing. To reconstruct the missing land cover semantics beneath clouds, fusing optical imagery with all-weather SAR data has become a standard paradigm for cloud-resilient map-ping [4], [32]–[34]. Early attempts typically employed early fusion strategies, such as channel concatenation or element-wise summation, to combine features from both modalities [17], [35], [36]. While straightforward, these methods treat all spatial locations equally, failing to account for the varying information quality caused by cloud artifacts. To mitigate the impact of occlusion, state-of-the-art frameworks like CloudSeg [14] have advanced towards multi-task learning. Specifically, IEEE TGRS, VOL. X, NO. X, MARCH 2026 3Separate  Down Sampling 
+
+> Separate  DownSampling
+> Separate  DownSampling
+> Separate  DownSampling
+> 𝐶𝑀 1
+> 𝐹𝑢𝑠𝑒
+> 𝑂𝑝𝑡 1
+
+EOME 
+
+> ISAR
+> …
+> ICl oud y
+> … …CM Fuse
+> SS
+> Decoder
+
+TeacherNet   
+
+> （Same as Student ）Distillation Loss
+> CloudMask
+> Decoder Out
+> Teacher
+
+Distillation                            
+
+> …ICl ou dfree
+> SS
+> Decoder
+> 𝐶𝑀 1
+> 𝐹𝑢𝑠𝑒
+> 𝐶𝑀 2
+> 𝐹𝑢𝑠𝑒
+> 𝐶𝑀 3
+> 𝐹𝑢𝑠𝑒
+> 𝐶𝑀 4
+> 𝐹𝑢𝑠𝑒
+> SS head SS head
+> 𝑂𝑝𝑡 1
+> 𝑂𝑝𝑡 2
+> 𝑂𝑝𝑡 3
+> 𝑂𝑝𝑡 4
+> CR
+> Decoder
+> CR head
+> Decoder Out
+> Student
+> Stage 1 Stage 2 Stage 3 Stage 4
+> 𝐷 1:𝐶 1×H
+> 4×W
+> 4𝐷 2:𝐶 2×H
+> 8×W
+> 8𝐷 3:𝐶 3×H
+> 16 ×W
+> 16 𝐷 4:𝐶 4×H
+> 32 ×W
+> 32
+> 𝐶𝑀 2
+> 𝐹𝑢𝑠𝑒 𝑂𝑝𝑡 2
+
+EOME 
+
+> 𝐶𝑀 3
+> 𝐹𝑢𝑠𝑒 𝑂𝑝𝑡 3
+
+EOME 
+
+> 𝐶𝑀 4
+> 𝐹𝑢𝑠𝑒
+> 𝑂𝑝𝑡 4
+
+EOME 
+
+Fig. 2. Overall framework of the proposed EDC. The StudentNet takes the SAR image ISAR and the cloudy optical image ICloudy as input. At each stage i,the encoder produces an optical-corrected feature Opt i and a fused semantic feature CM Fuse  
+
+> i
+
+at the corresponding resolution. Note that CM Fuse  
+
+> 1
+
+is initialized as an empty input (i.e., no prior fused feature is available at the first stage). The cloud-removal (CR) decoder aggregates {Opt i}4 
+
+> i=1
+
+to reconstruct the cloud-removed optical image, while the semantic-segmentation (SS) decoder aggregates {CM Fuse  
+
+> i
+
+}4 
+
+> i=1
+
+to predict the land-cover map. During training, a TeacherNet with the same architecture is fed with ISAR and the cloud-free optical image ICloudfree and provides supervision to the StudentNet via a cloud-mask-guided distillation loss. 
+
+CloudSeg incorporates an auxiliary cloud removal task and utilizes knowledge distillation to guide the network in recov-ering cloud-free semantics [37]. However, the fusion operation is often still indiscriminate, implicitly treating restored optical features as reliable across all regions. Under thick clouds, restoration can be ill-posed, and corrupted optical cues may propagate through fusion and pollute the cross-modal repre-sentation. These limitations call for reliability-aware fusion that ex-plicitly distinguishes reliable and unreliable regions under spatially varying cloud corruption. We therefore propose Discrepancy-Conditioned Hybrid Fusion (DCHF), which uses cross-modal discrepancy as a reliability cue to gate informa-tion flow based on physical consistency. III. M ETHOD 
+
+A. Overview 
+
+As illustrated in Fig. 2, the proposed EDC is formulated as a progressive spatial-spectral fusion framework. To balance long-range context modeling and efficiency under cloud occlu-sion, we design a lightweight tri-branch student architecture with teacher-guided distillation. The workflow proceeds in three stages: 1) Efficiency-Oriented Multi-Scale Encoding: Instead of relying on dense self-attention with quadratic complexity [38], we construct an Efficiency-Oriented Multi-Scale Encoder with three parallel streams (Optical, SAR, and Cross-Modal). With modality-adaptive stems for heterogeneous inputs, the encoder leverages a hierarchical carrier-token mechanism. This design decouples local extraction from global dependency modeling, enabling efficient long-range context aggregation with near-linear complexity. 2) Discrepancy-Conditioned Hybrid Fusion Module: To handle spatially varying feature reliability under cloud oc-clusion, hierarchical features are fused by DCHF. DCHF DCHF 
+
+Block   
+
+> FasterViT
+> Stage i
+> （Optical ）
+> FasterViT
+> Stage i
+> （SAR ）
+
+CM i−1
+
+> Fuse
+
+Opt i−1
+
+SAR i−1
+
+SAR i
+
+CM i
+
+> Fuse
+
+Opt i 
+
+> FasterViT
+> Stage i
+> （CM ）
+
+Fig. 3. Framework of the proposed Efficiency-Oriented Multi-Scale Encoder. 
+
+computes a discrepancy attention map A from cross-modal feature differences and uses it to guide both (i) discrepancy-focused spatial interaction and (ii) discrepancy-conditioned global descriptor construction via WGAP. This prevents cloud-contaminated responses from biasing channel statistics. Mean-while, it emphasizes stable SAR cues in regions with high cross-modal inconsistency before feeding the refined repre-sentation into the cross-modal stream. 3) Dual-Task Decoding and Optimization: The refined fea-tures are upsampled by a U-Net-style decoder to recover fine-grained boundaries. We train the network with dual-task objectives: a semantic segmentation head predicts the land-cover map, while an auxiliary cloud removal head reconstructs the cloud-free optical image. The auxiliary task regularizes the encoder toward cloud-invariant surface details. 
+
+B. Efficiency-Oriented Multi-Scale Encoder 
+
+Long-range context modeling is essential for cloud-occluded dense prediction, yet a direct implementation via dense self-attention requires full token-to-token interaction. Let S =
+
+H × W denote the number of spatial tokens. Standard multi-head self-attention incurs O(S2) interactions in token length, which becomes prohibitive as resolution increases. SegFormer alleviates this cost by sequence reduction in key/value tokens IEEE TGRS, VOL. X, NO. X, MARCH 2026 4
+
+with a spatial reduction ratio R (i.e., reducing K/V length to approximately S/R 2), leading to an attention cost on the order of O(S2/R 2); however, the computation still grows rapidly for high-resolution dense prediction and large receptive fields [12]. To reconcile long-range context modeling with computa-tional efficiency, EDC adopts an efficiency-oriented multi-scale encoder instantiated by the Hierarchical Attention Transformer (HAT) backbone in FasterViT, and extends it into a tri-stream 
+
+design: an Optical stream, a SAR stream, and a Cross-Modal stream, which is illustrated in Fig. 3. HAT introduces carrier tokens to enable cross-window communication at reduced cost: local window tokens are aggregated within windows, while carrier tokens mediate global message passing across windows, thereby preserving long-range context without full quadratic attention over all spatial tokens. 
+
+Modality-adaptive stem initialization. To accommodate heterogeneous inputs while reusing ImageNet pretraining, we adopt a modality-adaptive stem initialization strategy. Given the pretrained stem kernel W ∈ RCout ×3×k×k, we adapt the input channels as follows: for 4-band optical input (RGB+NIR), we append one additional channel by replicating a pretrained channel kernel to initialize the NIR channel; for 2-pol SAR input (VV+VH), we retain the first two pretrained channel kernels to form W′ ∈ RCout ×2×k×k (for single-pol we only retain the first pretrained channel kernels). This preserves the pretrained weight distribution at the earliest layer while aligning the encoder with remote-sensing spec-tral/polarimetric inputs. 
+
+Carrier-token hierarchical attention for efficient global semantics. At stage l ∈ { 1, . . . , 4}, each stream produces a multi-scale feature map F(l) ∈ RHl×Wl×Cl , forming a four-stage pyramid. For notational convenience, we reshape the feature map into a token sequence X(l) = Tokenize( F(l)) ∈
+
+RNl×Cl , where Nl = HlWl. Let X(l) 
+
+> wi
+
+∈ Rnl×Cl denote the subset of tokens within the i-th local window wi (with nl
+
+tokens per window). Each feature map is partitioned into Ml
+
+non-overlapping local windows {wi}Ml
+
+> i=1
+
+, and each window is associated with a compact carrier token ti summarizing its semantics. The computation is decomposed into (i) local aggregation, (ii) global interaction on carrier tokens, and (iii) local injection: 
+
+
+
+X′(l) 
+
+> wi
+
+= Flocal 
+
+
+
+X(l) 
+
+> wi
+
+; t′
+
+> i
+
+
+
+ti = Alocal 
+
+
+
+X(l)
+
+> wi
+
+
+
+{t′
+
+> i
+
+}Ml 
+
+> i=1
+
+= Gglobal 
+
+
+
+{tj }Ml
+
+> j=1
+
+ , (1) where X(l) 
+
+> wi
+
+denotes the tokens within window wi at stage l. By confining dense interaction to local windows and performing global mixing on carrier tokens (rather than on all Nl = HlWl
+
+tokens), HAT substantially reduces computation while retain-ing cross-window communication. 
+
+Progressive tri-stream encoding. The Optical and SAR streams extract modality-specific pyramids {F(l)opt } and 
+
+{F(l)sar }, while the Cross-Modal stream maintains a progres-sively updated representation along the pyramid. Concretely, the stage-1 fused cross-modal feature is forwarded to the cross-modal encoder to generate deeper cross-modal features (e.g., at ×8, ×16 , ×32 ), which are further refined by subsequent stage-wise fusion. These multi-scale outputs serve as backbone features for the subsequent DCHF, which further suppresses cloud-contaminated optical responses during cross-modal in-teraction. 
+
+C. Discrepancy-Conditioned Hybrid Fusion Mechanism 
+
+Effective multimodal fusion critically depends on the quality of the global context descriptor used for channel recalibration. Conventional channel attention [39], [40] typically employs Global Average Pooling (GAP) to aggregate spatial informa-tion into channel-wise statistics. However, under cloud occlu-sion where feature reliability becomes spatially non-uniform, GAP indiscriminately pools cloud-corrupted responses into the global statistics, biasing the resulting descriptors. This biased context then perturbs channel recalibration and can destabilize subsequent cross-modal interaction. To alleviate this issue, we propose a Discrepancy-Conditioned Hybrid Fusion (DCHF) module that incorpo-rates an explicit cross-modal discrepancy attention into global descriptor construction for robust channel recalibration. Let 
+
+Fopt , Fsar , Ffuse denote the feature tensors corresponding to {Opt i−1, SAR i−1, CM Fuse  
+
+> i−1
+
+} in Fig. 4. Although the two modalities are encoded by parallel streams, SAR responses remain relatively stable under clouds, while optical features may deviate significantly due to cloud artifacts. Therefore, their discrepancy provides a practical cue to highlight regions where optical observations are less reliable and SAR cues are more informative. We compute a discrepancy map 
+
+D = ψ(Fopt , Fsar ), (2) where ψ(·) is implemented as a lightweight difference operator 
+
+Fopt − Fsar . This map is fed into a lightweight spatial gating network fsg (·) (CBAM-style SpatialGate with 7 × 7
+
+convolutions) to produce a discrepancy attention map: 
+
+A = σ(fsg (D)) ∈ [0 , 1] H×W ×1. (3) Here, A indicates stronger cross-modal inconsistency and thus a higher reliance on SAR cues, rather than a calibrated probabilistic uncertainty. For convenience, we further define an optical reliability map Ropt = 1 − A.
+
+Discrepancy-conditioned Global Descriptor (DCGD). 
+
+Guided by A, we replace standard GAP with a discrepancy-conditioned weighted GAP (WGAP) when constructing branch-wise channel descriptors. Specifically, we define 
+
+W(opt) rel = Ropt , W(sar) rel = A, W(cm) rel = 1H×W ×1, (4) where Wcm adopts a unit weight for the cross-modal stream. For each branch b ∈ { opt , sar , cm }, we compute 
+
+ˆz(b) 
+
+> c
+
+=
+
+P 
+
+> i,j
+
+W(b)rel (i, j ) F(b)
+
+> i,j,c
+
+P 
+
+> i,j
+
+W(b)rel (i, j ) + ϵw
+
+, (5) where W(b)rel is selected according to b ∈ { opt , sar , cm }, and 
+
+ϵw is a small constant. This asymmetric weighting prevents IEEE TGRS, VOL. X, NO. X, MARCH 2026 5Discrepancy -Conditioned Hybrid Fusion Opt i−1                            
+
+> 𝐴
+> Spatial Gate  1𝐻 ×𝑊 ×1−𝐴
+> CM i−1
+> Fuse
+> SAR 𝑖 −1
+> Conv &  Sigmoid
+> WGAP
+> Neutral
+> Mode g
+> g
+> Opt i
+> SAR 𝑖
+> MSC MSC MSC
+> C
+> Fi−1
+> cat
+> WGAP
+> WGAP
+> CM i
+> Fuse
+> Fig. 4. Architecture of the proposed DCHF module. It uses discrepancy-guided attention map Ato perform weighted GAP for robust channel recalibration and fusion, producing CM Fuse
+> iand refined {Opt i, SAR i}from
+> {Opt i−1, SAR i−1, CM Fuse
+> i−1}(with CM Fuse
+> 1empty). ⊕/⊖/⊗: element-wise ops; C: concatenation.
+
+global descriptors from being dominated by cloud-corrupted optical regions: optical statistics are aggregated more conser-vatively from reliable (less inconsistent) regions, while SAR statistics emphasize regions where cross-modal inconsistency is high and SAR cues are most informative. 
+
+Channel interaction and fusion injection. The descriptors from all branches are concatenated to form ˆz, which is processed by an ECA-style 1D convolution [40] to capture local cross-channel dependencies. Here, Conv1D k(·) performs efficient local channel mixing on ˆz, and σ(·) maps the response to a channel-wise gating vector s ∈ (0 , 1) |ˆz|:
+
+s = σ(Conv1D k(ˆ z)) . (6) The resulting channel-wise weights rescale the concatenated multimodal features (e.g., Fopt , Fsar , and Ffuse ), producing a fused representation that is injected into the residual gating paths of the fusion block for progressive multi-scale fusion. In this way, DCHF couples discrepancy-conditioned descriptor construction with channel interaction, mitigating noise propa-gation under cloud occlusion. 
+
+D. Dual-Task Decoding and Teacher-Guided Optimization 
+
+Given the discrepancy-conditioned fused representations, EDC adopts a lightweight U-Net decoder to recover spatial resolution. Through skip connections, the decoder combines high-level semantics from deep stages with low-level struc-tural details from shallow stages, which helps preserve fine boundaries in dense land-cover mapping. We attach two task-specific heads on top of the decoded features: (i) a semantic segmentation head that predicts land-cover logits, and (ii) an auxiliary cloud removal head that reconstructs the cloud-free optical image. This auxiliary reconstruction serves as an appearance-level regularizer, encouraging the encoder-decoder to preserve cloud-invariant surface cues that are beneficial for segmentation. For fair comparison with strong baselines, we keep the cloud removal and distillation strategy consistent with prior multi-task/distillation frameworks and focus our contri-butions on the efficiency-oriented encoder and the discrepancy-conditioned fusion mechanism. 
+
+a) Dual-task losses: Let y denote the ground-truth land-cover label map and ˆy the predicted logits. We optimize the segmentation head using pixel-wise cross-entropy over valid pixels: 
+
+Lseg = 1
+
+|Ω|
+
+X
+
+> (i,j )∈Ω
+
+CE(ˆ yi,j , y i,j ) , (7) where Ω is the valid pixel set (excluding void/unlabeled pixels). For cloud removal, let Icf denote the ground-truth cloud-free optical image and ˆIcr denote the reconstructed output. We optimize the reconstruction branch using a cloud-mask-reweighted generalized Charbonnier loss [41] : 
+
+
+
+Lcr = 1
+
+CHW 
+
+X
+
+> c,i,j
+
+(1 + λM i,j ) ρ
+
+ ˆIcr c,i,j − Icf c,i,j 
+
+
+
+ρ(d) = ( d2 + ϵ2)p
+
+, (8) where M ∈ { 0, 1}H×W is the cloudmask ( Mi,j = 1 for cloudy pixels), and we set λ = 5 , p = 0 .45 , and ϵ = 10 −3.We upsample ˆIcr to match the ground-truth resolution before computing Lcr when needed. 
+
+b) Teacher-guided feature-level distillation: Cloud oc-clusion can perturb both covered pixels and nearby feature interactions. To transfer clear-sky semantic priors, we employ a cloud-free teacher network trained on cloud-free inputs. Denote by ΦS the student features and ΦT the teacher features extracted from the corresponding layer (we distill the cross-modal decoded features). We align feature resolutions using a lightweight upsampling operator and impose a masked feature matching loss on clear pixels: 
+
+
+
+Lkd = 1
+
+|Ωkd |
+
+X
+
+> (i,j )∈Ωkd
+
+ΦSi,j − ΦTi,j 
+
+> 22
+
+Ωkd = {(i, j ) | Mi,j = 0 }
+
+. (9) We apply the distillation loss only on clear pixels, because these regions provide reliable teacher-student semantic cor-respondence. Enforcing strict feature matching in cloud cor-rupted regions may introduce undesirable bias due to the severe input discrepancy between the cloudy student and the cloud-free teacher. 
+
+c) Overall objective: The final training objective is 
+
+Ltotal = Lseg + β Lcr + γ Lkd , (10) where β and γ balance the auxiliary reconstruction and distillation terms. IV. EXPERIMENTS 
+
+A. Experimental settings 1) Datasets: We conduct experiments on two datasets: 
+
+M3M-CR [42] is built from 780 disjoint regions of interest (ROIs) sampled worldwide. The original benchmark focuses on cloud removal and provides, for each ROI, a quartet of orthorectified, geo-referenced images: a cloudy optical image, a cloud-free optical image, a Sentinel-1 SAR image, and a land-cover map derived from ESA WorldCover. In our study, these scenes are tiled into 63,000 patches. 60,000 patches from IEEE TGRS, VOL. X, NO. X, MARCH 2026 6
+
+660 ROIs are used for model training, while 3,000 patches from the remaining 120 ROIs form the held-out test set. Within the training set, we further hold out 6,494 patches from 65 ROIs for validation, and use the remaining 53,506 patches from 595 ROIs for training. Each patch contains a 300 × 300 
+
+PlanetScope optical tile with four spectral bands (blue, green, red, and near-infrared) at 3 m ground sampling distance, and a co-registered Sentinel-1 GRD SAR tile acquired in IW mode with VV and VH polarizations at 10 m resolution. The SAR images are originally 90 × 90 pixels. We upsampled them by nearest-neighbor interpolation to match the 300 × 300 optical grid. 
+
+WHU-OPT-SAR [17] is a large-scale optical-SAR land-use dataset collected over Hubei Province, China. It comprises 100 co-registered GF-1 optical images and GF-3 SAR images, each of size 5,556 ×3,704 pixels and covering in total roughly 
+
+50 ,000 km 2 with 5 m spatial resolution after resampling. The optical data provide four channels (RGB and near-infrared), while the SAR data is single polarization. Pixel-level land-use annotations with multiple categories are available for all scenes. For our experiments, we first align the optical and SAR images at 5 m resolution, then uniformly crop them into non-overlapping 256 × 256 patches. We keep all four optical bands together with the SAR image as network inputs, and randomly split the patches into training, validation, and test subsets at the scene level to avoid spatial leakage between splits. Following CloudSeg, we synthesized cloudy conditions by uniformly adding Perlin noise to each spectral band of the optical images. The original cloud-free optical patches were retained as supervision targets and as references for evaluation under ideal conditions. 
+
+2) Evaluation Metrics: To evaluate EDC and enable fair comparisons with existing methods, we adopt commonly used metrics for both tasks in our dual-task setting, i.e., land-cover semantic segmentation and cloud removal .
+
+Evaluation Metrics for Land-Cover Mapping. We employ two standard segmentation metrics, Mean Intersection over Union (mIoU) and Mean Pixel Accuracy (mPA), to evaluate region overlap and class-wise pixel accuracy, respectively. Let 
+
+C denote the number of land-cover classes, and TP i, FP i,and FN i denote the numbers of true positive, false positive, and false negative pixels for class i, respectively. mIoU is the primary indicator for semantic segmentation, measuring the spatial overlap between the predicted map and the ground truth. It explicitly penalizes both false positives and false negatives by taking the intersection-to-union ratio for each class and then averaging over all classes. The calculation is as follows: 
+
+mIoU = 1
+
+C
+
+> C
+
+X
+
+> c=1
+
+TP c
+
+TP c + FP c + FN c
+
+. (11) And mPA complements mIoU by evaluating the proportion of correctly classified pixels within each ground-truth class and then averaging across classes, thus treating all categories equally regardless of class frequency. The calculation is as follows: 
+
+mPA = 1
+
+C
+
+> C
+
+X
+
+> c=1
+
+TP c
+
+TP c + FN c
+
+. (12) Higher mIoU and mPA indicate better land-cover mapping performance. 
+
+Evaluation Metrics for Cloud Removal. For cloud re-moval, we evaluate the fidelity of the reconstructed cloud-free optical output ˆY ∈ RC×H×W against the cloud-free reference Y ∈ RC×H×W using three widely adopted image-quality metrics: Peak signal-to-noise ratio (PSNR), Structural Similarity Index (SSIM) and Mean Absolute Error (MAE). Let 
+
+MAX denote the maximum valid pixel value. PSNR measures the reconstruction fidelity by quantifying the ratio between the maximum possible signal power and the reconstruction noise power, where a larger PSNR indicates less distortion. We first compute the mean squared error (MSE) between ˆY and Y , and then derive PSNR accordingly. The calculation procedure is shown as below: 
+
+
+
+PSNR = 10 log 10 
+
+ MAX 2
+
+MSE 
+
+
+
+MSE = 1
+
+CHW 
+
+> C
+
+X
+
+> c=1
+> H
+
+X
+
+> i=1
+> W
+
+X
+
+> j=1
+
+ ˆYc,i,j − Yc,i,j 
+
+2 . (13) SSIM measures image quality by comparing the similarity in three major aspects: luminance, contrast, and structure, which are more consistent with human visual perception than pixel-wise errors. The calculation procedure is shown as below: 
+
+SSIM( ˆY, Y) = (2 μ ˆY μY + c1)(2 σ ˆY Y + c2)(μ2ˆY + μ2 
+
+> Y
+
++ c1)( σ2ˆY + σ2 
+
+> Y
+
++ c2) , (14) where μ and σ2 denote the mean and variance, σ ˆY Y is the covariance, and c1, c 2 are small constants for numerical stability. For multi-spectral images, SSIM is computed per band and then averaged over C bands. MAE measures the average absolute reconstruction devia-tion between ˆY and Y, providing an intuitive pixel-wise error magnitude that is easy to interpret; a smaller MAE indicates higher reconstruction accuracy. The calculation procedure is shown as below: 
+
+MAE = 1
+
+CHW 
+
+> C
+
+X
+
+> c=1
+> H
+
+X
+
+> i=1
+> W
+
+X
+
+> j=1
+
+ˆYc,i,j − Yc,i,j . (15) Higher PSNR/SSIM and lower MAE indicate better cloud removal performance. 
+
+3) Implementation Details: Our EDC is trained and evalu-ated using an NVIDIA A100 80GB in the PyTorch framework. We trained the network using AdamW with a weight decay of 
+
+1×10 −4. The learning rate was set to 3×10 −4. The batch size was 160 and the maximum number of training epochs was set to 100. The weighting factors β and γ were empirically set to 1. IEEE TGRS, VOL. X, NO. X, MARCH 2026 7       
+
+> TABLE I SEGMENTATION PERFORMANCE COMPARISON UNDER CLOUDY ,CLOUD -FREE ,AND OVERALL SPLITS ON M3M-CR AND WHU-OPT-SAR BETWEEN
+> EDC AND STATE -OF -THE -ART METHODS . B EST RESULTS ARE IN BOLD AND THE SECOND -BEST ARE UNDERLINED .
+
+Method M3M-CR WHU-OPT-SAR 
+
+Cloudy Cloud-Free Overall Cloudy Cloud-Free Overall mPA mIoU mPA mIoU mPA mIoU mPA mIoU mPA mIoU mPA mIoU DCSA-Net [43] 50.35 39.52 51.21 40.21 51.04 40.09 46.67 36.76 47.88 38.48 47.28 37.63 AMM-FuseNet [44] 59.17 46.18 63.74 49.95 61.77 48.29 51.68 32.21 55.83 38.19 53.97 35.24 MCANet [17] 61.17 49.16 64.75 51.52 63.29 50.62 41.04 31.39 41.34 31.92 41.19 31.66 FTransUNet [15] 60.57 48.89 66.49 54.60 63.37 50.63 56.12 45.10 58.79 47.43 57.47 46.28 CMX [16] 61.08 48.73 65.33 51.98 63.46 50.58 50.48 40.09 53.86 42.07 52.16 41.15 CloudSeg [14] 63.43 50.87 69.02 55.91 66.57 53.64 55.79 45.01 63.00 52.18 59.69 48.70 EDC* 62.16 49.63 67.94 54.43 65.38 52.29 55.34 44.27 64.30 51.88 59.87 48.11 
+
+EDC (Ours) 64.95 51.24 71.05 56.69 68.33 54.20 57.24 45.74 66.01 53.40 61.67 49.58 
+
+B. Comparisons with semantic segmentation methods 
+
+We compare EDC with representative multimodal semantic segmentation baselines, including DCSA-Net [43], MCANet [17], AMM-FuseNet [44], FTransUNet [15], CMX [16], and CloudSeg [14]. Following the common evaluation protocol in cloud-robust land-cover mapping, we additionally report results on cloudy and cloud-free subsets determined by the provided cloud coverage maps, besides the overall perfor-mance. Quantitative comparisons on M3M-CR are summa-rized in Tab. I. For clarity, we also include a simplified variant, EDC*, which performs semantic segmentation only, without the auxiliary cloud removal branch or teacher-guided distillation used in the full model. As shown in Tab. I, EDC achieves the best overall seg-mentation performance, reaching 68.33 mPA and 54.20 mIoU. More importantly, its advantage remains consistent across different cloud conditions. In cloudy regions, EDC outper-forms CloudSeg and all other baselines, indicating stronger robustness when optical observations are severely degraded. In cloud-free regions, it still delivers the best accuracy, showing that the proposed design improves cloud resilience without compromising clear-sky performance. These improvements are consistent with the proposed efficiency-oriented context aggregation and discrepancy-conditioned fusion. By conditioning global descriptor con-struction and channel recalibration on a cross-modal discrep-ancy attention, EDC reduces the influence of cloud-induced outliers and selectively strengthens complementary SAR struc-tural cues in inconsistent regions, leading to more stable predictions in cloudy areas. Moreover, the hierarchical context modeling of the encoder enables occluded locations to borrow semantic priors from distant clear-sky patches, alleviating local ambiguity. Finally, the performance gap between EDC and EDC* further highlights the benefit of the multi-task and teacher-guided training strategy with consistent improvements in both cloudy and cloud-free subsets. Fig. 5 presents qualitative comparisons on four represen-tative scenes from M3M-CR and WHU-OPT-SAR. Overall, EDC produces predictions that are more consistent with the ground truth than the competing methods, especially under severe cloud contamination. Although EDC* yields broadly similar boundary layouts, it remains less accurate in semantic discrimination within cloud-affected regions. In the first M3M-CR scene, EDC more completely recovers spatially coherent road structures, even when the roads are heavily obscured in the cloudy optical image but remain visible in SAR. In the second M3M-CR scene, EDC also more clearly separates rangeland from agricultural land, whereas the other methods, including EDC*, exhibit boundary confusion and incomplete partitioning. In the first WHU-OPT-SAR scene, where near-complete cloud cover severely degrades optical cues, EDC produces more continuous roads and cleaner water bodies. This improvement is consistent with the role of DCHF, which suppresses cloud-corrupted optical responses and relies more on stable SAR cues in the affected regions. Beyond segmentation, we also evaluate the auxiliary cloud removal branch of EDC against representative reconstruction baselines, including HS2P [45], USSRN-CR [46], CloudSeg [14], Align-CR [42], and GLF-CR [47]. Tab. II shows that EDC achieves the best reconstruction quality on both datasets. In particular, it consistently surpasses the strongest competi-tor, GLF-CR, on M3M-CR, and maintains the top ranking on WHU-OPT-SAR. This result indicates that the auxiliary branch serves not only as a training regularizer, but also as an effective cloud removal module for recovering high-fidelity cloud-free imagery. 
+
+C. Ablation Study 
+
+We systematically evaluate the proposed method from three perspectives: 1) the overall advantage of the full architecture over a naive baseline; 2) the fine-grained effectiveness of the discrepancy-conditioned fusion design, including DCHF and DCGD; and 3) the contribution of the dual-task optimization strategy, including knowledge distillation and auxiliary cloud removal. All quantitative results on M3M-CR and WHU-OPT-SAR are summarized in Tab. III. 
+
+a) Effectiveness of the Proposed Architecture: To verify the advantage of the full framework, we compare EDC with a baseline variant, EDC-naive. EDC-naive removes the auxiliary supervision, including teacher-guided distillation and cloud IEEE TGRS, VOL. X, NO. X, MARCH 2026 8Cloudy  Cloud -free  SAR  GT  AMM -FuseNet  MCANet                          
+
+> DCSA -Net FTransUNet CMX CloudSeg EDC* EDC
+> Cloudy Cloud -free SAR GT AMM -FuseNet MCANet
+> DCSA -Net FTransUNet CMX CloudSeg EDC* EDC
+> Cloudy Cloud -free SAR GT AMM -FuseNet MCANet
+> Cloud -free Cloudy SAR GT AMM -FuseNet MCANet
+> DCSA -Net
+
+FTransUNet  CMX  CloudSeg  EDC*  EDC      
+
+> DCSA -Net FTransUNet CMX CloudSeg EDC* EDC
+
+Fig. 5. Visualization of land cover mapping for 4 different scenes. The first two scenes are from the M3M-CR dataset, while the latter two are from the WHU-OPT-SAR dataset. For each scene, from top-left to bottom-right are respectively the cloudy image, the cloud-free image, the SAR image, the ground truth, the result from AMM-FuseNet, MCANet, DCSA-Net, FTransUNet, CMX, CloudSeg and our EDC. IEEE TGRS, VOL. X, NO. X, MARCH 2026 9                                                                                       
+
+> TABLE II QUANTITATIVE COMPARISONS BETWEEN THE PROPOSED EDC AND THE CURRENT STATE -OF -THE -ART METHODS IN THE FIELD OF CLOUD REMOVAL .THE RESULTS WITH THE HIGHEST PERFORMANCE ARE SHOWN IN BOLD ,WHILE THE SECOND -BEST RESULTS ARE UNDERLINED .Method M3M-CR WHU-OPT-SAR SSIM ↑PSNR ↑(dB) MAE ↓(10 −2)SSIM ↑PSNR ↑(dB )MAE ↓(10 −2)HS2P [45] 0.8809 29.61 2.72 0.8093 28.73 2.96 USSRN-CR [46] 0.8942 29.99 2.64 0.8122 28.94 2.87 CloudSeg [14] 0.8907 29.56 2.69 0.8167 28.61 2.89 Align-CR [42] 0.9050 29.12 2.57 0.8192 29.42 2.65 GLF-CR [47] 0.9076 30.25 2.43 0.8215 29.92 2.56
+> EDC (Ours) 0.9185 30.94 2.26 0.8236 30.01 2.49
+> TABLE III ABLATION STUDY OF DIFFERENT ARCHITECTURAL COMPONENTS AND TRAINING STRATEGIES ON M3M-CR AND WHU-OPT-SAR DATASETS .Method M3M-CR WHU-OPT-SAR mPA mIoU mPA mIoU w/o DCHF 66.84 53.35 60.06 48.91 w/o DCGD 67.09 53.44 60.57 48.99 w/o Distillation 65.43 52.54 61.00 48.90 w/o Cloud Removal 65.97 52.85 61.21 49.26
+> EDC-naive 64.88 52.01 59.37 47.29
+> EDC (Ours) 68.33 54.20 61.67 49.58
+
+removal, and replaces the proposed discrepancy-conditioned fusion with standard Squeeze-and-Excitation (SE) blocks [48]. It can therefore be regarded as a further degraded version of EDC*. As reported in Tab. III, the complete model yields clear and consistent gains over EDC-naive on both datasets. On M3M-CR, EDC improves mIoU by 2.19% and mPA by 3.45%, with similar improvements also observed on WHU-OPT-SAR. These results suggest that combining discrepancy-conditioned fusion with auxiliary supervision is beneficial under the spatially non-stationary corruption introduced by clouds. Without explicit reliability-aware correction, EDC-naive is more easily affected by cloud-dominated features and therefore tends to accumulate errors in occluded regions. By contrast, DCHF suppresses discrepancy-induced optical out-liers during fusion, while the auxiliary cloud removal task and teacher-guided distillation further regularize cloud-invariant features and reliable clear-sky semantics, leading to more consistent representations and more robust final predictions. 
+
+b) Detailed Contributions of DCHF and DCGD: To further analyze the proposed fusion design, we separately evaluate the contributions of the DCHF module and its core component, DCGD. 
+
+The Effectiveness of DCHF: We replace DCHF with a stan-dard SE-based fusion block to evaluate the role of discrepancy-guided fusion. Unlike DCHF, the SE block does not perform discrepancy-conditioned spatial filtering. As shown in Tab. III, this substitution leads to a clear performance drop, with the mIoU on M3M-CR decreasing from 54.20% to 53.35%. This result supports the value of spatial modulation guided by the cross-modal discrepancy map. Visual evidence in Fig. 6 is consistent with this observation: compared with the in-trinsic modality difference shown for reference in Fig. 6(c), the discrepancy map under cloudy observations in Fig. 6(d) exhibits pronounced responses concentrated in cloud-covered regions. Accordingly, the spatial gating network produces an attention map in Fig. 6(e) that highlights corrupted regions and suppresses the propagation of cloud-induced noise during spatial feature interaction. 
+
+The Effectiveness of DCGD: To assess the role of discrepancy-conditioned global descriptor construction, we re-place DCGD with standard GAP while keeping the remaining fusion design unchanged. Under this setting, the mIoU on M3M-CR decreases to 53.44%, indicating that standard GAP is more easily affected by cloud artifacts that are indiscrim-inately pooled into global channel statistics and can bias subsequent channel recalibration. This interpretation is further supported by the optical reliability map in Fig. 6(f) ( 1 − A), where low-reliability regions align well with the ground-truth cloudmask in Fig. 6(g). This observation suggests that DCGD helps suppress cloud-corrupted optical contributions during global descriptor construction. By dynamically down-weighting inconsistent optical regions, DCGD refines the global descriptors and encourages channel recalibration to rely more on stable SAR structural cues, thereby helping preserve semantic representations under severe occlusion. 
+
+c) Effectiveness of Knowledge Distillation and Multi-Task Regularization: Finally, we analyze the contribution of the teacher-student framework and the auxiliary task to the final land-cover mapping performance. 
+
+Knowledge Distillation: Removing the feature-level distil-lation branch leads to a clear performance drop on both benchmarks. As shown in Tab. III, the mPA on M3M-CR decreases from 68.33% to 65.43%. On WHU-OPT-SAR, mPA and mIoU decrease by 0.67% and 0.68%, respectively. These results suggest that clear-pixel distillation from the cloud-free teacher helps stabilize semantic representation learning by providing reliable semantic anchors in unoccluded regions. This supervision indirectly improves the final predictions under occlusion. 
+
+Cloud Removal: The exclusion of the auxiliary cloud re-moval head also adversely affects the segmentation accuracy. Specifically, the mIoU on M3M-CR decreases from 54.20% to 52.85%, and the mIoU on WHU-OPT-SAR also drops. This validates the role of the cloud removal head as an effective IEEE TGRS, VOL. X, NO. X, MARCH 2026 10 a b c d e f g 
+
+> Fig. 6. Intermediate outputs of the DCHF module are shown from left to right as follows: (a) cloudy optical image, (b) SAR image, (c) discrepancy map between cloud-free optical image and SAR image, (d) discrepancy map between cloudy optical image and SAR image, (e) discrepancy attention map, (f) reliability map, (g) cloudmask image.
+
+appearance-level regularizer. By forcing the encoder to recon-struct the underlying cloud-free optical image, the auxiliary task encourages the model to capture fine-grained surface details and cloud-invariant structural cues. This multi-task optimization strategy creates a synergy where the low-level geometric information recovered by the CR branch directly facilitates the high-level semantic discrimination required for robust land-cover mapping under cloudy conditions. 
+
+D. Efficiency Analysis and Architectural Pareto Optimality 
+
+To assess the deployment practicality of EDC, we com-pare model complexity (Params/GMAC), inference throughput (Thrp.), and segmentation accuracy (mIoU) on M3M-CR and WHU-OPT-SAR. All throughput results are measured under a fixed protocol with 160 × 160 inputs, batch size 128, and FP16 inference with AMP. The quantitative results in Tab. IV summarize the practical accuracy–efficiency trade-off among current cloud-resilient optical-SAR segmentation models. 
+
+1) Pareto Frontier under a Fixed Deployment Protocol: 
+
+Under the same deployment protocol, EDC achieves the best segmentation accuracy on both datasets while also remaining the fastest among all compared methods. This places EDC on a favorable Pareto frontier: unlike heavy context-aggregation models, it does not trade runtime efficiency for stronger accu-racy, and unlike lightweight alternatives, it does not sacrifice segmentation quality for speed. These results indicate that EDC achieves a more effective balance between accuracy and deployment efficiency than existing baselines. 
+
+2) Efficiency from Structural Decoupling in the Encoder: 
+
+The efficiency advantage mainly comes from the proposed 
+
+Efficiency-Oriented Multi-Scale Encoder (Sec. III–B). Instead of relying on dense global token interaction as in heavy Transformer-style backbones, EDC routes long-range context through Carrier Tokens , which decouples local feature extrac-tion from global dependency modeling. This design reduces                                                   
+
+> TABLE IV MODEL COMPLEXITY ,COMPUTATION ,INFERENCE THROUGHPUT ,AND SEGMENTATION ACCURACY COMPARISON ON M3M-CR AND
+> WHU-OPT-SAR. T HRP .DENOTES INFERENCE THROUGHPUT IN IMAGES PER SECOND (IMG /S), MEASURED UNDER THE BENCHMARKING PROTOCOL IN SEC . IV-D.
+> Method Para (M) GMAC Thrp. M3M-CR WHU-OPT-SAR mIoU mIoU DCSA-Net 80.01 8.17 275.30 40.09 37.63 AMM-FuseNet 62.30 43.21 464.3 48.29 35.24 MCANet 131.76 11.90 952.3 50.62 31.66 FTransUNet 203.40 21.90 410.39 50.63 46.28 CMX 66.57 5.58 968.3 50.58 41.15 CloudSeg 203.21 16.25 491.2 53.64 48.70
+> EDC (Ours) 108.36 10.74 971.2 54.20 49.58
+
+redundant global mixing and leads to a better complexity– throughput profile in practice. Compared with CloudSeg, EDC uses substantially fewer parameters and less computation, while still achieving higher mIoU on both M3M-CR and WHU-OPT-SAR. The corresponding throughput gain further confirms that the architectural efficiency translates into con-sistent runtime benefits under the same inference setting. 
+
+3) Effective Capacity under Cloud Occlusion via DCHF: 
+
+Beyond raw complexity, robust performance under cloud occlusion also depends on how effectively computation is utilized. Methods that aggregate context uniformly over all spatial locations may not only incur unnecessary overhead, but also propagate cloud-corrupted optical responses into the fused representation. This tendency can be observed in methods with relatively high computational cost but limited accuracy gains. In contrast, EDC employs discrepancy-conditioned fusion (Sec. III–C) to suppress unreliable optical features and rely more on stable SAR cues in occluded regions. This improves the effective use of its parameter and computation budget, IEEE TGRS, VOL. X, NO. X, MARCH 2026 11                                     
+
+> TABLE V REPRESENTATION EFFICIENCY DIAGNOSTICS . W E REPORT EFFECTIVE -RANK STATISTICS AND ACTIVATION SPARSITY AT THE DEEPEST CROSS -MODAL ENCODER STAGE (S T A G E 4_ C M ,C=512 ), AND THE CHANNEL DIMENSION CdAND LINEAR CKA WITH LOGITS AT THE CROSS -MODAL DECODER OUTPUT (C M _D E C O D E R _O U T ). Method stage4_cm cm_decoder_out
+> erank ↑nerank ↑sparsity ( |x|<10 −3)CdCKA ↑
+> CMX 8.70 0.017 0.004 512 0.609 CloudSeg 23.58 0.046 0.667 16 0.821 EDC (Ours) 131.97 0.258 0.119 32 0.930
+
+enabling stronger segmentation performance without requiring a heavier model. 
+
+4) Budgeted Performance: Lightweight vs. Heavy vs. Ours: 
+
+Tab. IV and Fig. 1 also reveal a clear two-sided limitation in existing designs. Lightweight models can be fast, but often lack sufficient representational capacity for cloud-occluded scene understanding, leading to inferior segmentation accu-racy. Conversely, heavy baselines allocate substantially larger parameter and computation budgets, yet still fail to outperform EDC while running much more slowly. EDC provides a better balance between these two extremes: it retains sufficient capac-ity for long-range context reasoning and reliable fusion under occlusion, while structural optimization avoids the redundancy of heavier architectures, yielding stronger accuracy at practical deployment speed. 
+
+E. Representation-Level Efficiency Analysis 
+
+To complement the complexity and mIoU comparisons, we further examine how EDC organizes multimodal rep-resentations relative to representative baselines. We ex-tract features from (i) the deepest cross-modal fusion stage (stage4_cm , C=512 ) and (ii) the cross-modal decoder output ( cm_decoder_out ). For a fair layer-wise compar-ison, we use stage-4 features for all methods, since both the SegFormer-based baselines (CMX and CloudSeg) and our FasterViT-based encoder follow a four-stage hierarchy. Therefore, stage4_cm in EDC is aligned with the stage-4 fused representations in the baselines. We then compute the 
+
+Effective Rank (erank) and Normalized Effective Rank (nerank) to measure representational diversity and channel utilization, and use linear Centered Kernel Alignment (CKA) between 
+
+cm_decoder_out and logits to assess task alignment [49]. Let X ∈ RC×N denote a feature matrix with C channels and 
+
+N spatial locations where the spatial dimensions are flattened. We first compute the covariance 
+
+Σ = 1
+
+N XX ⊤, (16) with eigenvalues {λi}Ci=1 , and define the normalized spectrum as, 
+
+H(p) = −
+
+> C
+
+X
+
+> i=1
+
+pi log pi
+
+pi = λi
+
+PCj=1 λj
+
+. (17) The effective rank and normalized effective rank are then 
+
+
+
+nerank( X) = erank( X)
+
+C
+
+erank( X) = exp  H(p) . (18) Given two centered feature matrices X ∈ RN ×dx and Y ∈
+
+RN ×dy collected over the same set of pixels, the linear CKA is defined as 
+
+CKA( X, Y ) = X⊤Y 2
+
+> F
+
+X⊤X F Y ⊤Y F
+
+. (19) In this subsection, X denotes the layer features and Y denotes the logits. 
+
+Preventing Feature Degeneration in Deep Layers: As shown in Tab. V, CloudSeg exhibits reduced representational diversity at the deepest encoder stage. Although its fused feature has 512 channels, the normalized effective rank is only 0.046, together with high activation sparsity (66.7%), suggest-ing that many channel directions are weakly utilized during deep fusion. In contrast, EDC maintains substantially higher-rank fused features (erank = 131 .97 , nerank = 0 .258 ) with much lower sparsity ( 11 .9% ), indicating better preservation of diverse feature directions in deep cross-modal fusion. 
+
+Structural Efficiency and Bottleneck Alignment: The comparison at the decoder output reveals distinct structural behaviors. CMX maintains a high-dimensional pre-logit fea-ture ( Cd=512 ) but achieves a relatively low CKA (0.609), indicating weaker linear alignment at this stage. CloudSeg employs a much narrower bottleneck ( Cd=16 ) and is as-sociated with higher alignment (0.821) compared to CMX. Notably, EDC compresses the deep fused representation into a compact pre-logit bottleneck ( Cd=32 ) while achieving the highest task alignment (0.930). Taken together, these results indicate that EDC not only mitigates deep representational degeneration in the fused encoder, but also converts the fused representation into a compact and highly task-aligned pre-logit space, consistent with a more efficient (closer-to-linear) readout in the final segmentation head. Overall, EDC maintains higher-rank and less sparse deep fusion features, and achieves the strongest logit alignment with a compact bottleneck ( Cd=32 ), supporting a more efficient organization of multimodal representations under a constrained complexity budget. 
+
+F. Confidence and Calibration Analysis 
+
+Beyond standard accuracy metrics like mIoU, the reliability of predictions is also paramount. A reliable model should be IEEE TGRS, VOL. X, NO. X, MARCH 2026 12  
+
+> Fig. 7. Residual calibration results on the M3M-CR dataset. The top row shows residual calibration plots of all compared methods, while the bottom row zooms in on the top-performing models for fine-grained comparison. From left to right are the All Regions, Cloud-Free, and Cloudy subsets, where negative indicates over-confidence and positive indicates under-confidence.
+
+well-calibrated, meaning its predicted confidence probabili-ties should match its actual accuracy [50]. To evaluate this, we compute pixel-wise confidence as the maximum softmax probability and group predictions into confidence bins [51]. For each bin, we report the empirical accuracy (fraction of correctly classified pixels) and the average confidence. We vi-sualize the calibration behavior using residual calibration plots, defined as Residual = Accuracy − Confidence . Graphically, a perfectly calibrated model yields a flat line at zero; values below zero indicate over-confidence, while values above zero indicate under-confidence. As illustrated in Tab. VI, we also report the Expected Calibration Error (ECE) to quantify the overall deviation [52], [53]. The analysis is performed on three subsets of the test set: all pixels, only cloud-free pixels, and only cloudy pixels, according to the ground-truth cloudmask. To compute ECE, we partition the confidence interval [0 , 1] 
+
+into B bins. Let Sb be the set of pixels whose confidence falls into bin b, with nb = |S b| and N = PBb=1 nb. Denoting the average confidence and empirical accuracy in bin b as conf b
+
+and acc b, the ECE is 
+
+ECE = 
+
+> B
+
+X
+
+> b=1
+
+nb
+
+N acc b − conf b . (20) 
+
+1) Overall Calibration Landscape: Fig. 7 (top) visualizes the calibration behavior of all compared methods. The results reveal distinct behavioral tiers. Earlier fusion baselines ex-hibit pronounced miscalibration: DCSA-Net is predominantly under-confident, yielding a relatively high ECE of 0.0745, whereas MCANet tends to be over-confident and frequently assigns high confidence to incorrect predictions. In contrast, more recent methods, including CloudSeg, FTransUNet, and EDC, remain much closer to the zero-residual line, indicating substantially improved calibration quality. 
+
+2) Robustness Under Cloud Occlusion: To examine the differences among the strongest models more closely, Fig. 7 (bottom) zooms in on the residual calibration curves of EDC, CloudSeg, and FTransUNet, with particular attention to the challenging Cloudy subset. Both CloudSeg and FTransUNet                      
+
+> TABLE VI ECE OF STRONG BASELINES ON M3M-CR. ALL/CF/CY DENOTE THE ALL /CLOUD -FREE /CLOUDY REGIONS .Method ECE (All) ↓ECE (CF) ↓ECE (CY) ↓
+> EDC (Ours) 0.0046 0.0065 0.0053
+> CloudSeg 0.0126 0.0133 0.0120 FTransUNet 0.0161 0.0163 0.0159 CMX 0.0420 0.0420 0.0419
+
+exhibit consistently negative residuals in cloudy regions, indicating a tendency toward over-confidence under occlu-sion. This effect is especially evident for CloudSeg, whose curve falls noticeably below zero and whose Cloudy ECE reaches 0.0120. Such behavior suggests that, without explicit discrepancy modeling, dense context aggregation may over-smooth corrupted features and produce high-confidence errors in cloud-affected regions [54]. In contrast, EDC shows the most stable calibration behavior, with residuals remaining close to zero across confidence intervals. Notably, in the high-confidence range ( > 0.8) of the Cloudy subset, EDC avoids the pronounced negative deviation observed in the baselines. This visual trend is consistent with the quantitative results: EDC achieves the lowest Cloudy ECE of 0.0053 , corresponding to a 55.8% reduction relative to CloudSeg. These observations are consistent with the design goal of discrepancy-conditioned fusion in reducing over-confident er-rors under cloud occlusion. By using the cross-modal discrep-ancy map as a spatial gate, EDC suppresses cloud-corrupted optical responses before fusion, which helps produce confi-dence estimates that more closely track empirical accuracy in occluded regions. V. C ONCLUSION 
+
+In this paper, we presented EDC, an efficiency-oriented, discrepancy-conditioned framework for cloud-resilient optical-SAR semantic segmentation via progressive spatial-spectral fusion. It is built on two core designs: (i) EOME intro-duces Carrier Tokens to decouple local feature extraction from global dependency modeling, alleviating the efficiency-receptive-field bottleneck; and (ii) DCHF uses pixel-wise cross-modal discrepancies as a reliability proxy to gate cloud-corrupted responses and prevent noise from biasing global context aggregation. Experiments on M3M-CR and WHU-OPT-SAR demon-strate state-of-the-art segmentation accuracy, both in cloud-covered and cloud-free regions. Meanwhile, EDC remains highly efficient, reducing parameters by 46.7% and improving inference speed by 97.7% compared with heavy context-aggregation models such as CloudSeg, indicating that strong cloud-resilient mapping does not require prohibitive computa-tional cost. Looking forward, we will optimize EDC for resource-constrained on-board satellite processing to enable real-time cloud-resilient monitoring at the sensor edge, and further explore lightweight compression techniques to facilitate this deployment. IEEE TGRS, VOL. X, NO. X, MARCH 2026 13 
+
+REFERENCES [1] J. Li, Y. Cai, Q. Li, M. Kou, and T. Zhang, “A review of remote sensing image segmentation by deep learning methods,” Int. J. Digit. Earth ,vol. 17, no. 1, p. 2328827, 2024. [2] S. Lu, J. Guo, J. R. Zimmer-Dauphinee, J. M. Nieusma, X. Wang, P. VanValkenburgh, S. A. Wernke, and Y. Huo, “Vision foundation models in remote sensing: A survey,” IEEE Geosci. Remote Sens. Mag. ,vol. 13, no. 3, pp. 190–215, 2025. [3] C. Liu, Y. Sun, Y. Xu, Z. Sun, X. Zhang, L. Lei, and G. Kuang, “A review of optical and sar image deep feature fusion in semantic segmentation,” 
+
+IEEE J. Sel. Top. Appl. Earth Observ. Remote Sens. , vol. 17, pp. 12 910– 12 930, 2024. [4] A. Meraner, P. Ebel, X. X. Zhu, and M. Schmitt, “Cloud removal in sentinel-2 imagery using a deep residual neural network and sar-optical data fusion,” ISPRS J. Photogramm. Remote Sens. , vol. 166, pp. 333– 346, 2020. [5] P. Ebel, A. Meraner, M. Schmitt, and X. X. Zhu, “Multi-sensor data fusion for cloud removal in global and all-season sentinel-2 imagery,” 
+
+IEEE Trans. Geosci. Remote Sens. , vol. 59, no. 7, pp. 5866–5878, 2021. [6] H. Zhou, C.-H. Kao, C. P. Phoo, U. Mall, B. Hariharan, and K. Bala, “AllClear: A comprehensive dataset and benchmark for cloud removal in satellite imagery,” in Adv. Neural Inf. Process. Syst. 37, NEURIPS ,2024. [7] A. I. Flores-Anderson, J. Cardille, K. Azad, E. Cherrington, Y. Zhang, and S. Wilson, “Spatial and temporal availability of cloud-free optical observations in the tropics to monitor deforestation,” Sci. Data , vol. 10, p. 550, 2023. [8] S. Liu, H. Chen, K. Tang, Y. Chen, H. Shu, T. Zan, Y. Xue, and J. Chen, “Innovative sar-optical data fusion for reflectance time series reconstruction in vegetation-covered regions,” Int. J. Appl. Earth Obs. Geoinf. , vol. 140, p. 104567, 2025. [9] X. Liu, H. Peng, N. Zheng, Y. Yang, H. Hu, and Y. Yuan, “EfficientViT: Memory efficient vision transformer with cascaded group attention,” in Proc. IEEE/CVF Conf. Comput. Vis. Pattern Recognit. , 2023, pp. 14 420–14 430. [10] Y. Liu, Y. Tian, Y. Zhao, H. Yu, L. Xie, Y. Wang, Q. Ye, J. Jiao, and Y. Liu, “VMamba: Visual state space model,” in Adv. Neural Inf. Process. Syst. 37 , 2024. [11] H. Wu, B. Xiao, N. Codella, M. Liu, X. Dai, L. Yuan, and L. Zhang, “CvT: Introducing convolutions to vision transformers,” in Proc. IEEE/CVF Int. Conf. Comput. Vis. , 2021, pp. 22–31. [12] E. Xie, W. Wang, Z. Yu, A. Anandkumar, J. M. Alvarez, and P. Luo, “Segformer: simple and efficient design for semantic segmentation with transformers,” in Proceedings of the 35th International Conference on Neural Information Processing Systems , ser. NIPS ’21. Curran Associates Inc., 2021. [13] C. Zhang and J. Yao, “Multi-faceted adaptive token pruning for efficient remote sensing image segmentation,” Remote Sens. , vol. 17, no. 14, 2025. [14] F. Xu, Y. Shi, W. Yang, G.-S. Xia, and X. X. Zhu, “CloudSeg: A multi-modal learning framework for robust land cover mapping under cloudy conditions,” ISPRS J. Photogramm. Remote Sens. , vol. 214, pp. 21–32, 2024. [15] X. Ma, X. Zhang, M.-O. Pun, and M. Liu, “A multilevel multimodal fusion transformer for remote sensing semantic segmentation,” IEEE Trans. Geosci. Remote Sens. , vol. 62, pp. 1–15, 2024. [16] J. Zhang, H. Liu, K. Yang, X. Hu, R. Liu, and R. Stiefelhagen, “CMX: Cross-modal fusion for rgb-x semantic segmentation with transformers,” 
+
+IEEE Trans. Intell. Transp. Syst. , vol. 24, no. 12, pp. 14 679–14 694, 2023. [17] X. Li, G. Zhang, H. Cui, and S. Hou, “MCANet: A joint semantic segmentation framework of optical and SAR images for land use classification,” Int. J. Appl. Earth Obs. Geoinf. , vol. 106, p. 102638, 2022. [18] A. Kendall, Y. Gal, and R. Cipolla, “Multi-task learning using uncer-tainty to weigh losses for scene geometry and semantics,” in Proc. IEEE/CVF Conf. Comput. Vis. Pattern Recognit. , 2018. [19] G. Hinton, O. Vinyals, and J. Dean, “Distilling the knowledge in a neural network,” 2015, arXiv:1503.02531. [20] Q. Han, B. Huang, and Y. Li, “Sar-conditioned consistency model for effective cloud removal in remote sensing images,” Remote Sens. ,vol. 17, no. 22, 2025. [21] X. X. Zhu, D. Tuia, L. Mou, G. C. Xia, L. Zhang, F. Xu, and F. Fraundorfer, “Deep learning in remote sensing: A comprehensive review and list of resources,” IEEE Geosci. Remote Sens. Mag. , vol. 5, no. 4, pp. 8–36, 2017. [22] J. Long, E. Shelhamer, and T. Darrell, “Fully convolutional networks for semantic segmentation,” in Proc. IEEE Conf. Comput. Vis. Pattern Recognit. , 2015, pp. 3431–3440. [23] O. Ronneberger, P. Fischer, and T. Brox, “U-net: Convolutional networks for biomedical image segmentation,” in Medical Image Computing and Computer-Assisted Intervention , 2015, pp. 234–241. [24] L.-C. Chen, Y. Zhu, G. Papandreou, F. Schroff, and H. Adam, “Encoder-decoder with atrous separable convolution for semantic image segmen-tation,” in Proc. Eur. Conf. Comput. Vis. , 2018, pp. 833–851. [25] W. Luo, Y. Li, and R. Urtasun, “Understanding the effective receptive field in deep convolutional neural networks,” in Adv. Neural Inf. Process. Syst. , 2016. [26] A. Dosovitskiy, L. Beyer, A. Kolesnikov, D. Weissenborn, X. Zhai et al. ,“An image is worth 16x16 words: Transformers for image recognition at scale,” in Int. Conf. Learn. Represent. , 2021. [27] J. Fan, Z. Shi, Y. Du, and C. Zhuang, “HR-MM Segformer: Enhancing land use and land cover semantic segmentation through transformer-based multisource remote sensing feature fusion,” Environ. Model. Softw. , vol. 197, p. 106848, 2026. [28] Z. Wang, N. Xu, Z. You, and S. Zhang, “DiffMamba: semantic diffusion guided feature modeling network for semantic segmentation of remote sensing images,” GISci. Remote Sens. , vol. 62, no. 1, p. 2484829, 2025. [29] M.-H. Guo, C.-Z. Lu, Q. Hou, Z.-N. Liu, M.-M. Cheng, and S.-M. Hu, “SegNeXt: Rethinking convolutional attention design for semantic segmentation,” in Adv. Neural Inf. Process. Syst. , vol. 35, 2022, pp. 1140–1156. [30] Y. Liu, Y.-H. Wu, G. Sun, L. Zhang, A. Chhatkuli, and L. Van Gool, “Vision transformers with hierarchical attention,” Mach. Intell. Res. ,vol. 21, pp. 670–683, 2024. [31] A. Hatamizadeh, G. Heinrich, H. Yin, A. Tao, J. M. Alvarez, J. Kautz, and P. Molchanov, “FasterViT: Fast vision transformers with hierarchical attention,” in The Twelfth Int. Conf. Learn. Represent. , 2024. [32] J. Li, Z. Wang, N. Xu, and Z. You, “Semantic segmentation with scale alignment and contextual information fusion for multimodal remote sensing images,” Inf. Fusion , vol. 126, p. 103671, 2026. [33] M. Schmitt, L. H. Hughes, C. Qiu, and X. X. Zhu, “SEN12MS – a curated dataset of georeferenced multi-spectral sentinel-1/2 imagery for deep learning and data fusion,” ISPRS Annals of the Photogrammetry, Remote Sensing and Spatial Information Sciences , vol. IV-2/W7, pp. 153–160, 2019. [34] P. Ebel, Y. Xu, M. Schmitt, and X. X. Zhu, “SEN12MS-CR-TS: A remote-sensing data set for multimodal multitemporal cloud removal,” 
+
+IEEE Trans. Geosci. Remote Sens. , vol. 60, pp. 1–14, 2022. [35] Y. Hong, J. Pan, J. Xu, S. Jin, and J. Li, “SMAF-net: semantics-guided modality transfer and hierarchical feature fusion for optical-sar image registration,” Int. J. Appl. Earth Obs. Geoinf. , vol. 143, p. 104827, 2025. [36] W. Kang, Y. Xiang, F. Wang, and H. You, “CFNet: A cross fusion network for joint land cover classification using optical and sar images,” 
+
+IEEE J. Sel. Top. Appl. Earth Observ. Remote Sens. , vol. 15, pp. 1562– 1574, 2022. [37] C. Li, S. Li, and X. Liu, “Breaking through clouds: A hierarchical fusion network empowered by dual-domain cross-modality interactive attention for cloud-free image reconstruction,” Inf. Fusion , vol. 113, p. 102649, 2025. [38] A. Vaswani, N. Shazeer, N. Parmar, J. Uszkoreit, L. Jones, A. N. Gomez, Ł. Kaiser, and I. Polosukhin, “Attention is all you need,” in Adv. Neural Inf. Process. Syst. , 2017. [39] S. Woo, J. Park, J.-Y. Lee, and I. S. Kweon, “CBAM: Convolutional block attention module,” in Proc. Eur. Conf. Comput. Vis. , 2018. [40] Q. Wang, B. Wu, P. Zhu, P. Li, W. Zuo, and Q. Hu, “ECA-net: Efficient channel attention for deep convolutional neural networks,” in Proc. IEEE/CVF Conf. Comput. Vis. Pattern Recognit. , 2020. [41] J. T. Barron, “A general and adaptive robust loss function,” in Proc. IEEE/CVF Conf. Comput. Vis. Pattern Recognit. , 2019. [42] F. Xu, Y. Shi, P. Ebel, W. Yang, and X. X. Zhu, “Multi-modal and multi-resolution data fusion for high-resolution cloud removal: A novel baseline and benchmark,” IEEE Trans. Geosci. Remote Sens. , vol. 62, pp. 1–15, 2024. [43] X. Wang, Y. Zhang, T. Lei, Y. Wang, Y. Zhai, and A. K. Nandi, “Dy-namic convolution self-attention network for land-cover classification in VHR remote-sensing images,” Remote Sens. , vol. 14, no. 19, 2022. [44] W. Ma, O. Karakus ¸, and P. L. Rosin, “AMM-FuseNet: Attention-based multi-modal image fusion network for land cover mapping,” Remote Sens. , vol. 14, no. 18, 2022. [45] Y. Li, F. Wei, Y. Zhang, W. Chen, and J. Ma, “HS 2P: Hierarchical spectral and structure-preserving fusion network for multimodal remote IEEE TGRS, VOL. X, NO. X, MARCH 2026 14 
+
+sensing image cloud and shadow removal,” Inf. Fusion , vol. 94, pp. 215–228, 2023. [46] Y. Wang, B. Zhang, W. Zhang, D. Hong, B. Zhao, and Z. Li, “Cloud removal with sar-optical data fusion using a unified spatial-spectral residual network,” IEEE Trans. Geosci. Remote Sens. , vol. 62, no. 5600820, pp. 1–20, 2024. [47] F. Xu, Y. Shi, P. Ebel, L. Yu, G.-S. Xia, W. Yang, and X. X. Zhu, “GLF-CR: Sar-enhanced cloud removal with global–local fusion,” ISPRS J. Photogramm. Remote Sens. , vol. 192, pp. 268–278, 2022. [48] J. Hu, L. Shen, and G. Sun, “Squeeze-and-excitation networks,” in Proc. IEEE Conf. Comput. Vis. Pattern Recognit. , 2018. [49] S. Kornblith, M. Norouzi, H. Lee, and G. Hinton, “Similarity of neural network representations revisited,” in Int. Conf. Mach. Learn. , 2019. [50] A. Niculescu-Mizil and R. Caruana, “Predicting good probabilities with supervised learning,” in Int. Conf. Mach. Learn. , 2005. [51] D. Hendrycks and K. Gimpel, “A baseline for detecting misclassified and out-of-distribution examples in neural networks,” in Int. Conf. Learn. Represent. , 2017. [52] C. Guo, G. Pleiss, Y. Sun, and K. Q. Weinberger, “On calibration of modern neural networks,” in Int. Conf. Mach. Learn. , 2017. [53] M. Pavlovic, “Understanding Model Calibration - A gentle introduction and visual exploration of calibration and the expected calibration error (ECE),” in ICLR Blogposts , 2025. [54] Y. Ovadia, E. Fertig, J. Ren, Z. Nado, D. Sculley, S. Nowozin, J. V. Dil-lon, and B. Lakshminarayanan, “Can you trust your model’s uncertainty? evaluating predictive uncertainty under dataset shift,” in Adv. Neural Inf. Process. Syst. , 2019.
