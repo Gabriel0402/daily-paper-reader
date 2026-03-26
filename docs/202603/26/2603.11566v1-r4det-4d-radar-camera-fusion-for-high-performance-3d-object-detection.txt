@@ -1,0 +1,556 @@
+Title: R4Det: 4D Radar-Camera Fusion for High-Performance 3D Object Detection
+
+URL Source: https://arxiv.org/pdf/2603.11566v1
+
+Published Time: Fri, 13 Mar 2026 00:35:22 GMT
+
+Number of Pages: 11
+
+Markdown Content:
+# R4Det: 4D Radar-Camera Fusion for High-Performance 3D Object Detection 
+
+## Zhongyu Xia 1 Yousen Tang 1† Yongtao Wang 1B Zhifeng Wang 2 Weijun Qin 21 Wangxuan Institute of Computer Technology, Peking University 2 EBTech Co. Ltd 
+
+{xiazhongyu,wyt }@pku.edu.cn 2352614@tongji.edu.cn zhifengw@ebtech.com 
+
+## Abstract 
+
+4D radar–camera sensing configuration has gained in-creasing importance in autonomous driving. However, ex-isting 3D object detection methods that fuse 4D Radar and camera data confront several challenges. First, their ab-solute depth estimation module is not robust and accurate enough, leading to inaccurate 3D localization. Second, the performance of their temporal fusion module will de-grade dramatically or even fail when the ego vehicle’s pose is missing or inaccurate. Third, for some small objects, the sparse radar point clouds may completely fail to re-flect from their surfaces. In such cases, detection must rely solely on visual unimodal priors. To address these limitations, we propose R4Det, which enhances depth es-timation quality via the Panoramic Depth Fusion module, enabling mutual reinforcement between absolute and rela-tive depth. For temporal fusion, we design a Deformable Gated Temporal Fusion module that does not rely on the ego vehicle’s pose. In addition, we built an Instance-Guided Dynamic Refinement module that extracts semantic proto-types from 2D instance guidance. Experiments show that R4Det achieves state-of-the-art 3D object detection results on the TJ4DRadSet and VoD datasets. 
+
+## 1. Introduction 
+
+The cornerstone of autonomous driving safety lies in 3D perception. To achieve this goal, the community has been actively exploring sensor configurations that go beyond the conventional LiDAR-camera setup. Among emerging al-ternatives, 4D millimeter-wave radar has gained significant attention for its all-weather reliability, long-range sensing, and substantially lower cost compared with LiDAR. How-ever, the inherent sparsity and noise characteristics of radar point clouds make it insufficient to support high-precision 3D detection on its own. Therefore, 4D radar-camera multi-modal fusion approaches have become the prevailing choice in practical applications. However, developing high-    
+
+> †This work was done as an intern at PKU. BCorresponding author. 46810
+> FPS on RTX3090
+> 35
+> 40
+> 45
+> mAP on TJ4DRadSet dataset (%)
+> RCFusion
+> FUTR3D BEVFusion
+> LXL
+> SGDet3D
+> CVFusion
+> R4Det(Ours)
+
+Figure 1. Comparison of R4Det with current 4D radar-camera real-time detectors. 
+
+performance 4D radar-camera 3D object detection models faces numerous challenges. The primary challenge in current 4D radar–camera fu-sion frameworks is the limited accuracy of their absolute depth estimation module, which leads to inaccurate 3D lo-calization. Current radar–camera fusion frameworks [1, 13, 14] rely on accurate dense depth estimation during view transformation. However, these methods only apply ab-solute depth supervision to foreground points, resulting in sparse depth supervision. Hence, they can not achieve high-quality panoramic depth estimation, which benefits fore-ground localization and reduces background noise. In ad-dition, recent relative depth estimation works show strong generalization capabilities [2, 24, 26]. How to effectively leverage their capabilities for accurate panoramic absolute depth estimation is a topic worth investigating. The second challenge confronting current radar-camera fusion frameworks involves temporal fusion due to the ab-sence of the ego-vehicle pose. Temporal input provides cru-cial historical 3D information of occluded objects, which is essential for 3D object detection tasks. However, most methods developed upon the mainstream 4D radar dataset, 
+
+i.e. , TJ4DRadSet, remain single-frame detectors, largely due to the lack of ego-vehicle pose in this dataset. More-over, in real-world scenarios, particularly in rural areas, missing or inaccurate ego-vehicle poses due to GPS signal loss are also common. Hence, some studies [8] have begun 1
+
+> arXiv:2603.11566v1 [cs.CV] 12 Mar 2026
+
+incorporating temporal information by merely stacking his-torical BEV features along the channel dimension, which yield limited improvements. The third challenge lies in detecting small objects, e.g. ,distant cyclists, which appear in the image without any point cloud reflected from their surfaces. For these chal-lenging cases, it is necessary to leverage visual priors to identify them. Some works [6, 23] attempt to extract in-stance proposals from 2D features, but they all rely on Transformer-based architectures and regard the extracted instances only as queries, making them less compatible with other widely used CNN-based frameworks. To address the three challenges mentioned above, we propose R4Det, a novel 4D radar-camera fusion framework for high-performance 3d object detection. To handle the first challenge, we propose the Panoramic Depth Fusion (PDF) module. Specifically, to eliminate geometric contam-ination, PDF abandons sparse metric regression and intro-duces a novel pairwise ordinal ranking loss with dynamic tolerance, enabling the model to learn high-fidelity, edge-sharp, and structurally continuous geometry. To tackle the second challenge, we design a Deformable Gated Tempo-ral Fusion (DGTF) module that explicitly aligns non-rigid motion with deformable convolutions and smooths tempo-ral noise through GRU-style gating, achieving stable fea-ture aggregation without the instability of implicit recur-rence. To deal with the third challenge, we propose an Instance-Guided Dynamic Refinement (IGDR) that lever-ages a 2D instance-guided semantic prototype to purify fea-tures, jointly optimized with the detection head to correct misprojected semantics and restore clarity for distant or par-tially occluded objects. To sum up, the key contributions of this work are: • We present a 4D radar-camera detector for highly ac-curate, efficient, and robust 3D object detection. • We propose three BEV-paradigm-compatible, plug-and-play modules, i.e. , Panoramic Depth Fusion, Deformable Gated Temporal Fusion, and Instance-Guided Dynamic Refinement, to produce high-quality panoramic absolute depth estimations, fuse temporal information without ego pose, and handle small ob-jects, respectively. • R4Det achieves state-of-the-art performance on both VoD and TJ4DRadSet dataset. 
+
+## 2. Related Work 
+
+2.1. Camera-only 3D Object Detection 
+
+Current camera-only 3D detection methods focus on recon-structing the 3D scene from synchronized image streams. BEVDet [5] and BEVDepth [11] predict dense pixel-wise depth maps and employ the Lift-Splat-Shoot (LSS) paradigm [18] to project image features into the bird’s-eye-view (BEV) space, constructing dense BEV represen-tations. Transformer-based methods, such as DETR3D [20] and PETR [15], use BEV queries or object-centric queries to perform implicit 2D-to-3D coordinate transformations and feature aggregation. Sparse geometry sampling strate-gies have also been explored to balance feature efficiency and spatial precision. To capture temporal information in dynamic scenarios, BEVFormer [12] and VideoBEV [4] in-tegrate temporal information either in the BEV space or via recurrent feature fusion. Despite their rich semantic repre-sentations, camera-only systems still suffer from significant depth and geometric uncertainty under occlusion, illumina-tion changes, or distant objects. 
+
+2.2. 4D Radar-Camera Fusion for 3D Object Detec-tion 
+
+To overcome the limitations of camera-only perception and integrate robust geometric and motion information, 4D millimeter-wave radar-camera fusion has attracted sig-nificant attention. BEV-level fusion methods, such as CRN [8], use multi-modal deformable attention to align radar and camera BEV features, while HVDetFusion [10] and RCBEVDet [14] explore effective radar BEV fea-ture extraction to supplement camera BEV streams. Hy-DRa [21] fuses features in both perspective and BEV spaces, CRAFT [7] introduces proposal-level fusion. RA-DIANT [16] leverages radar points to predict 3D offsets for correcting monocular depth errors without retraining the camera model. SGDet3D [1] introduces a dual-branch fu-sion module and a localization-aware cross-attention to fa-cilitate deep interactions across modalities. CVFusion [29] proposed Point- and grid-guided fusion modules to effec-tively fuse multiple-view features. However, existing fusion detectors still face three chal-lenges: (1) depth estimation heavily relies on sparse radar or LiDAR supervision, which induces geometric contamina-tion with blurred boundaries and discontinuous structures; (2) temporal modeling is often simplified as naive feature concatenation, failing to align non-rigid motion effectively; (3) cumulative errors in geometric and modality alignment can contaminate BEV features, impairing instance separa-tion and the detection of distant small objects. 
+
+## 3. Method 
+
+3.1. Overall Framework 
+
+As illustrated in Figure 2, the R4Det framework is a pro-gressive purification pipeline designed to address three core challenges in 4D radar-camera object detection. First, us-ing sparse radar features (extracted by the radar encoder) as queries, the Panoramic Depth Fusion (PDF) mod-ule establishes an accurate geometric foundation to extract dense image semantics (Sec. 3.2). The resulting image 2Image 
+
+> Encoder  Image BEV
+> Radar
+> Encoder
+
+Image 
+
+2D-to-BEV 
+
+Panoramic Depth Fusion (PDF) 
+
+Lprob 
+
+Lrelative 
+
+Lmetric 
+
+> Depth
+> Radar BEV
+
+Fusion  
+
+> Multi-modal Fusion Temporal Fusion
+
+Deformable Gated Temporal Fusion (DGTF) 
+
+Alignment  Update 
+
+Instance-Guided Dynamic Refinement 
+
+(IGDR) 
+
+> 2D Instance Segmentation
+
+Head RPN  RolAlign 
+
+> Car1
+> Pedestrian1
+> Truck1
+
+Feature 
+
+Mask Figure 2. Overall architecture of R4Det. Our framework progressively purifies the BEV representation in three stages: i) The Panoramic Depth Fusion (PDF) module generates a geometrically-accurate BEV feature map from multi-modal inputs. ii) The Deformable Gated Temporal Fusion (DGTF) module performs pose-free alignment and integration to create a temporally consistent feature. iii) The Instance-Guided Dynamic Refinement (IGDR) module leverages 2D instance prototypes to purify the final features for 3D detection. Panoramic Depth Fusion (PDF)     
+
+> Depth Network
+> Lrelative Lfound Lprob
+> Input
+> k
+> Neighbour Cross Attention
+> Image Feature
+> qv
+> Dilation
+> Holistic Refinment Edge Sharpening
+> Radar Feature
+> conv conv
+> Lprob Lfound
+> Edge Global
+> Lrelative
+> Depth Map
+
+Figure 3. Overview of the Panoramic Depth Fusion (PDF) module. 
+
+BEV is then concatenated with the radar BEV via a Multi-modal Fusion block to produce an initial fused BEV fea-ture map Xt. Next, our Deformable Gated Temporal Fusion (DGTF) module performs pose-free spatial align-ment and gated updates on Xt to maintain a temporally consistent hidden state Ht and output a fused feature FRC 
+
+(Sec. 3.3). Finally, the Instance-Guided Dynamic Refine-ment (IGDR) module leverages 2D instance prototypes to dynamically calibrate FRC , outputting a purified feature 
+
+Ff inal to the 3D detection head (Sec. 3.4). 
+
+3.2. Panoramic Depth Fusion (PDF) 
+
+To establish a robust geometric foundation, we employ a Neighborhood Cross-Attention mechanism [1] to aggre-gate dense image semantics using sparse radar features as queries. Built upon this aggregated representation, we in-troduce a triplet of dedicated supervisions to fundamen-tally resolve depth ambiguity and geometric contamina-tion. Probabilistic Supervision. We first supervise the pre-dicted depth distribution P ∈ RB×D×H×W using sparse high-precision LiDAR points dsparse  
+
+> g
+
+. Here, B is the batch size, D represents the number of depth bins, and H, W 
+
+are the spatial dimensions of the BEV map. Specifically, each sparse point is converted to a Gaussian target distribu-tion G(dsparse  
+
+> g
+
+). Then, we minimize the KL divergence over sparse locations Msparse :
+
+Lprob = 1
+
+|M sparse |
+
+X
+
+> i∈M sparse
+
+KL  G(dsparse  
+
+> gi
+
+) ∥ P i
+
+. (1) This branch determines the network’s probabilistic output, ensuring that the ‘Splat’ operation in the subsequent view transformation is based on a sharp and accurate distribution, thereby preventing geometric scattering. 
+
+Foundation-Model-Guided Depth Supervision For the decoded expected depth map ˆd, we incorporate both sparse radar-anchored depth and dense pseudo-ground truth (Met-ric3D), denoted as ddense  
+
+> g
+
+, as supervision. By applying the Smooth L1 loss for both metric targets, we effectively pre-vent gradient explosion caused by potential radar outliers: 
+
+Lfound = λabs Labs + λdense Ldense , (2) where 
+
+Labs = 1
+
+|M sparse |
+
+X
+
+> i∈M sparse
+
+SmoothL1 ( ˆdi, d sparse  
+
+> gi
+
+), (3) 
+
+Ldense = 1
+
+|M dense |
+
+X
+
+> i∈M dense
+
+SmoothL1 ( ˆdi, d dense  
+
+> gi
+
+). (4) This combination ensures both high metric precision on key points and robust structural coverage for the full scene. 3Structural Ranking Supervision. To preserve local depth relationships, we adopt a relative depth ranking loss: 
+
+sij = sign (ddense  
+
+> gi
+
+− ddense  
+
+> gj
+
+), (5) 
+
+Lpair (i, j ) = Softplus (−sij ( ˆdi − ˆdj )) . (6) However, naively sampling all pairs is inefficient, as most pairs lie on flat surfaces where small true depth differences are dominated by sensor noise, leading to ambiguous train-ing signals. Therefore, we only select pixel pairs with a sig-nificant difference that exceeds their depth-dependent dy-namic threshold given by: 
+
+τij = max( τabs , τ rel · (ddense  
+
+> gi
+
++ ddense  
+
+> gj
+
+)/2) ,
+
+include pair if |ddense  
+
+> gi
+
+− ddense  
+
+> gj
+
+| > τ ij . (7) where τabs and τrel are the absolute and relative toler-ance margins, respectively, designed to filter out noisy mi-nor differences on flat surfaces. Furthermore, we apply a 
+
+foreground-biased dual sampling strategy which separates edge regions and background: 
+
+Lrelative = wedge Ledge + wglobal Lglobal . (8) Here, wedge and wglobal are the balancing weights. Lglobal 
+
+samples pixel pairs randomly from background regions, ex-cluding foreground objects, to preserve overall scene struc-ture. The core innovation lies in Ledge ’s cross-boundary sampling : we first dilate 2D instance masks to form a nar-row dilated ring around each object (the difference between the dilated mask and original mask). During sampling, one pixel i is selected from this dilated ring (immediately out-side the object), and the other j from the object’s interior (original mask). This strategy forces the network to focus on sharp depth transitions at object boundaries, significantly enhancing contour sharpness and geometric accuracy. 
+
+Total Depth Loss. The overall depth loss combines all three supervisions is: 
+
+Ldepth = λ1Lprob + λ2Lf ound + λ3Lrelative . (9) This depth loss encourages the network to generate depth maps that are probabilistically accurate, metric-scale pre-cise, and structurally coherent, providing strong geometric priors for downstream 3D detection. 
+
+3.3. Deformable Gated Temporal Fusion (DGTF) 
+
+Fusing dense BEV features over time introduces two cou-pled challenges: spatial misalignment caused by ego-motion and object movement, and temporal inconsistency 
+
+due to dynamic scene evolution. Conventional recurrent units try to address both issues jointly through a single gat-ing mechanism, which is often inefficient and inaccurate when handling complex non-rigid motion. To address this conv         
+
+> Offset
+> DCN
+> Mask
+> Motion-Aware
+> Alignment
+> Deformable Gated Temporal Fusion(DGTF)
+> Decoupled Spatial Alignment & Temporal Update
+> Xt
+> Gated Temporal
+> Update
+> C
+> XtHt-1
+> rtzt
+> tanh
+> Ht-1
+> C
+> conv zconv r
+> •
+> σσ
+> C
+> conv h
+> ~
+> Ht
+> ~
+> •
+> +•
+> （1-zt）
+
+Figure 4. Architecture of the proposed Deformable Gated Tem-poral Fusion (DGTF) module. DGTF consists of two specialized branches: motion-aware alignment using deformable convolution and a gated temporal update mechanism. 
+
+Algorithm 1 Pseudo-code of Deformable Gated Temporal Fusion (DGTF)                                                
+
+> 1: Input: Current BEV feature Xt, previous hidden state Ht−1
+> 2: Output: Updated BEV feature Ht
+> 3: // Motion-Aware Alignment
+> 4: (∆ p, m ) = Conv offset (Concat (Xt, H t−1))
+> 5: ˜Ht−1=DCNv2 (Ht−1,∆p, m )
+> 6: // Gated Information Update
+> 7: rt=σ(Conv r(Concat (Xt,˜Ht−1)))
+> 8: ˜Ht=ϕ(Conv h(Concat (Xt, r t⊙˜Ht−1)))
+> 9: zt=σ(Conv z(Concat (Xt,˜Ht−1)))
+> 10: Ht= (1 −zt)⊙Xt+zt⊙˜Ht
+> 11: FRC =Conv out (Ht)
+> 12: return FRC
+
+issue, we explicitly decouple the challenge into two prob-lems and propose the Deformable Gated Temporal Fusion (DGTF) module with two branches, as illustrated in Fig-ure 8. The motion-aware alignment branch addresses the spatial correction issue, while the gated temporal update branch addresses the feature evolution problem. 
+
+Motion-Aware Alignment Branch. Given the current BEV feature Xt and the previous hidden state Ht−1, we first predict the sampling offset ∆p and modulation mask 
+
+m through an offset prediction convolution: 
+
+∆p, m = Conv of f set (Concat (Xt, H t−1)) . (10) The previous hidden feature is then aligned using de-formable convolution (DCNv2): 
+
+˜Ht−1 = DCNv2 (Ht−1, ∆p, m ). (11) This step compensates for motion-induced spatial misalign-ment without ego-pose priors: the learned offsets ∆p ex-4Instance-Semantic Prior Construction  
+
+> RPN
+> Softmax-weighted Fusion
+> ROIAlign
+> Prototype-Guided Dynamic Calibration
+> Conv
+> 𝛃𝛃 𝐁𝐁𝐁𝐁𝐁𝐁 𝛄𝛄 𝐁𝐁𝐁𝐁𝐁𝐁 𝐅𝐅 calibrated
+> Foreground-Gated Fusion
+> Gated Fusion
+> Conv 𝐁𝐁 𝐟𝐟𝐟𝐟𝐟𝐟𝐟𝐟𝐟𝐟𝐟𝐟𝐟𝐟𝐟𝐟
+> 𝐒𝐒 𝐁𝐁𝐁𝐁𝐁𝐁
+> Global Pool & Project
+
+Instance-Guided Dynamic Refinement (IGDR)  
+
+> 𝐅𝐅 𝐟𝐟𝐟𝐟𝐟𝐟𝐟𝐟𝐟𝐟
+> 𝐁𝐁 𝐁𝐁𝐁𝐁𝐁𝐁
+> 𝐅𝐅 𝐑𝐑𝐑𝐑
+> Image Feature Map
+> Fused BEV 𝐅𝐅 𝐑𝐑𝐑𝐑
+
+=· + 
+
+> Sigmoid Gate-conv 𝐆𝐆 𝐛𝐛𝐛𝐛
+
+Figure 5. Overview of Instance-Guided Dynamic Refinement (IGDR) module. IGDR adaptively refines radar-camera BEV features by suppressing instance overlap contamination and cross-modality noise, while preserving reliable distant object representations. 
+
+plicitly reconstruct the relative motion flow, while the mod-ulation mask m adaptively suppresses unreliable back-ground regions, thereby producing geometrically consistent features across frames. 
+
+Gated Information Update Branch. After feature align-ment, DGTF performs temporal reasoning via gated up-date units. The reset gate rt estimates the relevance of the aligned historical feature: 
+
+rt = σ(Conv r (Concat (Xt, ˜Ht−1))) . (12) The candidate feature ˜Ht integrates the filtered history and current observation: 
+
+˜Ht = ϕ(Conv h(Concat (Xt, r t ⊙ ˜Ht−1))) . (13) Finally, the update gate zt adaptively balances between new and historical information: 
+
+zt = σ(Conv z (Concat (Xt, ˜Ht−1))) , (14) 
+
+Ht = (1 − zt) ⊙ Xt + zt ⊙ ˜Ht. (15) where σ and ϕ denote the sigmoid and hyperbolic tan-gent (tanh) activation functions, respectively, and ⊙ rep-resents the element-wise multiplication. The refined fea-ture Ht is further processed by a lightweight convolutional layer(Conv out ) to produce the temporally aligned multi-modal feature FRC for the subsequent module. By disentangling spatial alignment and temporal update through “DCN for alignment, GRU for update”, DGTF achieves fine-grained motion compensation and robust tem-poral consistency, leading to significantly improved dy-namic perception in radar-camera BEV fusion. 
+
+3.4. Instance-Guided Dynamic Refinement (IGDR) 
+
+To address feature contamination in overlapping regions and blurred representations of distant small objects in BEV, we propose the Instance-Guided Dynamic Refinement (IGDR) module. The core idea is guidance: instead of rely-ing on potentially noisy FRC features to refine themselves, we leverage parallel, clean 2D instance features as semantic priors to actively calibrate the main BEV feature stream. 
+
+Instance-Semantic Prior Construction. IGDR takes three inputs: the multi-modal BEV feature FRC ∈ RB×C×H×W
+
+(from DGTF), 2D instance branch features Ef eatures ∈
+
+RN ×Cinst ×H′×W ′
+
+, and the instance spatial distribution map 
+
+SBEV ∈ RB×N ×H×W . Here, C denotes the channel di-mension of the BEV map, N and Cinst represent the num-ber of RPN instance proposals and their channel dimension, while H′ and W ′ are the spatial resolutions of the 2D RoI features extracted by the 2D instance segmentation head. 
+
+SBEV serves as a spatial assignment map, representing the probability distribution of the N instances projected into the BEV space via LSS. We first apply global average pooling over the spatial dimensions of Ef eatures and a projection layer to align channel dimensions, yielding instance prototype vectors 
+
+Eproj ∈ RB×N ×Cinst . Using SBEV as a soft attention map, we broadcast the prototypes into the BEV space via 
+
+Softmax-weighted Fusion to construct a clean instance fea-ture map EBEV :
+
+Aprob = Softmax dim =N
+
+ SBEV 
+
+τ
+
+
+
+, (16) 
+
+EBEV = BMM (Aprob , E proj ). (17) Here, τ is a temperature hyperparameter controlling the attention sharpness. EBEV ∈ RB×Cinst ×H×W represents the ideal instance semantics, fully decoupled from potential geometric projection errors and noise in FRC .
+
+Prototype-Guided Dynamic Calibration. The core in-novation of IGDR is instance-guided dynamic calibration. Rather than directly fusing EBEV with FRC , we treat 
+
+EBEV as a conditional generator to predict a pair of affine transformation parameters (scale γBEV and bias βBEV ) for each spatial location via Conv layers: 
+
+γBEV = Conv γ (EBEV ), βBEV = Conv β (EBEV )
+
+(18) 5We then apply a feature-wise affine transformation to the potentially noisy FRC , producing the calibrated feature 
+
+Fcalibrated :
+
+Fcalibrated = FRC ⊙ γBEV + βBEV (19) This mechanism allows the clean instance semantics to actively calibrate, enhance, or suppress the main feature stream, effectively mitigating cross-instance contamination and improving the representation of distant small objects. 
+
+Foreground-Gated Fusion. To ensure calibration only af-fects instance regions while preserving background struc-ture, we introduce a foreground gate Gbg . We first sum 
+
+SBEV along the instance dimension to represent the union of all instances, then apply a 3×3 Gate-conv layer followed by a Sigmoid function ( σ) to generate a smooth gating map: 
+
+Gbg = σ Conv gate 
+
+> N
+
+X
+
+> i=1
+
+S(i)
+
+> BEV
+
+!! 
+
+(20) The final output is obtained via Gated Fusion :
+
+Ff inal = (1 − Gbg ) ⊙ FRC + Gbg ⊙ Fcalibrated (21) To prevent exposure bias during training, we strictly avoid using ground-truth bounding boxes to extract instance fea-tures. Instead, IGDR is trained using realistic, potentially imperfect proposals dynamically generated by the 2D de-tector. This simulated inference path forces the module to learn robust calibration under non-ideal priors, yielding a highly plug-and-play refinement block without modifying the backbone. 
+
+## 4. Experiments 
+
+4.1. Datasets and Metrics 
+
+We conduct experiments on two large-scale 4D radar-camera datasets: TJ4DRadSet [27] and View-of-Delft [17] . TJ4DRadSet provides data from diverse driving conditions with four categories: Car , Pedestrian , Cyclist , and Truck .VoD offers data from complex urban traffic with three cate-gories: Car , Pedestrian , and Cyclist . We follow the official evaluation protocols for both. For TJ4DRadSet, we report 
+
+AP 3D and AP BEV for targets within 70m. For VoD, we re-port two complementary metrics: AP EAA (Entire Annotated Area) and AP DC (Driving Corridor). A unified IoU thresh-old convention is used: 0.50 for Car and Truck , and 0.25 for 
+
+Pedestrian and Cyclist .
+
+4.2. Implementation Details 
+
+We train the model with a global batch size of 32 using a two-stage strategy identical to SGDet3D [1]: (i) a 15-epoch spatial perception pretraining stage (freezing DGTF, IGDR, and the detection head) to initialize the PDF module and 2D instance branch for high-quality geometric and seman-tic priors; (ii) a 15-epoch spatial-temporal end-to-end fine-tuning stage with all parameters unfrozen to jointly opti-mize fusion, alignment, and dynamic refinement. We use AdamW with an initial learning rate of 4 × 10 −4 and co-sine decay, along with standard data augmentations includ-ing random flipping, rotation, and scaling. The data point on the right in Fig. 1 (mAP 45.47, FPS 9.2) reduced the channel numbers in its backbone and neck (256 →224) to align its FPS with SGDet3D. 
+
+4.3. Main Results 
+
+As shown in Table 1, R4Det significantly outperforms all existing methods across all categories on the challenging 
+
+TJ4DRadSet dataset, which includes complex nighttime and overpass scenarios. Our framework improves upon the SGDet3D [1] baseline by +5.47% and +6.91% in 3D and BEV mAP. It is worth noting that our method is effective for small objects, such as Cyclist , surpassing the previous best by a large margin of +7.91%. For the VoD dateset , as shown in Table 2, R4Det also demonstrate state-of-the-art performance. As shown in Figure 1 and Table 2, we con-ducted inference speed tests on a single 3090 GPU. The ex-                                                                                                                                           
+
+> Table 1. Comparison of 3D object detection results on the test set of TJ4DRadSet [27]. In the modality column, R denotes 4D radar and C denotes camera. The best values are in bold .
+> Method Modality AP 3D (%) mAP 3D
+> AP BEV (%) mAP BEV
+> Car Pedestrian Cyclist Truck Car Pedestrian Cyclist Truck PointPillars [9] R21.26 28.33 52.47 11.18 28.31 38.34 32.26 56.11 18.19 36.23 CenterPoint [25] R22.03 25.02 53.32 15.92 29.07 33.03 27.87 58.74 25.09 36.18 RadarPillarNet [28] R28.45 26.24 51.57 15.20 30.37 45.72 29.19 56.89 25.17 39.24 SMURF [19] R28.47 26.22 54.61 22.64 32.99 43.13 29.19 58.81 32.80 40.98 RCFusion [28] R+C 29.72 27.17 54.93 23.56 33.85 40.89 30.95 58.30 28.92 39.76 FUTR3D [3] R+C ----32.42 ----37.51 BEVFusion [13] R+C ----32.71 ----41.12 LXL [22] R+C ----36.32 ----41.20 SGDet3D [1] R+C 59.43 26.57 51.30 30.00 41.82 66.38 29.18 53.72 39.36 47.16 CVFusion [29] R+C 51.54 29.49 49.41 29.55 40.00 58.07 31.65 51.29 35.29 44.07
+> R4Det R+C 63.60 31.24 62.84 31.46 47.29 72.36 33.48 64.58 45.85 54.07
+
+6Table 2. Comparison of 3D object detection results on the val set of VoD [17]. R and C denote 4D radar and camera modalities, respectively. The best values are in bold .
+
+Methods Modality Entire Annotated Area (AP EAA , %) Driving Corridor (AP DC , %) FPS 
+
+Car Pedestrian Cyclist mAP Car Pedestrian Cyclist mAP PointPillars [9] R 37.06 35.04 63.44 45.18 70.15 47.22 85.07 67.48 113.9 CenterPoint [25] R 32.74 38.00 65.51 45.42 62.01 48.18 84.98 65.06 -RadarPillarNet [28] R 39.30 35.10 63.63 46.01 71.65 42.80 83.14 65.86 98.8 SMURF [19] R 42.31 39.09 71.50 50.97 71.74 50.54 86.87 69.72 -RCFusion [28] R+C 41.70 38.95 68.31 49.65 71.87 47.50 88.33 69.23 9.0 FUTR3D [3] R+C 46.01 35.11 65.98 49.03 78.66 43.10 86.19 69.32 7.3 BEVFusion [13] R+C 37.85 40.96 68.95 49.25 70.21 45.86 89.48 68.52 7.1 LXL [22] R+C 42.33 49.48 77.12 56.31 72.18 58.30 88.31 72.93 6.1 SGDet3D [1] R+C 53.16 49.98 76.11 59.75 81.13 60.91 90.22 77.42 9.2 CVFusion [29] R+C 60.87 57.89 77.46 65.41 89.86 68.79 88.62 82.42 5.4 
+
+R4Det R+C 66.90 55.42 77.75 66.69 90.62 66.47 93.96 83.68 8.3 A B C D     
+
+> R4Det SGDet3D SGDet3D SGDet3D SGDet3D R4Det R4Det R4Det
+
+Figure 6. Example visualization results of R4Det and baseline on challenging scenarios ( e.g. , low-light conditions or small objects). 
+
+Table 3. More 3D object detection results on the val set of VoD to demonstrate the proposed modules are plug-and-play.                     
+
+> Method Car Pedestrian Cyclist mAP EAA
+> BEVFusion [13] 37.85 40.96 68.95 49.25
+> BEVFusion + Ours 41.98 48.15 76.64 55.59
+> RCBEVDet [14] 40.63 38.86 70.48 49.99
+> RCBEVDet + Ours 41.02 48.85 76.12 55.33
+
+perimental results demonstrate that R4Det achieves a better speed-accuracy balance. We also applied the proposed module to BEVFusion [13] and RCBEVDet [14]. As shown in Table 3, our approach achieves improvements of +6.34% and +5.34% in mAP EAA ,respectively. This demonstrates the plug-and-play nature of our method. 
+
+4.4. Ablation 
+
+We conduct a chained ablation study on the TJ4DRadSet validation set [27]. As shown in Table 1, the first row presents the SGDet3D baseline. PDF enhances geo-metric perception through fine-grained depth completion (+1.71 mAP), DGTF strengthens temporal consistency via gated recurrent fusion (+3.55 mAP), and IGDR further re-fines BEV representations with instance-guided calibration 
+
+Table 4. Ablation study on each component of R4Det on the TJ4D Dataset .                                
+
+> PDF DGTF IGDR mAP BEV mAP 3D Car Ped Cyc Truck
+> 45.15 39.86 58.67 25.93 47.89 26.24
+> ✓46.86 41.41 59.76 23.35 55.08 29.25
+> ✓✓50.41 44.86 61.94 28.90 57.15 30.48
+> ✓✓✓54.07 47.29 63.60 31.24 62.84 31.46
+
+(+3.66 mAP). 
+
+Effectiveness of the PDF Module. We evaluate the ef-fectiveness of the Panoramic Depth Fusion module under a unified training configuration. The module uses four loss weights: λ1 (0.1), λabs (0.01), λdense (0.03), and λ3 (0.05). Different combinations correspond to different supervision configurations, as summarized in Table 5. Qualitative com-parisons are provided in Figure 7. Our model maintains ac-curate depth and clear object boundaries under high-noise and low-light conditions, demonstrating strong generaliza-tion. Adding the metric loss ( λdense ) improves mAP from 45.15 to 46.08 (+0.93), while the relative loss ( λ3) further increases it to 46.86 (+0.78). 
+
+Effectiveness of the DGTF Module As shown in Table 6, we perform a set of step-wise ablation studies to validate the effectiveness of each component in the DGTF mod-ule. Adding simple feature concatenation (V1) already im-7Table 5. Ablation of the Panoramic Depth Fusion module. Each setting corresponds to different combinations of loss components. 
+
+Setting λ1 λabs λdense λ3 BEV mAP ↑
+
+A 0.1 0.01 – – 45.15 B 0.1 0.01 0.03 – 46.08 C 0.1 0.01 0.03 0.05 46.86 A  
+
+> B
+> Input SGDet3D Ours
+
+Figure 7. Qualitative comparison of depth predictions by our Panoramic Depth Fusion and the baseline method. 
+
+Table 6. Ablation of the Deformable Gated Temporal Fu-sion module. V1 (+Concat) concatenates current and previous BEV features; V2 (+DCN) adds modulated deformable convolu-tion (DCNv2) to spatially align features; V4 (DGTF, Ours) fur-ther incorporates a GRU-style gating mechanism (ConvGRU) for selective temporal fusion; V3 (+SE) adds channel-wise Squeeze-and-Excitation on top of V4.                           
+
+> Variant Concat DCN ConvGRU SE BEV mAP 3D mAP
+> V0 46.86 41.41 V1 ✓47.82 42.01 V2 ✓✓48.86 43.32 V3 ✓✓✓✓49.12 42.47
+> V4 (Ours) ✓✓✓50.41 44.86
+
+proves temporal consistency, while deformable alignment (V2) further enhances motion-aware fusion. Introducing the gating mechanism (ConvGRU) yields the largest gain (+3.45 3D mAP), confirming the importance of adaptive up-date and forgetting. Squeeze-and-Excitation brings no addi-tional benefit, suggesting that ConvGRU already performs effective channel selection. Overall, DGTF (V4) enhances BEV localization by +3.55 mAP and 3D detection by +3.45 mAP, demonstrating robust and efficient temporal fusion. 
+
+Effectiveness of the IGDR Module To validate the effec-tiveness of each component in the proposed IGDR module, we conduct a comprehensive ablation study. Starting from a baseline that only uses the main BEV feature FRC , we progressively build up to the full model. The results clearly demonstrate the evolution of our IGDR design: (1) From baseline to prototype fusion (A →B→C): The baseline A (+PDF+DGTF), which directly uses the raw BEV features 
+
+FRC , achieves 50.41% mAP. Naively adding the Softmax-weighted prototype (B) yields limited gains, demonstrating that direct fusion introduces background noise. However, introducing the gating mechanism (C) to selectively fuse the foreground significantly improves performance to 51.60% 
+
+Table 7. Ablation on the Instance-Guided Dynamic Refinement module. Gen. indicates the generator used to produce calibra-tion parameters or replacement maps. (1) None (A): Baseline without refinement. (2) Softmax-Fusion (B): Directly adds the Softmax-weighted instance prototype EBEV to the main stream without gating. (3) Static Map (C): Statically replaces the fore-ground region in FRC with EBEV under gating. (4) MLP (D): 
+
+Generates γ, β from Eproj using MLPs, followed by affine trans-formation. (5) Attention (E): Employs a masked attention mech-anism using FRC as Query and Eproj as Key/Value. (6) Conv (F, Ours): Constructs the spatial prototype EBEV and generates γ, β 
+
+via Conv2d layers, enabling spatially-aware calibration. Our con-volutional generator achieves the best overall performance. 
+
+ID Component BEV mAP (%) 
+
+Gbg Gen. Cyclist Pedestrian Overall A None 57.51 31.66 50.41 B Softmax-Fusion 58.14 32.00 51.29 C ✓ Static Map 58.62 31.92 51.60 D ✓ MLP 62.13 32.43 52.48 E ✓ Attention 62.21 32.21 52.52 F ✓ Conv 64.59 33.48 54.07 
+
+(+1.19 mAP over A). This confirms that gating is essential to filter out unreliable regions and provides a clean founda-tion for dynamic refinement. (2) Necessity of dynamic cali-bration (C →D): The MLP-based calibration (D) introduces instance-adaptive γ, β parameters from Eproj , leading to a further +0.88 mAP gain, validating the idea of calibrating rather than replacing FRC . (3) Choice of calibration gen-erator (D →E→F): While the attention-based generator (E) provides marginal improvement (+0.04 mAP), our convo-lutional generator (F) achieves the best result (+1.55 mAP). The spatial-to-spatial mapping ( EBEV →FRC ) via convolu-tion captures local geometric patterns more effectively than non-spatial (MLP) or attention-based counterparts. Over-all, the proposed IGDR achieves the highest performance (54.07 mAP, +3.66 over the baseline) and demonstrates a ro-bust, efficient refinement mechanism for radar-camera BEV fusion. 
+
+## 5. Conclusion 
+
+In this paper, we present R4Det, a 4D radar-camera multi-modal 3D object detector for highly accurate, efficient, and robust 3D object detection. R4Det enhances depth esti-mation quality via the Panoramic Depth Fusion module, enabling mutual reinforcement between absolute and rel-ative depth. For temporal fusion, we design a Deformable Gated Temporal Fusion module that does not rely on the ego vehicle’s pose. In addition, we built an Instance-Guided Dynamic Refinement module that extracts semantic proto-types from 2D instance guidance. Experiments show that R4Det achieves state-of-the-art 3D object detection results on both TJ4DRadSet and VoD datasets. 8Acknowledgements 
+
+This work was supported by the National Nat-ural Science Foundation of China (Grant No. 62176007). 
+
+## References 
+
+[1] Xiaokai Bai, Zhu Yu, Lianqing Zheng, Xiaohan Zhang, Zili Zhou, Xue Zhang, Fang Wang, Jie Bai, and Hui-Liang Shen. Sgdet3d: Semantics and geometry fusion for 3d object de-tection using 4d radar and camera. RAL , 2024. 1, 2, 3, 6, 7[2] Shariq Farooq Bhat, Reiner Birkl, Diana Wofk, Peter Wonka, and Matthias M¨ uller. Zoedepth: Zero-shot trans-fer by combining relative and metric depth. arXiv preprint arXiv:2302.12288 , 2023. 1 [3] Xuanyao Chen, Tianyuan Zhang, Yue Wang, Yilun Wang, and Hang Zhao. Futr3d: A unified sensor fusion framework for 3d detection. In CVPR , 2023. 6, 7 [4] Chunrui Han, Jinrong Yang, Jianjian Sun, Zheng Ge, Run-pei Dong, Hongyu Zhou, Weixin Mao, Yuang Peng, and Xi-angyu Zhang. Exploring recurrent long-term temporal fusion for multi-view 3d perception. In RAL , 2024. 2 [5] Junjie Huang, Guan Huang, Zheng Zhu, Yun Ye, and Dalong Du. Bevdet: High-performance multi-camera 3d object de-tection in bird-eye-view. arXiv preprint arXiv:2112.11790 ,2021. 2 [6] Xiaohui Jiang, Shuailin Li, Yingfei Liu, Shihao Wang, Fan Jia, Tiancai Wang, Lijin Han, and Xiangyu Zhang. Far3d: Expanding the horizon for surround-view 3d object detec-tion. In AAAI , 2024. 2 [7] Youngseok Kim, Sanmin Kim, Jun Won Choi, and Dongsuk Kum. Craft: Camera-radar 3d object detection with spatio-contextual fusion transformer. In AAAI , 2023. 2 [8] Youngseok Kim, Juyeb Shin, Sanmin Kim, In-Jae Lee, Jun Won Choi, and Dongsuk Kum. Crn: camera radar net for accurate, robust, efficient 3d perception. In ICCV , 2023. 1, 2 [9] Alex H Lang, Sourabh Vora, Holger Caesar, Lubing Zhou, Jiong Yang, and Oscar Beijbom. Pointpillars: Fast encoders for object detection from point clouds. In CVPR , 2019. 6, 7 [10] Kai Lei, Zhan Chen, Shuman Jia, and Xiaoteng Zhang. Hvdetfusion: A simple and robust camera-radar fusion framework. arXiv preprint arXiv:2307.11323 , 2023. 2 [11] Yinhao Li, Zheng Ge, Guanyi Yu, Jinrong Yang, Zengran Wang, Yukang Shi, Jianjian Sun, and Zeming Li. Bevdepth: Acquisition of reliable depth for multi-view 3d object detec-tion. In AAAI , 2023. 2 [12] Zhiqi Li, Wenhai Wang, Hongyang Li, Enze Xie, Chong-hao Sima, Tong Lu, Yu Qiao, and Jifeng Dai. Bevformer: Learning bird’s-eye-view representation from multi-camera images via spatiotemporal transformers. In ECCV , 2022. 2 [13] Tingting Liang, Hongwei Xie, Kaicheng Yu, Zhongyu Xia, Zhiwei Lin, Yongtao Wang, Tao Tang, Bing Wang, and Zhi Tang. Bevfusion: A simple and robust lidar-camera fusion framework. In NeurIPS , 2022. 1, 6, 7 [14] Zhiwei Lin, Zhe Liu, Zhongyu Xia, Xinhao Wang, Yongtao Wang, Shengxiang Qi, Yang Dong, Nan Dong, Le Zhang, and Ce Zhu. Rcbevdet: Radar-camera fusion in bird’s eye view for 3d object detection. In CVPR , 2024. 1, 2, 7 [15] Yingfei Liu, Tiancai Wang, Xiangyu Zhang, and Jian Sun. Petr: Position embedding transformation for multi-view 3d object detection. In ECCV , 2022. 2 [16] Yunfei Long, Abhinav Kumar, Daniel Morris, Xiaoming Liu, Marcos Castro, and Punarjay Chakravarty. Radiant: Radar-image association network for 3d object detection. In AAAI ,2023. 2 [17] Andras Palffy, Ewoud Pool, Srimannarayana Baratam, Ju-lian FP Kooij, and Dariu M Gavrila. Multi-class road user detection with 3+ 1d radar in the view-of-delft dataset. RAL ,2022. 6, 7 [18] Jonah Philion and Sanja Fidler. Lift, splat, shoot: Encoding images from arbitrary camera rigs by implicitly unprojecting to 3d. In ECCV , 2020. 2 [19] Austin Stone, Daniel Maurer, Alper Ayvaci, Anelia An-gelova, and Rico Jonschkowski. Smurf: Self-teaching multi-frame unsupervised raft with full-image warping. In CVPR ,2021. 6, 7 [20] Yue Wang, Vitor Guizilini, Tianyuan Zhang, Yilun Wang, Hang Zhao, and Justin Solomon. Detr3d: 3d object detec-tion from multi-view images via 3d-to-2d queries. In CoRL ,2021. 2 [21] Philipp Wolters, Johannes Gilg, Torben Teepe, Fabian Her-zog, Anouar Laouichi, Martin Hofmann, and Gerhard Rigoll. Unleashing hydra: Hybrid fusion, depth consistency and radar for unified 3d perception. In ICRA , 2025. 2 [22] Weiyi Xiong, Jianan Liu, Tao Huang, Qing-Long Han, Yux-uan Xia, and Bing Zhu. Lxl: Lidar excluded lean 3d object detection with 4d imaging radar and camera fusion. IEEE TIV , 2023. 6, 7 [23] Chenyu Yang, Yuntao Chen, Hao Tian, Chenxin Tao, Xizhou Zhu, Zhaoxiang Zhang, Gao Huang, Hongyang Li, Yu Qiao, Lewei Lu, et al. Bevformer v2: Adapting modern image backbones to bird’s-eye-view recognition via perspective su-pervision. In CVPR , 2023. 2 [24] Lihe Yang, Bingyi Kang, Zilong Huang, Xiaogang Xu, Jiashi Feng, and Hengshuang Zhao. Depth anything: Unleashing the power of large-scale unlabeled data. In CVPR , 2024. 1 [25] Tianwei Yin, Xingyi Zhou, and Philipp Krahenbuhl. Center-based 3d object detection and tracking. In CVPR , 2021. 6, 7[26] Wei Yin, Chi Zhang, Hao Chen, Zhipeng Cai, Gang Yu, Kaixuan Wang, Xiaozhi Chen, and Chunhua Shen. Metric3d: Towards zero-shot metric 3d prediction from a single image. In ICCV , 2023. 1 [27] Lianqing Zheng, Zhixiong Ma, Xichan Zhu, Bin Tan, Sen Li, Kai Long, Weiqi Sun, Sihan Chen, Lu Zhang, Mengyue Wan, et al. Tj4dradset: A 4d radar dataset for autonomous driving. IEEE ITSC , 2022. 6, 7 [28] Lianqing Zheng, Sen Li, Bin Tan, Long Yang, Sihan Chen, Libo Huang, Jie Bai, Xichan Zhu, and Zhixiong Ma. Rc-fusion: Fusing 4-d radar and camera with bird’s-eye view features for 3-d object detection. IEEE TIM , 2023. 6, 7 
+
+9[29] Hanzhi Zhong, Zhiyu Xiang, Ruoyu Xu, Jingyun Fu, Peng Xu, Shaohong Wang, Zhihao Yang, Tianyu Pu, and Eryun Liu. Cvfusion: Cross-view fusion of 4d radar and camera for 3d object detection. In ICCV , 2025. 2, 6, 7 
+
+10 R4Det: 4D Radar-Camera Fusion for High-Performance 3D Object Detection 
+
+# Supplementary Material 
+
+## A. Additional ablation of the PDF module 
+
+Table 8 further presents the experimental process of adjust-ing the loss weight of the PDF module. Sensitivity analysis (C1–C4) shows that slight variations of λ1, λ3, λdense , or 
+
+λabs lead to minor performance drops, confirming that the final setting (C5) achieves a balanced trade-off between sta-bility and accuracy. 
+
+Table 8. Ablation of the Panoramic Depth Fusion module. Each setting corresponds to different combinations of loss components. 
+
+Setting λ1 λabs λdense λ3 BEV mAP ↑
+
+A 0.1 0.01 – – 45.15 B (+ λdense ) 0.1 0.01 0.03 – 46.08 C1 ( ↓λ1) 0.05 0.01 0.03 0.05 46.64 C2 ( ↓λ3) 0.1 0.01 0.03 0.02 46.30 C3 ( ↑λdense ) 0.1 0.01 0.05 0.05 46.45 C4 ( ↑λabs ) 0.1 0.03 0.03 0.05 46.12 
+
+C5 (ours) 0.1 0.01 0.03 0.05 46.86 
+
+## B. Additional ablation of the DGTF module 
+
+We also examine temporal depth sensitivity (Table 9): using the immediate predecessor ( t−1) achieves the best accuracy and stability, whereas fusing more distant frames ( t − 2,
+
+t − 3) leads to noise accumulation. 
+
+Table 9. Sensitivity to historical frame gap. Evaluation of differ-ent historical fusion depths. Single-step ( t − 1) achieves the best accuracy and stability. 
+
+Fusion Depth BEV mAP 3D mAP 
+
+t & t − 3 49.20 42.74 
+
+t & t − 2 49.87 43.12 
+
+t & t − 1 50.41 44.86 
+
+## C. Qualitative Analyses of the DGTF module 
+
+R4Det is the first to validate the feasibility of temporal modeling on these two datasets. As shown in the Fig-ure 8, the learned offsets ∆p (red arrows) can align with ob-ject motion, reconstructing relative motion flow, while the mask m precisely suppresses the background. This physi-cally proves DGTF performs explicit, physics-based motion alignment. Prediction Mask m ΔP (Arrows: Predicted Motion Relative to Ego)  Prediction Mask m ΔP (Arrows: Predicted Motion Relative to Ego)  
+
+> Image Image
+
+Figure 8. DGTF Visualization. Learned offsets ( ∆p, red arrows) align strictly with vehicle motion, while the mask ( m, heatmap) suppresses background, proving explicit temporal alignment. 
+
+1
