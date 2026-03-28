@@ -1,0 +1,886 @@
+Title: UMBRELLA: Uncertainty-aware Multi-robot Reactive Coordination under Dynamic Temporal Logic Tasks
+
+URL Source: https://arxiv.org/pdf/2603.25395v1
+
+Published Time: Fri, 27 Mar 2026 01:01:32 GMT
+
+Number of Pages: 8
+
+Markdown Content:
+# UMBRELLA: Uncertainty-aware Multi-robot Reactive Coordination under Dynamic Temporal Logic Tasks 
+
+Qisheng Zhao 1, Meng Guo 1, Hengxuan Du 1, Lars Lindemann 2, and Zhongkui Li 1
+
+Abstract — Multi-robot systems can be extremely efficient for accomplishing team-wise tasks by acting concurrently and collaboratively. However, most existing methods either assume static task features or simply replan when environmental changes occur. This paper addresses the challenging problem of coordinating multi-robot systems for collaborative tasks involv-ing dynamic and moving targets. We explicitly model the un-certainty in target motion prediction via Conformal Prediction (CP), while respecting the spatial-temporal constraints specified by Linear Temporal Logic (LTL). The proposed framework (UMBRELLA) combines the Monte Carlo Tree Search (MCTS) over partial plans with uncertainty-aware rollouts, and intro-duces a CP-based metric to guide and accelerate the search. The objective is to minimize the Conditional Value at Risk (CVaR) of the average makespan. For tasks released online, a receding-horizon planning scheme dynamically adjusts the assignments based on updated task specifications and motion predictions. Spatial and temporal constraints among the tasks are always ensured, and only partial synchronization is required for the collaborative tasks during online execution. Extensive large-scale simulations and hardware experiments demonstrate substantial reductions in both the average makespan and its variance by 23% and 71% , compared with static baselines. 
+
+I. I NTRODUCTION 
+
+Recent advances in computation, perception and commu-nication enable the deployment of autonomous robots in large, remote and hazardous environments, such as offshore drilling platforms [1] and construction sites [2]. Concur-rent motion and actions can greatly improve the team ef-ficiency [3], [4], while direct collaboration on a single task further extends system capabilities [5]. To specify complex tasks beyond simple sequential visiting, many studies employ formal languages such as Linear Temporal Logic (LTL) for-mulas [6], as an intuitive yet powerful way to describe both spatial and temporal requirements on the team behavior [7], [8]. However, while tasks are commonly defined over static features such as regions and landmarks, many real-world applications involve dynamic targets, e.g., monitoring animal flocks or tracking moving vehicles [9]. These scenarios pose particular challenges for traditional offline methods that are designed for tasks over static features [10]–[12], as the future motion of targets can significantly impact the performance and even correctness of the overall plan.                  
+
+> The authors are with: 1School of Advanced Manufacturing and Robotics, Peking University, Beijing 100871, China; and 2Automatic Control Lab-oratory, ETH Z¨ urich, Z¨ urich 8092, Switzerland. This work was sup-ported by the National Natural Science Foundation of China under grants 62425301, U2241214, T2121002. Corresponding author: Zhongkui Li (
+
+zhongkui.li@pku.edu.cn ).                        
+
+> Fig. 1. Top: Task plans with 12 robots coordinating to track 4dynamic targets across 12 tasks in two scenes (Scene-1: left and middle; Scene-2: right). Middle: ROS simulation with 8robots and 3dynamic targets executing 10 tasks. Bottom: Hardware experiments with 4robots and 2
+> dynamic targets performing 7tasks, showing snapshots at different times.
+
+A. Related Work 
+
+Extensive work has addressed task planning for team-wise temporal-logic specifications. Centralized methods are often used to ensure optimality and completeness. A sampling-based method in [7] avoids synchronized products of indi-vidual models. The work in [13] decomposes team tasks into subtasks and assigns them to individual robots. Works [10], [11] formulate task constraints and assignments as integer optimization programs. However, these works typically as-sume static propositions and operate offline. For dynamic workspaces, [14] performs local replanning for LTL tasks using updated workspace models. A reactive planning framework for heterogeneous robots is introduced in [15], allowing dynamic adaptation to collaborative tem-poral logic missions through local reallocation and path adjustment, minimizing task violations. A sampling-based coordination method in [16] addresses environments with un-certain semantic labels and known target motions. To handle online temporal tasks, [12] proposes computing products of partially-ordered subtasks and reassigning them after each task update. However, for tasks defined over dynamically 
+
+> arXiv:2603.25395v1 [cs.RO] 26 Mar 2026
+
+moving features, the aforementioned methods would mostly plan over the current system state, neglecting their future motions and more importantly, the inherent uncertainties. Furthermore, Conformal Prediction (CP) has recently been used in robotics to quantify uncertainties in prediction [17]– [19]. In [17], CP is integrated with model predictive con-trol to ensure motion safety for simple navigation tasks in dynamic environments. Temporal correlations are predicted using CP in [18] to enhance long-horizon performance for single-robot navigation. CP-based trajectory predictors for uncontrollable dynamic agents are applied to Signal Tempo-ral Logic (STL) control in [19]. However, the planning prob-lem for multi-robot collaborative tasks involving dynamic and uncertain targets remains an open challenge. 
+
+B. Our Method 
+
+This work proposes UMBRELLA , an online planning framework for multi-robot coordination under dynamic tem-poral tasks. It integrates CP-based motion prediction with MCTS for task assignment. Predicted target motions and quantified uncertainty are used after “Expansion” to filter child nodes, and incorporated into “Simulation” to evaluate partial plans under the Conditional Value at Risk (CVaR) metric. To handle online updates of target motions and newly released tasks, a receding-horizon scheme is adopted to dynamically adjust task assignments. The framework ensures LTL-specified spatial-temporal constraints while accounting for target motion uncertainty, requiring only partial syn-chronization during collaborative task execution. Compared with offline baselines assuming static workspaces or simple periodic replanning, our method significantly reduces both the mean and variance of the average makespan. The main contribution is two-fold: (I) the incorporation of CP-based prediction into online multi-robot coordination under complex temporal tasks associated with dynamic tar-gets; (II) a substantial reduction in the average makespan for temporal tasks specified offline and released online, with a 
+
+23% and 71% decrease in mean and variance, respectively. II. P ROBLEM DESCRIPTION 
+
+A. Robots and Targets 
+
+Consider a team of N autonomous robots operating within a workspace W Ă R3. The state of robot n P N fi 
+
+t1, ¨ ¨ ¨ , N u at time t is xt P W. The maximum velocity of robot n is denoted by vn. Each robot n can execute actions from a set An. Let A fi Ť 
+
+> nPN
+
+An. The team is pre-programmed with collaborations C fi tC1, ¨ ¨ ¨ , C ku, where each collaboration Ck P C consists of a list of actions that must be executed by different robots, denoted by: Ck fi 
+
+ra1, a 2, ¨ ¨ ¨ , a ℓk s, where ℓk ą 0 is the number of required actions, and aℓ P A for @ℓ “ 1, ¨ ¨ ¨ , ℓ k. Each action aℓ P Ck
+
+should be performed by a capable robot n, i.e., aℓ P An.Each collaboration has a fixed duration ρ : C Ñ R`.Moreover, the workspace contains M dynamic targets with unknown trajectories. The position of target m P M fi 
+
+t1, ¨ ¨ ¨ , M u at time t is modeled as a random variable Yt,m P
+
+R2, with the joint target state Yt fi pYt, 1, ¨ ¨ ¨ , Y t,M q P R2M .Their trajectories are assumed to follow an unknown distri-bution D, i.e., pY0, Y 1, ¨ ¨ ¨ q „ D. A total of ¯K independent trajectory samples Y piq fi pY piq 
+
+> 0
+
+, Y piq 
+
+> 1
+
+, ¨ ¨ ¨ q are available, partitioned into a calibration set Dcal fi tY p1q, ¨ ¨ ¨ , Y pKqu
+
+and a training set Dtra fi tY pK`1q, ¨ ¨ ¨ , Y p ¯Kqu. The dis-tribution D is independent of robot behaviors, i.e., it does not depend on the team state x. Perfect observations of target positions and velocities are continuously available, denoted by Y0: t fi pY0, ¨ ¨ ¨ , Y tq and V0: t fi pV0, ¨ ¨ ¨ , V tq,where Vt fi pVt, 1, ¨ ¨ ¨ , V t,M q. A centralized scheme ag-gregates all measurements and fuses them into real-time estimates of target states. For simplicity, static task regions and obstacles are modeled as targets with zero velocity. 
+
+B. Task Specification 
+
+Consider two types of atomic propositions: (I) pmn is true 
+
+if the distance between robot n P N and target m P M is below a given threshold. Let p fi tpmn , @m P M, n P N u;(II) cmk is true if collaboration Ck is executed on target m.Let c fi tcmk , @m P M, @Ck P C, @ac P Cku. Thus, the complete set of propositions is denoted by AP fi p Y c.Given these propositions, a team-wise task is represented as a syntactically co-safe LTL (sc-LTL) formula: φi “
+
+sc-LTL pAP q. The overall task specification is represented as a set of LTL formulas, which consists of two parts: 
+
+φ fi φstatic 
+
+ľ 
+
+> ¯eP¯E
+
+l `φ¯e 
+
+> obs
+
+Ñ ♢φ¯e
+
+> rep
+
+˘ , (1) where φstatic is a predefined set of sc-LTL formulas; ¯E
+
+is the set of events triggered by online observations; φ¯e
+
+> obs
+
+is the propositional condition for event ¯e P ¯E; and φ¯e
+
+> rep
+
+is the corresponding response task, also specified as sc-LTL. Specifically, if φ¯e 
+
+> obs
+
+holds, then φ¯e 
+
+> rep
+
+must eventually be satisfied. We adopt the standard LTL syntax [6]: φ fi 
+
+J | p | φ1 ^ φ2 | ␣ φ | ⃝ φ | φ1 U φ2, where J fi True ,
+
+p P AP , ⃝ (next ), U (until ) and K fi ␣J . sc-LTL [20] is a fragment of LTL restricted to operators ⃝, U, and ♢
+
+(eventually), written in positive normal form without the negation operator ␣ preceding temporal operators. Moreover, the task plan for the robot team is defined as 
+
+ΠN fi pπ1, π 2, ¨ ¨ ¨ , π N q, (2) where πn fi pt1
+
+> n
+
+, a 1
+
+> n
+
+, m 1
+
+> n
+
+qp t2
+
+> n
+
+, a 2
+
+> n
+
+, m 2
+
+> n
+
+q ¨ ¨ ¨ p tKn 
+
+> n
+
+, a Kn 
+
+> n
+
+, m Kn 
+
+> n
+
+q
+
+is the timed sequence of actions and corresponding targets for robot n P N . Each action akn P An is executed on target 
+
+mkn P M at time tkn ą 0, where k P Kn fi t1, ¨ ¨ ¨ , K nu.Given ΠN , the induced trace is given by the sequence of propositions satisfied by the actions, i.e., wΠ “ σ1σ2 ¨ ¨ ¨ σL
+
+where σℓ P 2AP . The language of φ is Lφ fi tw | w |ù φu,where |ù is the satisfaction relation. Since sc-LTL formulas admit satisfaction by finite traces [6], [20], the plan satisfies 
+
+φ if wΠ P Lφ, denoted by ΠN |ù φ. The makespan Tφ is defined as the minimal time to generate a trace satisfying φ.As the tasks assigned to the robot system consist of initially issued tasks and online triggered tasks during execution, for a sequence of tasks φptq fi tφ1, . . . , φ Lu received up to time t,the average makespan is defined as: T φ fi 1
+
+> L
+
+řLℓ“1 Tφℓ .Fig. 2. Overview of the proposed framework, consisting of four main components: (i) trajectory estimation via LSTM and CP, (ii) task decomposition into an R-poset, (iii) CP-MCTS for uncertainty-aware assignment, and (iv) online execution and receding-horizon adaptation. In the R-poset illustration, precedence and mutual-exclusion relations are marked by black and red arrows, respectively. 
+
+C. Problem Statement 
+
+Given task formulas φptq and observations tY0: t, V 0: tu, the overall objective is to synthesize the team-wise plan ΠN to satisfy φptq and minimize the average makespan T φ.
+
+Example 1: Consider a fleet of UAVs and ground robots (GRs) deployed for wildlife monitoring in a workspace labeled with poacher , trap and animal . An offline collaborative task φ1 is specified as: 
+
+φ1 “ φp´s1 ^ φmf ´a, φ p´s1 “ ♢patrol s1 ,φmf ´a “ ♢pmonitor a ^ ␣ film a ^ ♢film aq, (3) which requires to patrol region s1, monitor and film an-telopes in sequence. GRs must avoid obstacles in the workspace. The reactive protocol specifies: ppoacher Ñ
+
+♢arrest q, where an “arrest” task is triggered upon detect-ing a poacher, and ptrap ^animal Ñ ♢rescue q, triggers a “rescue” task when an animal is trapped. ■
+
+III. P ROPOSED SOLUTION 
+
+As illustrated in Fig. 2, the proposed solution consists of four components: the dynamic target trajectory estimation in Sec. III-A; the derivation of the relaxed partially-ordered set (R-poset) in Sec. III-B; the uncertainty-aware task assign-ment via CP-MCTS in Sec. III-C; and a receding-horizon planning scheme for real-time adaptation in Sec. III-D. 
+
+A. Trajectory Estimation of Dynamic Targets 1) Trajectory Predictor: Given a task horizon Tφ and the history of target observations Y0: t, we train an independent trajectory predictor for each target based on the training dataset Dtra . Let Dm 
+
+> tra
+
+Ă Dtra collect trajectories of target m, Y piq 
+
+> 0: T,m
+
+fi pY piq
+
+> 0,m
+
+, ¨ ¨ ¨ , Y piq
+
+> t,m
+
+, Y piq
+
+> t`1,m
+
+, ¨ ¨ ¨ , Y piq
+
+> Tφ,m
+
+q
+
+denotes the i-th trajectory in Dm
+
+> tra
+
+. The trajectory pre-dictor is defined as Υm : R2pt`1q Ñ R2pTφ´tq that estimates the future states of target m as pYHt,m fi 
+
+ΥmpY0: t,m q, Ht fi tt ` 1, ¨ ¨ ¨ , T φu, where ΥmpY0: t,m q fi 
+
+p pYt`1|t,m , ¨ ¨ ¨ , pYTφ|t,m q. Let Υ fi pΥ1, ¨ ¨ ¨ , ΥM q. In princi-ple, any trajectory predictor can be employed, including long short-term memory (LSTM) networks [21], recurrent neural networks (RNN) [22], and gated recurrent units (GRU) [23]. In this work, a LSTM network is adopted for each target and trained by minimizing the following loss function: 
+
+min 
+
+> Υm
+
+1
+
+|Dm
+
+> tra
+
+|
+
+> |Dm
+> tra |
+
+ÿ
+
+> i“1
+
+›››Y piq 
+
+> Ht,m
+
+´ ΥmpY piq
+
+> 0: t,m
+
+q
+
+›››2
+
+,
+
+which is the Mean Squared Error (MSE) over the pre-dicted trajectory for target m. Stacking per-target predic-tions gives pYHt fi p pYHt,1, ¨ ¨ ¨ , pYHt,M q. Furthermore, based on the velocity measurements V0: t, we define v˚
+
+> m
+
+ptq fi 
+
+max t| Vς,m | : ς ď tu as the maximum historical velocity of target m up to time t. This velocity bound serves as an input parameter for the subsequent planning module. 
+
+2) Conformal Prediction Regions: The CP framework can construct regions around predicted trajectories that contain the true trajectory with high probability, see [24] for detailed descriptions. More specifically, we adopt the method in [17] to construct valid prediction regions for each target indepen-dently. Given observations Y0: t at time t, the trajectory pre-dictors Υ generate predictions pYHt for the task horizon Tφ.For each target m P M, given a failure probability δ P p 0, 1q,the prediction regions GHt,m fi pGt`1|t,m , ¨ ¨ ¨ , G Tφ|t,m q are constructed such that: Pr 
+
+´ › ››Yh,m ´ pYh|t,m 
+
+››› ď Gh|t,m , @h P Ht
+
+¯
+
+ě 1 ´ δ, (4) where Gh|t,m denotes the h-step prediction error for target m
+
+at time t. The nonconformity score is defined as 
+
+Rpiq 
+
+> h|t,m
+
+fi 
+
+›››Y piq 
+
+> h,m
+
+´ pY piq
+
+> h|t,m
+
+››› , (5) for calibration trajectories Y piq P Dm
+
+> cal
+
+, where Dm 
+
+> cal
+
+is the calibration dataset for target m. Specifically, predic-tions pY piq 
+
+> h|t,m
+
+are computed for each Y piq P Dm
+
+> cal
+
+, and the corresponding nonconformity scores Rpiq 
+
+> h|t,m
+
+are calculated. These scores are sorted in non-decreasing order after adding 
+
+Rp| Dm 
+
+> cal |` 1q
+> h|t,m
+
+fi 8. The error bound Gh|t,m is then chosen as the p-th smallest score, where p “ rp| Dm
+
+> cal
+
+| ` 1qp 1 ´ ¯δqs.Finally, the prediction regions for all targets are aggregated as: GHt fi pGh|t, 1, ¨ ¨ ¨ , G h|t,M q.B. R-posets for Task Formulas 
+
+To efficiently capture the temporal constraints embedded in a sc-LTL formula φ, we adopt the notion of relaxed partially ordered sets (R-posets) as proposed in [25]. Given φ, we first translate it into a Nondeterministic B¨ uchi Automaton (NBA) Aφ “ p S, Σ, δ, S 0, S F q, where S is the set of states; Σ “ AP is the alphabet; δ : S ˆ Σ Ñ 2S
+
+is the transition relation; S0, S F Ď S denote the initial and accepting states. Along a satisfying run of Aφ, a subtask ω is defined as the minimal symbol enabling a transition between states. Each subtask represents a unit of progress, and the collection of all subtasks forms Ωφ.
+
+Definition 1 (R-poset): An R-poset over φ is defined as the triple: Pφ “ p Ωφ, ĺφ, ‰φq: (I) Ωφ is the set of sub-tasks; (II) ĺφĎ Ωφ ˆ Ωφ is the precedence relation: if 
+
+pω1, ω 2q P ĺφ, then ω2 cannot start before ω1 starts; (III) 
+
+‰φĎ 2Ωφ is the mutual exclusion relation: subtasks in the same set cannot be executed simultaneously. ■
+
+Although an R-poset is not unique for a given φ, the set of all possible R-posets Pφ is as expressive as the original NBA. Any plan consistent with an R-poset must satisfy φ,since Words pPφq Ă Words pφq. In practice, we construct Pφ
+
+using the algorithm in [25], denoted as Compute poset p¨q .An example of an R-poset is illustrated in Fig. 2. 
+
+C. Uncertainty-Aware Task Assignment 
+
+Given the estimation of target motions p pYHt , G Ht q and the final R-poset Pφ “ p Ωφ, ĺφ, ‰φq, the objective is to find an efficient assignment of all subtasks in Ωφ given the robot team N such that all partial orders in ĺφ, ‰φ are respected and the average makespan of all tasks T φ is minimized. 
+
+1) CP-based Monte Carlo Tree Search: Monte Carlo Tree Search (MCTS) is a well-known heuristic search algorithm for solving complex planning problems in dynamic scenes. Built upon this algorithm, this work introduces CP-based Monte Carlo Tree Search (CP-MCTS). As summarized in Alg. 1 and Fig. 2, it is a centralized task planning algorithm designed to efficiently handle complex temporal tasks asso-ciated with dynamic targets. It repeats four stages until the time budget expires: selection, expansion, simulation, and backpropagation. Notably, as the number of robots and tasks increases, the nodes generated during the “Expansion” phase grow rapidly. If “Simulation” is performed for all expanded nodes, the algorithm becomes biased toward breadth-first search, neglecting depth exploration and thus reducing ef-ficiency. To mitigate this, a CP-based metric is introduced to efficiently evaluate and select the most promising child nodes, which are then advanced to the “Simulation” stage. 
+
+2) Selection and Expansion: Each node in the search tree represents a partial assignment of subtasks, i.e., ν fi 
+
+pτ1, τ 2, ¨ ¨ ¨ , τ N q, where τn is the ordered sequence of sub-tasks assigned to robot n P N .During “Selection”, the Upper Confidence Bound applied to Trees (UCT) [26] is used to choose nodes for “Expansion”. The UCT value is computed as pξi ` Q ˆ
+
+b lnB bi q, where ξi
+
+is the estimated value of the i-th child node, bi is its visit 
+
+Algorithm 1: CP-based MCTS (CP-MCTS) 
+
+Input : Robots N , poset Pφ, duration func. ρ,time budget tb, target estimations pYHt , G Ht .
+
+Output: Plan Π‹
+
+> c
+
+, average makespan η‹
+
+> c
+
+. 
+
+> 1
+
+Initialize root node ν0, η‹ 
+
+> c
+
+Ð 8 ; 
+
+> 2
+
+while time ă tb do  
+
+> 3
+
+Leaf node ν Ð Selection (ν0);  
+
+> 4
+
+Child nodes tν`u Ð Expansion (ν, P φ);  
+
+> 5
+
+Filtered nodes tνsu via ζ in (7);  
+
+> 6
+
+for νs P t νsu do 
+
+/* Simulation = Rollout + Eval */  
+
+> 7
+
+Πc Ð Rollout (νs, P φ, ρ, pYHt , x t);  
+
+> 8
+
+ηc Ð Eval pΠc, P φ, ρ, ˆYHt , G Ht , x tq; 
+
+> 9
+
+if ηc ă η‹ 
+
+> c
+
+then  
+
+> 10
+
+η‹ 
+
+> c
+
+Ð ηc, Π‹ 
+
+> c
+
+Ð Πc; 
+
+> 11
+
+Backpropagate (νs, ξ c); count, B is the visit count of the current node, and Q ą 0 is a parameter that balances exploration and exploitation. Starting from the root, at each level the child with the highest UCT value is recursively selected until a leaf node is reached. During “Expansion”, unless a terminal state with a com-plete assignment is reached, child nodes are generated from the leaf node by assigning the next subtask to the robot team. Let Ων fi tω P τn, @n P N u be the set of subtasks already assigned in node ν, and Ω´ 
+
+> ν
+
+fi ΩφzΩν the remaining ones. To ensure feasibility, the next subtask ω is chosen from 
+
+Ωa 
+
+> ν
+
+fi ␣ω | ω P Ω´ 
+
+> ν
+
+, ω 1 P Ων , @ω1 P Pre pωq(, where Pre pωq
+
+represents the set of subtasks that must be completed be-fore ω according to R-poset Pφ. In other words, a subtask ωi
+
+cannot be assigned to node ν if some ωj with pωj , ω iq P ĺφ
+
+has not yet been assigned. When a subtask ω P Ω` 
+
+> ν
+
+is selected, a child node ν` is created by assigning ω to a robot group Iω , i.e., by appending it to the local plan τn of each robot n P Iω . For child node ν`, define key subtasks Ωs 
+
+> ν`
+
+Ă
+
+Ων` as: Ωs 
+
+> ν`
+
+fi ␣ω | ω “ τnr0s, ω R τn1 r1 : s, @n, n 1 P
+
+N (, where Ωs 
+
+> ν`
+
+contains the first-to-execute subtasks across robots, independent of others. Stepwise simulation is then performed based on the predicted target trajectories pYHt , as described in the sequel, resulting in the predicted completion time pTω for each assigned subtask ω P Ων` .
+
+3) Simulation: The “Simulation” procedure consists of three steps: (I) rollout to complete an assignment; (II) sample the makespan distribution; (III) evaluate the plan based on this distribution. First, a rollout policy is applied recursively from the selected child node until all subtasks are assigned. In each iteration, the next subtask is selected as in “Ex-pansion” and assigned to a robot group either randomly or greedily according to stepwise simulation results. To enhance 
+
+rollout diversity, we use a random factor ϵ P r 0, 1s: with probability ϵ, a feasible robot group is chosen uniformly at random; with probability 1 ´ϵ, the group expected to initiate this subtask earliest is selected. Once a complete plan Πc
+
+is obtained, a sampling-based method derives its average makespan distribution Tc via stepwise simulation with z P N
+
+samples drawn from the prediction regions pYHt , G Ht .Definition 2 (VaR and CVaR): The value at risk (VaR) at risk level α P p 0, 1s is defined as VaR αpΠcq fi inf ␣ρ P
+
+R, Prob pTc ě ρq ě α(, i.e., the α-quantile of the distribu-tion Tc. The associated conditional value at risk (CVaR) is defined as: CVaR αpΠcq fi E“Tc|Tc ě VaR αpΠcq‰, as the expected value of the worst α-quantile of Tc. ■
+
+As shown in Fig. 2, VaR captures the maximum loss at a given confidence level, while CVaR assesses the expected loss beyond the VaR threshold, providing a more informative measure of tail risk. Accordingly, we use ηc fi CVaR αpΠcq
+
+as the evaluation metric for each plan based on its average makespan distribution. The procedure of deriving the distri-bution and computing the CVaR is encapsulated as Eval p¨q .During the search, the best plan Π‹ 
+
+> c
+
+and its minimal risk value η‹ 
+
+> c
+
+are maintained. For each new candidate Πc, if 
+
+ηc ă η‹
+
+> c
+
+, both Π‹ 
+
+> c
+
+and η‹ 
+
+> c
+
+are updated. 
+
+4) Backpropagation: To support the tree search, we define a normalized performance measure: 
+
+ξc fi 2 ´ ηc
+
+η‹
+
+> c
+
+, (6) which facilitates comparison across different branches of the search tree. During “Backpropagation”, the evaluation values and visit counts of nodes are propagated and updated along the path from the selected node to the root. 
+
+Lemma 1: Given an expanded node ν`, the completion times of key subtasks in Ωs 
+
+> ν`
+
+satisfy that Pr 
+
+´
+
+Tω ď pTω ` G pTω ,m 
+
+min 
+
+> nPIω
+
+tvnu ´ v‹
+
+> m
+
+, @ω P Ωs
+
+> ν`
+
+¯
+
+ě p 1 ´ δq|Ωs 
+
+> ν`|
+
+,
+
+where Tω is the actual completion time of subtask ω P Ωs 
+
+> ν`
+
+;
+
+m is the associated target; Iω is the set of robots executing ω;
+
+vn and v‹ 
+
+> m
+
+are the velocities of robot n and target m.
+
+Proof: From the simulation results, all robots n P Iω
+
+assigned to subtask ω P Ωs 
+
+> ν`
+
+would reach the predicted position pY pTω ,m of target m by time instance pTω . By the probability guarantee in (4), it holds that Pr 
+
+´ › ››Y pTω ,m ´ pY pTω ,m 
+
+››› ď G pTω ,m , @ω P Ωs
+
+> ν`
+
+¯
+
+ě p 1 ´ δq|Ωs 
+
+> ν`|
+
+.
+
+The additional delay required to reach target m is upper-bounded by pT e 
+
+> ω
+
+“ G pTω ,m {p min nPIω tvnu ´ v‹
+
+> m
+
+q, this com-pletes the proof. The actual completion time of a first executed subtask Tω
+
+is probabilistically bounded by the predicted time pTω plus an uncertainty term determined by the prediction region G pTω ,m 
+
+and the velocity difference between the slowest robot and the target. Hence, with confidence level p1´δq, each key subtask 
+
+completion time can be reliably estimated. The evaluation metric for a child node ν` is then defined as: 
+
+ζν` fi 
+
+ř|Ων` | 
+
+> i“1
+
+pTωi ` ř|Ωs  
+
+> ν`|
+> j“1
+
+pT e
+
+> ωj
+
+|Ων` | , (7) which approximates the average completion time of assigned subtasks with uncertainty adjustment. After “Expansion”, for each next subtask, the child node with the smallest ζ is selected to enter “Simulation”, forming the filtered set tνsu.
+
+Algorithm 2: Online Dynamic Task Assignment 
+
+Input : Robots N , task formula φptq, duration func. ρ, trajectory predictors Υ, prediction regions GHt , observations tY0: t, V 0: tu.
+
+Output: Assignment Π‹. 
+
+> 1
+
+Initialize Pφ Ð Compute poset pφp0qq , Ωι Ð H ; 
+
+> 2
+
+Initialize Π‹, η ‹ Ð CP-MCTS pPφ, ρ, ˆYH0 , G H0 , x 0q; 
+
+> 3
+
+while not terminated do  
+
+> 4
+
+Each robot n P N applies πn; 
+
+> 5
+
+Sense xt and Yt; 
+
+> 6
+
+Obtain predictions ˆYHt ; 
+
+> 7
+
+Update φptq by (8);  
+
+> 8
+
+Update Pφ by Compute poset pφptqq ; 
+
+> 9
+
+if φrptq then  
+
+> 10
+
+Π‹, η ‹ Ð CP-MCTS (Pφ, ρ, ˆYHt , G Ht , x t);  
+
+> 11
+
+else  
+
+> 12
+
+η‹ Ð η‹ ´ 1; 
+
+> 13
+
+if Ωcptq ‰ H then  
+
+> 14
+
+Update η‹ by (9);  
+
+> 15
+
+Ωι Ð Ωι Y Ωcptq; 
+
+> 16
+
+η‹ 
+
+> t
+
+Ð Eval pΠ‹, P φ, ρ, ˆYHt , G Ht , x tq; 
+
+> 17
+
+if η‹ 
+
+> t
+
+ą p 1 ` γqη‹ then  
+
+> 18
+
+pΠt, pηt Ð CP-MCTS pPφ, ρ, ˆYHt , G Ht , x tq; 
+
+> 19
+
+if pηt ă η‹ 
+
+> t
+
+then  
+
+> 20
+
+Π‹ Ð pΠt, η ‹ Ð pηt; 
+
+> 21
+
+t Ð t ` 1; 
+
+Remark 1: For a child node ν`, if a subtask ω P Ωs
+
+> ν`
+
+is assigned to a robot n P Iω with velocity vn ď v‹
+
+> m
+
+, the robot may be unable to complete the subtask. In this case, the predicted completion time is pTω “ 8 , which yields ζν` “8; thus the node is excluded from the “Simulation” step. ■
+
+D. Online Execution and Adaptation 1) Online Execution and Adaptation: As illustrated in Fig. 2 and summarized in Alg. 2, the planning scheme consists of two stages: initial planning and online adaptation. Following the initial plan, each robot n P N executes its local plan πn by navigating to the targets specified by the assigned subtasks and then performing the corresponding actions. When executing action aKn 
+
+> n
+
+on target mKn 
+
+> n
+
+, the robot n must wait for collaborators if aKn 
+
+> n
+
+belongs to a multi-robot collaboration Ck (i.e., |Ck| ą 1). Such partial synchro-nization is essential to handle uncertainties in navigation and task execution times. If the action is non-collaborative, the robot proceeds independently without waiting. At each time step t ą 0, the robot states xt and tar-get observations Yt are updated, and new predictions ˆYHt
+
+are generated from Y0: t using the trajectory predictors Υ.Moreover, the task formula φptq is updated by integrating triggered reactive task formula, i.e., 
+
+φptq fi φpt´q ^ φrptq, (8) where φpt´q is the previous formula and φrptq fi Ź  
+
+> ¯eP¯E
+
+♢φ¯e
+
+> rep
+
+ptq is the reactive tasks released at time t. The current R-poset Pφ is updated accordingly. Replanning is triggered under two conditions: (I) new reactive tasks appear, i.e., φrptq ‰ H , or (II) the current plan’s performance de-grades significantly, i.e., η‹ 
+
+> t
+
+ą p 1 ` γqη‹, where γ P p 0, 1q is the replanning triggering ratio. Here, the performance metric 
+
+η‹ 
+
+> t
+
+is computed via Eval p¨q given the latest observations. For completed tasks, the expected value η‹ is updated as 
+
+η‹` fi 
+
+`|φptq| ´ | Ωι| ` | Ωcptq| ˘
+
+|φptq| ´ | Ωι| η‹´, (9) where η‹` and η‹´ denote the updated and previous values; 
+
+|φptq| is the total number of tasks; |Ωι| is the number of completed tasks; and |Ωcptq| is the number of tasks finished at time t. When replanning is triggered, CP-MCTS generates a candidate plan pΠt with metric pηt. The system adopts this new plan only if it offers improved performance as pηt ă
+
+η‹ 
+
+> t
+
+. Otherwise, the current plan Π‹ is maintained and the metric η‹ is monotonically decreased to reflect progress. This procedure repeats until the system terminates. 
+
+2) Complexity Analysis: The computational complexity of Alg. 2 is analyzed as follows. Generating a R-poset has worst-case complexity OpJ2q, where J is the number of subtasks, bounded by the number of edges in the NBA. For task assignment, the worst-case search space is OpJ! ¨ N J q,as subtask orderings are combinatorial and assignments grow exponentially with the number of robots N . In contrast, the 
+
+rollout process remains OpJ ¨ N q, as subtasks are assigned randomly or greedily. The complexity of stepwise simulation is Op zT ¨p J`N q 
+
+> ∆t
+
+q, where z is the number of samples, T is the makespan and ∆t is the time step. 
+
+3) Generalization: There are two notable extensions of the proposed scheme. (I) Robot Failures . In the event of robot failures, a modified CP-MCTS is employed to generate a new plan. The root node is updated to exclude failed robots and include completed subtasks. If a failure occurs during execu-tion, the affected subtask is rescheduled. The standard CP-MCTS procedure is then applied to update the assignment. 
+
+(II) Dynamic Task Priority . When tasks are associated with different priorities αℓ, the optimization objective shifts from the average makespan T φ to the weighted makespan rTφ fi 
+
+řLt 
+
+> ℓ“1
+
+αℓTφℓ , which emphasizes high-priority tasks. IV. N UMERICAL EXPERIMENTS 
+
+This section presents numerical validations of the pro-posed method over large-scale multi-robot systems. The implementation is in Python3 and tested on a laptop with an AMD Ryzen 9 7845HX CPU. Simulation and experiment videos are available in the supplementary material. 
+
+A. Scenario Description 
+
+For the wildlife protection scenario in Fig. 1, four types of animals: antelope, rabbit, elephant, and tiger, move within an 800 m ˆ 800 m outdoor area containing obstacles such as reservoirs and hills. A total of 2000 synthetic trajectories are collected for the four types of animals as the training and calibration datasets ( 1000 each), where initial and tar-get positions are specified and Gaussian noise is added to sampled waypoints. Four robots of each type are deployed:      
+
+> Fig. 3. The average makespan and the number of explored nodes with different random factors ϵand expansion strategies (with or without CP-based metric ζin (7)) during initial planning in Scene-1.
+
+fast GRs Gf to monitor, patrol and arrest; slow GRs Gs to monitor, patrol and rescue; and UAVs U to monitor and film. GRs can navigate safely around obstacles as a team. Tasks are specified by the following LTL formulas, which require to monitor, film, and rescue animals, while also patrolling and arresting poachers in designated areas: 
+
+φstatic “ φp´s1 ^ φp´s2 ^ φmf ´a ^ φmf ´r ^ φmf ´e,φrp50 q “ φmf ´t, φ rp90 q “ ♢arrest s3 ^ ♢rescue e,
+
+where φp, φmf follow the same structure as in (3). Two scenes with different animal motion patterns are considered (Fig. 1): Scene-1 : targets exhibit piecewise uniform linear motion; Scene-2 : targets follow general smooth trajectories. The main parameters are: CP failure probability δ “ 0.15 ,CP-MCTS time budget tb “ 10 s, exploration factor Q “ 1.5,random factor ϵ “ 0.3, number of samples z “ 50 , risk level α “ 0.05 , and replanning triggering ratio γ “ 0.2.
+
+B. Results 
+
+The results are shown in Figs. 1 and 4. At t “ 0,trajectory prediction takes 0.05 s, R-posets computation for 
+
+8 static tasks takes 0.03 s, and the “Simulation” at each node averages 0.25 s with z “ 50 samples. The metric ζν` in (7) ranges from 24 .5s to 72 .3s, and a plan with average makespan η‹ 
+
+> 0
+
+“ 48 s is generated after exploring 118 nodes within tb “ 10 s. At t “ 43 s, replanning is triggered due to performance degradation, with η‹ 
+
+> 43
+
+“ 14 .2s exceeding the threshold p1 ` γqη‹ “ 13 .7s for γ “ 0.2. After exploring 
+
+140 nodes, the new plan yields pη43 “ 16 .4s, which does not improve performance; thus, the current plan is retained. At t “ 50 s, the appearance of a new target tiger and task φmf-t triggers replanning with 4 subtasks, where 389 
+
+nodes are explored, producing η‹ 
+
+> 50
+
+“ 28 .2s. At t “ 90 s,reactive tasks arrest s3 and rescue e trigger replanning with 3 unfinished subtasks, exploring 155 nodes and yielding 
+
+η‹ 
+
+> 90
+
+“ 40 .3s. The system terminates at t “ 147 s, with an average makespan of 67 .6s over 12 subtasks. Fig. 3 illustrates convergence and node exploration at t “ 0. The algorithm is deemed converged when the best plan remains unchanged for more than 100 s. As the random factor ϵ
+
+increases, more nodes are explored, but convergence time grows. With heuristic-based robot selection during rollout ,convergence is achieved within 10 s for ϵ “ 0 and ϵ “ 0.3.Moreover, using ζν` as in (7) to filter child nodes accelerates tree exploration and improves performance. Fig. 4. Left: Gantt chart of Scene-1, where replanning happens when the predicted value η‹       
+
+> texceeds a threshold (orange line) and new tasks are triggered (green and blue lines). Right: Gantt chart of Scene-1 where two robots fail at 40 sand 70 s(in grey), respectively.
+
+C. Comparisons 
+
+To evaluate the effectiveness of our method (Ours ), we compare against six baselines: Mixed Integer Linear Programming ( MILP ): task decomposition and assignment via integer optimization [10]; Branch and Bound ( BnB ): a search-based method from [25]; No Trajectory Prediction (NTP ) and No Uncertainty ( NU ): Ours without trajectory prediction or without uncertainty regions, respectively; Ours-G: Ours with a GRU-based trajectory predictor; Ours-P10 :Ours with periodic replanning every 10s instead of event-triggered replanning. All methods are first evaluated for task allocation at t “ 0 in Scene-1, executed over 500 target trajectory samples. Metrics include the mean and variance of average makespan and the solution time. They are further tested online in Scene-1 and Scene-2 with 500 samples, together with a clairvoyant strategy ( CS ) that has access to future trajectories and applies NU for assignment. Static methods (MILP, BnB, NTP) model each dynamic target as fixed at its most recently observed position during planning. As shown in Table I, Ours outperforms static methods with reductions of 16 .5% , 24 .6% , and 22 .5% in mean makespan and 64 .9% , 67 .3% , and 74 .8% in variance across Scene-1 ( t “ 0), Scene-1, and Scene-2, respectively. BnB finds the first feasible solution quickly but converges slowly due to random exploration. MILP is the most time-consuming because of its exponential complexity. Ours requires more computation than NTP and BnB due to sampling and step-wise simulation, but achieves more reliable outcomes. Although NU achieves a 6.7% lower mean makespan than Ours in Scene-1 at t “ 0, it incurs 1.2ˆ higher variance and performs worse in online settings, confirming that Ours offers more risk-averse assignments via CP. Ours-G per-forms comparably to Ours, showing adaptability to different predictors. Ours-P10 increases mean makespan by 10 .2% 
+
+and variance by 4.2% relative to Ours, underscoring the benefit of event-triggered replanning. Finally, Ours remains within 6.0% „ 7.5% of CS in mean makespan with only minor variance increases, indicating performance close to CS without prior knowledge of target motion. 
+
+D. Generalization 1) Scalability Analysis: Scalability is evaluated with re-spect to the number of robots N , tasks F , and targets M ,as summarized in Table II. With fixed F “ 8 and M “ 3,                                                                                              
+
+> TABLE I COMPARISON AGAINST BASELINES
+> Method Scene-1 ( t“0)Scene-1 Scene-2 M( Tϕ), V( Tϕ)atprssbM( Tϕ), V( Tϕ)M( Tϕ), V( Tϕ)Ours 48.0, 3.25 1.22, 4.70 67.6, 5.32 68.5, 4.34 NU 44.8 , 7.05 0.30, 2.74 72.5, 14.32 71.8, 12.59 NTP 56.2, 10.05 0.25, 0.53 81.9, 12.41 83.0, 17.21 MILP 59.1, 8.79 3.24, 905.6 94.9, 16.33 94.8, 18.12 BnB 57.1, 8.91 0.06 , 35.22 92.0, 20.13 87.5, 16.24 Ours-G 49.9, 3.98 1.31, 5.21 66.9, 6.12 70.2, 5.43 Ours-P10 //79.3, 11.45 77.8, 12.67 CS //63.8 ,3.24 65.3 ,2.96
+> aM( Tϕ),V( Tϕ): mean and variance of average makespan Tϕ.
+> bThe solution time tpis measured by two timestamps: (i) when the first solution is returned; (ii) when the algorithm converges.
+> cBest values are in bold ; second-best are underlined. TABLE II SCALABILITY ANALYSIS RESULTS
+> (Gf,Gs,U)atp(M“3)rsstppF“16 )rss
+> F“8F“12 F“16 M“6M“9
+> (4, 4, 4) 1.22, 4.7 2.03, 8.2 3.93, 15.5 2.04, 13.2 1.63, 15.6 (8, 8, 8) 2.71, 4.1 5.15, 9.2 7.64, 18.1 5.29, 12.1 7.59, 19.1 (12, 12, 12) 3.81, 4.9 6.19, 9.5 9.39, 18.3 8.35, 12.8 9.59, 16.3
+> a(Gf,Gs,U): the number of three types of robots.
+
+increasing N from 12 to 36 raises the computation time for the first solution from 1.22 s to 3.81 s, while the convergence time remains around 4.7s. With fixed M “ 3 and N “ 12 ,increasing F from 8 to 16 extends convergence time from 
+
+4.7s to 15 .5s, whereas the time for the first solution grows only modestly from 1.22 s to 3.93 s, owing to the polynomial complexity of rollout . With fixed F “ 16 and N “ 12 ,increasing M from 3 to 9 causes fluctuations in the first-solution time, but convergence time stays around 15 .0s. 
+
+2) Robot Failure: In Scene-1, ground robot Gf2 fails at t “ 40 s, and UAV U 4 at t “ 70 s. As shown in the Gantt chart of Fig. 4, the failure of Gf2 during antelope monitoring triggers replanning, where U 3 replaces it. At 
+
+t “ 70 s, the failure of UAV U 4 during antelope filming leads to another update, assigning U 2 and U 3 to complete the task. Despite these failures, the team successfully completes all tasks by t “ 151 s, with an average makespan of 74 .9s.
+
+3) Dynamic Task Priority: In Scene-1, the antelope-related task φmf ´a is assigned a priority coefficient of 0.3,while other tasks are given 0.1. When optimizing for the average makespan T φ, the completion times for monitoring and filming the antelope are Tm´a “ 92 s and Tf´a “ 112 s.Under weighted makespan rTφ minimization, these times decrease to 82 s and 102 s, respectively, each reduced by 10 s.
+
+4) High-fidelity ROS Simulation: In the second scenario (Figs. 1 and 5), three types of suspects: on foot f, by bike b, and by car c flee through city roads. Two types of robots, four of each, are deployed: UAVs Ut for tracking suspects and scouting, and UAVs Ui for interception and scouting. Tasks are given by φstatic “ φs´s1 ^ φs´s2 ^
+
+φti ´f ^ φti ´b ^ φti ´c, φrp40 q “ φs´s3 , φrp80 q “Fig. 5. ROS simulation results. Top : Robot and target trajectories. Bottom :Gantt chart of the execution timeline with task allocation and replanning. 
+
+φs´s4 , φ s´s1 “ ♢scout s1 , φti ´f “ ♢ptrack f ^␣intercept f ^ ♢intercept fq. Task assignments are updated at t “ 40 s and t “ 80 s when new reactive tasks appear. Additional replanning occurs at t “ 64 s, t “ 79 s,and t “ 104 s, though the plan remains unchanged. The system terminates at t “ 136 s, completing all 10 tasks with an average makespan of 66 .9s.
+
+E. Hardware Experiments 
+
+For further validation with hardware, we built a setup similar to the second scenario with 4 robots ( UAV : 2Ut,
+
+2Ui) and 2 targets ( UGV : a1, a2) in a 4.95 m ˆ 4.95 m
+
+workspace, with the motion capture system OptiTrack 
+
+providing their global states. Each robot communicates wirelessly with a control PC via ROS1 . Mature navigation controllers are adopted and omitted for brevity. The tasks are specified as: φstatic “ φs´s1 ^ φs´s2 ^ φti ´a1 ^ φti ´a2 ,
+
+φrp80 q “ φs´s3 . The algorithm uses the same parameters as in simulation. Assignments are updated at t “ 47 s (due to performance degradation) and t “ 80 s (due to a new task). The system terminates at t “ 113 s, completing all 7 tasks with an average makespan of 64 .7s. The resulting trajectory, snapshots, and Gantt chart are shown in Figs. 1 and 6. V. C ONCLUSION 
+
+This paper has presented UMBRELLA , an online multi-robot coordination framework for collaborative temporal tasks with dynamic targets. It achieves substantial reductions in both the mean and variance of the average makespan, while guaranteeing satisfaction of spatial-temporal task spec-ifications. Future work includes intention-aware prediction for dynamic targets and finer motion constraints for robots. REFERENCES [1] A. Shukla and H. Karki, “Application of robotics in offshore oil and gas industry—a review part ii,” Robotics Auton. Syst. , vol. 75, pp. 508–524, 2016. [2] T. Bock, “Construction robotics,” Auton. Robots , vol. 22, no. 3, pp. 201–209, 2007. [3] P. Toth and D. Vigo, “An overview of vehicle routing problems,” The Vehicle Routing Problem , pp. 1–26, 2002. [4] O. M. Cliff, R. Fitch, S. Sukkarieh, D. L. Saunders, and R. Heinsohn, “Online localization of radio-tagged wildlife with an autonomous aerial robot system,” in Robotics Sci. Syst. , 2015. [5] A. Varava, K. Hang, D. Kragic, and F. T. Pokorny, “Herding by caging: a topological approach towards guiding moving agents via mobile robots.” in Robotics Sci. Syst. , 2017, pp. 696–700. 
+
+Fig. 6. Hardware experiment results. Left: Recorded robot and target trajectories. Top-right: Example trajectory snapshots highlighting robot-target interactions. Bottom-right: Gantt chart of the execution timeline. [6] C. Baier and J.-P. Katoen, Principles of Model Checking . MIT Press, 2008. [7] Y. Kantaros and M. M. Zavlanos, “Stylus*: A temporal logic optimal control synthesis algorithm for large-scale multi-robot systems,” Int. J. Robot. Res. , vol. 39, no. 7, pp. 812–836, 2020. [8] M. Guo and M. M. Zavlanos, “Multirobot data gathering under buffer constraints and intermittent communication,” IEEE Trans. Robot. ,vol. 34, no. 4, pp. 1082–1097, 2018. [9] C. Robin and S. Lacroix, “Multi-robot target detection and tracking: taxonomy and survey,” Auton. Robots , vol. 40, pp. 729–760, 2016. [10] X. Luo and M. M. Zavlanos, “Temporal logic task allocation in heterogeneous multi-robot systems,” IEEE Trans. Robot. , vol. 38, no. 6, pp. 3602–3621, 2022. [11] Y. E. Sahin, P. Nilsson, and N. Ozay, “Multirobot coordination with counting temporal logics,” IEEE Trans. Robot. , vol. 36, no. 4, pp. 1189–1206, 2019. [12] Z. Liu, M. Guo, W. Bao, and Z. Li, “Fast and adaptive multi-agent planning under collaborative temporal logic tasks via poset products,” 
+
+Research , vol. 7, p. 0337, 2024. [13] P. Schillinger, M. B¨ urger, and D. V. Dimarogonas, “Simultaneous task allocation and planning for temporal logic goals in heterogeneous multi-robot systems,” Int. J. Robot. Res. , vol. 37, no. 7, pp. 818–838, 2018. [14] M. Guo and D. V. Dimarogonas, “Multi-agent plan reconfiguration under local ltl specifications,” Int. J. Robot. Res. , vol. 34, no. 2, pp. 218–235, 2015. [15] Y. Zhang, S. Kalluraya, G. J. Pappas, and Y. Kantaros, “Reactive planning for teams of heterogeneous robots with dynamic collaborative temporal logic missions,” in IEEE Conf. Decis. Control , 2024, pp. 1599–1606. [16] S. Kalluraya, G. J. Pappas, and Y. Kantaros, “Multi-robot mission planning in dynamic semantic environments,” in IEEE Int. Conf. Robot. Autom. , 2023, pp. 1630–1637. [17] L. Lindemann, M. Cleaveland, G. Shim, and G. J. Pappas, “Safe planning in dynamic environments using conformal prediction,” IEEE Robot. Autom. Lett. , vol. 8, no. 8, pp. 5116–5123, 2023. [18] S. Tonkens, S. Sun, R. Yu, and S. Herbert, “Scalable safe long-horizon planning in dynamic environments leveraging conformal prediction and temporal correlations,” in IEEE Int. Conf. Robot. Autom. , 2023. [19] X. Yu, Y. Zhao, X. Yin, and L. Lindemann, “Signal temporal logic control synthesis among uncontrollable dynamic agents with confor-mal prediction,” arXiv:2312.04242 , 2023. [20] C. Belta, B. Yordanov, and E. A. Gol, Formal Methods for Discrete-Time Dynamical Systems . Springer, 2017, vol. 15. [21] S. Hochreiter, “Long short-term memory,” Neural Comput. , 1997. [22] L. R. Medsker, L. Jain, et al. , “Recurrent neural networks,” Design and Applications , vol. 5, no. 64-67, p. 2, 2001. [23] K. Cho, B. Van Merri¨ enboer, D. Bahdanau, and Y. Bengio, “On the properties of neural machine translation: Encoder-decoder ap-proaches,” arXiv preprint arXiv:1409.1259 , 2014. [24] A. N. Angelopoulos and S. Bates, “A gentle introduction to con-formal prediction and distribution-free uncertainty quantification,” 
+
+arXiv:2107.07511 , 2021. [25] Z. Liu, M. Guo, and Z. Li, “Time minimization and online synchro-nization for multi-agent systems under collaborative temporal logic tasks,” Automatica , vol. 159, p. 111377, 2024. [26] L. Kocsis and C. Szepesv´ ari, “Bandit based monte-carlo planning,” in 
+
+Eur. Conf. Mach. Learn. , 2006, pp. 282–293.
