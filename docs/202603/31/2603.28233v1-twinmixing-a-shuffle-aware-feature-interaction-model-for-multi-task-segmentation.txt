@@ -1,0 +1,563 @@
+Title: TwinMixing: A Shuffle-Aware Feature Interaction Model for Multi-Task Segmentation
+
+URL Source: https://arxiv.org/pdf/2603.28233v1
+
+Published Time: Tue, 31 Mar 2026 02:35:48 GMT
+
+Number of Pages: 15
+
+Markdown Content:
+# TwinMixing: A Shuffle-Aware Feature Interaction Model for Multi-Task Segmentation 
+
+## Minh-Khoi Do a,b ,∗, Huy Che a,b ,∗, Dinh-Duy Phan a,b , Duc-Khai Lam a,b ,∗∗ and Duc-Lung Vu a,b 
+
+> a
+
+University of Information Technology, Ho Chi Minh City, Vietnam 
+
+> b
+
+Vietnam National University, Ho Chi Minh City, Vietnam 
+
+A R T I C L E I N F O 
+
+Keywords :Drivable-area segmentation Lane segmentation Autonomous car Light-weight model 
+
+A B S T R A C T 
+
+Accurate and efficient perception is essential for autonomous driving, where segmentation tasks such as drivable-area and lane segmentation provide critical cues for motion planning and control. However, achieving high segmentation accuracy while maintaining real-time performance on low-cost hardware remains a challenging problem. To address this issue, we introduce TwinMixing, a lightweight multi-task segmentation model designed explicitly for drivable-area and lane segmentation. The proposed network features a shared encoder and task-specific decoders, enabling both feature sharing and task specialization. Within the encoder, we propose an Efficient Pyramid Mixing (EPM) module that enhances multi-scale feature extraction through a combination of grouped convolutions, depthwise dilated convolutions and channel shuffle operations, effectively expanding the receptive field while minimizing computational cost. Each decoder adopts a Dual-Branch Upsampling (DBU) Block composed of a learnable transposed convolution–based Fine detailed branch and a parameter-free bilinear interpolation–based Coarse grained branch , achieving detailed yet spatially consistent feature reconstruction. Extensive experiments on the BDD100K dataset validate the effectiveness of TwinMixing across three configurations - tiny , base , and large . Among them, the base configuration achieves the best trade-off between accuracy and computational efficiency, reaching 92.0% mIoU for drivable-area segmentation and 32.3% IoU for lane segmentation with only 0.43M parameters and 3.95 GFLOPs. Moreover, TwinMixing consistently outperforms existing segmentation models on the same tasks, as illustrated in Figure 1. Thanks to its compact and modular design, TwinMixing demonstrates strong potential for real-time deployment in autonomous driving and embedded perception systems. The source code is avaiable at https://github.com/Jun0se7en/TwinMixing. 
+
+## 1. Introduction 
+
+In autonomous driving systems, image segmentation plays a vital role in understanding the driving environment by identifying key elements such as road surfaces, vehi-cles, pedestrians, and lane markings. However, constructing highly detailed multi-class semantic maps [1, 2, 3, 4] is often unnecessary for practical advanced driver-assistance systems (ADAS) [5, 6, 7]. A critical requirement of ADAS is real-time perception, where even minor delays in processing can compromise driving safety. Instead of exhaustively seg-menting all objects in the scene, ADAS applications primar-ily focus on extracting task-relevant regions-notably drivable areas and lane markings-which directly support navigation, lane keeping, and trajectory planning. Consequently, seg-mentation approaches that emphasize task-specific utility and real-time efficiency are more desirable than those that solely focus on fine-grained semantic labeling. In contrast to general semantic scene understanding tasks [1, 2, 3, 4, 8] that focus on categorizing all visible ob-jects within a scene, drivable area segmentation and lane segmentation [8] serve a more safety-critical function in autonomous driving perception. As illustrated in Fig. 1, 
+
+> ∗
+
+Equal contribution 
+
+> ∗∗
+
+Corresponding author  
+
+> khoidm.19@grad.uit.edu.vn
+
+(M. Do); huycq@uit.edu.vn (H. Che);  
+
+> duypd@uit.edu.vn
+
+(D. Phan); khaild@uit.edu.vn (D. Lam);  
+
+> lungvd@uit.edu.vn
+
+(D. Vu) 
+
+> ORCID
+
+(s): 0009-0007-7477-4702 (H. Che); 0000-0003-0228-9648 (D. Phan); 0000-0003-2711-1408 (D. Lam); 0000-0002-0045-4657 (D. Vu) 5 10  15 
+
+> small
+> medium
+
+91 
+
+MobiP 
+
+Drivable area segmentation 
+
+> mIoU (%)
+
+89 
+
+93 
+
+GFLOPs 0
+
+> large
+> tiny
+> base
+
+TwinMixing   
+
+> 25 30 35
+
+Lane segmentation 
+
+> IoU (%)
+
+SegFormer 
+
+> large
+
+87  TwinLiteNet+ 
+
+TwinLiteNet 
+
+> nano
+> nano
+> small
+> medium
+
+YOLOP 
+
+DFFM 
+
+> (Ours)
+
+Figure 1: The horizontal axis represents FLOPs, the vertical axis denotes mIoU, and the circle radius corresponds to IoU. 
+
+these tasks provide crucial information for identifying nav-igable regions, maintaining stable lane positioning, and en-abling trajectory planning and collision avoidance in com-plex and dynamic traffic environments. The primary aim of segmentation research in this context is to create ac-curate mappings between sensory inputs, such as camera images, LiDAR, or other modalities, and their corresponding segmentation maps. Nevertheless, achieving high accuracy alone is not sufficient for real-world deployment; models must also deliver real-time inference performance to ensure safety and responsiveness in autonomous driving systems. This requirement underscores the need for segmentation 
+
+M-K Do et-al.: Preprint submitted to Elsevier Page 1 of 15   
+
+> arXiv:2603.28233v1 [cs.CV] 30 Mar 2026 TwinMixing Model Drivable Area
+> Lane
+> Semantic Scene Understanding Drivable Area and Lane Segmentation
+> Pole
+> Fence
+> Building
+> Tree
+> Person
+> Car
+> Wall
+> .
+> .
+> .
+> Figure 2: Visual comparison of semantic scene understanding versus drivable area and lane segmentation, highlighting the focus on safety-critical and navigable regions for autonomous driving.
+
+algorithms that strike a balance between strong representa-tional capability and computational efficiency, while main-taining high processing throughput on resource-constrained onboard hardware. Consequently, balancing accuracy and efficiency emerges as a key challenge in designing segmenta-tion systems for practical autonomous driving applications. Although recent segmentation studies have achieved re-markable accuracy [9, 10, 11, 12], most are evaluated on high-end GPUs, which differ substantially from the com-putational constraints of in-vehicle systems. To balance ac-curacy and efficiency, several lightweight architectures [13, 14, 15] have been developed. Among them, dilated convolu-tion–based models [13, 14] effectively enlarge the receptive field without increasing the kernel size, thereby enhancing contextual perception at a moderate cost. However, these approaches still suffer from redundant computation and lim-ited channel interaction. To overcome these limitations, we introduce an efficient feature extraction strategy that com-bines dilated depthwise convolutions with channel shuffle operations. Our proposed model takes a different perspective by emphasizing inter-feature interaction and cross-scale in-formation integration within the encoder. Instead of relying solely on structural efficiency, TwinMixing enhances repre-sentational richness through efficient pyramid mixing and channel-level fusion. This design strengthens cross-channel communication while substantially reducing parameters and FLOPs, resulting in a more compact yet expressive encoder suitable for embedded deployment. Building upon these principles, we propose the Twin-Mixing Model, a lightweight multi-task segmentation ar-chitecture designed for drivable area and lane segmenta-tion. The model employs a shared encoder that extracts multi-scale features through a combination of Efficient Pyra-mid Mixing (EPM), followed by two task-specific decoders equipped with Dual Branch Upsampling Blocks (DBU) to reconstruct segmentation masks for each task. The inte-gration of EPM Units enables efficient multi-scale repre-sentation learning, while the dual-branch decoder balances detailed reconstruction with spatial smoothness through the fusion of transposed convolution and bilinear upsampling. Our main contributions can be summarized as follows: 
+
+• We propose TwinMixing, a lightweight multi-task segmentation model that jointly performs drivable-area and lane-line segmentation. The shared encoder integrates dilated depthwise separable convolutions, channel shuffle operations, and the proposed Effi-cient Pyramid Mixing (EPM) module to achieve rich multi-scale representations with minimal computa-tional overhead. 
+
+• We design Dual Branch Upsampling (DBU)–that fuses a learnable transposed convolution–based Fine Branch with a parameter-free Bilinear Upsampling–based Coarse Branch. This dual-path strategy enhances spa-tial detail recovery and stability while avoiding checker-board artifacts. , 
+
+• TwinMixing is developed in three scalable configurations-
+
+tiny , base , and large -ranging from 0.10M / 1.08 GFLOPs to 1.50M / 14.25 GFLOPs, supporting flex-ible deployment from embedded systems to edge devices. 
+
+• Extensive experiments on the BDD100K dataset demon-strate that TwinMixing large achieves 92.8% mIoU for drivable-area segmentation and 34.2% IoU for lane segmentation, outperforming recent lightweight baselines such as TwinLiteNet + [14], DFFM [16], and IALaneNet [9] with significantly lower computational cost. 
+
+## 2. RELATED WORK 
+
+Semantic segmentation is a fundamental task in com-puter vision, in which each pixel in an image is assigned a semantic label. In autonomous driving, this task plays a crucial role in environmental perception and scene under-standing [1, 2, 3, 4, 8], supporting downstream tasks such as motion planning, navigation, and collision avoidance. Pioneering works such as DeepLab [17], SegFormer [18], and Mask2Former [19] have achieved high accuracy through deep feature extraction and strong contextual representation. However, these models often rely on heavy backbones with high computational costs, making them unsuitable for real-time deployment on embedded or in-vehicle systems. To improve computational efficiency, several lightweight archi-tectures [20, 21, 22] have been proposed, which employ simplified encoder–decoder designs to reduce complexity while maintaining reasonable segmentation performance. In addition, channel mixing mechanisms such as grouped con-volution and channel shuffle, introduced in ShuffleNet [23] and MobileNet [24], further enhance feature diversity with-out significantly increasing the parameter count.         
+
+> M-K Do et-al.: Preprint submitted to Elsevier Page 2 of 15 TwinMixing Model Shuffle Unit
+> Shuffle Unit
+> C
+> Stride EPM
+> EPM
+> Shuffle Unit
+> Stride EPM
+> EPM Shuffle Unit
+> PCAA
+> C
+> DBU
+> C
+> DBU
+> C
+> DBU
+> C
+> DBU
+> C
+> DBU
+> DBU
+> Encoding Stage Decoding Stage
+> Figure 3: The architecture of TwinMixing. The model consists of a shared encoder and two task-specific decoders. The encoder integrates the proposed Efficient Pyramid Mixing (EPM) modules to enhance multi-scale feature extraction and contextual representation. Each decoder adopts a Dual Branch Upsampling Block (DBU) composed of Fine detailed branch and Coarse grained branch . The two decoders independently generate segmentation masks for lane lines and drivable areas, respectively.
+
+In practical autonomous driving systems, however, seg-menting a wide range of complex semantic categories (e.g., road, building, vegetation, pedestrian, or traffic sign) is not always necessary for real-time decision-making. Instead, advanced driver assistance systems (ADAS) often focus on perception tasks that directly support vehicle control, such as drivable area segmentation and lane line detection. Consequently, recent studies have developed task-specific models [9, 16, 13, 14, 25, 20, 26, 27, 28] for these purposes, following either single-task [20, 26, 27, 28] or multi-task paradigms [9, 16, 13, 14, 25]. Among them, multi-task mod-els have gained more attention due to their ability to share features across tasks, reduce redundant computation, and improve scalability. Typically, these models adopt a shared encoder to learn general representations, followed by task-specific decoders to specialize for each output. Despite these advances, most existing multi-task architectures [13, 14, 16] rely on dilated convolutions to enlarge the receptive field but remain limited in inter-channel interaction, which constrains feature diversity and contextual representation capacity. From these observations, two significant challenges re-main insufficiently addressed in prior research: (1) how to enhance inter-channel information exchange while maintain-ing effective multi-scale contextual representation under low computational cost; and (2) how to achieve stable spatial detail reconstruction during decoding without introducing boundary noise or checkerboard artifacts. To address these challenges, we propose TwinMixing - a lightweight multi-task segmentation model designed explicitly for drivable area and lane line segmentation. The model incorporates an Efficient Pyramid Mixing (EPM) module within the en-coder to expand the receptive field via dilated depthwise convolutions while facilitating channel interactions through grouped convolutions and channel shuffle. In the decoding stage, a Dual Branch Upsampling (DBU) module with two parallel branches ensures smooth and stable spatial recon-struction. Through this design, TwinMixing achieves an optimal balance between computational efficiency, accuracy, and training stability, making it well-suited for real-time perception in autonomous driving systems. 
+
+## 3. TwinMixing Model 
+
+3.1. Overall architecture 
+
+The TwinMixing model is a multi-task segmentation architecture designed to simultaneously perform two re-lated tasks: lane line segmentation and drivable area seg-mentation. The model takes an RGB image as input and extracts feature representations through a shared encoder. These shared features are then processed by two task-specific decoders, each dedicated to reconstructing a segmentation mask for its corresponding task. The encoder of TwinMixing is built upon a combination of convolutional layers, the proposed Efficient Pyramid Mix-ing (EPM) modules, and the PCAA module [29]. This com-bination enhances multi-scale feature representation while maintaining high computational efficiency. Specifically, the EPM modules are designed to expand the receptive field and facilitate channel interactions at a low computational cost through multiple EPM Units, enabling the model to capture contextual information across different spatial levels. Mean-while, the PCAA module serves as an attention mechanism that amplifies semantically important regions for each target class. During encoding, the spatial resolution of feature maps is gradually reduced from H ×W to H/8 ×W/8 before being passed to the decoding stage. In contrast to the shared encoder, the decoders in Twin-Mixing are task-specific, allowing the model to learn spe-cialized feature representations optimized for each segmen-tation objective. Each decoder is constructed using the pro-posed Dual Branch Upsampling Block (DBU), which con-sists of two complementary branches: the Fine detailed branch and the Coarse grained branch . The outputs of these two branches are fused through element-wise addition, enabling the model to simultaneously leverage the detail reconstruction capability of transposed convolution and the spatial smoothness and stability provided by Bilinear Inter-polation. As a result, TwinMixing achieves more accurate spatial feature reconstruction and improved training stability. During inference, the encoder processes the input image 
+
+𝑟𝑔𝑏 to produce an intermediate feature representation 𝑒 .This shared feature is then passed through two separate decoders to generate the final segmentation masks: 𝑙𝑎𝑛𝑒   
+
+> M-K Do et-al.: Preprint submitted to Elsevier Page 3 of 15
+
+TwinMixing Model Shuffle Unit 
+
+> Shuffle Unit
+> Stride=2
+> Stride EPM
+> EPM
+> Shuffle Unit
+> Stride EPM
+> EPM
+> Shuffle Unit
+
+## PCAA 
+
+Figure 4: Overview of the encoder in TwinMixing. The encoder extracts hierarchical multi-scale features from the input image through a combination of standard convolutional layers, Efficient Pyramid Mixing (EPM) modules, and Partial Class Activation Attention (PCAA) [29], producing the shared representation 𝑒 for subsequent decoding. 
+
+for lane line segmentation and 𝑑𝑟𝑖𝑣𝑎𝑏𝑙𝑒 for drivable area segmentation. The overall architecture of TwinMixing is illustrated in Figure 3. 
+
+3.2. Encoder 
+
+In the TwinMixing segmentation model, the encoding stage is implemented using a shared encoder, that extracts and represents spatial and semantic features from the in-put image. The encoder is constructed using a sequence of CNN layers that combine Shuffle Units [23] with the proposed Efficient Pyramid Mixing (EPM) modules. The EPM modules include both EPM and Stride EPM variants. While the standard EPM focuses on expanding the receptive field to enhance multi-scale feature representation, the Stride EPM further enables the encoder to simultaneously enlarge the receptive field and perform progressive downsampling across layers. During the encoding process, the feature maps are gradually reduced in spatial resolution from H ×W to H/8 ×W/8, followed by a PCAA attention module [29] before being passed to the decoding stage. The encoder design is illustrated in Figure 4. Within the encoder, the proposed Efficient Pyramid Mixing (EPM) plays a central role in enhancing multi-scale feature extraction while maintaining computational efficiency. EPM follows the reduce–split–transform–merge 
+
+principle, enabling the model to process features across mul-tiple spatial scale representations effectively. Unlike prior approaches [17] that directly split the input features into multiple branches, the proposed EPM first performs dimen-sionality reduction through an EPM Unit with a 1 ×1 kernel, effectively lowering the computational cost of subsequent multi-branch transformations while preserving essential representational information. By performing the reduction before branching, the subsequent transformations in each parallel path operate on lower-dimensional feature maps, thereby significantly decreasing the overall computational EMP Unit 
+
+> kernel 1x1
+> EMP Unit
+> kernel 3x3
+> dilation = 2
+> EMP Unit
+> kernel 3x3
+> dilation = 4
+> EMP Unit
+> kernel 3x3
+> dilation = 1
+> EMP Unit
+> kernel 3x3
+> dilation = 16
+> EMP Unit
+> kernel 3x3
+> dilation = 8
+> C
+
+Figure 5: Illustration of the proposed Efficient Pyramid Mixing (EPM) module. The design is inspired by the ESP [22], where the EPM performs a reduction step using an EPM Unit with a kernel 1 ×1 before splitting features into multiple parallel branches. Each branch transforms the reduced feature through an EPM Unit with a different dilation rate to capture multi-scale spatial information. The outputs of all branches are then merged through the Hierarchical Feature Fusion (HFF) mechanism [22]. In the Stride EPM variant, the reduction step employs an EPM Unit with a kernel 1 ×1 and a stride of 2 to achieve downsampling. 
+
+burden of multi-branch processing. The reduced feature is then split into multiple parallel branches, each transformed by an EPM Unit with a different dilation rate, enabling the model to capture contextual information at multiple spatial scales. EPM Unit enables the model to capture contextual information at varying receptive scales. The outputs from these branches are then fused via a Hierarchical Feature Fusion (HFF) mechanism [22], which mitigates gridding artifacts. The overall architecture of the EPM module is illustrated in Figure 5. Within the EPM module, each EPM Unit serves as the core transformation process, responsible for capturing and encoding multi-scale spatial information. Structurally, the EPM Unit is structurally optimized to achieve a balance between computational efficiency and representational ca-pacity, combining essential operations: (i) a grouped 1 ×1convolution for feature projection; (ii) a 3 ×3 depthwise dilated convolution for spatial transformation and receptive field expansion without incurring significant computational overhead; and (iii) A channel shuffle operation is employed to restore inter-group information flow and mitigate the isolation caused by grouped convolutions. This combina-tion enables an effective balance between representation capability and efficiency, making the EPM Unit particularly suitable for real-time segmentation tasks that demand both high accuracy and fast inference. In the original Efficient Spatial Pyramid (ESP) design [22], only dilated convolutions (D-Conv) were employed for feature transformation, as illustrated in Figure 6a. The proposed Efficient Pyramid Mixing (EPM) Unit draws in-spiration from the Depthwise Dilated Separable Convolu-tion (DDS-Conv) structure introduced in previous studies 
+
+M-K Do et-al.: Preprint submitted to Elsevier Page 4 of 15 TwinMixing Model D-Conv 
+
+> (a) Dilated Con-volution a
+
+DD-Conv 
+
+PW-Conv  
+
+> (b) Depth-wise Dilated Separa-ble Convolution
+
+G-Conv 
+
+DD-Conv 
+
+G-Conv 
+
+> chanel mixing
+> (c) EPM Unit aa
+
+G-Conv 
+
+DD-Conv 
+
+> Stride = 2
+
+G-Conv  
+
+> chanel mixing Pooling
+> C
+> (d) Stride EPM Unit aa
+> Figure 6: Evolution of transformation designs in approaches derived from the Efficient Spatial Pyramid (ESP) framework [22].
+> (a) Dilated Convolution (D-Conv) in ESPNet [22]; (b) Depth-wise Dilated Separable Convolution (DDS-Conv) in [14, 30]; (c) EPM Unit proposed; (d) Stride EPM Unit variant for downsampling.
+
+[14, 30], depicted in Figure 6b. DDS-Conv effectively en-larges the receptive field by applying a Depthwise Dilated Convolution (DD-Conv) to capture spatial context, followed by a Pointwise Convolution (PW-Conv) to adjust the channel dimensionality and restore feature compactness. However, since both operations process channels independently, DDS-Conv lacks inter-channel interaction, resulting in limited feature diversity and weak contextual representation. To overcome this limitation, the EPM Unit replaces standard PW-Convs with grouped 1 ×1 convolutions, followed by a channel shuffle operation to promote cross-group informa-tion exchange. The shuffled features are then transformed by a DD-Conv, where the dilation rate is adaptively adjusted to control the receptive field based on network depth. Finally, a second grouped 1 ×1 convolution restores the output channel dimension. When the number of input and output channels is identical, a shortcut connection with element-wise addition is applied to stabilize training and facilitate efficient informa-tion propagation across layers, as shown in Figure 6c. For the Stride EPM variant, used in the reduction stages of the EPM hierarchy, a 1 ×1 convolution with stride = 2 is employed, as illustrated in Figure 6d. In addition to performing DD-Conv with a stride of 2, we introduce an additional 3 ×3 average pooling layer in the shortcut branch to downsample spatially, and replace element-wise addition with channel concatena-tion, allowing the network to increase its output channel capacity with minimal computational overhead. This design maintains a balance between spatial efficiency and informa-tion preservation, ensuring that the downsampling process does not compromise the geometric structure of the learned feature representations. 
+
+3.3. Decoder 
+
+In the TwinMixing Model, we design separate decoders for each segmentation task to enable the model to learn task-specific feature representations. Each decoder is responsible for transforming the encoder output features (F 𝑒 ) into a segmentation mask that has the exact spatial resolution as the input image, as illustrated in Figure 7. The decoders are constructed from a combination of convolutional operations and upsampling methods, jointly extracting spatial features and restoring resolution. In particular, we propose the Dual Branch Upsampling Block (DBU) - a dual-path upsampling structure composed of two complementary branches: the 
+
+Fine detailed branch and the Coarse grained branch .The Fine detailed branch is designed to recover fine spa-tial details that are often lost during the encoder’s downsam-pling process. Specifically, the Fine detailed branch employs transposed convolution for learnable upsampling, enabling the model to directly learn how to reconstruct fine geometric features from the training data. In the early upsampling stages, the upsampled features are concatenated with low-level feature maps from the encoder via skip connections at the exact spatial resolution, thereby preserving spatial continuity and local context. After concatenation, the fused features are further refined by an additional convolutional layer, which enhances the extraction of combined features and enriches the spatial representation. Consequently, the 
+
+Fine detailed branch plays an essential role in reconstructing object boundaries, ensuring sharpness and precision in the segmentation results. In contrast, the Coarse grained branch focuses on pre-serving the overall structure and spatial continuity during the resolution recovery process. This branch first applies a 1 ×1 convolution to reduce computational cost and ad-just the channel of the input features, followed by bilinear interpolation - a parameter-free interpolation method that enlarges feature maps by a factor of 2 × without producing the checkerboard artifacts commonly observed in transposed convolution. As a result, the Coarse grained branch provides stable feature representations that maintain the global layout of objects, serving as a structural foundation to be integrated with the detailed features from the Fine detailed branch .           
+
+> M-K Do et-al.: Preprint submitted to Elsevier Page 5 of 15 TwinMixing Model Drivable area segmentation Lane segmentation
+> Figure 7: Architecture of the proposed model with two parallel decoders sharing the same structural design for different segmentation tasks. C
+> Fine detailed branch
+> Coarse grained branch
+> Bilinear Interpolation
+
+PW-Conv 
+
+DeConv  Conv  
+
+> (a) DBU w/ skip connection Fine detailed branch
+> Coarse grained branch
+> Bilinear Interpolation
+
+PW-Conv 
+
+DeConv              
+
+> (b) DBU w/o skip connection
+> Figure 8: Illustration of the proposed Dual Branch Up-sampling Block (DBU). It consists of two complementary upsampling paths: the Fine detailed branch and the Coarse grained branch .
+
+The outputs from the two branches are fused through element-wise addition, allowing the model to jointly lever-age the fine-detail learning capability of the transposed convolution branch and the spatial stability of the bilinear interpolation branch. This combination improves boundary accuracy and maintains a consistent spatial structure in the final segmentation results. The detailed design of the DBU is illustrated in Figure 8, where Figure 8a shows the case in which the DBU incorporates downsampled features through skip connections, and Figure 8b depicts the configuration when the block operates independently without skip connec-tions. 
+
+3.4. Training strategies 
+
+During the training process, all input images are resized from their original resolution of 1280 ×720 to 640 ×384 to ensure computational efficiency and facilitate a fair com-parison with previous works that follow the same setting. To enhance generalization, we apply photometric augmen-tations (random hue, saturation, and value shifts) and geo-metric transformations (random translation, cropping, and horizontal flipping) to improve robustness and spatial diver-sity. We adopt the AdamW optimizer [31] and the learning rate follows a cosine annealing schedule, gradually reducing during 100 epochs. The batch size is set to 16. To address challenges in pixel-wise classification for autonomous driving-particularly class imbalance and fine-structure sensitivity-we design a hybrid loss combining Fo-cal Loss [32] and Tversky Loss [33]. Each loss is applied independently to the drivable-area and lane-segmentation outputs, ensuring task-specific optimization. Focal Loss fo-cuses on hard-to-classify pixels by down-weighting easy examples using a modulating factor (1 − ̂ 𝑝 𝑖 (𝑐 )) 𝛾 , which is effective in mitigating severe class imbalance where back-ground pixels dominate. Tversky Loss extends Dice Loss [34] by introducing weighting factors 𝛼 and 𝛽 to balance false positives and false negatives, which is crucial for thin and elongated lane structures. The total objective is ex-pressed as: 
+
+total = drivable area + lane (1) Empirically, we set 𝛼 = 0.7, 𝛽 = 0.3 for drivable-area segmentation, and 𝛼 = 0.9, 𝛽 = 0.1 for lane segmentation, while using 𝛼 𝑡 = 0.25 and 𝛾 = 2 in the Focal Loss formula-tion. These hyperparameters are chosen to emphasize recall over precision, ensuring safety-critical sensitivity to small or narrow structures such as lane markings. All experiments are conducted on an NVIDIA GTX 4090 GPU, with the model trained jointly for both tasks in an end-to-end multi-task setting. 
+
+## 4. Experimental 
+
+4.1. Dataset and evaluation metrics 
+
+The BDD100K dataset is a large-scale, diverse dataset of driving scenes developed for research in autonomous driving perception. It comprises 100,000 video clips collected from over 50,000 driving sessions across multiple regions in the United States, encompassing a wide range of environments, weather conditions, and times of day. The dataset is divided into training, validation, and test subsets containing 70K, 10K, and 20K images, respectively. Following prior stud-ies [13, 14, 9, 16], since the ground-truth annotations for the test set are not publicly available, all evaluations in this work are conducted on the validation set consisting of 10,000 images. Owing to its large scale and diverse environmental conditions, BDD100K serves as a comprehensive bench-mark for evaluating segmentation models under realistic driving conditions. For the segmentation evaluation, consistent with prior works [13, 14, 9, 16], the drivable-area segmentation perfor-mance is quantified using the mean Intersection over Union                                   
+
+> M-K Do et-al.: Preprint submitted to Elsevier Page 6 of 15 TwinMixing Model
+> Table 1
+> Throughput complexity comparison among configurations at various batch sizes
+> Config FPS w/ batch size ↑Params FLOPs
+> batch=1
+> 1416
+> Tiny 83 ±0.89 335 ±3.37 1302 ±12.71 0.10M 1.08G Base 67 ±0.47 255 ±2.68 724 ±0.94 0.43M 3.95G Large 56 ±0.51 218 ±2.42 301 ±0.64 1.50M 14.25G
+> Table 2
+> Comparison of per-epoch training time across TwinLiteNet, TwinLiteNet +, and TwinMixing.
+> Parameters FLOPs Training times
+> TwinLiteNet 0.44M 3.9G 567.1s TwinLiteNet +
+> Medium 0.48M 4.63G 799.8s TwinMixing base 0.43M 3.95G 1070.2s
+
+(mIoU) metric. For the lane segmentation task, both Accu-racy (Acc) and Intersection over Union (IoU) are employed to provide a comprehensive assessment. However, due to the substantial class imbalance between lane markings and the background, a balanced accuracy [35, 14] metric is addition-ally adopted to yield a more reliable evaluation of model performance. To measure the computational efficiency of our approach, we adopt two commonly used indicators: the number of parameters and the FLOPs count. Following standard practice in recent studies [14, 36, 22], FLOPs are defined as the total number of multiplication and addition operations required during inference. 
+
+4.2. Main results 
+
+4.2.1. Inference throughput and model complexity 
+
+The runtime characteristics and scalability of the Twin-Mixing family are summarized in Table 1, detailing an evaluation of the tiny , base , and large configurations at batch sizes of 1, 4, 16. Inference FPS is computed over 500 independent runs and reported as the mean value with standard deviation. The results reveal a clear and distinct trade-off between computational complexity and inference latency, demonstrating effective throughput scaling across the architecture variants. The model family spans from TwinMixing tiny , tailored for ultra-lightweight and edge deployments, to TwinMixing large ,which targets high-capacity scenarios. The TwinMixing tiny 
+
+variant demonstrates excellent hardware utilization, achiev-ing 83 FPS at batch size 1 and scaling near-linearly to 1302 FPS at batch size 16. This indicates the model is predom-inantly compute-bound and highly optimized for resource-constrained applications. For a balanced latency–capacity profile, TwinMixing base provides substantially greater model capacity than the tiny variant while maintaining robust real-time throughput, delivering 67 FPS with a batch size of 1 and 724 FPS with a batch size of 16. The large variant is designed for high-end GPU deployments where model capacity and accuracy are prioritized. Despite incurring the highest computational cost, it sustains real-time operation at 56 FPS with a batch size of 1 and scales effectively to 301 FPS with a batch size of 16. These results confirm the effective scalability of the TwinMixing architecture, whose hierarchical variants offer favorable throughput-complexity trade-offs suitable for diverse computational budgets. 
+
+4.2.2. Training time comparison 
+
+We compare the training time of TwinLiteNet [13], TwinLiteNet + [14], and TwinMixing on an RTX 4090 GPU. Table 2 highlights a clear difference between the-oretical computational efficiency (FLOPs and parameter count) and practical training cost (time per epoch) across the three models. Although TwinMixing achieves the low-est FLOPs (3.9G) and a compact parameter size (0.44M) compared with the TwinLiteNet variants, its training time per epoch increases substantially to 1070,2s. This gap is primarily attributed to differences in the core operators and the resulting computational graph complexity. Specifically, TwinLiteNet relies on dilated convolutions as its primary feature-extraction operator, while TwinLiteNet + adopts di-lated depthwise convolutions to improve efficiency. The complex design of this unit results in a more intricate computation graph, increasing the cost of backpropagation and gradient computation. Moreover, grouped convolution and channel shuffle are introduced to improve cross-channel interaction without notably increasing FLOPs; they can introduce additional overhead from memory access and frequent tensor layout transformations on the GPU, further prolonging training. Finally, the Dual Branch Upsampling (DBU) decoder, which processes two parallel branches to recover fine details, increases intermediate activation volume and thus adds training-time overhead. Despite its more complex architecture, which aims to enhance feature extraction and reconstruction, TwinMixing maintains low FLOPs and parameter count through width scaling, carefully tuning channel width across layers. This design choice reduces both the number of parameters and FLOPs relative to the compared baselines, thereby improv-ing deployment efficiency, at the expense of higher training cost due to multi-branch computation and memory-related overhead. 
+
+4.2.3. Quantitative results 
+
+The compared methods include both general-purpose segmentation networks and multi-task perception models, ranging from standard baselines [17, 18, 37, 39] to recent lightweight architectures [13, 25, 15]. We also include scal-able models with multiple configurations [16, 9, 14], which are analogous to our TwinMixing for a fair comparison across different scales. The quantitative results of all models are summarized in Table 3. On the BDD100K dataset, the proposed TwinMixing achieves high segmentation accuracy while maintaining low computational cost. For the lane segmentation task, TwinMixing large reaches 82.4% accuracy and 34.2% IoU, outperforming competitive models such as TwinLiteNet +
+
+> Large
+
+,  
+
+> M-K Do et-al.: Preprint submitted to Elsevier Page 7 of 15
+
+TwinMixing Model 
+
+Table 3 
+
+Quantitative comparison of models on the drivable-area and lane-segmentation tasks. Results are reported as mIoU (%) for drivable area segmentation, and as Acc (%) and IoU (%) for lane segmentation, together with model complexity measured by FLOPs and parameter count. 
+
+Model Drivable area segmentation Lane segmentation FLOPs Parameters mIoU (%) Acc (%) IoU (%) 
+
+DeepLabV3+ [17] 90.9 – 29.8 30.7G 15.4M SegFormer [18] 92.3 4 – 31.7 12.1G 7.2M R-CNNP [37] 90.2 – 24.0 – –YOLOP [37] 91.6 – 26.5 8.11G 5.53M YOLOv8 (multi-seg) [38] 84.2 81.7 3 24.3 – –Sparse U-PDP [39] 91.5 – 31.2 – –BILane [15] 91.2 – 31.3 – 1.4M EdgeUNet [40] 89.9 – – – –MobiP [25] 90.3 – 31.2 3.6G 5.8M TwinLiteNet [13] 91.3 77.8 31.1 3.9G 0.44M IALaneNet ResNet-18 [9] 90.5 – 30.4 89.83G 17.05M IALaneNet ResNet-34 [9] 90.6 – 30.5 139.46G 27.16M IALaneNet ConvNeXt-tiny [9] 91.3 – 31.5 96.52G 18.35M IALaneNet ConvNeXt-small [9] 91.7 – 32.5 3 200.07G 6 39.97M 6
+
+DFFM Nano [16] 88.7 – 25.3 0.72G 0.03M DFFM Small [16] 90.8 – 29.3 2.56G 0.13M DFFM Mdedium [16] 92.0 – 31.6 10.17G 0.5M DFFM Large [16] 92.1 5 – 32.1 5 39.79G 5 2.2M 5
+
+TwinLiteNet + 
+
+> Nano
+
+[14] 87.3 70.2 23.3 0.57G 0.03M TwinLiteNet + 
+
+> Small
+
+[14] 90.6 75.8 29.3 1.40G 0.12M TwinLiteNet + 
+
+> Medium
+
+[14] 92.0 79.1 5 32.3 4 4.63G 0.48M TwinLiteNet + 
+
+> Large
+
+[14] 92.9 81.9 34.2 17.58G 4 1.94M 4
+
+Our proposed 
+
+TwinMixing tiny 91.1 76.6 29.8 1.08G 0.10M TwinMixing base 92.4 3 80.7 4 33.2 3.95G 0.43M 
+
+TwinMixing large 92.8 82.4 34.2 14.25G 3 1.50M 3     
+
+> The best and second-best results are marked in bold and underline, while the top 3rd, 4th, and 5th ranked models are indicated with 3,4, and 5, respectively. Note that the ranking of FLOPs and Parameters is based only on the models with the highest combined mIoU and IoU scores, rather than all models in the table.
+
+DFFM Large , and IALaneNet ConvNeXt-small . Despite higher accuracy, our model requires significantly fewer resources, highlighting the effectiveness of the proposed architec-ture in modeling fine-grained structural cues with min-imal overhead. For the drivable area segmentation task, TwinMixing large achieves 92.8% mIoU, which is only 0.1% lower than TwinLiteNet +
+
+> Large
+
+, but with a substantially lower computational burden, saving 3.33 GFLOPs and 0.44M parameters. This demonstrates that the large configuration of TwinMixing offers a superior balance between accuracy and efficiency across both segmentation tasks compared to prior multi-task networks such as TwinLiteNet +, DFFM, and IALaneNet. Among the top five models with the highest overall performance, measured by the sum of mIoU for driv-able area segmentation and IoU for lane segmentation, TwinMixing base demonstrates the best computational effi-ciency, requiring only 3.95 GFLOPs and 0.43M parame-ters while maintaining competitive accuracy (92.4% mIoU, 33.2% IoU). Its performance ranks just below TwinMixing large 
+
+and TwinLiteNet +
+
+> large
+
+, yet with significantly lower compu-tational cost, highlighting its strong accuracy–efficiency balance. Furthermore, the TwinMixing tiny variant, tailored for ultra-lightweight embedded deployment, achieves 91.1% mIoU and 29.8% IoU with only 1.08 GFLOPs and 0.10M pa-rameters, demonstrating excellent scalability under limited computational budgets. These results clearly demonstrate that TwinMixing achieves an outstanding balance between segmentation accuracy and computational cost compared to existing multi-task seg-mentation models. As illustrated in Figure 2, the proposed models consistently lie on the optimal region of the accu-racy–efficiency curve, showing favorable trade-offs across different configurations. This confirms the scalability of TwinMixing, whose hierarchical variants ( tiny , base , large )maintain competitive performance under varying computa-tional budgets. 
+
+M-K Do et-al.: Preprint submitted to Elsevier Page 8 of 15 TwinMixing Model Clear 
+
+> Highway
+> Dawn/dusk
+> Clear
+> Citystreet
+> Daytime
+> Overcast
+> Citystreet
+> Daytime
+> Clear
+> Highway
+> Daytime
+> Partlycloudy
+> Residential
+> Daytime
+
+Figure 9: Qualitative comparison of segmentation results under normal driving conditions. 
+
+4.3. Qualitative results 
+
+4.3.1. Qualitative analysis on BDD100K 
+
+For a comprehensive evaluation, we also evaluate TwinMi-xing base configurations with TwinLiteNet and TwinLiteNet +
+
+> Medium
+
+using their public pretrained checkpoints on BDD100K [8] with standardized configurations. These two models have the same parameters as TwinMixing, making them appropriate baselines for comparison. Evaluation is conducted on the BDD100K validation split, with subsets stratified by time of day, scene type, and weather. Figure 9 presents a visual com-parison across highway, city street, and residential settings with benign weather in daylight and dawn/dusk conditions. TwinMixing produces cleaner drivable-area masks with tighter lane boundaries than TwinLiteNet and TwinLiteNet +.In residential and highway scenes under daytime lighting, it preserves lane geometry and road–horizon alignment, reducing spillover into non-drivable regions frequently ob-served in the baselines. The model also remains reliable under illumination changes on highway scenes at dawn/dusk and on city-street scenes in both clear and overcast daytime conditions. TwinMixing maintains accurate lane delineation while suppressing spurious activations near vehicles and roadside structures. Beyond benign settings, we qualitatively assess robust-ness in adverse environments (Fig. 10), spanning night time lighting with city street, residential, highway, and tunnel scenes under snow, rain, and fog conditions. TwinMixing offers cleaner drivable-area estimates with tighter lane de-marcation, outperforming TwinLiteNet and TwinLiteNet +.In a city street scene under snowy weather conditions at dawn, TwinMixing captures lane boundaries missed by the baselines and provides superior delineation. Across tun-nel, residential, and highway scenes under these condi-tions, TwinMixing maintains stable drivable-area masks and sharper lane boundaries; in particular, on residential scenes at night and in rain, it yields a cleaner drivable-area mask than TwinLiteNet. These observations are consistent with the qualitative improvements in boundary quality and the reduction in false positives. 
+
+4.3.2. Cross-dataset generalization analysis 
+
+Beyond in-domain evaluation on the BDD100K dataset, we further assess the cross-dataset generalization ability of TwinMixing on Cityscapes [1] and ACDC [3]. The Cityscapes dataset consists of urban scenes captured across different European cities. At the same time, ACDC focuses 
+
+M-K Do et-al.: Preprint submitted to Elsevier Page 9 of 15 TwinMixing Model Night 
+
+> Undefined
+> Tunnel
+> Snowy
+> Citystreet
+> Dawn/dusk
+> Rainy
+> Residential
+> Night
+> Snowy
+> Citystreet
+> Dawn/dusk
+> Foggy
+> Highway
+> Night
+
+Figure 10: Qualitative comparison of segmentation results under challenging driving conditions. 
+
+Table 4 
+
+Comparative evaluation of the TwinMixing model under multi-task and single-task learning settings, reporting segmentation accuracy and computational efficiency metrics. 
+
+Method Drivable area segmentation Lane segmentation Parameters FLOPs mIoU (%) Acc (%) IoU (%) 
+
+Single-task 92.3 ✘ ✘ 0.41M 3.50G 
+
+✘ 81.1 33.5 0.41M 3.50G Multi-task 92.4 ↑0.1 80.7 ↓0.4 33.2 ↓0.3 0.43M ↑0.02M 3.95G ↑0.45G 
+
+on diverse and challenging environmental conditions. Qual-itative results of TwinMixing + 
+
+> large
+
+across these datasets are visualized in Figure 11. The results indicate that TwinMix-ing exhibits strong generalization across unseen datasets, successfully recognizing drivable areas and lane regions in scenes captured from different geographic locations and un-der adverse environmental conditions, including nighttime, rain, fog, and snow. Nevertheless, due to domain shifts and the absence of training on these datasets, the model does not consistently achieve optimal accuracy in specific scenarios, highlighting remaining challenges in cross-domain robust-ness. 
+
+4.4. Ablation study 
+
+4.4.1. Multi-task and single-task models 
+
+Table 4 contrasts TwinMixing trained as two sepa-rate single-task models with a single multi-task model for drivable-area and lane segmentation. The multi-task config-uration attains a slightly lower drivable-area mIoU 92.3% vs. 92.4%, matches lane accuracy 81.1%, and achieves a marginally higher lane IoU 33.5% vs. 33.2%. Notably, a sin-gle multi-task model requires only 0.434 M parameters and 3.950 G FLOPs to produce both outputs, whereas deploying two single-task models together requires about 0.823 M parameters and 6.998 G FLOPs. Relative to a single-task 
+
+M-K Do et-al.: Preprint submitted to Elsevier Page 10 of 15 TwinMixing Model Cityscape ACDC  
+
+> Figure 11: Qualitative visualization of cross-dataset generalization.
+
+model, the multi-task variant adds only ∼0.023 M param-eters and ∼0.451 G FLOPs, yet replaces two models with one, delivering near-parity accuracy at roughly half the total compute and parameter budget. These results indicate that TwinMixing offers a balanced and efficient trade-off between performance and complexity for joint drivable-area and lane segmentation in multi-task settings. 
+
+4.4.2. The results of TwinMixing in different conditions 
+
+Table 5 presents the performance of TwinMixing base 
+
+across a range of environmental conditions in the BDD100K. We evaluate the model under favorable conditions with clear illumination and simple scene layouts—such as daytime, highway, and residential before moving to more challeng-ing scenarios, including nighttime, rainy, and tunnel envi-ronments. The results indicate that TwinMixing performs strongly under normal conditions, maintaining high segmen-tation accuracy, while its performance degrades moderately under adverse environments, such as rainy and tunnel con-ditions. Notably, despite the challenging lighting conditions in night scenes, the model still achieves competitive results (92.5% mIoU for drivable area and 32.9% IoU for lane segmentation), which can be attributed to its exposure to a large number of nighttime images ( 28k/70k) during training. Adverse conditions primarily affect lane segmentation, as reflective surfaces, motion blur, and low-contrast lane mark-ings reduce model confidence. Among all, tunnel scenes pose the greatest challenge, where lane IoU drops signifi-cantly compared to the overall performance. These findings demonstrate that TwinMixing maintains robust, consistent accuracy in drivable area segmentation. In contrast, lane detection remains more sensitive to challenging conditions, such as foggy, snowy, and tunnel environments.                     
+
+> Table 5
+> Performance across various environmental conditions on both task drivable area segmentation and lane segmentation
+> Environmental conditions Drivable area segmentation Lane segmentation mIoU (%) IoU (%)
+> Daytime 93.2 35.1 Night 92.5 32.9 Snowy 91.6 31.6 Rainy 90.2 32.0 Foggy 92.4 29.6 Highway 93.3 33.8 Residential 92.8 34.4 Tunnel 89.8 28.9
+> TwinMixing base 92.4 33.2
+
+4.4.3. Ablation study on the Dual Branch Upsampling module 
+
+To evaluate the contribution of each component within the proposed Dual Branch Upsampling (DBU) module, we conduct an ablation analysis by selectively removing the fine-detailed branch and coarse-grained branch. The results are summarized in Table 6. When either the fine-detailed branch (Transposed Convolution–based) or the coarse-grained branch (bilinear interpolation–based) is omit-ted, a consistent performance degradation is observed across both drivable-area and lane segmentation tasks. Specifically, removing the fine-detailed branch results in a 0.2% drop in mIoU and a 0.3% reduction in IoU, indicating its importance in restoring spatial details. Similarly, eliminating the coarse-grained branch results in slightly lower accuracy and IoU, confirming its role in providing spatial smoothness and sta-bility. These findings demonstrate that the complementary design of the two branches enables DBU to achieve a better balance between fine-grained reconstruction and smooth                           
+
+> M-K Do et-al.: Preprint submitted to Elsevier Page 11 of 15 TwinMixing Model
+> Table 6
+> Ablation of the Dual Branch Upsampling (DBU) module. Removing either branch degrades performance, confirming their complementary effect on segmentation accuracy.
+> Methods Drivable area segmentation Lane segmentation mIoU (%) Acc (%) IoU (%)
+> DBU 92.4 80.7 33.2
+> w/o fine detailed 92.2 ↓0.2 80.3 ↓0.4 32.9 ↓0.3
+> w/o coarse grained 92.3 ↓0.1 80.3 ↓0.4 33.0 ↓0.2
+
+upsampling, thereby improving overall segmentation perfor-mance. 
+
+4.4.4. Sensitivity analysis of dilation rate and group size in EPM module 
+
+In this section, we analyze the sensitivity of the proposed model to the dilation rate and group size configurations in the EPM module. All experiments are conducted using the TwinMixing tiny configuration, trained for 50 epochs un-der identical settings. Different dilation-rate and group-size variants are compared against the default TwinMixing tiny 
+
+configuration, which is also trained for 50 epochs to ensure a fair comparison. To evaluate the effect of dilation rates, we replace the default multi-dilation setting in the EPM module with fixed dilation rates of 1, 4, and 16, while keeping all other com-ponents unchanged. As reported in Table 7, the default multi-dilation configuration achieves the best performance, attaining 90.9% mIoU for drivable-area segmentation and 29.4% IoU for lane segmentation. In contrast, using a single fixed dilation rate consistently degrades performance, with more pronounced drops observed for lane segmentation. These results indicate that the multi-dilation design is more effective at capturing multi-scale contextual information and mitigating gridding artifacts than fixed-dilation-rate alterna-tives. We further examine the sensitivity to group size in grouped convolutions. While the input and output channel dimensions determine the default group size, we override this rule and set the number of groups to {1, 2, 4, 8, 16, 32}. As shown in Table 8, varying the group size primarily affects model complexity, as measured by the number of parameters and FLOPs. In contrast, segmentation accuracy remains stable mainly across different configurations. Smaller group sizes yield marginal improvements in accuracy at the ex-pense of increased computation. In comparison, larger group sizes reduce the number of parameters and FLOPs with negligible performance degradation. Overall, the results in-dicate a clear efficiency–accuracy trade-off and confirm that TwinMixing is not highly sensitive to the specific group-size choice.                                                   
+
+> Table 7
+> Sensitivity analysis of dilation-rate configurations in the EPM module.
+> Dilated rates Drivable area segmentation Lane segmentation mIoU (%) Acc (%) IoU (%)
+> ★90.9 76.4 29.4 189.6 75.4 28.2 490.2 74.8 27.7 16 89.8 74.8 27.7
+> ★indicate default settings
+> Table 8
+> Sensitivity analysis of group-size configurations in the EPM module.
+> Groups Parameters FLOPs Drivable area Lane mIoU (%) IoU (%)
+> ★98.2K 1,084G 90.9 29.4 1115.0K 1.222G 91.3 30.4 2104.5K 1.118G 91.2 29.5 4100.7K 1.094G 90.8 29.3 899.2K 1.088G 90.9 29.3 16 98.5K 1.086G 90.9 29.2 32 98.2K 1.084G 90.9 29.3
+> ★indicate default settings
+
+4.5. Quantization and deployment 
+
+Table 9 presents the quantization performance of Twin-Mixing under three numerical precisions: FP32, FP16, and INT8. For the INT8 configuration, we employ Quantization-Aware Training (QAT), which integrates quantization oper-ations directly into the training process. Instead of retraining the model from scratch, we fine-tune the pre-trained FP32 model for 10 additional epochs using QAT. As shown, quantization has a negligible impact on segmentation ac-curacy while significantly reducing computational cost and memory usage-a crucial advantage for real-time deployment on embedded hardware. In particular, the FP16 configuration achieves nearly identical accuracy compared to the FP32 baseline. Tran-sitioning to INT8 quantization introduces only a marginal performance degradation (< 1%) while reducing model size by up to 4 × and substantially lowering inference latency across various hardware platforms. These results confirm the robustness of TwinMixing to precision scaling, highlighting its suitability for efficient inference on edge and low-power devices without compromising segmentation quality. To further evaluate the real-time inference capability of TwinMixing on embedded hardware, we measure the latency of the tiny configuration across multiple NVIDIA Jetson platforms, including AGX Orin, Xavier, Orin Nano, and TX2. The inference is executed using TensorRT with FP16 precision to leverage hardware acceleration and op-timize runtime efficiency. The results, presented in Table                      
+
+> M-K Do et-al.: Preprint submitted to Elsevier Page 12 of 15 TwinMixing Model
+> Table 9
+> Quantization results of TwinMixing across different configura-tions, including FP32, FP16, and INT8. Results are presented in the format mIoU (for drivable area segmentation) / IoU (for lane segmentation).
+> Config Performance FP32 FP16 INT8 (QAT)
+> Tiny 91.1 / 29.8 91.1 / 29.8 90.3 / 29.2 Base 92.4 / 33.2 92.4 / 33.2 92.2 / 32.7 Large 92.8 / 34.2 92.8 / 34.2 92.6 / 33.9
+> Figure 12: Visualization of challenging failure cases for TwinMixing large .
+
+10, demonstrate that TwinMixing maintains consistently low inference latency across all devices, with 21.96 ms on AGX Orin and 27 ms on Xavier and Orin Nano, while remaining under 60.81 ms even on the older TX2 board. These results indicate that TwinMixing is well-suited for real-time deployment on a wide range of embedded systems with varying computational capacities. 
+
+## 5. Discussion and Conclusion 
+
+5.1. Limitations 
+
+Although TwinMixing demonstrates strong overall per-formance, several limitations remain that merit further inves-tigation. First, despite its robustness across diverse driving environments, the model’s drivable area and lane segmen-tation accuracy degrade under adverse conditions such as snow, rain, or tunnels, as shown in Table 5. This suggests that          
+
+> Table 10
+> Inference latency (in milliseconds) of TwinMixing tiny on various NVIDIA Jetson devices, reported as the mean and standard deviation over 500 independent runs.
+> Device AGX Orin Xavier Orin Nano TX2
+> Latency 21.96 ±0.23 26.78 ±0.38 27.53 ±0.08 60.81 ±0.13
+
+TwinMixing’s reliability under varying illumination and vis-ibility could be enhanced through more advanced data aug-mentation or domain adaptation techniques. Second, while the proposed Efficient Pyramid Mixing (EPM) and Dual-Branch Upsampling (DBU) modules achieve an excellent balance between accuracy and efficiency, their configura-tions still depend on manually tuned architectural hyperpa-rameters (e.g., dilation rates, grouping factors, and repetition depth). Incorporating neural architecture search (NAS) or adaptive parameterization strategies could further optimize performance and generalizability. Finally, TwinMixing cur-rently focuses solely on segmentation tasks. Extending it to support additional perception tasks such as object detection, depth estimation, or panoptic segmentation could form a unified perception backbone for broader autonomous driving applications. We also additionally present representative failure cases of TwinMixing (large configuration) in Figure 12. While the model demonstrates competitive performance across various conditions in Figure 9,10, it still struggles in low-light nighttime scenes and under adverse weather conditions such as rain or snow (Figure 12). In these scenarios, strong illumination contrast, reflections on wet road surfaces, and increased visual noise hinder effective feature extraction, resulting in inaccurate drivable-area boundaries and incom-plete or fragmented lane segmentation. These observations highlight the model’s current limitations under extreme en-vironmental conditions and suggest that further robustness enhancements, such as illumination-aware training strategies or multimodal cues, could be beneficial. 
+
+5.2. Conclusion 
+
+In this work, we present TwinMixing, a shuffle-aware, lightweight multi-task segmentation model designed explic-itly for drivable area and lane segmentation in autonomous driving. The proposed Efficient Pyramid Mixing (EPM) module enhances multi-scale feature extraction. At the same time, the Dual Branch Upsampling (DBU) block improves decoding stability by combining fine-detailed and coarse-grained spatial reconstruction. Comprehensive experiments on the BDD100K dataset demonstrate that TwinMixing achieves a superior trade-off between accuracy and effi-ciency, outperforming state-of-the-art lightweight models such as TwinLiteNet+ and DFFM while requiring substan-tially fewer parameters and FLOPs. Moreover, its consistent real-time inference speed across NVIDIA Jetson devices confirms its potential for embedded and edge deployment. Future work will focus on improving model robustness under   
+
+> M-K Do et-al.: Preprint submitted to Elsevier Page 13 of 15
+
+TwinMixing Model 
+
+extreme weather and lighting conditions, exploring self-supervised pretraining for better generalization, and extend-ing TwinMixing to broader panoptic perception tasks in autonomous systems. 
+
+## References 
+
+[1] M. Cordts, M. Omran, S. Ramos, T. Rehfeld, M. Enzweiler, R. Benen-son, U. Franke, S. Roth, and B. Schiele, “The cityscapes dataset for semantic urban scene understanding,” in 2016 IEEE Conference on Computer Vision and Pattern Recognition (CVPR) , 2016, pp. 3213– 3223. [2] G. Ros, L. Sellart, J. Materzynska, D. Vazquez, and A. M. Lopez, “The synthia dataset: A large collection of synthetic images for semantic segmentation of urban scenes,” in 2016 IEEE Conference on Computer Vision and Pattern Recognition (CVPR) , 2016, pp. 3234– 3243. [3] C. Sakaridis, D. Dai, and L. Van Gool, “Acdc: The adverse conditions dataset with correspondences for semantic driving scene understand-ing,” in 2021 IEEE/CVF International Conference on Computer Vision (ICCV) , 2021, pp. 10 745–10 755. [4] S. R. Richter, V. Vineet, S. Roth, and V. Koltun, “Playing for data: Ground truth from computer games,” in Computer Vision – ECCV 2016 , B. Leibe, J. Matas, N. Sebe, and M. Welling, Eds. Cham: Springer International Publishing, 2016, pp. 102–118. [5] R. Koteczki and B. E. Balassa, “Systematic literature review of user acceptance factors of advanced driver assistance systems across different social groups,” Transportation Research Interdisciplinary Perspectives , vol. 31, p. 101486, 2025. [Online]. Available: https: //www.sciencedirect.com/science/article/pii/S2590198225001654 [6] T. Neumann, “Analysis of advanced driver-assistance systems for safe and comfortable driving of motor vehicles,” Sensors , vol. 24, no. 19, 2024. [Online]. Available: https://www.mdpi.com/1424-8220/24/19/ 6223 [7] M. W. Khattak, K. Brijs, T. M. Tran, T. A. Trinh, A. T. Vu, and T. Brijs, “Acceptance towards advanced driver assistance systems (adas): A validation of the unified model of driver acceptance (umda) using structural equation modelling,” Transportation Research Part F: Traffic Psychology and Behaviour , vol. 105, pp. 284–305, 2024. [Online]. Available: https://www.sciencedirect.com/science/article/ pii/S1369847824001803 [8] F. Yu, H. Chen, X. Wang, W. Xian, Y. Chen, F. Liu, V. Madhavan, and T. Darrell, “Bdd100k: A diverse driving dataset for heterogeneous multitask learning,” in 2020 IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) , 2020, pp. 2633–2642. [9] W. Tian, X. Yu, and H. Hu, “Interactive attention learning on detection of lane and lane marking on the road by monocular camera image,” 
+
+Sensors , vol. 23, no. 14, 2023. [10] C. Han, Q. Zhao, S. Zhang, Y. Chen, Z. Zhang, and J. Yuan, “Yolopv2: Better, faster, stronger for panoptic driving perception,” 2022. [11] J. Zhan, J. Liu, Y. Wu, and C. Guo, “Multi-task visual perception for object detection and semantic segmentation in intelligent driving,” Remote Sensing , vol. 16, no. 10, 2024. [Online]. Available: https://www.mdpi.com/2072-4292/16/10/1774 [12] J. Zhan, Y. Luo, C. Guo, Y. Wu, J. Meng, and J. Liu, “Yolopx: Anchor-free multi-task learning network for panoptic driving perception,” 
+
+Pattern Recognition , vol. 148, p. 110152, 2024. [13] Q.-H. Che, D.-P. Nguyen, M.-Q. Pham, and D.-K. Lam, “Twinlitenet: An efficient and lightweight model for driveable area and lane seg-mentation in self-driving cars,” in 2023 International Conference on Multimedia Analysis and Pattern Recognition (MAPR) , 2023, pp. 1–6. [14] Q.-H. Che, D.-T. Le, M.-Q. Pham, V.-T. Nguyen, and D.-K. Lam, “Twinlitenet+: An enhanced multi-task segmentation model for autonomous driving,” Computers and Electrical Engineering , vol. 128, p. 110694, 2025. [Online]. Available: https: //www.sciencedirect.com/science/article/pii/S0045790625006378 [15] Z. Hu and Y. Shen, “Lane detection based on boundary feature enhancement and information interaction,” Academic Journal of Computing & Information Science , vol. 8, no. 1, pp. 57–63, 2025. [Online]. Available: https://doi.org/10.25236/AJCIS.2025.080108 [16] I. Papadeas, L. Tsochatzidis, and I. Pratikakis, “Dual-task learning for real-time semantic segmentation in autonomous driving,” IEEE Transactions on Intelligent Vehicles , pp. 1–10, 2025. [17] L.-C. Chen, Y. Zhu, G. Papandreou, F. Schroff, and H. Adam, “Encoder-decoder with atrous separable convolution for semantic image segmentation,” in Computer Vision – ECCV 2018 , V. Ferrari, M. Hebert, C. Sminchisescu, and Y. Weiss, Eds. Cham: Springer International Publishing, 2018, pp. 833–851. [18] E. Xie, W. Wang, Z. Yu, A. Anandkumar, J. M. Alvarez, and P. Luo, “Segformer: Simple and efficient design for semantic segmenta-tion with transformers,” in Neural Information Processing Systems (NeurIPS) , 2021. [19] B. Cheng, I. Misra, A. G. Schwing, A. Kirillov, and R. Girdhar, “Masked-attention mask transformer for universal image segmen-tation,” in Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) , June 2022, pp. 1290–1299. [20] A. Paszke, A. Chaurasia, S. Kim, and E. Culurciello, “Enet: A deep neural network architecture for real-time semantic segmentation,” 
+
+ArXiv , vol. abs/1606.02147, 2016. [21] R. P. K. Poudel, S. Liwicki, and R. Cipolla, “Fast-scnn: Fast semantic segmentation network,” ArXiv , vol. abs/1902.04502, 2019. [Online]. Available: https://api.semanticscholar.org/CorpusID:60441195 [22] S. Mehta, M. Rastegari, A. Caspi, L. Shapiro, and H. Hajishirzi, “Espnet: Efficient spatial pyramid of dilated convolutions for seman-tic segmentation,” in Computer Vision – ECCV 2018 , V. Ferrari, M. Hebert, C. Sminchisescu, and Y. Weiss, Eds. Cham: Springer International Publishing, 2018, pp. 561–580. [23] X. Zhang, X. Zhou, M. Lin, and J. Sun, “Shufflenet: An extremely efficient convolutional neural network for mobile devices,” 2018 IEEE/CVF Conference on Computer Vision and Pattern Recognition ,pp. 6848–6856, 2017. [24] A. Howard, M. Zhu, B. Chen, D. Kalenichenko, W. Wang, T. Weyand, M. Andreetto, and H. Adam, “Mobilenets: Efficient convolutional neural networks for mobile vision applications,” 04 2017. [25] M. Ye and J. Zhang, “Mobip: a lightweight model for driving perception using mobilenet,” Frontiers in Neurorobotics , vol. Volume 17 - 2023, 2023. [Online]. Available: https://www.frontiersin.org/ journals/neurorobotics/articles/10.3389/fnbot.2023.1291875 [26] Y. Hou, Z. Ma, C. Liu, and C. C. Loy, “Learning lightweight lane detection cnns by self attention distillation,” 2019 IEEE/CVF Interna-tional Conference on Computer Vision (ICCV) , pp. 1013–1021, 2019. [27] Y. Qian, J. M. Dolan, and M. Yang, “Dlt-net: Joint detection of drivable areas, lane lines, and traffic objects,” IEEE Transactions on Intelligent Transportation Systems , vol. 21, no. 11, pp. 4670–4679, 2020. [28] H. Zhao, J. Shi, X. Qi, X. Wang, and J. Jia, “Pyramid scene parsing network,” in Proceedings of the IEEE Conference on Computer Vision and Pattern Recognition (CVPR) , July 2017. [29] S.-A. Liu, H. Xie, H. Xu, Y. Zhang, and Q. Tian, “Partial class activation attention for semantic segmentation,” in 2022 IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) ,2022, pp. 16 815–16 824. [30] Q.-H. Che and D.-K. Lam, “Trilitenet: Lightweight model for multi-task visual perception,” IEEE Access , vol. 13, pp. 50 152–50 166, 2025. [31] I. Loshchilov and F. Hutter, “Decoupled weight decay regularization,” in International Conference on Learning Representations , 2017. [32] T.-Y. Lin, P. Goyal, R. Girshick, K. He, and P. Dollar, “Focal loss for dense object detection,” in Proceedings of the IEEE International Conference on Computer Vision (ICCV) , Oct 2017. [33] S. S. M. Salehi, D. Erdogmus, and A. Gholipour, “Tversky loss function for image segmentation using 3d fully convolutional deep networks,” in Machine Learning in Medical Imaging , Q. Wang, Y. Shi, H.-I. Suk, and K. Suzuki, Eds. Cham: Springer International Publishing, 2017, pp. 379–387. 
+
+M-K Do et-al.: Preprint submitted to Elsevier Page 14 of 15 TwinMixing Model 
+
+[34] C. H. Sudre, W. Li, T. Vercauteren, S. Ourselin, and M. Jorge Cardoso, “Generalised dice overlap as a deep learning loss function for highly unbalanced segmentations,” in Deep Learning in Medical Image Analysis and Multimodal Learning for Clinical Decision Support .Cham: Springer International Publishing, 2017, pp. 240–248. [35] J. Wang, Q. M. Jonathan Wu, and N. Zhang, “You only look at once for real-time and generic multi-task,” IEEE Transactions on Vehicular Technology , vol. 73, no. 9, pp. 12 625–12 637, 2024. [36] K. He, X. Zhang, S. Ren, and J. Sun, “Deep residual learning for image recognition,” in 2016 IEEE Conference on Computer Vision and Pattern Recognition (CVPR) , 2016, pp. 770–778. [37] D. Wu, M.-W. Liao, W.-T. Zhang, X. Wang, X. Bai, W. Cheng, and W.-Y. Liu, “Yolop: You only look once for panoptic driving perception,” 
+
+Machine Intelligence Research , vol. 19, pp. 550 – 562, 2021. [38] G. Jocher, A. Chaurasia, and J. Qiu, “Ultralytics YOLO,” 2023. [Online]. Available: https://github.com/ultralytics/ultralytics [39] H. Wang, M. Qiu, Y. Cai, L. Chen, and Y. Li, “Sparse u-pdp: A unified multi-task framework for panoptic driving perception,” IEEE Transactions on Intelligent Transportation Systems , vol. 24, no. 10, pp. 11 308–11 320, 2023. [40] X. Sheng, J.-Z. Zhang, Z. Wang, and Z.-T. Duan, “Edgeunet: Edge-guided multi-loss network for drivable area and lane segmentation in autonomous vehicles,” IEEE Transactions on Intelligent Transporta-tion Systems , vol. 26, no. 2, pp. 2530–2542, 2025. 
+
+M-K Do et-al.: Preprint submitted to Elsevier Page 15 of 15

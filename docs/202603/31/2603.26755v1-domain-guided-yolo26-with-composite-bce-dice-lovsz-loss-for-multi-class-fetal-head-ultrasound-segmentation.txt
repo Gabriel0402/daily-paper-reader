@@ -1,0 +1,254 @@
+Title: Domain-Guided YOLO26 with Composite BCE-Dice-Lov\'{a}sz Loss for Multi-Class Fetal Head Ultrasound Segmentation
+
+URL Source: https://arxiv.org/pdf/2603.26755v1
+
+Published Time: Tue, 31 Mar 2026 00:14:40 GMT
+
+Number of Pages: 7
+
+Markdown Content:
+# Domain-Guided YOLO26 with Composite BCE-Dice-Lovász Loss for Multi-Class Fetal Head Ultrasound Segmentation 
+
+M. Fazri Nizar 
+
+Informatics Engineering, Faculty of Computer Science Sriwijaya University 
+
+mfazrinizar@gmail.com , 09021282328053@student.unsri.ac.id 
+
+Abstract —Segmenting fetal head structures from prenatal ultrasound remains a practical bottleneck in obstetric imaging. The current state-of-the-art baseline, proposed alongside the published dataset, adapts the Segment Anything Model with per-class Dice and Lovász losses but still depends on bounding-box prompts at test time. We build a prompt-free pipeline on top of YOLO26-Seg that jointly detects and segments three structures, Brain, Cavum Septi Pellucidi (CSP), and Lateral Ventricles (LV), in a single forward pass. Three modifications are central to our approach: (i) a composite BCE-Dice-Lovász segmentation loss with inverse-frequency class weighting, injected into the YOLO26 training loop via runtime monkey-patching; (ii) domain-guided copy-paste augmentation that transplants minority-class structures while respecting their anatomical location relative to the brain boundary; and (iii) inter-patient stratified splitting to prevent data leakage. On 575 held-out test images, the composite loss variant reaches a mean Dice coefficient of 0.9253, exceeding the baseline (0.9012) by 2.68 percentage points, despite reporting over three foreground classes only, whereas the baseline’s reported mean includes the easy background class. We further ablate each component and discuss annotation-quality and class-imbalance effects on CSP and LV performance. 
+
+Keywords —Fetal Head Segmentation, Ultrasound, YOLO26, In-stance Segmentation, Lovász Loss, Domain-Guided Augmentation 
+
+I. I NTRODUCTION 
+
+Routine prenatal ultrasound relies on measurements such as head circumference (HC), biparietal diameter (BPD), and ventricular width to track fetal development and flag anoma-lies [ 1 ]. Extracting these measurements requires delineating the fetal brain boundary, the Cavum Septi Pellucidi (CSP), and the Lateral Ventricles (LV), three structures whose clinical relevance is well established [ 2], [ 3]. In practice, manual annotation is slow, subjective, and exhibits considerable inter-observer variability [4]. Over the past decade, convolutional and attention-based architectures, U-Net [ 5], UNet++ [ 6], SegFormer [7], DeepLabV3+ [ 33 ], have steadily narrowed the gap between au-tomated and expert segmentation, as reviewed comprehensively by Fiorentino et al. [ 34 ]. More recently, Alzubaidi et al. [ 9 ]fine-tuned the Segment Anything Model (SAM) [ 8 ] with a weighted Dice-Lovász objective, producing FetSAM. While FetSAM reports a mean DSC of 0.9012 across four classes (including background), it requires a bounding-box prompt for every input, which in turn requires either a separate detector or manual interaction. The YOLO family [ 10 ], [ 11 ], whose evolution from YOLOv1 through YOLOv8 is surveyed by Terven et al. [ 35 ], offers single-pass detection and instance segmentation without auxiliary prompts. YOLO26 [ 12 ], the latest release, introduces C2PSA attention blocks, building on the self-attention mechanism of Vaswani et al. [ 21 ], and a hybrid Muon-SGD optimizer (MuSGD) that orthogonalizes gradient updates via Newton– Schulz iterations. Meanwhile, Ghiasi et al. [ 20 ] showed that copy-paste augmentation can meaningfully boost minority-class recall in instance segmentation, and Athalye and Arnaout [ 13 ]demonstrated domain-guided copy-paste specifically for medi-cal ultrasound imaging. This paper makes four contributions: 1) Composite BCE-Dice-Lovász loss. A three-term segmen-tation loss with inverse-frequency class weights, integrated into YOLO26 via monkey-patching rather than source modification. 2) Domain-guided augmentation. An augmentation scheme that copies CSP/LV regions from donor images and pastes them into brain-only acceptor images at anatomically consistent locations. 3) Inter-patient splitting. Patient-level partitioning of the HC18-derived dataset, published publicly, that prevents data leakage. 4) Ablation and comparison. Evaluation across three config-urations with per-class analysis, compared against FetSAM and twelve other architectures from [9]. II. M ATERIALS AND METHODS 
+
+A. Dataset 
+
+The images originate from the HC18 Grand Challenge [ 14 ]and supplementary fetal head ultrasound collections. Each 2D B-mode frame is annotated with polygon masks for up to three structures:  
+
+> •
+
+Brain (Class 0): The full cranial boundary, the largest and easiest to delineate.  
+
+> arXiv:2603.26755v1 [cs.CV] 23 Mar 2026 •
+
+CSP (Class 1): A small midline cavity whose apparent size varies with gestational age [3].  
+
+> •
+
+LV (Class 2): Paired fluid-filled chambers; enlargement beyond 10 mm suggests ventriculomegaly [2].                          
+
+> TABLE I INSTANCE COUNTS AFTER INTER -PATIENT SPLITTING .Split Images Brain CSP LV Total Train 2,654 2,697 921 1,052 4,670 Val 603 611 190 212 1,013 Test 575 568 172 212 952
+> All 3,832 3,792 1,283 1,476 6,551
+
+Table I summarizes the per-split instance counts. Brain accounts for 57.9% of all instances; the Brain-to-CSP ratio is roughly 3:1. Not every image contains all three structures, many show only the brain contour. Figure 1 visualizes the class distribution and imbalance ratio, while Figure 2 confirms that the stratified split preserves proportional representation.   
+
+> Fig. 1. Class distribution and imbalance ratio across the full dataset.
+> Fig. 2. Per-split class counts, showing that the stratified split preserves proportional representation.
+
+B. Inter-Patient Splitting 
+
+In the HC18 dataset, a single patient can contribute multiple frames. A naïve random split therefore risks placing frames from the same patient in both training and test partitions, inflating reported scores [ 15 ]. This type of data leakage is a well-documented pitfall in medical imaging studies [ 34 ]. We group all frames by patient ID (extracted from the filename convention), then allocate patients, not images, to train/val/test at a 70/15/15 ratio with approximate class stratification. The resulting splits are publicly released 1 in YOLO polygon format. 
+
+C. YOLO26-Seg Architecture 
+
+YOLO26-Seg [ 12 ] performs detection and instance segmenta-tion in one pass. Its backbone stacks Conv layers (stride 2) with batch normalization [ 31 ], C3k2 CSP bottleneck blocks [ 16 ], an SPPF module with three cascaded 5 × 5 max-pools, and a C2PSA block. C2PSA is the distinguishing element: it splits channels via a 1 × 1 convolution, feeds one branch through PSABlock modules that apply multi-head self-attention [ 21 ](heads = c/ 64 ) and a feed-forward network, then concatenates and projects back. This gives the network global context for relating spatially distant structures, useful when the model must learn that CSP and LV always appear inside the brain. Deep residual connections [ 22 ] within the C3k2 blocks facilitate gradient flow through the network. The neck fuses features bidirectionally via Feature Pyramid Network (FPN) [ 23 ] top-down and Path Aggregation Network (PAN) [ 24 ] bottom-up pathways through C3k2 blocks at P3– P5. The Segment26 head predicts boxes, class logits, and 32-dim mask prototype coefficients; the final mask is a linear combination of learned prototypes, following the prototype-based paradigm introduced by YOLACT [ 26 ] and later adopted by Mask R-CNN variants [ 25 ]. Table II lists the two variants used in this study along with their inference speed, parameter count, and FLOPs.                    
+
+> TABLE II MODEL VARIANTS USED IN THIS WORK .Variant Speed CPU ONNX (ms) Speed GPU T4 TRT10 (ms) Params FLOPs YOLO26N-Seg 53.3 ±0.5 2.1 ±0.0 2.7 M 9.1 YOLO26L-Seg 387.0 ±3.7 8.0 ±0.1 28.0 M 139.8
+
+D. Composite BCE-Dice-Lovász Loss 
+
+YOLO26 ships with a BCEDiceLoss for the segmentation head. We replace it at runtime with a three-term composite that adds a Lovász Hinge component and per-class weighting. 
+
+Binary Cross-Entropy. Given N pixels with ground truth 
+
+yi ∈ { 0, 1} and predicted probability ˆyi:
+
+LBCE = − 1
+
+N
+
+> N
+
+X
+
+> i=1
+
+yi ln ˆ yi + (1 − yi) ln(1 − ˆyi) (1) 
+
+Dice Loss. With smoothing constant ϵ = 1 :
+
+LDice = 1 − 2 P 
+
+> i
+
+ˆyiyi + ϵ
+
+P 
+
+> i
+
+ˆyi + P 
+
+> i
+
+yi + ϵ (2) 
+
+Lovász Hinge Loss [ 17 ]. For a binary mask of class c, let the per-pixel hinge errors mi = 1 − (2 yi − 1)ˆ yi be sorted in 
+
+> 1Dataset
+
+decreasing order. The loss is the inner product of the positive errors with the discrete gradient ∆J of the Jaccard index evaluated along that ordering: 
+
+LLovász = X
+
+> i
+
+max(0 , m i) ∆ Ji (3) where ∆Ji = J({1, . . . , i })−J({1, . . . , i −1}), and J denotes the Jaccard set function over the sorted error positions. Whereas Dice loss optimises the F1 surrogate, Lovász provides a tight convex extension of the IoU metric itself [ 17 ]. This is related to, but distinct from, focal loss [ 27 ], which addresses class imbalance by down-weighting easy examples rather than directly optimising the set-based overlap metric. We assign inverse-frequency class weights (Table III) to the Dice and Lovász terms so that minority classes receive stronger gradients.               
+
+> TABLE III INVERSE -FREQUENCY CLASS WEIGHTS USED IN DICE AND LOVÁSZ TERMS .Class Instances Weight Normalised Brain 3,792 (57.9%) 0.1 0.059 CSP 1,283 (19.6%) 0.9 0.529 LV 1,476 (22.5%) 0.7 0.412
+
+The composite loss sums the three terms: 
+
+L = 0 .25 LBCE + 0 .50 LDice + 0 .25 LLovász (4) Dice receives the largest coefficient because DSC is the primary evaluation metric; BCE supplies stable per-pixel gradients during early training; and the Lovász term sharpens boundary predictions through direct IoU optimisation. 
+
+Integration. Rather than forking the YOLO26 codebase, we monkey-patch 
+
+ultralytics.utils.loss.BCEDiceLoss with our FetSAMBCEDiceLovaszLoss class before model instantiation. This leaves all other training machinery, data loading, augmentation, scheduling, checkpointing, untouched. Shape mismatches between multi-scale mask predictions and targets are resolved via bilinear interpolation inside the patched loss. 
+
+E. Automatic Optimizer Selection (MuSGD) 
+
+YOLO26 introduces an automatic optimizer selection mech-anism. When the optimizer argument is set to auto , the framework estimates the total number of training iterations 
+
+I = E × ⌈ Ntrain /B ⌉ (epochs × steps per epoch) and branches: optimizer =
+
+(
+
+MuSGD , lr = 0 .01 , μ = 0 .9 if I > 10 ,000 
+
+AdamW , lr = 0.01 4+ nc , μ = 0 .9 otherwise (5) where nc is the number of classes. AdamW [ 28 ] decouples weight decay from the gradient update, which improves generalisation over the classical Adam formulation. MuSGD is a hybrid optimizer that blends Muon updates (momentum with Newton–Schulz orthogonalisation of the gradient matrix) and classical SGD with Nesterov momentum. For 2-D+ parameter tensors, the Muon branch computes an approximate orthogonal factorisation G 7 → U V ⊤ via five Newton–Schulz iterations, which acts as a form of gradient preconditioning. The mixing coefficients are fixed at wmuon = 0 .2, wsgd = 1 .0.In our experiments, the Domain-Guided run (300 ×⌈2654 /16 ⌉ ≈ 49 ,762 iterations) triggered MuSGD, while the FetSAM Loss run ( 300 × ⌈ 2654 /128 ⌉ ≈ 6,220 iterations) fell below the threshold and used AdamW with a fitted learning rate of 0.001429. The Baseline used an explicitly specified AdamW. 
+
+F. Domain-Guided Copy-Paste Augmentation 
+
+Standard geometric transforms (flips, rotations, scaling) do not synthesise new minority-class instances. Following the copy-paste framework of Ghiasi et al. [ 20 ] and the domain-guided principles of Athalye and Arnaout [ 13 ], we implement a domain-guided variant of copy-paste augmentation that respects anatomical layout: 1) Categorise training images into acceptors (Brain-only), 
+
+CSP donors , and LV donors .2) Measure the donor structure’s centroid offset from the brain centroid: (∆ x, ∆y).3) Paste the structure into the acceptor at the same relative offset inside the acceptor’s brain region, requiring ≥ 70% 
+
+spatial overlap with the brain mask. 4) Blend with α = 0 .95 to preserve texture continuity. 5) Re-extract polygon labels via contour detection on the composited mask. The procedure runs once as an offline preprocessing step (flagged by a marker file to prevent re-application). It specifi-cally increases CSP and LV representation without generating anatomically impossible composites, unlike Mosaic or MixUp, which we therefore disable. 
+
+G. Training Configuration 
+
+Table IV lists all hyperparameters for the three experiments, and Table V reports the corresponding wall-clock training times.                                                                      
+
+> TABLE IV HYPERPARAMETERS PER EXPERIMENT .Parameter Baseline Domain-Guided FetSAM Loss Architecture YOLO26N-Seg YOLO26L-Seg YOLO26N-Seg Params 2.7 M 28.0 M 2.7 M Input size 640 800 640 Batch size 64 16 128 Epochs 180 (early stop) 300 (3 sess.) 300 Optimizer AdamW Auto →MuSGD Auto →AdamW Effective lr 0.0001 0.01 0.001429 Weight decay 0.001 0.0005 0.001 Patience 20 50 100 Seg. loss BCEDice BCE-Dice-Lov. BCE-Dice-Lov. Augmentation Standard Domain-guided Standard Pretrained Yes Yes No Mosaic/MixUp Off/Off Off/Off Off/Off AMP On On On GPUs 2×T4 2×T4 2×T4 Seed 42 42 42 TABLE V WALL -CLOCK TRAINING TIMES ON T4 ×2. Experiment Sessions Epochs Total time Per epoch Baseline 1180 2.45 h 48.8 s Domain-Guided 3300 30.88 h 368.3 s FetSAM Loss 1300 4.04 h 48.3 s
+
+As shown in Table V, the Domain-Guided run spans three GPU training sessions (112 + 116 + 72 epochs) because of the 12-hour per-session limit. Its longer per-epoch time (368 s vs. 48 s) reflects the 10 × parameter count and the higher input resolution. All runs use Automatic Mixed Precision (AMP) [ 30 ], which stores activations in FP16 while accumulating gradients in FP32, reducing memory usage and accelerating training on T4 GPUs. We disable Mosaic and MixUp throughout: stitching ultrasound frames from different patients into a single tile produces anatomically incoherent images that harm rather than help medical segmentation. 
+
+H. Evaluation Protocol 
+
+Dice Similarity Coefficient (DSC) [18]: DSC (A, B ) = 2|A ∩ B||A| + |B| (6) 
+
+Intersection over Union (IoU) :IoU (A, B ) = |A ∩ B||A ∪ B| (7) 
+
+Mean Average Precision (mAP) follows the COCO pro-tocol [ 19 ]. At each of ten IoU thresholds (0.50, 0.55, . . . , 0.95), predictions are matched to ground truths independently, a precision–recall curve is built, its envelope is sampled at 101 recall points, and AP is the area under the interpolated curve: AP =
+
+Z 10
+
+penv (r) dr ≈ 1101 
+
+> 100
+
+X
+
+> k=0
+
+penv 
+
+ k
+
+100 
+
+
+
+(8) mAP@50 uses only the 0.50 threshold; mAP@50-95 aver-ages over all ten. Per-class Precision, Recall, Specificity, and F1 are computed at IoU ≥ 0.5, then macro-averaged for overall scores. III. R ESULTS 
+
+A. Overall Performance 
+
+Table VI presents the aggregate test-set metrics. The Domain-Guided configuration leads on every detection and classification metric (mAP@50 +16.6 pp over baseline). In segmentation overlap, however, the lighter FetSAM Loss variant edges ahead (mDSC 0.9253 vs. 0.9208), indicating that the composite loss alone accounts for most of the segmentation gain, while the larger model and augmentation chiefly improve detection. Figure 3 visualizes these differences as a grouped bar chart.                                                                                                                                       
+
+> TABLE VI TEST -SET RESULTS (575 IMAGES ). B EST VALUES IN BOLD .Metric Baseline Domain-Guided FetSAM Loss mAP@50 0.7423 0.8657 0.7700 mAP@50-95 0.4736 0.5462 0.5046 mDSC 0.9229 0.9208 0.9253
+> mIoU 0.8661 0.8624 0.8697
+> Precision 0.7393 0.8244 0.7592 Recall 0.7810 0.8775 0.8178 F1 0.7573 0.8467 0.7839 Specificity 0.8952 0.9444 0.9242 Accuracy 0.7196 0.8204 0.7572
+> Fig. 3. Grouped bar chart of detection, segmentation, and classification metrics. TABLE VII PER -CLASS RESULTS , B ASELINE (YOLO26N, STANDARD BCED ICE ). Class Prec. Rec. F1 IoU DSC TP FP FN Brain 0.939 0.982 0.960 0.943 0.971 558 36 10 CSP 0.624 0.762 0.686 0.704 0.823 131 79 41 LV 0.655 0.599 0.626 0.695 0.816 127 67 85 TABLE VIII PER -CLASS RESULTS , D OMAIN -G UIDED (YOLO26L, BCE-D ICE -L OVÁSZ +
+> DOMAIN AUG .). Class Prec. Rec. F1 IoU DSC TP FP FN Brain 0.984 0.997 0.990 0.947 0.973 566 92CSP 0.700 0.895 0.786 0.722 0.836 154 66 18 LV 0.789 0.741 0.764 0.693 0.816 157 42 55 TABLE IX PER -CLASS RESULTS , F ET SAM L OSS (YOLO26N, BCE-D ICE -L OVÁSZ ONLY ). Class Prec. Rec. F1 IoU DSC TP FP FN Brain 0.983 0.998 0.990 0.946 0.972 567 10 1CSP 0.640 0.837 0.725 0.715 0.831 144 81 28 LV 0.655 0.618 0.636 0.712 0.828 131 69 81
+
+B. Per-Class Breakdown 
+
+Tables VII to IX report the per-class detection and segmenta-tion metrics for each configuration. Brain DSC sits above 0.97 in all three runs. CSP and LV hover in the 0.82–0.84 range, roughly 15 points lower. The gap is discussed in Section IV. Figure 4 compares per-class DSC across the three models, and Figure 5 presents a metric heatmap for the Domain-Guided model, highlighting the Brain–CSP–LV performance disparity. 
+
+Fig. 4. Per-class DSC across the three models, with numeric labels. 
+
+Fig. 5. Metric heatmap for the Domain-Guided model; warm colours highlight the Brain–CSP–LV performance disparity. 
+
+C. Training Dynamics 
+
+Fig. 6. Training curves: segmentation loss, box loss, classification loss, mAP@50, mAP@50-95, and validation segmentation loss versus epoch. 
+
+Three observations stand out (Figure 6). First, the Baseline converges fast and triggers early stopping at epoch 180 (pa-tience 20); mAP is still creeping upward at that point. Second, the Domain-Guided model, trained across three sessions with MuSGD, keeps improving through epoch 300, suggesting it had not fully plateaued. Third, the FetSAM Loss run (same YOLO26N as Baseline, different loss) reaches lower validation segmentation loss throughout, confirming that the Lovász term provides gradient signal that BCE+Dice alone does not. Figure 7 shows the learning-rate schedules for all three runs. 
+
+Fig. 7. Learning-rate schedules. All runs use cosine annealing with warm restarts [29]; the Domain-Guided curve resets at session boundaries. 
+
+D. Comparison with FetSAM and Other Models 
+
+Table X compares mean DSC across all models, and Table XI provides a per-class DSC breakdown against FetSAM. 
+
+TABLE X MEAN DSC COMPARISON WITH MODELS REPORTED IN ALZUBAIDI ET AL . [9]. Model Backbone Paradigm Mean DSC FetSAM [9] SAM (ViT) Prompt-based 0.9012 Efb0_DLabV3+ [9] EffNet-B0 [32] Semantic 0.8532 Mit_SegFormer_b0 [9] MiT-B0 [7] Semantic 0.8323 Efb0_Unet [9] EffNet-B0 [32] Semantic 0.8466 Efb0_Unet++ [9] EffNet-B0 [32] Semantic 0.8495 Efb0_Linknet [9] EffNet-B0 [32] Semantic 0.8184 Efb0_FPN [9] EffNet-B0 [32] Semantic 0.8375 Efb0_PAN [9] EffNet-B0 [32] Semantic 0.8450 Mvit075_Unet [9] MobileViT-0.75 Semantic 0.7962 Mvit075_DLabV3 [9] MobileViT-0.75 Semantic 0.8028 Mvit075_FPN [9] MobileViT-0.75 Semantic 0.7847 Mvit075_Manet [9] MobileViT-0.75 Semantic 0.7996 Mvit075_PSPNet [9] MobileViT-0.75 Semantic 0.7914 
+
+Ours, FetSAM Loss YOLO26N Instance 0.9253 Ours, Baseline YOLO26N Instance 0.9229 Ours, Domain-Guided YOLO26L Instance 0.9208 
+
+All three of our runs surpass FetSAM’s reported 0.9012. FetSAM’s “mean” includes a background class (BG DSC ≈
+
+0.9951), which inflates the average; ours is computed over the three foreground classes only. Among semantic segmentation baselines, the EfficientNet-B0 [ 32 ] and SegFormer [ 7] back-bones paired with various decoder architectures, U-Net [ 5], UNet++ [ 6], DeepLabV3+ [ 33 ], FPN [ 23 ], and PAN [ 24 ], all achieve mean DSCs between 0.78 and 0.85, confirming that the YOLO26-based instance segmentation approach provides a clear advantage. TABLE XI PER -CLASS DSC COMPARISON WITH FET SAM [9]. Class FetSAM Ours (FetSAM Loss) Ours (Dom.-Guided) Brain 0.9851 0.9718 0.9729 CSP 0.8037 0.8305 ( +3.3%) 0.8359 (+4.0%) LV 0.8208 0.8280 (+0.9%) 0.8162 Mean (fg) 0.9012* 0.9253 0.9208 *FetSAM’s published mean includes the background class. 
+
+IV. D ISCUSSION 
+
+A. Annotation Quality 
+
+Ground-truth masks for CSP and LV often consist of very few polygon vertices, sometimes as few as four, yielding rectangular approximations rather than anatomically faithful contours. This coarseness degrades the training signal (the network learns to match rectangles, not anatomy) and complicates metric interpretation (both prediction and reference may be similarly rough, so DSC appears higher than the actual boundary quality warrants). Figures 8 and 9 illustrate this issue.   
+
+> Fig. 8. Vertex counts per annotation. Brain contours (often >50 vertices) are substantially more detailed than CSP and LV masks (frequently 4–8 vertices).
+
+B. Composite Loss Ablation 
+
+Holding architecture and data fixed (both YOLO26N, same dataset), swapping BCEDice for BCE-Dice-Lovász yields 
+
++3.7 pp mAP@50, +6.5 pp mAP@50-95, and +0.24 pp mDSC. The benefit concentrates on LV, whose DSC rises from 0.8163 to 0.8280 ( +1.4%) and IoU from 0.6947 to 0.7117 ( +2.4%). This is consistent with the Lovász loss’s property of directly optimising the Jaccard index [ 17 ]: for small structures, even a few misclassified pixels cause a large relative IoU drop, and the Lovász gradient penalises exactly that scenario. 
+
+> Fig. 9. Model predictions (contours) versus ground truth (filled) on test images containing all three classes. The model often produces smoother boundaries than the coarsely annotated references.
+
+C. Model Capacity and Domain-Guided Augmentation 
+
+The Domain-Guided run bundles three changes, larger backbone, composite loss, and augmented data, so its gains cannot be attributed to a single factor. Taken together, they push mAP@50 from 0.7423 to 0.8657 ( +16.6 pp) and Macro F1 from 0.7573 to 0.8467 ( +11.8 pp). Most of this improvement is in detection : CSP false negatives drop from 41 to 18 ( −56%) and LV false negatives from 85 to 55 ( −35%). Per-instance segmentation quality barely changes (mDSC 0.9229 → 0.9208), suggesting the extra capacity and augmented training data help the model find minority structures, while the mask quality per detected instance is already near the ceiling imposed by annotation granularity. 
+
+D. Class Imbalance 
+
+A 15-point DSC gap between Brain (0.97) and CSP/LV (0.82–0.84) persists in every configuration. Two factors interact: (i) Brain is large enough that even an imprecise mask overlaps substantially with the ground truth, whereas CSP and LV are small and demand pixel-accurate boundaries; (ii) training sees roughly 3 × more Brain instances, so the network’s implicit prior favours the majority class. Possible remedies include instance-level oversampling of CSP/LV, curriculum learning that gradually shifts focus toward the harder classes, cropped-region training at higher resolution around small structures, and, most directly, re-annotating CSP/LV with denser polygon vertices. 
+
+E. Practical Considerations 
+
+YOLO26N-Seg achieves an inference throughput of ap-proximately 476 frames/s on a T4 GPU with TensorRT 10 optimization; the larger YOLO26L variant reaches about 120 frames/s. Neither requires bounding-box prompts, which removes a step that FetSAM-style pipelines need at inference time. The prompt-free design simplifies deployment in clinical settings where radiologist interaction should be minimal. V. C ONCLUSION 
+
+We have presented a fully automatic fetal head segmentation pipeline built on YOLO26-Seg with three practical enhance-ments: a composite BCE-Dice-Lovász loss, domain-guided copy-paste augmentation, and inter-patient data splitting. The composite loss alone raises mean DSC to 0.9253, outperforming FetSAM’s 0.9012 by 2.68 pp on a stricter three-class (no background) basis. Domain-guided augmentation provides the largest detection improvement, cutting CSP false negatives by 56% and LV false negatives by 35%. The remaining bottleneck is annotation quality: coarsely drawn CSP and LV masks limit both training signal and achievable metric scores. Re-annotation with finer polygons is the most direct path to further gains. All data and code are publicly available. REFERENCES [1] F. P. Hadlock, R. B. Harrist, R. S. Sharman, R. L. Deter, and S. K. Park, “Estimation of fetal weight with the use of head, body, and femur measurements, a prospective study,” Amer. J. Obstet. Gynecol. , vol. 151, no. 3, pp. 333–337, 1985. DOI: 10.1016/0002-9378(85)90298-4 [2] J. D. Cardoza, R. B. Goldstein, and R. A. Filly, “Exclusion of fetal ventriculomegaly with a single measurement: the width of the lateral ventricular atrium,” Radiology , vol. 169, no. 3, pp. 711–714, 1988. DOI: 10.1148/radiology.169.3.3055034 [3] H. J. Jou, M. K. Shyu, S. C. Wu, S. M. Chen, C. H. Su, and F. J. Hsieh, “Ultrasound measurement of the fetal cavum septi pellucidi,” Ultrasound Obstet. Gynecol. , vol. 12, no. 6, pp. 419–421, 1998. DOI: 10.1046/j.1469-0705.1998.12060419.x [4] I. Sarris, C. Ioannou, P. Chamberlain, E. Ohuma, F. Roseman, L. Hoch, D. G. Altman, and A. T. Papageorghiou, “Intra- and interobserver vari-ability in fetal ultrasound measurements,” Ultrasound Obstet. Gynecol. ,vol. 39, no. 3, pp. 266–273, 2012. DOI: 10.1002/uog.10082 [5] O. Ronneberger, P. Fischer, and T. Brox, “U-Net: Convolutional networks for biomedical image segmentation,” in Proc. MICCAI (LNCS, vol. 9351), Springer, 2015, pp. 234–241. DOI: 10.1007/978-3-319-24574-4_28 [6] Z. Zhou, M. M. R. Siddiquee, N. Tajbakhsh, and J. Liang, “UNet++: A nested U-Net architecture for medical image segmentation,” in Proc. DLMIA/ML-CDS Workshop at MICCAI (LNCS, vol. 11045), Springer, 2018, pp. 3–11. DOI: 10.1007/978-3-030-00889-5_1 [7] E. Xie, W. Wang, Z. Yu, A. Anandkumar, J. M. Alvarez, and P. Luo, “SegFormer: Simple and efficient design for semantic segmentation with Transformers,” in Proc. NeurIPS , 2021. Available: https://arxiv.org/abs/ 2105.15203 [8] A. Kirillov et al. , “Segment Anything,” in Proc. ICCV , 2023, pp. 3992– 4003. DOI: 10.1109/ICCV51070.2023.00371 [9] M. Alzubaidi, U. Shah, M. Agus, and M. Househ, “FetSAM: Advanced segmentation techniques for fetal head biometrics in ultrasound im-agery,” IEEE Open J. Eng. Med. Biol. , vol. 5, pp. 281–295, 2024. DOI: 10.1109/ojemb.2024.3382487 [10] J. Redmon, S. Divvala, R. Girshick, and A. Farhadi, “You Only Look Once: Unified, real-time object detection,” in Proc. CVPR , 2016, pp. 779– 788. DOI: 10.1109/cvpr.2016.91 [11] G. Jocher, A. Chaurasia, and J. Qiu, “Ultralytics YOLO,” 2023. Available: https://github.com/ultralytics/ultralytics [12] R. Sapkota, R. H. Cheppally, A. Sharda, and M. Karkee, “YOLO26: Key architectural enhancements and performance benchmarking for real-time object detection,” arXiv preprint arXiv:2509.25164 , 2025. Available: https://arxiv.org/abs/2509.25164 [13] C. Athalye and R. Arnaout, “Domain-guided data augmentation for deep learning on medical imaging,” PLOS ONE , vol. 18, no. 3, e0282532, 2023. DOI: 10.1371/journal.pone.0282532 [14] T. L. A. van den Heuvel, D. de Bruijn, C. L. de Korte, and B. van Gin-neken, “Automated measurement of fetal head circumference using 2D ultrasound images,” PLOS ONE , vol. 13, no. 8, e0200412, 2018. DOI: 10.1371/journal.pone.0200412 [15] N. Rieke et al. , “The future of digital health with federated learning,” npj Digit. Med. , vol. 3, art. no. 119, 2020. DOI: 10.1038/s41746-020-00323-1 [16] C.-Y. Wang, H.-Y. M. Liao, Y.-H. Wu, P.-Y. Chen, J.-W. Hsieh, and I.-H. Yeh, “CSPNet: A new backbone that can enhance learn-ing capability of CNN,” in Proc. CVPRW , 2020, pp. 1571–1580. DOI: 10.1109/cvprw50498.2020.00203 [17] M. Berman, A. R. Triki, and M. B. Blaschko, “The Lovász-Softmax loss: A tractable surrogate for the optimization of the intersection-over-union measure in neural networks,” in Proc. CVPR , 2018, pp. 4413–4421. DOI: 10.1109/cvpr.2018.00464 [18] L. R. Dice, “Measures of the amount of ecologic association between species,” Ecology , vol. 26, no. 3, pp. 297–302, 1945. DOI: 10.2307/1932409 [19] T.-Y. Lin, M. Maire, S. Belongie, J. Hays, P. Perona, D. Ramanan, P. Dollár, and C. L. Zitnick, “Microsoft COCO: Common objects in context,” in Proc. ECCV (LNCS, vol. 8693), Springer, 2014, pp. 740–755. DOI: 10.1007/978-3-319-10602-1_48 [20] G. Ghiasi, Y. Cui, A. Srinivas, R. Qian, T.-Y. Lin, E. D. Cubuk, Q. V. Le, and B. Zoph, “Simple copy-paste is a strong data augmentation method for instance segmentation,” in Proc. CVPR , 2021, pp. 2917–2927. DOI: 10.1109/CVPR46437.2021.00294 [21] A. Vaswani, N. Shazeer, N. Parmar, J. Uszkoreit, L. Jones, A. N. Gomez, Ł. Kaiser, and I. Polosukhin, “Attention is all you need,” in Proc. NeurIPS ,2017, pp. 5998–6008. Available: https://arxiv.org/abs/1706.03762 [22] K. He, X. Zhang, S. Ren, and J. Sun, “Deep residual learn-ing for image recognition,” in Proc. CVPR , 2016, pp. 770–778. DOI: 10.1109/CVPR.2016.90 [23] T.-Y. Lin, P. Dollár, R. Girshick, K. He, B. Hariharan, and S. Belongie, “Feature pyramid networks for object detection,” in Proc. CVPR , 2017, pp. 936–944. DOI: 10.1109/CVPR.2017.106 [24] S. Liu, L. Qi, H. Qin, J. Shi, and J. Jia, “Path aggregation network for instance segmentation,” in Proc. CVPR , 2018, pp. 8759–8768. DOI: 10.1109/CVPR.2018.00913 [25] K. He, G. Gkioxari, P. Dollár, and R. Girshick, “Mask R-CNN,” in Proc. ICCV , 2017, pp. 2980–2988. Available: https://arxiv.org/abs/1703.06870 [26] D. Bolya, C. Zhou, F. Xiao, and Y. J. Lee, “YOLACT: Real-time instance segmentation,” in Proc. ICCV , 2019, pp. 9157–9166. DOI: 10.1109/ICCV.2019.00925 [27] T.-Y. Lin, P. Goyal, R. Girshick, K. He, and P. Dollár, “Focal loss for dense object detection,” in Proc. ICCV , 2017, pp. 2999–3007. DOI: 10.1109/ICCV.2017.324 [28] I. Loshchilov and F. Hutter, “Decoupled weight decay regularization,” in 
+
+Proc. ICLR , 2019. Available: https://arxiv.org/abs/1711.05101 [29] I. Loshchilov and F. Hutter, “SGDR: Stochastic gradient descent with warm restarts,” in Proc. ICLR , 2017. Available: https://arxiv.org/abs/ 1608.03983 [30] P. Micikevicius et al. , “Mixed precision training,” in Proc. ICLR , 2018. Available: https://arxiv.org/abs/1710.03740 [31] S. Ioffe and C. Szegedy, “Batch normalization: Accelerating deep network training by reducing internal covariate shift,” in Proc. ICML , 2015, pp. 448–456. Available: https://arxiv.org/abs/1502.03167 [32] M. Tan and Q. V. Le, “EfficientNet: Rethinking model scaling for convolutional neural networks,” in Proc. ICML , 2019, pp. 6105–6114. Available: https://arxiv.org/abs/1905.11946 [33] L.-C. Chen, Y. Zhu, G. Papandreou, F. Schroff, and H. Adam, “Encoder-decoder with atrous separable convolution for semantic image segmen-tation,” in Proc. ECCV , 2018, pp. 801–818. DOI: 10.1007/978-3-030-01234-2_49 [34] M. C. Fiorentino, F. P. Villani, M. Di Cosmo, E. Frontoni, and S. Moccia, “A review on deep-learning algorithms for fetal ultrasound-image analysis,” Medical Image Analysis , vol. 83, art. no. 102629, 2023. DOI: 10.1016/j.media.2022.102629 [35] J. Terven, D.-M. Córdova-Esparza, and J.-A. Romero-González, “A comprehensive review of YOLO architectures in computer vision: From YOLOv1 to YOLOv8 and YOLO-NAS,” Mach. Learn. Knowl. Extract. ,vol. 5, no. 4, pp. 1680–1716, 2023. DOI: 10.3390/make5040083 
+
+APPENDIX AREPRODUCIBILITY  
+
+> •
+
+Code: Code  
+
+> •
+
+Inter-Patient Splitted Dataset: Dataset

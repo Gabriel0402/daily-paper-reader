@@ -1,0 +1,470 @@
+Title: Structural-Ambiguity-Aware Translation from Natural Language to Signal Temporal Logic
+
+URL Source: https://arxiv.org/pdf/2603.28426v1
+
+Published Time: Tue, 31 Mar 2026 02:07:04 GMT
+
+Number of Pages: 8
+
+Markdown Content:
+# Structural-Ambiguity-Aware Translation from Natural Language to Signal Temporal Logic 
+
+Kosei Fushimi, Kazunobu Serizawa, Junya Ikemoto, Kazumune Hashimoto 
+
+Abstract — Signal Temporal Logic (STL) is widely used to specify timed and safety-critical tasks for cyber-physical sys-tems, but writing STL formulas directly is difficult for non-expert users. Natural language (NL) provides a convenient interface, yet its inherent structural ambiguity makes one-to-one translation into STL unreliable. In this paper, we propose an ambiguity-preserving method for translating NL task descrip-tions into STL candidate formulas. The key idea is to retain multiple plausible syntactic analyses instead of forcing a single interpretation at the parsing stage. To this end, we develop a three-stage pipeline based on Combinatory Categorial Gram-mar (CCG): ambiguity-preserving n-best parsing, STL-oriented template-based semantic composition, and canonicalization with score aggregation. The proposed method outputs a deduplicated set of STL candidates with plausibility scores, thereby explicitly representing multiple possible formal interpretations of an ambiguous instruction. In contrast to existing one-best NL-to-logic translation methods, the proposed approach is designed to preserve attachment and scope ambiguity. Case studies on representative task descriptions demonstrate that the method generates multiple STL candidates for genuinely ambiguous inputs while collapsing unambiguous or canonically equivalent derivations to a single STL formula. 
+
+I. I NTRODUCTION 
+
+Autonomous robots, such as mobile robots, drones, and automated vehicles, are increasingly expected to execute complex tasks while satisfying timing and safety require-ments. Formal specification languages provide a rigorous interface between high-level task descriptions and low-level control, and Signal Temporal Logic (STL) has become a standard choice for continuous-state systems because it can express time-bounded reachability, safety, sequencing, and persistence requirements over real-valued signals [1], [2]. In addition, STL is equipped with quantitative robustness semantics, which measure how strongly a trajectory satisfies a specification and therefore make STL attractive for motion planning, model predictive control, and controller synthesis [3], [4], [5]. Despite these advantages, writing STL formulas directly is difficult for non-expert users. One must choose atomic propositions, temporal operators, time intervals, and logical scopes precisely, even for seemingly simple task descriptions. Natural language (NL) provides an appealing front end for specifying tasks. Recent work in robotic language grounding and formal task specification has explored translating or grounding user instructions into temporal-logic formulas for downstream planning and execution [6], [7], [8], [9]. For a 
+
+> The authors are with the Graduate School of Engineering, The University of Osaka, Suita, Japan (Kazumune Hashimoto is the corresponding author: e-mail: hashimoto@eei.eng.osaka-u.ac.jp).
+
+broader overview of robotic language grounding, see [10]. However, natural language is inherently ambiguous. In par-ticular, a modifier or safety condition such as “while avoiding A” may apply either to a single subtask or to the entire task, leading to multiple plausible formal interpretations of the same command. If this ambiguity is ignored, the resulting temporal-logic formula may fail to capture the intended control requirement. Existing NL-to-TL/STL methods have mainly treated translation as a one-best prediction problem. This trend appears in learning-based translators based on neural models or large language models [11], [12], [13], [14], as well as in recent STL translation frameworks [15]. This formulation is effective when the intended formalization is unique, but it becomes problematic for commands such as “Within 10 seconds, reach B or reach C while avoiding A”, whose modifier scope is not uniquely determined. Interactive ap-proaches partly address this issue: Gavran et al. nl2spec 
+
+synthesize LTL specifications from natural language and demonstrations, while uses large language models to detect and resolve ambiguity through editable subtranslations [16], [17]. In the STL setting, Mohammadinejad et al. consider interactive learning from language and demonstrations [18]. A remaining challenge, however, is how to obtain a small and interpretable set of plausible formalizations when a single sentence admits multiple structurally valid readings. In such cases, the desirable alternatives are those whose differences correspond to clear linguistic choices, such as modifier attachment or scope. Otherwise, it becomes difficult to distinguish genuine ambiguity in the input sentence from uncertainty introduced by the translation procedure. In this paper, we address this gap by proposing a
+
+structural-ambiguity-aware translation method from natural language to STL. The key idea is to preserve ambiguity rather than collapse it at the parsing stage. Specifically, we adapt Combinatory Categorial Grammar (CCG)-based semantic parsing (see, e.g., [19]) to NL-to-STL translation by retaining multiple high-scoring parse trees, composing STL-oriented intermediate meanings with task-specific lexical-semantic templates, and canonicalizing equivalent derivations into a scored set of STL candidates. As a result, the output of the proposed method is not a single STL formula but a candidate set that explicitly represents multiple plausible formalizations of an ambiguous instruction. This paper makes two main technical contributions. First, we propose an ambiguity-preserving formulation of NL-to-STL translation in which the output is a scored candidate set of STL formulas rather than a single formula. Second, 
+
+> arXiv:2603.28426v1 [cs.CL] 30 Mar 2026
+
+we develop a symbolic pipeline that realizes this formulation by combining n-best CCG parsing, STL-oriented template-based semantic composition, and canonicalization with score aggregation. Representative case studies demonstrate that the proposed method produces multiple candidates for genuinely ambiguous inputs while collapsing unambiguous or canoni-cally equivalent derivations to a single STL formula. The remainder of this paper is organized as follows. Section II reviews preliminaries on STL. Section III intro-duces the problem setup and motivating ambiguity patterns. Section IV presents the proposed ambiguity-preserving NL-to-STL translation pipeline. Section V reports numerical evaluation on representative sentences. Finally, Section VI concludes the paper and discusses limitations and future work. II. PRELIMINARIES 
+
+A. Signal Temporal Logic 
+
+Signal Temporal Logic (STL) is a formal language for specifying temporal properties over real-valued signals. Since the main focus of this paper is ambiguity-preserving transla-tion from natural-language control descriptions to STL, we briefly review only the STL syntax and robustness semantics used in the sequel. For standard definitions and notation of STL, the reader is referred to [1], [2]. STL formulas 
+
+φ are defined recursively from atomic propositions, logical operators, and temporal operators as 
+
+φ ::= ⊤ | μ | ¬ φ | φ1 ∧ φ2 | φ1 ∨ φ2
+
+| FI φ | GI φ | φ1UI φ2, (1) where ⊤ denotes the Boolean constant True , and ¬, ∧, and ∨
+
+denote negation, conjunction, and disjunction, respectively. The atomic proposition μ : Rn → B is a Boolean-valued predicate over the current signal value. For example, given a real-valued function h : Rn → R, we define 
+
+μ(z) = True ⇐⇒ h(z) > 0, z ∈ Rn. (2) The operators FI , GI , and UI denote the temporal operators eventually , always , and until , respectively, over a discrete-time interval 
+
+I = [ a, b ] = {τ ∈ Z≥0 | a ≤ τ ≤ b}, a, b ∈ Z≥0. (3) In natural-language terms, FI φ means that “ φ holds at some time in I,” GI φ means that “ φ holds at every time in I,” and 
+
+φ1UI φ2 means that “ φ2 holds at some time in I, while φ1
+
+holds up to that time.” Moreover, the eventually and always 
+
+operators can be expressed using the until operator as 
+
+FI φ := ⊤ UI φ, GI φ := ¬FI ¬φ. (4) The degree of satisfaction of an STL formula can be quanti-fied by its robustness. A positive robustness value indicates satisfaction, whereas a negative value indicates violation. For a trajectory x = x0: T = ( x0, x 1, . . . , x T ) and time t, the robustness ρφ(x, t ) is defined recursively as 
+
+ρμ(x, t ) = h(xt),ρ¬μ(x, t ) = −h(xt),ρφ1∧φ2 (x, t ) = min( ρφ1 (x, t ), ρ φ2 (x, t )) ,ρφ1∨φ2 (x, t ) = max( ρφ1 (x, t ), ρ φ2 (x, t )) ,ρFI φ(x, t ) = max  
+
+> t1∈t+I
+
+ρφ(x, t 1),ρGI φ(x, t ) = min  
+
+> t1∈t+I
+
+ρφ(x, t 1),ρφ1UI φ2 (x, t ) = max 
+
+> t1∈t+I
+
+
+
+min( ρφ2 (x, t 1), min  
+
+> t2∈[t,t 1]
+
+ρφ1 (x, t 2)) 
+
+
+
+.
+
+with t + I := { t + τ | τ ∈ I }.III. PROBLEM SETUP 
+
+A. Target Descriptions and Structural Ambiguity 
+
+Translating natural-language (NL) control descriptions into STL is attractive because natural language is easy for users to provide, whereas writing STL formulas directly requires familiarity with temporal operators, logical scope, and task-dependent atomic propositions. Natural language is inherently ambiguous. Among the dif-ferent types of ambiguity, we focus on structural ambiguity ,i.e., ambiguity caused by attachment or scope differences in syntactic structure. This type of ambiguity is particularly important in NL-to-STL translation because STL is highly sensitive to scope and compositional structure. In what follows, we use navigation/path-planning as a representative application domain. Specifically, we restrict attention to natural-language control descriptions built from task predicates such as reach and avoid , temporal modifiers such as within 10 seconds , and connectives such as and , or ,and while . This class captures many navigation/path-planning instructions while keeping the problem setting well-defined. Although the examples and numerical experiments are drawn from this domain, the formulation itself is not limited. Note that our focus is on preserving structurally distinct interpretations and translating them into STL candidates. The same idea can be applied to other control descriptions expressible in STL by changing the mapping from words to predicates and atomic propositions. As a motivating example, consider the following task described in natural-language: 
+
+Within 10 seconds, reach B or reach C while avoiding A. 
+
+For this example, let ϕA, ϕB , and ϕC denote the atomic propositions that the agent is in regions A, B, and C,respectively. Then the sentence admits at least the following two interpretations, depending on the scope of the phrase 
+
+while avoiding A :
+
+φ1 = F[0 ,10] ϕB ∨  F[0 ,10] ϕC ∧ G[0 ,10] ¬ϕA
+
+, (5) 
+
+φ2 = F[0 ,10] 
+
+ ϕB ∨ ϕC
+
+ ∧ G[0 ,10] ¬ϕA. (6) The formula φ1 corresponds to a local -scope interpretation in which the avoidance condition is associated only with reaching C, whereas φ2 corresponds to a global -scope interpretation in which the avoidance condition applies to the entire disjunctive task. Although both interpretations are linguistically plausible, they impose different constraints on the system and may therefore lead to different planned trajectories. This example illustrates the central problem considered in this paper: a single natural-language descrip-tion may correspond to multiple distinct yet plausible STL formulas. 
+
+B. Problem Formulation 
+
+Given an input natural-language description d, our goal is to generate a set of candidate STL specifications 
+
+C(d) = {(φj , s j )}mj=1 , (7) where φj is an STL specification and sj ∈ R≥0 is its plau-sibility score. Intuitively, the score sj indicates how strongly 
+
+φj is supported as an interpretation of d by the translation pipeline. Notice that it is used to rank the candidates and does not measure control performance or STL robustness. When needed, these scores can be normalized into probabilities 
+
+pj = sj
+
+Pmk=1 sk
+
+,
+
+> m
+
+X
+
+> j=1
+
+pj = 1 , (8) so that pj represents the relative probability of φj among the candidates generated. 
+
+C. Practical Benefits Why is generating multiple candidates useful? This is because ambiguity in language can lead to qualitatively different control behaviors. In the motivating example, a planner using φ1 may accept a trajectory that reaches B even if it passes through A, whereas a planner using φ2 must reject any trajectory that visits A. Thus, if the system prematurely commits to a single STL formula, it may produce a behavior that is formally correct for that formula but inconsistent with the user’s true intent. By generating multiple STL candidates, the system can present not only the formulas themselves but also candidate trajectories derived from them. This allows the user to com-pare possible behaviors, identify unintended interpretations before execution, and select the desired specification. In this sense, the candidate set serves as an interpretable interface between ambiguous NL task description and formal control synthesis. IV. A MBIGUITY -P RESERVING NL-TO -STL TRANSLATION 
+
+A. Overview 
+
+In this paper, we leverage syntactic parsing [19], which is a standard technique in natural language processing, to capture structural ambiguity and preserve multiple plausible interpretations of an input sentence. An overview of the proposed method is shown in Fig. 1. Given an input natural-language description d, the method generates STL candidates through a three-stage pipeline: first, it constructs a set T (d)
+
+of plausible parse trees and the associated scores (Step 1); NL                
+
+> description
+> Semantic
+> Templates
+> STL
+> Specification
+> INPUT
+> OUTPUT
+> Semantic
+> Composition
+> CCG
+> Parsing
+> STEP1
+> STEP2
+> Canonicalization
+> STEP3
+> reference
+> 𝒯 𝑑 =𝑇 𝑖 ,𝑆 𝑖 𝑖 =1
+> 𝑁
+> ℳ𝑑 =𝑚 𝑖 𝑖 =1
+> 𝑁
+> 𝑑
+> 𝒞 𝑑 =𝜑 𝑗 ,𝑠 𝑗 𝑗 =1
+> 𝑚
+> Fig. 1. Overview of the Proposed Method.
+
+next, it derives a set M(d) of STL-oriented meaning rep-resentations through semantic composition (Step 2); and finally, it converts them into a deduplicated set C(d) of STL candidates with plausibility scores (Step 3). Although the basic ingredients build on standard CCG-based semantic parsing, the proposed method is not a di-rect application of an off-the-shelf CCG parser to obtain a single syntactic analysis, in the sense that we adapt CCG-based parsing for ambiguity-preserving NL-to-STL transla-tion. Specifically, as described in the following subsections, the proposed pipeline (i) retains multiple high-scoring parse trees so that attachment and scope ambiguities are preserved, (ii) composes STL-oriented meaning representations using task-specific semantic templates, and (iii) canonicalizes se-mantically equivalent derivations and aggregates their scores into a deduplicated set of STL candidates. In this way, syntactically distinct readings of the same sentence can be propagated to distinct STL specifications when appropriate, while spurious duplication is suppressed when different derivations yield the same STL formula. Each stage of the process is described in detail below. 
+
+B. Ambiguity-Preserving n-best CCG Parsing 
+
+In Step 1, the input sentence d is parsed by a probabilis-tic CCG parser, and multiple high-scoring parse trees are retained rather than committing to a single best analysis. We use Combinatory Categorial Grammar (CCG) [19] as a structured parsing backend. In this study, the role of CCG is not to provide a detailed linguistic analysis, but to explicitly represent attachment and scope differences in a form that can be propagated to STL generation. A CCG parse tree records how words and phrases combine to form a sentence. When a sentence is structurally ambiguous, the parser can return multiple plausible parse trees based on the parsing scores rather than a single one. Given an input sentence d,we obtain an n-best set of parse trees 
+
+T (d) = {Ti, S i}Ni=1 , (9) where each Ti represents one plausible syntactic interpreta-tion of d, and Si ∈ R denotes the parsing score associated with Ti. In our implementation using depccg [20], Si is the parser-internal score assigned by the underlying locally factored CCG model, which combines token-level supertag scores and dependency-head scores to rank candidate parses. As an example, let us consider again the following sen-tence: Within 10 seconds, reach B or reach C while avoiding A. 
+
+In this sentence, the phrase while avoiding A may attach either to the subexpression reach C or to the entire phrase 
+
+reach B or reach C . These two attachments correspond to different parse trees. Since the proposed method retains multiple parse trees instead of selecting only the top one, both interpretations can be preserved and passed to the semantic composition stage. 
+
+C. STL-oriented template-based semantic composition 
+
+In Step 2, an STL-oriented meaning representation is constructed for each parse tree by semantic composition based on task-specific lexical-semantic templates [19]. Given each parse tree Ti ∈ T (d), we construct an STL-oriented meaning representation by semantic composition. In CCG-based semantic parsing, semantic composition assigns alexical-semantic template to each lexical item or phrase and composes these templates according to the combinatory structure of the derivation. Here, a semantic template is a rule that maps a lexical item (together with its CCG category) to an STL-oriented lambda expression. Basic task expressions are mapped onto intermediate tem-poral operators such as F( I, X ) and G( I, X ), whereas func-tional expressions are mapped onto lambda abstractions such as λQ.λP. (P ∧ Q), λQ.λP. (P ∨ Q), λQ.λP. SEQ( P, Q ),and λP. P (I(a, b )) . Here, we use standard lambda-calculus notation for compositional semantics: λx. f (x) denotes the function that maps an argument x to f (x), and 
+
+λQ.λP. f (P, Q ) denotes a higher-order function that succes-sively takes two semantic arguments Q and P . In this nota-tion, P and Q denote intermediate semantic representations of subtasks, SEQ( P, Q ) denotes sequential composition, and 
+
+P (I(a, b )) denotes the application of the time interval I(a, b )
+
+to the temporal operator P . Moreover, P ∧ Q and P ∨ Q de-note logical conjunction and logical disjunction, respectively. These operators are intermediate semantic constructs used in Step 2 and are translated into final STL formulas in Step 3. In our implementation, semantic composition is performed using ccg2lambda [19]. While ccg2lambda is originally designed to derive linguistically rich semantic representa-tions, we design task-specific semantic templates tailored to NL-to-STL translation. Applying these templates to each parse tree yields 
+
+M(d) = {mi}Ni=1 , (10) where each mi is an STL-oriented meaning representation obtained by composing the lexical-semantic templates along the derivation Ti. Importantly, mi is an intermediate rep-resentation and need not yet be a complete well-formed STL formula; final conversion, deduplication, and score aggregation are deferred to Step 3. Each mi also inherits the support score of its source derivation, which is later aggregated at the formula level. Table I lists representative semantic templates used in our implementation. The table is illustrative rather than ex-haustive and highlights the template patterns that determine                   
+
+> TABLE I REPRESENTATIVE STL-ORIENTED SEMANTIC TEMPLATES . T HE SYMBOL
+> ¬DENOTES THE NEGATION OPERATOR .
+> Expression Abstract template
+> reach X λI. F( I, X )
+> avoid X λI. G( I, ¬X)
+> or λQ.λP. (P∨Q)
+> and then λQ.λP. SEQ( P, Q )
+> while λQ.λP. (P∧Q)
+> within Tseconds λP.P (I(0 , T ))
+
+task structure, scope, and temporal constraints in NL-to-STL translation. A key point is that the templates themselves are fixed; ambiguity arises from how they are composed along the parse tree. As a result, different parse trees give rise to different scopes of operators such as ∧, ∨, and SEQ , thereby yielding different intermediate semantic representations. In the motivating example, one parse associates the modi-fier while avoiding A only with reach C , whereas another as-sociates it with the entire disjunctive phrase reach B or reach C. Thus, even though the same abstract templates in Table I are used in both cases, their different combinatory structures lead to different elements of M(d), which are then converted into different STL candidates in Step 3. In ccg2lambda ,the actual templates are implemented as YAML-based rules; here, we abstract away from those implementation details and focus on the representative abstract template patterns summarized in Table I. 
+
+D. Conversion to STL, Canonicalization, and Score Aggre-gation 
+
+In Step 3, the intermediate meaning representations in 
+
+M(d) are converted into STL formulas, canonicalized, and scored at the formula level. In particular, the intermediate operators introduced in Step 2, such as F, G, and SEQ , are resolved into standard STL syntax. Because the elements of 
+
+M(d) are STL-oriented intermediate representations rather than final STL formulas, some mi ∈ M (d) may be incom-plete or ill-formed from the viewpoint of STL syntax, and distinct derivations may still yield the same STL formula after conversion. Step 3 resolves both issues through conver-sion, canonicalization, and score aggregation. For each mi, we first attempt to convert it into a complete STL formula. Representations that cannot be converted into a well-formed STL formula are discarded. The remaining for-mulas are then canonicalized so that derivationally different outputs that are equivalent under our canonicalization rules are mapped to a common normal form. This prevents the final candidate set from being artificially inflated by duplicate formulas arising from different parse trees or composition paths. Finally, scores are aggregated at the formula level. Because each mi inherits the support score of its source derivation, multiple derivations that collapse to the same canonical STL formula contribute jointly to a single candidate score. As a result, the final set in Eq. (7) contains only unique STL formulas together with plausibility scores that reflect their total support from the ambiguity-preserving translation pipeline. In this way, Step 3 preserves meaningful ambiguity while suppressing spurious duplication. V. N UMERICAL EVALUATION ON REPRESENTATIVE 
+
+SENTENCES 
+
+A. Setting 
+
+To evaluate the proposed ambiguity-preserving NL-to-STL translation pipeline, we consider representative natural-language task descriptions. Specifically, the sentence set covers simple reachability, time-bounded tasks, disjunction, sequential composition, and modifier attachment by while avoiding A . The aim of this section is not to provide a large-scale benchmark, but to verify three properties of the proposed method: (i) it produces multiple STL candidates when the input contains genuine structural ambiguity, (ii) it yields a single canonical STL candidate when the input is effectively unambiguous at the STL level, and (iii) it merges derivationally different outputs when they reduce to the same canonical STL formula. For CCG parsing, we use depccg [20] and retain up to the top N = 40 parse trees for each input sentence, yielding a set T (d) as in Eq. (9). Each parse tree is then mapped to an STL-oriented meaning representation and processed by the canonicalization and score-aggregation procedure described in Step 3. Each final candidate φ ∈ C (d) is assigned an aggregated score obtained by summing the support of all derivations that reduce to φ, and the aggregated scores are normalized according to Eq. (8) to obtain p(φ | d).The 12 representative input sentences are as follows: 
+
+S1. Reach B within 10 seconds. 
+
+S2. Reach B within 10 seconds while avoiding A. 
+
+S3. Within 10 seconds, reach B while avoiding A. 
+
+S4. Reach B or C within 10 seconds. 
+
+S5. Reach B within 10 seconds or reach C within 15 seconds. 
+
+S6. Reach B within 10 seconds and then reach C within 15 seconds. 
+
+S7. Reach B within 10 seconds and then reach C within 15 seconds and then reach D within 5 seconds. 
+
+S8. Within 10 seconds, reach B or reach C while avoiding A. 
+
+S9. Reach B within 10 seconds or reach C within 15 seconds while avoiding A. 
+
+S10. Reach B within 10 seconds and then reach C within 15 seconds while avoiding A. 
+
+S11. Reach B within 10 seconds and then reach C within 15 seconds and then reach D within 5 seconds while avoiding A. 
+
+S12. Reach B within 10 seconds and then reach C within 15 seconds or reach D within 5 seconds while avoiding A. Among them, S8, S9, S10, S11, S12 correspond to the two motivating ambiguity patterns considered in this paper, i.e., modifier scope over a disjunctive task description and mod-ifier scope over a sequential task description, respectively.                                                                
+
+> TABLE II SUMMARY OF RESULTS ON REPRESENTATIVE SENTENCES .
+> ID Type #Ref. |C (d)|Recovered S1 reachability(base) 11Yes S2 conjunction +modifi-cation (pattern 1) 11Yes S3 conjunction +modifi-cation (pattern 2) 11Yes S4 same time +disjunc-tion 11Yes S5 different time +dis-junction 11Yes S6 sequence 11Yes S7 long sequence 11Yes S8 same time +disjunc-tion (scope ambiguity) 22Yes S9 different time +dis-junction (scope ambi-guity) 22Yes S10 sequence (scope ambi-guity) 22Yes S11 long sequence (scope ambiguity) 33Yes S12 sequence + disjunction (scope ambiguity) 55Yes
+
+B. Summary of Results 
+
+Table II summarizes the outputs obtained for the 12 rep-resentative sentences. For each sentence, the column “Type” indicates the primary syntactic or semantic phenomenon tar-geted by that sentence, such as simple reachability, modifier attachment, disjunction, sequential composition, or scope ambiguity. We also report the number of manually identified reference interpretations (#Ref.), the number of unique STL candidates after canonicalization ( |C (d)|), and whether the reference interpretation set is recovered. This summary is intended to show not only that the proposed method can generate multiple STL formulas when needed, but also that it avoids unnecessary branching when the input is effectively unambiguous at the STL level. The key question is whether the proposed pipeline prop-agates ambiguity selectively. In particular, sentences with genuine attachment or scope ambiguity should yield multiple candidates, whereas structurally simpler sentences should collapse to a single canonical STL formula after Step 3. Such a result would indicate that the proposed method is not limited to the two motivating examples, but can be applied to a broader set of representative task descriptions while controlling over-generation through canonicalization and score aggregation. As a result, for all of these examples, the reference interpretation sets were successfully recovered. 
+
+C. Detailed Outputs for Representative Ambiguous Cases 
+
+Table III reports the full STL formulas and normalized probabilities for S8, S9, S10, S11, S12. These 5 cases illustrate the target ambiguity patterns of this paper: modifier attachment to a disjunctive task description and modifier attachment to a sequential task description. For all representative ambiguous examples, the generated TABLE III GENERATED STL FORMULAS AND NORMALIZED PROBABILITIES FOR REPRESENTATIVE AMBIGUOUS CASES .
+
+STL formula φ p(φ | d)
+
+S8: Within 10 seconds, reach B or reach C while avoiding A. 
+
+F[0 ,10] ϕB ∨  F[0 ,10] ϕC ∧ G[0 ,10] ¬ϕA
+
+ 0.6774565705 
+
+F[0 ,10] 
+
+ ϕB ∨ ϕC
+
+ ∧ G[0 ,10] ¬ϕA 0.3225434295 
+
+S9: Reach B within 10 seconds or reach C within 15 seconds while avoiding A. 
+
+F[0 ,10] ϕB ∨  F[0 ,15] ϕC ∧ G[0 ,15] ¬ϕA
+
+ 0.86272391  F[0 ,10] ϕB ∨ F[0 ,15] ϕC
+
+ ∧ G[0 ,15] ¬ϕA 0.13727609 
+
+S10: Reach B within 10 seconds and then reach C within 15 seconds while avoiding A. 
+
+F[0 ,10] 
+
+ ϕB ∧ F[0 ,15] ϕC ∧ G[0 ,15] ¬ϕA
+
+ 0.9896166506 
+
+F[0 ,10] 
+
+ ϕB ∧ F[0 ,15] ϕC
+
+ ∧ G[0 ,25] ¬ϕA 0.0103833494 
+
+S11: Reach B within 10 seconds and then reach C within 15 seconds and then reach D within 5 seconds while avoiding A. 
+
+F[0 ,10] 
+
+ ϕB ∧ F[0 ,15] 
+
+ ϕC ∧ F[0 ,5] ϕD ∧ G[0 ,5] ¬ϕA
+
+ 0.934112393 
+
+F[0 ,10] 
+
+ ϕB ∧ F[0 ,15] 
+
+ ϕC ∧ F[0 ,5] ϕD
+
+ ∧ G[0 ,20] ¬ϕA
+
+ 0.0599828964 
+
+F[0 ,10] 
+
+ ϕB ∧ F[0 ,15] 
+
+ ϕC ∧ F[0 ,5] ϕD
+
+ ∧ G[0 ,30] ¬ϕA 0.0059047106 
+
+S12: Reach B within 10 seconds and then reach C within 15 seconds or reach D within 5 seconds while avoiding A. 
+
+F[0 ,10] 
+
+ ϕB ∧    F[0 ,15] ϕC ∨ F[0 ,5] ϕD
+
+ ∧ G[0 ,15] ¬ϕA
+
+ 0.5004023346 
+
+F[0 ,10] 
+
+ ϕB ∧  F[0 ,15] ϕC ∨  F[0 ,5] ϕD ∧ G[0 ,5] ¬ϕA
+
+ 0.478979327 
+
+F[0 ,10] 
+
+ ϕB ∧  F[0 ,15] ϕC ∨ F[0 ,5] ϕD
+
+ ∧ G[0 ,25] ¬ϕA 0.015082217 
+
+F[0 ,10] 
+
+ ϕB ∧ F[0 ,15] ϕC
+
+ ∨  F[0 ,5] ϕD ∧ G[0 ,5] ¬ϕA
+
+ 0.0054311103  F[0 ,10] 
+
+ ϕB ∧ F[0 ,15] ϕC
+
+ ∨ F[0 ,5] ϕD
+
+ ∧ G[0 ,25] ¬ϕA 0.000105011 
+
+candidate sets contain the reference interpretations identi-fied manually. Although the resulting probabilities are not uniform, reflecting the preferences of the underlying parser, the very existence of multiple candidates indicates that the proposed method preserves structurally induced ambiguity up to the level of formal STL specifications. More broadly, this evaluation protocol is intended to verify that the same pipeline can be applied to representative sentence patterns beyond those considered here, while the canonicalization in Step 3 suppresses unnecessary duplication. 
+
+D. Comparison with a ChatGPT-Based Baseline 
+
+As a point of comparison, we evaluated a prompted general-purpose LLM baseline using ChatGPT on the five structurally ambiguous inputs S8–S12. The aim of this ex-periment is not to provide a comprehensive ranking over all learning-based NL-to-STL methods, but to examine whether a prompted LLM can enumerate the structurally licensed STL readings identified for these examples. The exact prompt and evaluation protocol are provided in Appendix I. Table IV summarizes the sentence-level results, and Table V lists the ChatGPT outputs. A returned formula was counted as correct 
+
+if and only if it matched one of the manually identified reference interpretations used for the proposed method. In the ChatGPT outputs, the remaining incorrect cases fall into two categories: (E1) scope/anchoring mismatch , where the avoidance condition is attached at the wrong temporal level or with the wrong effective interval; and (E2) structurally unsupported extra reading , where the output does not corre-spond to any reference parse-based interpretation. The ChatGPT outputs recover all reference readings for S8, S9, and S11, but not for S10 and S12. In particular, S10 recovers none of the two reference readings, and S12 recovers four of the five reference readings. Overall, 11 of the 14 returned formulas match a reference interpretation after 
+
+TABLE IV SENTENCE -LEVEL SUMMARY FOR THE CHAT GPT BASELINE ON 
+
+S8–S12. “R ECOVERED ” DENOTES HOW MANY REFERENCE INTERPRETATIONS WERE RECOVERED AT LEAST ONCE AMONG THE RETURNED FORMULAS .
+
+ID #Out Recovered Correct E1 E2 S8 2 2/2 2 0 0S9 2 2/2 2 0 0S10 2 0/2 0 1 1S11 3 3/3 3 0 0S12 5 4/5 4 1 0Total 14 11/14 11 2 1
+
+canonicalization, covering 11 of the 14 reference readings across S8–S12. The main failure mode is incorrect temporal anchoring. For example, in S10 the formula 
+
+F[0 ,10] 
+
+ ϕB ∧ F[0 ,15] (ϕC ∧ G[0 ,15] ¬ϕA)
+
+places G[0 ,15] ¬ϕA inside the inner eventuality, so the avoid-ance interval starts at the time of reaching C rather than at the beginning of the intended second-step subtask. In S12, the formula 
+
+G[0 ,15] ¬ϕA ∧  F[0 ,10] (ϕB ∧ F[0 ,15] ϕC ) ∨ F[0 ,5] ϕD
+
+
+
+does not match any reference interpretation either: it is too short for the top-level global reading, which requires 
+
+G[0 ,25] ¬ϕA, and it is placed outside the outer F[0 ,10] unlike the post-B disjunction-wide reading. The remaining unsup-ported case in S10 combines a first-step avoidance condition with the same mis-anchored second-step reading, yielding a composite formula not licensed by any reference parse. These observations suggest that, although a prompted LLM can recover certain valid readings, it does not yet reliably enumerate exactly the structurally licensed STL can-didates or recover them exhaustively under a fixed prompting protocol. Note that LLM outputs can vary substantially with prompt design, so the baseline results should be interpreted as prompt-dependent rather than as an intrinsic limit of ChatGPT. While additional prompt engineering may improve some cases, such sensitivity itself raises concerns about reproducibility and stable coverage of structurally licensed interpretations. In contrast, the proposed symbolic pipeline generates candidates only from explicitly represented parse-structural alternatives and recovers the complete reference set for these cases. VI. C URRENT LIMITATIONS AND FUTURE WORK 
+
+We proposed an ambiguity-preserving symbolic method for translating natural-language task descriptions into STL formulas. The proposed pipeline combines n-best CCG pars-ing, STL-oriented template-based semantic composition, and canonicalization with score aggregation so as to generate a scored set of candidate STL formulas rather than committing to a single interpretation. In this way, structurally distinct readings of an ambiguous sentence can be propagated to distinct formal specifications while canonically equivalent derivations are merged into a compact candidate set. Several limitations remain. First, the current formulation assumes that the input sentence provides explicit temporal information that can be mapped to STL time bounds. As a result, task descriptions without explicit timing expressions require additional assumptions and are not yet handled in a principled manner in the present implementation. Second, the current template set covers only a limited class of task expressions and ambiguity patterns, mainly those involving reachability, avoidance, disjunction, sequential composition, and modifier scope. Extending the method to richer linguistic phenomena, such as implicit temporal constraints, context-dependent expressions, or more diverse task operators, re-mains an open issue. Third, because the candidate set is de-rived from syntactic analyses produced by an external parser, parsing errors or coverage limitations of the parser may directly affect the quality of the generated STL candidates. Finally, the current evaluation is limited to representative case studies rather than a large-scale benchmark. These limitations suggest several directions for future work. An important next step is to handle sentences in which timing constraints are omitted or only implicitly specified, for example by incorporating default assumptions, context-dependent inference, or interactive clarification. Another direction is to expand the template library and the supported ambiguity types so that a wider range of natural-language task descriptions can be translated compositionally. It is also of interest to integrate the proposed candidate-generation framework with interactive disambiguation, downstream tra-jectory synthesis, and STL-based control design, so that candidate formulas can be selected, refined, and validated in a closed loop with the user and the control system. Finally, constructing a broader evaluation benchmark for ambiguity-aware NL-to-STL translation would be useful for comparing symbolic and learning-based approaches under a common protocol. REFERENCES [1] O. Maler and D. Nickovic, “Monitoring temporal properties of con-tinuous signals,” in International symposium on formal techniques in real-time and fault-tolerant systems , pp. 152–166, Springer, 2004. [2] A. Donz´ e and O. Maler, “Robust satisfaction of temporal logic over real-valued signals,” in International Conference on Formal Modeling and Analysis of Timed Systems , pp. 92–106, Springer, 2010. [3] V. Raman, A. Donz´ e, M. Maasoumy, R. M. Murray, A. L. Sangiovanni-Vincentelli, and S. A. Seshia, “Model predictive control with signal temporal logic specifications,” in 2014 IEEE 53rd Annual Conference on Decision and Control (CDC) , pp. 81–87, 2014. [4] Y. Lin, H. Li, and M. Althoff, “Model predictive robustness of signal temporal logic predicates,” IEEE Robotics and Automation Letters ,vol. 8, no. 12, pp. 8050–8057, 2023. [5] K. Leung, N. Ar´ echiga, and M. Pavone, “Backpropagation through signal temporal logic specifications: Infusing logical structure into gradient-based methods,” The International Journal of Robotics Re-search , vol. 42, no. 6, pp. 356–370, 2023. [6] C. Lignos, V. Raman, C. Finucane, M. P. Marcus, and H. Kress-Gazit, “Provably correct reactive control from natural language,” Autonomous Robots , vol. 38, no. 1, pp. 89–105, 2015. [7] C. Wang, C. Ross, Y.-L. Kuo, B. Katz, and A. Barbu, “Learning a natural-language to ltl executable semantic parser for grounded robotics,” in Proceedings of the 4th Conference on Robot Learning ,vol. 155 of Proceedings of Machine Learning Research , pp. 1706– 1718, PMLR, 2021. [8] J. X. Liu, Z. Yang, I. Idrees, S. Liang, B. Schornstein, S. Tellex, and A. Shah, “Grounding complex natural language commands for tempo-ral tasks in unseen environments,” in Proceedings of The 7th Confer-ence on Robot Learning (J. Tan, M. Toussaint, and K. Darvish, eds.), vol. 229 of Proceedings of Machine Learning Research , pp. 1084– 1110, PMLR, Nov. 2023. [9] J. Pan, G. Chou, and D. Berenson, “Data-efficient learning of natural language to linear temporal logic translators for robot task speci-fication,” in 2023 IEEE International Conference on Robotics and Automation (ICRA) , pp. 11554–11561, IEEE, 2023. [10] V. Cohen, J. X. Liu, R. Mooney, S. Tellex, and D. Watkins, “A survey of robotic language grounding: Tradeoffs between symbols and embeddings,” in Proceedings of the Thirty-Third International Joint Conference on Artificial Intelligence, IJCAI-24 (K. Larson, ed.), pp. 7999–8009, International Joint Conferences on Artificial Intelligence Organization, Aug. 2024. Survey Track. [11] J. He, E. Bartocci, D. Nickovic, H. Isakovic, and R. Grosu, “Deepstl: From english requirements to signal temporal logic,” in Proceedings of the 44th International Conference on Software Engineering , pp. 610– 622, Association for Computing Machinery, 2022. [12] Y. Chen, R. Gandhi, Y. Zhang, and C. Fan, “Nl2tl: Transforming natural languages to temporal logics using large language models,” in Proceedings of the 2023 Conference on Empirical Methods in Natural Language Processing (H. Bouamor, J. Pino, and K. Bali, eds.), (Singapore), pp. 15880–15903, Association for Computational Linguistics, December 2023. [13] Y. Mao, T. Zhang, X. Cao, Z. Chen, X. Liang, B. Xu, and H. Fang, “Nl2stl: Transformation from logic natural language to signal temporal logics using llama2,” Proceedings of the IEEE International Confer-ence on Cybernetics and Intelligent Systems, CIS , no. 2024, pp. 469– 474, 2024. 11th IEEE International Conference on Cybernetics and Intelligent Systems and 11th IEEE International Conference on Robotics, Automation and Mechatronics (CIS-RAM 2024). [14] Y. Fang, Z. Jin, J. An, H. Chen, X. Chen, and N. Zhan, “Enhancing transformation from natural language to signal temporal logic using LLMs with diverse external knowledge,” in Findings of the Association for Computational Linguistics: ACL 2025 (W. Che, J. Nabende, E. Shutova, and M. T. Pilehvar, eds.), (Vienna, Austria), pp. 10446– 10458, Association for Computational Linguistics, July 2025. [15] S. Mohammadinejad, S. Paul, Y. Xia, V. Kudalkar, J. Thomason, and J. V. Deshmukh, “Systematic translation from natural language robot task descriptions to STL,” in Bridging the Gap Between AI and Reality: Second International Conference, AISoLA 2024, Crete, Greece, October 30–November 3, 2024, Proceedings (B. Steffen, ed.), vol. 15217 of Lecture Notes in Computer Science , pp. 259–276, Springer, 2025. [16] I. Gavran, E. Darulova, and R. Majumdar, “Interactive synthesis of temporal specifications from examples and natural language,” Proceed-TABLE V STL SPECIFICATIONS GENERATED BY CHAT GPT FOR REPRESENTATIVE AMBIGUOUS CASES . T HE RAW OUTPUTS ARE NORMALIZED TO THE MANUSCRIPT NOTATION (ϕA, ϕ B , ϕ C , ϕ D ). “C ORRECT ” MEANS THAT THE OUTPUT MATCHES ONE OF THE MANUALLY IDENTIFIED REFERENCE INTERPRETATIONS AFTER CANONICALIZATION .
+
+STL formula φ Assessment Note 
+
+S8: Within 10 seconds, reach B or reach C while avoiding A. 
+
+F[0 ,10] ϕB ∨  G[0 ,10] ¬ϕA ∧ F[0 ,10] ϕC
+
+ Correct Matches the local-scope refer-ence. 
+
+G[0 ,10] ¬ϕA ∧ F[0 ,10] (ϕB ∨ ϕC ) Correct Equivalent to the global-scope reference after canonicalization. 
+
+S9: Reach B within 10 seconds or reach C within 15 seconds while avoiding A. 
+
+F[0 ,10] ϕB ∨  G[0 ,15] ¬ϕA ∧ F[0 ,15] ϕC
+
+ Correct Matches the local-scope refer-ence. 
+
+G[0 ,15] ¬ϕA ∧  F[0 ,10] ϕB ∨ F[0 ,15] ϕC
+
+ Correct Matches the global-scope refer-ence. 
+
+S10: Reach B within 10 seconds and then reach C within 15 seconds while avoiding A. 
+
+F[0 ,10] 
+
+ ϕB ∧ F[0 ,15] (ϕC ∧ G[0 ,15] ¬ϕA) E1 The avoidance interval is an-chored at the C-reaching in-stant, not at the beginning of the second-step subtask.  G[0 ,10] ¬ϕA ∧ F[0 ,10] ϕB
+
+ ∧ F[0 ,10] 
+
+ ϕB ∧ F[0 ,15] (ϕC ∧ G[0 ,15] ¬ϕA) E2 Unsupported composite reading; matches neither the local-scope nor the global-scope reference. 
+
+S11: Reach B within 10 seconds and then reach C within 15 seconds and then reach D within 5 seconds while avoiding A. 
+
+F[0 ,10] 
+
+ ϕB ∧ F[0 ,15] 
+
+ ϕC ∧ (G[0 ,5] ¬ϕA ∧ F[0 ,5] ϕD ) Correct Matches the local-D-scope refer-ence. 
+
+F[0 ,10] 
+
+ ϕB ∧ (G[0 ,20] ¬ϕA ∧ F[0 ,15] (ϕC ∧ F[0 ,5] ϕD ))  Correct Matches the C → D
+
+subsequence-scope reference. 
+
+G[0 ,30] ¬ϕA ∧ F[0 ,10] 
+
+ ϕB ∧ F[0 ,15] 
+
+ ϕC ∧ F[0 ,5] ϕD
+
+ Correct Matches the global-scope refer-ence. 
+
+S12: Reach B within 10 seconds and then reach C within 15 seconds or reach D within 5 seconds while avoiding A. 
+
+F[0 ,10] 
+
+ ϕB ∧ (F[0 ,15] ϕC ∨ (G[0 ,5] ¬ϕA ∧ F[0 ,5] ϕD ))  Correct Matches the post-B local-D ref-erence. 
+
+F[0 ,10] 
+
+ ϕB ∧ F[0 ,15] ϕC
+
+ ∨  G[0 ,5] ¬ϕA ∧ F[0 ,5] ϕD
+
+ Correct Matches the top-level local-D ref-erence. 
+
+F[0 ,10] 
+
+ ϕB ∧ (G[0 ,15] ¬ϕA ∧ (F[0 ,15] ϕC ∨ F[0 ,5] ϕD ))  Correct Matches the post-B disjunction-wide reference. 
+
+G[0 ,25] ¬ϕA ∧ F[0 ,10] 
+
+ ϕB ∧ (F[0 ,15] ϕC ∨ F[0 ,5] ϕD ) Correct Matches the post-B global-scope reference. 
+
+G[0 ,15] ¬ϕA ∧  F[0 ,10] (ϕB ∧ F[0 ,15] ϕC ) ∨ F[0 ,5] ϕD
+
+ E1 Matches neither reference: it is too short for the top-level global reading and placed at the wrong level for the post-B disjunction-wide reading. 
+
+Assessment labels. Correct : matches a manually identified reference interpretation after canonicalization. E1 : scope/anchoring mismatch, i.e., the avoidance interval is attached at the wrong temporal level or with the wrong effective interval. E2 : structurally unsupported extra reading, i.e., the output does not correspond to any reference parse-based interpretation. 
+
+ings of the ACM on Programming Languages , vol. 4, no. OOPSLA, pp. 201:1–201:26, 2020. [17] M. Cosler, C. Hahn, D. Mendoza, F. Schmitt, and C. Trippel, “nl2spec: Interactively translating unstructured natural language to temporal logics with large language models,” in Computer Aided Verification ,vol. 13965 of Lecture Notes in Computer Science , pp. 383–396, Springer, 2023. [18] S. Mohammadinejad, J. Thomason, and J. V. Deshmukh, “Interactive learning from natural language and demonstrations using signal tem-poral logic,” CoRR , vol. abs/2207.00627, 2022. [19] P. Mart´ ınez-G´ omez, K. Mineshima, Y. Miyao, and D. Bekki, “ccg2lambda: A compositional semantics system,” in Proceedings of ACL-2016 System Demonstrations (S. Pradhan and M. Apidianaki, eds.), (Berlin, Germany), pp. 85–90, Association for Computational Linguistics, Aug. 2016. [20] M. Yoshikawa, H. Noji, and Y. Matsumoto, “A* ccg parsing with a supertag and dependency factored model,” in Proceedings of the 55th Annual Meeting of the Association for Computational Linguistics (Volume 1: Long Papers) , pp. 277–287, Association for Computational Linguistics, 2017. 
+
+APPENDIX IPROMPT AND EVALUATION PROTOCOL FOR THE 
+
+CHAT GPT B ASELINE 
+
+We used ChatGPT (GPT-5.4 Thinking, accessed on 
+
+2026/03/29 ). Each input sentence was evaluated in a fresh chat session. The atomic propositions were defined as ϕA,
+
+ϕB , ϕC , and ϕD , indicating that the agent is in regions A, B, C, and D, respectively. The same prompt was used for S8–S12, with only the final sentence line replaced. 
+
+Prompt used for each input sentence. 
+
+You are given a navigation instruction and a map-ping from region names to atomic propositions. Use only the operators F[a,b ], G[a,b ], ∧, ∨, and parentheses. Do not output duplicates after simplification. Atomic propositions: ϕA: the agent is in region A; 
+
+ϕB : the agent is in region B; ϕC : the agent is in region C; ϕD : the agent is in region D. Sentence: S8/S9/S10/S11/S12 Return only a numbered list of STL formulas. For evaluation, the raw ChatGPT outputs were compared with the manually identified reference interpretations after canonicalization. A raw output was marked correct if it matched a reference interpretation; otherwise, it was classi-fied as one or more of the error types defined in Section V-D.
