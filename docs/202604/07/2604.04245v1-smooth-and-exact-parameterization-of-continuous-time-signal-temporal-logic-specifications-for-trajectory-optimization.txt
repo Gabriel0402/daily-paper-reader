@@ -1,0 +1,825 @@
+Title: Smooth and Exact Parameterization of Continuous-time Signal Temporal Logic Specifications for Trajectory Optimization
+
+URL Source: https://arxiv.org/pdf/2604.04245v1
+
+Published Time: Tue, 07 Apr 2026 01:13:36 GMT
+
+Number of Pages: 8
+
+Markdown Content:
+# Smooth and Exact Parameterization of Continuous-time Signal Temporal Logic Specifications for Trajectory Optimization 
+
+Samet Uzun and Behc ¸et Ac ¸ıkmes ¸e 
+
+Abstract — This paper presents a smooth parameterization of continuous-time Signal Temporal Logic (CT-STL) specifi-cations for nonconvex trajectory optimization that is sound and complete up to the accuracy of the underlying numerical integration scheme. CT-STL provides a natural framework for encoding rich temporal and logical task requirements, but existing trajectory-optimization formulations typically enforce such specifications only at discrete sampling nodes. In contrast, the proposed method evaluates specifications in dense time, thereby guaranteeing continuous-time satisfaction of always 
+
+predicates, which is critical for path constraints such as obstacle avoidance, while eliminating the node-induced conservatism of 
+
+eventually predicates by allowing satisfaction at any time within the prescribed interval. These two dense-time construc-tions also serve as the main building blocks for handling more general CT-STL formulas, including complex until specifi-cations. Furthermore, the proposed parameterization resolves the locality and gradient-masking issues inherent in standard quantitative semantics, yielding a more favorable landscape for gradient-based solvers. Although dense-time evaluation introduces additional function evaluations during discretization, it also permits substantially coarser temporal grids without sacrificing safety or logical fidelity. This, in turn, reduces the dimension of the resulting nonconvex program, which is often the dominant factor in trajectory-generation cost. The numerical effectiveness and semantic exactness of the proposed framework are demonstrated on an agile quadrotor flight problem subject to a complex continuous-time until 
+
+specification. The implementation is available at https:// github.com/UW-ACL/TrajOpt_CT-STL 
+
+I. INTRODUCTION Temporal logic specifications [1] provide a systematic framework for encoding high-level tasks and safety require-ments in dynamical systems. They have been used in a wide range of autonomy applications, including UAV planning [2], mobile-robot planning [3], [4], and safe learning [5], [6]. They have also been incorporated into differentiable and learning-based pipelines for planning and control [7]. While linear temporal logic (LTL) [8] and metric interval temporal logic (MITL) [9] provide foundations for specifying temporal requirements over discrete and continuous time, respectively, signal temporal logic (STL) [10] is particularly well suited to physical systems because its predicates are defined directly over real-valued continuous signals. A key advance in STL-based control synthesis was the introduction of quantitative semantics, or robustness [11]. Using min and max opera-tions, robustness assigns a continuous measure of satisfaction or violation, which enables temporal specifications to be 
+
+> S. Uzun and B. Ac ¸ıkmes ¸e are with the Department of Aeronautics and Astronautics, University of Washington, Seattle, WA 98105 (email:samet, behcet@uw.edu).
+
+incorporated into numerical optimization as constraints or objective terms [12], [13]. To solve these optimization problems, the vast major-ity of existing literature relies on discrete-time evaluations of STL (DT-STL). The exact min and max functions of discrete-time space robustness (D-SR) are traditionally en-coded using mixed-integer programming (MIP) [12], [14], [15]. However, the worst-case computational complexity of MIP formulations grows exponentially with the number of binary variables. Alternatively, D-SR can be used directly in continuous optimization, but the inherent nonsmoothness of the operators prevents the use of gradient-based opti-mization algorithms. Various smooth approximations, such as log-sum-exponential (LSE) [16], and softmax [17], restore gradient information but introduce approximation errors and frequently suffer from locality and masking issues [18], where gradients vanish and stall solver convergence. Recently, the discrete-time generalized mean-based smooth robustness (D-GMSR) [13] was introduced to defini-tively resolve these discrete-time trade-offs. By composing specialized generalized mean functions, D-GMSR provides an exact, C1-smooth parameterization of STL robustness that eliminates approximation errors while naturally distributing gradient information to overcome locality and masking. This formulation enables the use of high-performance sequential convex programming (SCP) solvers [19] for highly complex DT-STL trajectory optimization problems. Despite advancements in discrete-time smooth formula-tions, evaluating STL specifications solely at sparse dis-crete nodes leaves the continuous-time inter-sample behavior of the system unchecked. Beyond discrete-time encodings, a growing body of literature addresses dense-time satis-faction for continuous-time systems. In control synthesis, continuous-time STL satisfaction is frequently converted into time-varying set-invariance or reachability conditions enforced via control barrier functions (CBFs) [20], [21], [22], [23]. However, these approaches focus on online controller synthesis rather than providing a direct, smooth parameteri-zation of STL constraints for trajectory optimization. For trajectory optimization, continuous-time STL guar-antees have historically relied on specialized, often restric-tive mechanisms. Some approaches augment mixed-integer planners with CBF-derived intersample constraints under a zero-order hold [24], limiting scalability to linear systems and predicates. Others plan over sparse waypoints and im-pose strictified sampled-time specifications alongside hier-archical tracking controllers [2], introducing conservatism and platform-specific assumptions. Recent works optimizing 
+
+> arXiv:2604.04245v1 [math.OC] 5 Apr 2026
+
+directly over continuous parameterizations employ B´ ezier curves with mixed-integer linear programs (MILPs) [25] or time-varying robustness constraints [26], [27], or utilize sampling-based planners searching within forward-invariant sets [28]. While advancing continuous-time planning, these guarantees remain tightly coupled to specific machinery, such as barrier certificates, tracking-error bounds, piecewise polynomials, or mixed-integer encodings, falling short of a general, smooth, and semantically exact parameterization. Building on this line of work, a continuous-time successive convexification framework for enforcing the continuous-time satisfaction of path constraints, i.e., always -type specifi-cations, was developed in [29]. Their numerical effective-ness has been demonstrated across a range of applications, including GPU-accelerated trajectory optimization for 6-DoF rocket landing [30], nonlinear model predictive control (NMPC) for obstacle avoidance [31], and trajectory opti-mization for 6-DoF aircraft approach and landing [32]. This framework was subsequently combined with GMSR in [33] to handle the continuous-time always satisfaction of logical specifications in a 6-DoF rocket landing problem. Its practi-cal utility was further illustrated in perception-constrained drone motion planning [34], a rocket-landing application solved via an auto-tuned primal-dual algorithm [35], and SCvxGEN, an automatic code-generation framework for fast embedded trajectory optimization [36]. Despite these ad-vances, existing GMSR-based continuous-time formulations remain limited primarily to always -type specifications, and a general treatment of richer temporal operators such as 
+
+eventually and until is still lacking. Motivated by this gap, this paper develops a smooth parameterization of continuous-time Signal Temporal Logic (CT-STL) specifications for nonconvex trajectory optimiza-tion. The proposed framework extends the exact and smooth D-GMSR formulation [13] from discrete-time to dense-time STL semantics, thereby enabling continuous-time satisfac-tion of rich temporal and logical task requirements within a standard nonconvex optimization framework. In contrast to existing CT-STL approaches that rely on conservative inter-sample bounds, specialized trajectory parameterizations, or mixed-integer machinery, the proposed method evaluates STL specifications directly on a dense-time representation of the trajectory. As a result, it guarantees continuous-time satisfaction of always -type specifications, which is critical for safety constraints such as obstacle avoidance, while removing the node-induced conservatism of eventually -type specifications by allowing satisfaction at any time within the prescribed interval. Moreover, by inheriting the key properties of GMSR, the resulting formulation remains free from the locality and masking issues that commonly degrade standard quantitative semantics, yielding a more favorable landscape for gradient-based solvers. Owing to the exactness properties of GMSR, the proposed CT-STL parameterization is sound and complete with respect to the underlying dense-time semantics up to the numerical accuracy of the integra-tion scheme used to represent the continuous-time dynamics. II. P RELIMINARIES 
+
+This section briefly reviews the syntax and semantics of Signal Temporal Logic (STL). Let x : R+ → Rn be a continuous-time signal. A Boolean-valued predicate μ is induced by a real-valued C1 predicate function g : Rn → R
+
+according to 
+
+μ := ( g(x(t)) ≥ 0) .
+
+That is, μ evaluates to true if g(x(t)) ≥ 0 and false 
+
+otherwise. The syntax of an STL formula φ is defined recursively as 
+
+φ ::= ⊤ | μ | ¬ φ | φ1 ∧ φ2 | φ1U[a,b ]φ2,
+
+where φ1 and φ2 are STL subformulas, ¬ and ∧ are the fundamental Boolean operators, and U[a,b ] is the bounded 
+
+until operator over [a, b ] ⊂ R+.The standard derived operators or , implication ,
+
+eventually , and always are obtained from the funda-mental operators through 
+
+φ1 ∨ φ2 ≡ ¬ (¬φ1 ∧ ¬ φ2), φ1 =⇒ φ2 ≡ ¬ φ1 ∨ φ2,
+
+and 
+
+F[a,b ]φ ≡ ⊤ U[a,b ]φ, G[a,b ]φ ≡ ¬ F[a,b ]¬φ. 
+
+The Boolean semantics specify when a signal x satisfies a formula φ at time t, denoted by (x, t ) |= φ.
+
+Definition 1 (Continuous-time STL semantics [11]): For a continuous-time signal x : R+ → Rn and time t ∈ R+,the Boolean satisfaction relation (x, t ) |= φ is defined recursively as in Table I.                                                                                   
+
+> Formula φBoolean semantics (x, t )|=φμg(x(t)) ≥0
+> ¬φ¬ (x, t )|=φ
+> φ1∧φ2(x, t )|=φ1∧(x, t )|=φ2
+> φ1∨φ2(x, t )|=φ1∨(x, t )|=φ2
+> φ1=⇒φ2¬ (x, t )|=φ1
+> ∨(x, t )|=φ2
+> G[a,b ]φ∀t′∈[t+a, t +b],(x, t ′)|=φ
+> F[a,b ]φ∃t′∈[t+a, t +b]s.t. (x, t ′)|=φφ1U[a,b ]φ2∃t1∈[t+a, t +b]s.t. (x, t 1)|=φ2
+> and ∀t2∈[t, t 1],(x, t 2)|=φ1
+> TABLE I CONTINUOUS -TIME BOOLEAN SEMANTICS FOR STL.
+
+While Boolean semantics provide a true /false eval-uation, optimal control requires a continuous-valued mea-sure that can guide gradient-based optimization. A standard choice is the quantitative robustness semantics introduced in [11]. Let ρφ(x, t ) denote the robustness of formula φ at time 
+
+t. The sign of ρφ(x, t ) is consistent with Boolean satisfaction, and in particular ρφ(x, t ) > 0 implies strict satisfaction. The standard robustness semantics are summarized in Table II. Formula φ Quantitative robustness ρφ(x, t )                              
+
+> μg(x(t))
+> ¬φ−ρφ(x, t )
+> φ1∧φ2min  ρφ1(x, t ), ρ φ2(x, t )
+> φ1∨φ2max  ρφ1(x, t ), ρ φ2(x, t )
+> φ1=⇒φ2max  −ρφ1(x, t ), ρ φ2(x, t )
+> G[a,b ]φmin
+> t′∈[t+a,t +b]ρφ(x, t ′)
+> F[a,b ]φmax
+> t′∈[t+a,t +b]ρφ(x, t ′)
+> φ1U[a,b ]φ2max
+> t1∈[t+a,t +b]min
+> 
+> ρφ2(x, t 1),min
+> t2∈[t,t 1]ρφ1(x, t 2)
+> 
+> TABLE II STANDARD QUANTITATIVE ROBUSTNESS SEMANTICS FOR CONTINUOUS -TIME STL.
+
+III. T RAJECTORY OPTIMIZATION WITH CT-STL SPECIFICATIONS 
+
+We consider a fixed-final-time optimal control problem in Mayer form, subject to continuous-time Signal Temporal Logic (CT-STL) specifications: 
+
+minimize  
+
+> x, u
+
+L x(tf ) (1a) 
+
+subject to ˙x(t) = F  t, x (t), u (t), a.e. t ∈ [0 , t f ], (1b) 
+
+P  x(0) , u (0) , x (tf ), u (tf ) ≤ 0, (1c) 
+
+Q x(0) , u (0) , x (tf ), u (tf ) = 0 , (1d) 
+
+(x, 0) |= φ. (1e) Here, L denotes the terminal cost, F defines the nonlinear system dynamics, P and Q represent the boundary inequality and equality constraints, and φ is the STL specification evaluated at the initial time. 
+
+Remark 1: Continuous-time path constraints can be en-coded directly as STL formulas. For example, an inequality constraint g(x(t)) ≤ 0 and an equality constraint h(x(t)) = 0 enforced over the entire trajectory can be written as 
+
+G[0 ,t f ]
+
+
+
+(−g(x) ≥ 0) ∧ (h(x) ≥ 0) ∧ (−h(x) ≥ 0) 
+
+
+
+.
+
+Thus, path constraints can be handled within the same smooth robustness framework as the STL task specifications. 
+
+A. Control Input Parameterization 
+
+To obtain a finite-dimensional optimization problem, we parameterize the continuous-time control input using a finite set of nodal values. Specifically, we discretize the fixed time horizon [0 , t f ] using K nodes 
+
+0 = t1 < t 2 < · · · < t K = tf ,
+
+with uniform spacing 
+
+∆t := tf
+
+K − 1 , tk = ( k − 1)∆ t, k = 1 , . . . , K. 
+
+The control input is then parameterized by first-order hold (FOH), so that for each interval [tk, t k+1 ],
+
+u(t) = uk
+
+tk+1 − t
+
+∆t + uk+1 
+
+t − tk
+
+∆t , t ∈ [tk, t k+1 ],
+
+where uk ∈ Rm denotes the control value at node tk, and 
+
+k ∈ K := {1, . . . , K −1}. This parameterization replaces the infinite-dimensional control trajectory u(·) with the finite set of decision variables {uk}Kk=1 , while retaining a continuous-time representation of the control signal between nodes. 
+
+B. Discretization and Multiple Shooting 
+
+With the state and control values xk and uk at the discrete nodes tk acting as decision variables, we discretize the system dynamics using a multiple-shooting method [37]. The state transition from node k to node k+1 is enforced through 
+
+xk+1 = Φ tk+1  
+
+> tk
+
+(xk, u k, u k+1 ),
+
+where the flow map is defined by 
+
+Φtk+1  
+
+> tk
+
+(xk, u k, u k+1 ) := xk +
+
+Z tk+1 
+
+> tk
+
+F  t, x (t), u (t) dt. 
+
+Here, x(t) is the continuous-time state trajectory satisfying 
+
+x(tk) = xk under the FOH control parameterization over 
+
+[tk, t k+1 ].To evaluate this transition numerically, we partition each shooting interval [tk, t k+1 ] into N integration substeps. Let the corresponding integration subnodes be 
+
+tk = t0 
+
+> k
+
+< t 1 
+
+> k
+
+< · · · < t Nk = tk+1 . (2) The state at each intermediate subnode tik is obtained by applying a chosen numerical integration scheme over these substeps, for example a Runge–Kutta method. Thus, each subnode state x(tik) is generated explicitly from xk under the FOH control parameterization and is therefore a well-defined, continuously differentiable function of the nodal variables, provided the underlying integration scheme is itself differentiable. Consequently, its Jacobians with respect to xk,
+
+uk, and uk+1 are well defined and can be evaluated effi-ciently, which is important for gradient-based optimization. The terminal subnode value x(tNk ) provides the numerical evaluation of the flow map and is used to enforce the multiple-shooting defect constraint against the subsequent decision variable xk+1 .
+
+C. Parameterization of the CT-STL specifications via GMSR 
+
+To incorporate CT-STL specifications into trajectory op-timization, we use the generalized mean-based smooth ro-bustness (GMSR) construction introduced in [13]. Standard quantitative semantics typically face a fundamental trade-off. They are either exact but nonsmooth, due to repeated use of min and max , or smooth but approximate. Moreover, common smooth approximations often suffer from locality ,where sensitivity is concentrated at a single critical time, and masking , where satisfied subformulas suppress gradient information from violated ones. GMSR avoids these issues by providing a smooth and exact parameterization of the log-ical operators, with gradient information distributed across multiple relevant subformulas and time instants rather than collapsing onto a single critical sample. When evaluated on the dense numerical trajectory induced by the dynamics discretization, it yields an exact CT-STL realization on that trajectory representation. 1) Parameterization of the logical operators: For the logical operators ∧ and ∨, we use the following simplified GMSR parameterization: 
+
+> ∧
+
+hc(y) :=  M c
+
+> 0
+
+ |y|2+
+
+ 12 −  M c
+
+> 1
+
+ |y|2
+
+> −
+
+ 12 ,
+
+> ∨
+
+hc(y) := −∧hc(−y),
+
+where y ∈ Rn, |y|+ := max(0 , y ), and |y|− := min(0 , y )
+
+are applied elementwise, and 
+
+M c 
+
+> 0
+
+(z) := cn +
+
+> n
+
+Y
+
+> i=1
+
+zi
+
+!1/n 
+
+,M c 
+
+> 1
+
+(z) := c + 1
+
+n
+
+> n
+
+X
+
+> i=1
+
+zi,
+
+with c ∈ R++ .
+
+Remark 2 (Smoothing parameter and GMSR extensions): 
+
+The parameter c acts as a positive regularization shift near the switching region. For any c > 0, the resulting functions 
+
+> ∧
+
+hc and ∨hc are C1-smooth with bounded gradients, while preserving the exact sign-based parameterization of 
+
+conjunction and disjunction . Smaller values of c
+
+produce a less flattened transition near zero, whereas larger values yield a smoother but flatter local landscape. The simplified form above corresponds to a uniform-weight, fixed-curvature choice within the more general GMSR family introduced in [13]. In that formulation, weight parameters can be used to emphasize selected inputs or time samples, while curvature parameters can make the aggrega-tion more or less extremum-like. For clarity of presentation, we use the simplified form throughout this paper. Further intuition, derivative properties, and plots for different choices of these parameters are given in [13]. We now introduce the robustness measure recursively. For an atomic predicate μ := ( g(x) ≥ 0) , define 
+
+Γμ(x, t ) := g(x(t)) .
+
+Negation (¬), conjunction (∧), disjunction (∨), and implication ( =⇒ ) are then parameterized as 
+
+Γ¬φ 
+
+> c
+
+(x, t ) := −Γφ 
+
+> c
+
+(x, t ),
+
+Γφ1∧φ2 
+
+> c
+
+(x, t ) := ∧hc1
+
+
+
+Γφ1 
+
+> c
+
+(x, t ), Γφ2 
+
+> c
+
+(x, t )
+
+
+
+,
+
+Γφ1∨φ2 
+
+> c
+
+(x, t ) := ∨hc1
+
+
+
+Γφ1 
+
+> c
+
+(x, t ), Γφ2 
+
+> c
+
+(x, t )
+
+
+
+,
+
+Γφ1⇒φ2 
+
+> c
+
+(x, t ) := ∨hc1
+
+
+
+− Γφ1 
+
+> c
+
+(x, t ), Γφ2 
+
+> c
+
+(x, t )
+
+
+
+,
+
+where c collects the positive shift parameters used in the recursive GMSR compositions. Accordingly, for predicates of the form φi := ( gi(x) ≥ 0) ,satisfaction at time t is characterized exactly by 
+
+(x, t ) |=
+
+> n
+
+^
+
+> i=1
+
+φi ⇐⇒ ∧hc(g1(x(t)) , . . . , g n(x(t))) ≥ 0,
+
+(x, t ) |=
+
+> n
+
+_
+
+> i=1
+
+φi ⇐⇒ ∨hc(g1(x(t)) , . . . , g n(x(t))) ≥ 0.
+
+More generally, 
+
+(x, t ) |= φ ⇐⇒ Γφ 
+
+> c
+
+(x, t ) ≥ 0
+
+for any formula φ built recursively from the above logical operators. 
+
+Remark 3: Although the conditions 
+
+> ∧
+
+hc(y) ≥ 0 ⇐⇒ 
+
+> n
+
+X
+
+> i=1
+
+|yi|2 
+
+> −
+
+= 0 ,
+
+> ∨
+
+hc(y) ≥ 0 ⇐⇒ 
+
+> n
+
+Y
+
+> i=1
+
+|yi|2 
+
+> −
+
+= 0 
+
+are logically equivalent, the full GMSR expressions are numerically preferable. The geometric-mean normalization, together with the outer square-root, keeps the robustness values and gradients better scaled, while the equivalent sum and product tests can be poorly conditioned. Moreover, the shift parameter c > 0 regularizes the switching region, ensures C1-smoothness, and avoids singular behavior near zero. 
+
+2) Parameterization of the temporal operators: We pa-rameterize the temporal operators directly on the dense-time grid induced by the numerical integration of the dynamics. In direct optimal control, continuous-time satisfaction between mesh points is often enforced through conservative analytical bounds, which shrink the feasible set and may degrade optimality. Here, instead, we evaluate the STL semantics directly on the dense numerical mesh already used to inte-grate the dynamics. This yields an exact CT-STL realization on the chosen dense-time trajectory representation, without introducing any additional approximation parameter beyond the discretization of the physical dynamics themselves. To avoid introducing a separate discretization solely for STL evaluation, we reuse the intermediate integration subn-odes from (2). Let these subnodes be flattened into a single ordered sequence 
+
+{¯tm}Mm=1 , M = ( K − 1) N + 1 ,
+
+and let ¯xm := x(¯ tm) denote the corresponding states. The following schematic illustrates how the nodal states xk,the intermediate subnodes tik, and the flattened dense-time sequence ¯xm = x(¯ tm) are related. 
+
+x1 x2 xKt11 t21 · · · t12 t22 · · · 
+
+¯x1 ¯x2 ¯x3 · · · ¯xN +1 ¯xN +2 ¯xN +3 · · · ¯xM
+
+Because each dense-time state ¯xm is generated by numerical integration from the nodal decision variables, the resulting robustness values are smooth functions of the discretized trajectory variables. Let 
+
+X := {xk}Kk=1 , U := {uk}Kk=1 ,
+
+and write Γφ 
+
+> c
+
+(X, U ; ¯ tm) for the robustness value of subfor-mula φ at dense-time node ¯tm, where the dependence on 
+
+(X, U ) enters through the dense numerical trajectory. For an atomic predicate μ := ( g(x) ≥ 0) ,
+
+Γμ(X, U ; ¯ tm) := g(¯ xm).For composite formulas, the values Γφ 
+
+> c
+
+(X, U ; ¯ tm) are ob-tained recursively from the logical constructions above. Now consider a formula evaluated at dense-time node ¯tℓ.For a time interval [a, b ], define 
+
+Iℓ[a, b ] := {m ∈ { 1, . . . , M } : ¯ tm ∈ [¯ tℓ + a, ¯tℓ + b]} ,
+
+assuming the interval lies within the time horizon. If the boundary points are not already included in the dense-time grid, they can be inserted by refining the corresponding integration subintervals. Using this notation, the temporal robustness measures are defined by 
+
+ΓF[a,b ]φ 
+
+> c
+
+(X, U ; ¯ tℓ) := ∨hc1
+
+
+
+[ Γ φ 
+
+> c
+
+(X, U ; ¯ tm) ] m∈I ℓ[a,b ]
+
+
+
+,
+
+ΓG[a,b ]φ 
+
+> c
+
+(X, U ; ¯ tℓ) := ∧hc1
+
+
+
+[ Γ φ 
+
+> c
+
+(X, U ; ¯ tm) ] m∈I ℓ[a,b ]
+
+
+
+.
+
+Accordingly, 
+
+(x, ¯tℓ) |= F[a,b ]φ ⇐⇒ ΓF[a,b ]φ 
+
+> c
+
+(X, U ; ¯ tℓ) ≥ 0,
+
+(x, ¯tℓ) |= G[a,b ]φ ⇐⇒ ΓG[a,b ]φ 
+
+> c
+
+(X, U ; ¯ tℓ) ≥ 0.
+
+Similarly, the until operator is parameterized as 
+
+Γφ1U[a,b ]φ2 
+
+> c
+
+(X, U ; ¯ tℓ) := ∨hc1
+
+
+
+[ zm ]m∈I ℓ[a,b ]
+
+
+
+,
+
+where 
+
+zm := ∧hc2
+
+
+
+Γφ2 
+
+> c
+
+(X, U ; ¯ tm), ∧hc3  [ Γ φ1 
+
+> c
+
+(X, U ; ¯ tq ) ] mq=ℓ
+
+
+
+.
+
+Hence, 
+
+(x, ¯tℓ) |= φ1U[a,b ]φ2 ⇐⇒ Γφ1U[a,b ]φ2 
+
+> c
+
+(X, U ; ¯ tℓ) ≥ 0.
+
+Thus, G requires satisfaction at all dense-time samples in the interval, F requires satisfaction at at least one such sample, and U requires the existence of a sample at which 
+
+φ2 holds while φ1 holds at all preceding samples. The resulting parameterization is smooth with respect to the optimization variables, since the dependence on the decision variables enters only through the integrated dense-time states and the smooth GMSR operators. Moreover, because the temporal operators are evaluated on the same dense-time grid used to discretize the dynamics, the CT-STL semantics are enforced exactly on the dense numerical trajectory representation, up to the numerical accuracy of the underlying integration scheme. 
+
+3) Gradient behavior and optimization relevance: A key optimization advantage of GMSR is that its gradient is distributed across multiple relevant arguments, rather than collapsing to a single min/max witness. This property holds both for logical operators, where the inputs are subformula robustness values, and for temporal operators, where the inputs are robustness values sampled along the dense-time trajectory. As a result, the same gradient-distribution mech-anism appears across subformulas in the logical case and across time samples in the temporal case, which mitigates locality and masking. For conjunction , the positive branch is governed by the geometric term and the negative branch by the arithmetic-mean term. Up to a common positive scaling factor, the gradient magnitudes with respect to the inputs satisfy 
+
+∂ ∧hc(y)
+
+∂y i
+
+∝ 1
+
+yi
+
+, yi > 0,
+
+∂ ∧hc(y)
+
+∂y i
+
+∝ | yi|, yi < 0.
+
+Hence, when a conjunction is satisfied, smaller positive margins receive larger emphasis; when it is violated, larger violations receive larger corrective push. In other words, ∧
+
+emphasizes the weakest satisfied input and, if infeasible, pushes the worst violating input more strongly. Importantly, however, all relevant inputs still receive gradient information. For disjunction , the behavior is dual: 
+
+∂ ∨hc(y)
+
+∂y i
+
+∝ | yi|, yi > 0,
+
+∂ ∨hc(y)
+
+∂y i
+
+∝ 1
+
+|yi| , yi < 0.
+
+Thus, when a disjunction is violated, the inputs closest to satisfaction receive the largest emphasis, while the re-maining ones still contribute. When it is satisfied, stronger satisfying witnesses receive larger emphasis. Accordingly, 
+
+∨ tends to improve the best candidate first, but without restricting the gradient to a single input. The temporal operators inherit exactly the same structure, since they are obtained by applying these logical aggrega-tions to the vector of robustness values over the dense-time samples in the relevant interval. Therefore, for G, gradient information is distributed over all sampled times in the inter-val, with stronger emphasis on the smallest positive margins when the specification is satisfied and on the worst violations when it is not. For F , the gradient is again distributed over all sampled times, but now the most promising sample receives the largest emphasis. If the specification is violated, this is the sample closest to satisfaction; if it is satisfied, this is the strongest witness sample. In summary, the same mechanism applies in both dimen-sions of the construction. Across subformulas for logical op-erators and across time for temporal operators. An always -type condition pushes the worst parts more strongly, whereas an eventually -type condition pushes the best candidates more strongly, while still propagating gradient information to all relevant components. This is precisely why GMSR al-leviates locality and masking and is well-suited for gradient-based trajectory optimization. IV. N UMERICAL EXAMPLE 
+
+We demonstrate the proposed framework on a quadrotor guidance problem with a charging-station waypoint. To keep the example simple, we use a point-mass model of the quadrotor and consider a feasibility problem with fixed initial and terminal states. The task is to find a dynamically feasible trajectory that reaches the terminal state while satisfying a continuous-time until specification, namely that the vehicle speed must remain below a prescribed threshold until the quadrotor reaches the charging station. In addi-tion, continuous-time bounds on tilt angle, thrust magnitude, and speed are enforced through always operators. The implementation is available at https://github.com/ UW-ACL/TrajOpt_CT-STL 
+
+A. Problem setup 
+
+We use a point-mass quadrotor model with state and control 
+
+x := ( r, v ) ∈ R6, u := ( ux, u y , u z ) ∈ R3,
+
+where r = ( rx, r y , r z ) is the position, v = ( vx, v y , v z ) is the velocity, and u is the thrust vector. The dynamics are 
+
+˙x(t) = 
+
+ ˙r(t)˙v(t)
+
+
+
+=
+
+ v(t) 
+
+> 1
+> m
+
+u(t) + g
+
+
+
+, (3) where m > 0 is the vehicle mass and g = (0 , 0, −g0) is gravity. In the numerical implementation, these dynamics are discretized using the multiple-shooting and RK4 procedure described in Section III-B. The trajectory is required to satisfy the fixed boundary conditions 
+
+x(0) = xi, x(tf ) = xf .
+
+Continuous-time path constraints: The example in-cludes three continuous-time path constraints, namely a tilt-angle bound, a thrust-magnitude bound, and a speed bound. These are encoded as STL predicates and imposed through an always operator. The tilt-angle constraint is represented by the cone condi-tion 
+
+u2 
+
+> x
+
++ u2 
+
+> y
+
+≤ (cos θmax uz )2,
+
+which ensures that the thrust vector remains within a cone of half-angle θmax about the vertical axis. The thrust and speed bounds are 
+
+∥u∥2 ≤ Tmax , ∥v∥2 ≤ vmax .
+
+Accordingly, define the predicates 
+
+μθ :=  (cos θmax uz )2 − u2 
+
+> x
+
+− u2 
+
+> y
+
+≥ 0,μT :=  T 2max − u2 
+
+> x
+
+− u2 
+
+> y
+
+− u2 
+
+> z
+
+≥ 0,μv :=  v2max − v2 
+
+> x
+
+− v2 
+
+> y
+
+− v2 
+
+> z
+
+≥ 0.
+
+The continuous-time path-constraint formula is then 
+
+φpath := G[0 ,t f ]
+
+ μθ ∧ μT ∧ μv
+
+.
+
+Charging-station task: Let rc ∈ R3 denote the center of the charging station and let dc > 0 denote its radius. Define 
+
+μs :=  v2saf e − v2 
+
+> x
+
+− v2 
+
+> y
+
+− v2 
+
+> z
+
+≥ 0,μc :=  d2c − ∥ r − rc∥22 ≥ 0.
+
+The task specification is 
+
+φtask := μs U[0 ,t f ] μc, (4) which requires the vehicle speed to remain below the thresh-old until the charging station is reached.                                   
+
+> Parameter Value Parameter Value
+> K5N10
+> tf10 .7649 s g09.806 m /s2
+> vsaf e 5 m /svmax 10 m /s
+> θmax 45 ◦dc0.2 m
+> rc(2 .5,−10 ,0) m ci∈c0.005
+> xi(−10 ,−10 ,0) m xf(10 ,10 ,0) m
+> Tmax 1.75 g0kg m /s2m1 kg
+> TABLE III PARAMETERS FOR THE QUADROTOR CHARGING -STATION EXAMPLE .
+
+For visualization, we also define the signed charging-station margin 
+
+mc(t) := dc − ∥ r(t) − rc∥2,
+
+which is positive inside the charging station, zero on its boundary, and negative outside. Although the optimization uses the smooth predicate μc above, the signed margin mc
+
+provides a more interpretable geometric measure of station entry. The overall CT-STL specification is 
+
+φ := φpath ∧ φtask .
+
+Table III summarizes the numerical parameters used in the simulation. 
+
+B. Penalized discretization and prox-convex for solution 
+
+Let 
+
+Z := ( x1, . . . , x K , u 1, . . . , u K )
+
+collect the nodal decision variables, and let Z denote the convex set induced by the fixed boundary conditions. Since this example is posed as a feasibility problem, no performance cost is used. Instead, we solve an exact-penalty reformulation that penalizes the multiple-shooting defects and CT-STL violation: 
+
+minimize  
+
+> Z∈Z
+
+Jnl (Z), (5) where 
+
+Jnl (Z) := wdyn 
+
+> K−1
+
+X
+
+> k=1
+
+xk+1 − Φtk+1  
+
+> tk
+
+(xk, u k, u k+1 ) 1
+
++ wstl |− Γφ 
+
+> c
+
+(X, U ; ¯ t1)|+ , (6) 
+
+|a|+ := max( a, 0) , and wdyn , w stl > 0 are penalty weights. We solve (5) using the prox-convex method [19]. At iteration j + 1 , given the current iterate Zj , we solve the convex subproblem 
+
+minimize  
+
+> Z∈Z
+
+G(Z) + H C(Zj ) + ∇C(Zj )( Z − Zj )
+
++ wj
+
+> ptr
+
+2 ∥Z − Zj ∥22, (7) where G encodes the convex terms, H ◦ C represents the penalized smooth nonconvex terms, and wj 
+
+> ptr
+
+> 0 is the adaptive proximal weight. In each prox-convex iteration, JAX [38] is used to con-struct the nonlinear terms of the subproblem, including the discretized dynamics and the CT-STL specifications, as well as the corresponding first-order derivative information needed for linearization. Each convex subproblem is then modeled in CVXPY [39] and solved by QOCO [40], a conic convex solver. The initialization is chosen as a smooth trajectory interpolating between the initial state and the terminal state. 
+
+C. Results 
+
+Figure 1 shows the optimized trajectory together with the charging station. The vehicle first approaches and enters the charging region, and then proceeds toward the terminal state. This behavior is consistent with the until specification in (4), since before the charging station is reached, the trajectory remains in the low-speed mode enforced by μs.Figure 2 shows the speed profile along the trajectory. The speed remains below the threshold vsaf e prior to the charging event, as required by the until semantics, while also satisfying the global speed bound encoded in φpath .After the charging station is reached, the trajectory is free to accelerate subject only to the path constraints. Figure 3 reports the signed charging-station margin 
+
+mc(t) = dc − ∥ r(t) − rc∥2. The margin is negative while the vehicle is outside the station, reaches zero at the station boundary, and becomes positive once the charging region is entered. The zero crossing therefore identifies the witness time at which the until formula is satisfied. The remaining always constraints on thrust magnitude and tilt angle are also satisfied on the dense integration grid throughout the trajectory, although they are omitted from the plots for brevity. The final robustness value is positive, certifying satisfaction of the full CT-STL specification on the dense numerical trajectory representation. The final iterate is dynamically consistent to numerical tolerance and satisfies the CT-STL specification on the dense integration grid. Using a simple, non-optimized Python im-plementation, the problem is solved in 10 prox-convex itera-tions. The total time spent solving the convex subproblems is 
+
+15 .35 ms , and the total discretization time for the dynamics and CT-STL evaluations is 0.97 ms , measured on a 2023 MacBook Pro with an Apple M2 processor. Because this implementation is intended only to demonstrate the method and has not been optimized for runtime, further gains from code optimization, compilation, and conversion to C/C++ are expected, with speedups on the order of 10 × to 40 ×.V. CONCLUSIONS AND FUTURE DIRECTIONS In this paper, we presented a smooth and exact parameter-ization of continuous-time Signal Temporal Logic (CT-STL) specifications for trajectory optimization. The proposed for-mulation evaluates temporal operators directly on the dense-time grid induced by the dynamics discretization, thereby enforcing CT-STL semantics on the same continuous-time trajectory representation used by the transcription. The re-sulting robustness measure is smooth, exact in sign, and −10 −5 0 5 10              
+
+> x[m]
+> −10
+> −50510
+> y [m]
+> −101
+> z [m]
+> Start Goal Charging station Nodes
+> 0123456
+> Speed  ‖v(t)‖ [m/s]
+> Fig. 1. Optimized point-mass quadrotor trajectory together with the charg-ing station. The vehicle reaches the charging region before proceeding to the terminal state, consistent with the continuous-time until specification. 0246810
+> Time [s]
+> 0
+> 1
+> 2
+> 3
+> 4
+> 5
+> 6
+> Speed [m/s]
+> ‖v(t)‖
+> Nodes
+> vsafe
+> Station entry
+> Fig. 2. Speed profile along the optimized trajectory. The speed remains below the threshold vsaf e until the charging station is reached, and always remains below the global bound vmax .
+
+well suited for gradient-based optimization, while alleviating the locality and masking issues of min/max-based smooth approximations. As future work, we plan to develop a successive con-vexification framework for free-final-time optimal control problems with CT-STL specifications. In particular, we aim to incorporate a dynamic augmentation technique so that CT-STL satisfaction is tied directly to augmented dynamics and boundary conditions, avoiding the need to explicitly store the dense-time trajectory and allowing CT-STL constraints to be handled within a more standard direct optimal control framework. Dynamic augmentation has so far been available only for the always operator in [29]; extending it to general CT-STL formulas is an important next step. REFERENCES [1] C. Baier and J.-P. Katoen, Principles of Model Checking . MIT press, 2008. [2] Y. V. Pant, H. Abbas, R. A. Quaye, and R. Mangharam, “Fly-by-logic: Control of multi-drone fleets with temporal logic objectives,” in 2018 ACM/IEEE 9th International Conference on Cyber-Physical Systems (ICCPS) , pp. 186–197, IEEE, 2018. [3] A. T. Buyukkocak, D. Aksaray, and Y. Yazıcıo˘ glu, “Planning of heterogeneous multi-agent systems under signal temporal logic spec-0 2 4 6 8 10     
+
+> Time [s]
+> −20
+> −15
+> −10
+> −5
+> 0
+> Charging-station margin [m]
+> gc(t) = rw− ‖ r(t)−pw‖
+> Nodes
+> gc(t) = 0 Station entry
+
+Fig. 3. Signed charging-station margin mc(t) = dc − ∥ r(t) − rc∥2.The margin is negative outside the station, zero on the boundary, and positive inside. The first zero crossing marks the witness time for the until 
+
+specification. ifications with integral predicates,” IEEE Robotics and Automation Letters , vol. 6, no. 2, pp. 1375–1382, 2021. [4] G. A. Cardona and C.-I. Vasile, “Planning for heterogeneous teams of robots with temporal logic, capability, and resource constraints,” The International Journal of Robotics Research , p. 02783649241247285, 2024. [5] D. Aksaray, A. Jones, Z. Kong, M. Schwager, and C. Belta, “Q-learning for robust satisfaction of signal temporal logic specifications,” in 2016 IEEE 55th Conference on Decision and Control (CDC) ,pp. 6565–6570, IEEE, 2016. [6] R. Karagulle, N. Ar´ echiga, A. Best, J. DeCastro, and N. Ozay, “A safe preference learning approach for personalization with applications to autonomous vehicles,” IEEE Robotics and Automation Letters , vol. 9, no. 5, pp. 4226–4233, 2024. [7] K. Leung, N. Ar´ echiga, and M. Pavone, “Backpropagation through signal temporal logic specifications: Infusing logical structure into gradient-based methods,” The International Journal of Robotics Re-search , vol. 42, no. 6, pp. 356–370, 2023. [8] A. Pnueli, “The temporal logic of programs,” in 18th Annual Sympo-sium on Foundations of Computer Science (SFCS 1977) , pp. 46–57, IEEE, 1977. [9] R. Alur, T. Feder, and T. A. Henzinger, “The benefits of relaxing punctuality,” Journal of the ACM (JACM) , vol. 43, no. 1, pp. 116– 146, 1996. [10] O. Maler and D. Nickovic, “Monitoring temporal properties of con-tinuous signals,” in International Symposium on Formal Techniques in Real-Time and Fault-Tolerant Systems , pp. 152–166, Springer, 2004. [11] A. Donz´ e and O. Maler, “Robust satisfaction of temporal logic over real-valued signals,” in International Conference on Formal Modeling and Analysis of Timed Systems , pp. 92–106, Springer, 2010. [12] V. Raman, A. Donz´ e, M. Maasoumy, R. M. Murray, A. Sangiovanni-Vincentelli, and S. A. Seshia, “Model predictive control with signal temporal logic specifications,” in 53rd IEEE Conference on Decision and Control , pp. 81–87, IEEE, 2014. [13] S. Uzun, P. Elango, P.-L. Garoche, and B. Ac ¸ıkmes ¸e, “Optimization with temporal and logical specifications via generalized mean-based smooth robustness measures,” arXiv preprint arXiv:2405.10996 , 2024. [14] S. Sadraddini and C. Belta, “Robust temporal logic model predictive control,” in 2015 53rd Annual Allerton Conference on Communication, Control, and Computing (Allerton) , pp. 772–779, IEEE, 2015. [15] A. Rodionova, L. Lindemann, M. Morari, and G. J. Pappas, “Time-robust control for STL specifications,” in 2021 60th IEEE Conference on Decision and Control (CDC) , pp. 572–579, IEEE, 2021. [16] Y. V. Pant, H. Abbas, and R. Mangharam, “Smooth operator: Control using the smooth robustness of temporal logic,” in 2017 IEEE Confer-ence on Control Technology and Applications (CCTA) , pp. 1235–1240, IEEE, 2017. [17] Y. Gilpin, V. Kurtz, and H. Lin, “A smooth robustness measure of signal temporal logic for symbolic control,” IEEE Control Systems Letters , vol. 5, no. 1, pp. 241–246, 2020. [18] N. Mehdipour, C.-I. Vasile, and C. Belta, “Average-based robustness for continuous-time signal temporal logic,” in 2019 IEEE 58th Con-ference on Decision and Control (CDC) , pp. 5312–5317, IEEE, 2019. [19] S. Uzun, D. Luo, B. Ac ¸ıkmes ¸e, and A. Y. Aravkin, “A proximal method for composite optimization with smooth and convex compo-nents,” 2025. [20] L. Lindemann and D. V. Dimarogonas, “Control barrier functions for signal temporal logic tasks,” IEEE control systems letters , vol. 3, no. 1, pp. 96–101, 2018. [21] M. Charitidou and D. V. Dimarogonas, “Barrier function-based model predictive control under signal temporal logic specifications,” in 2021 European Control Conference (ECC) , pp. 734–739, IEEE, 2021. [22] A. T. Buyukkocak, D. Aksaray, and Y. Yazıcıo˘ glu, “Control barrier functions with actuation constraints under signal temporal logic spec-ifications,” in 2022 European Control Conference (ECC) , pp. 162–168, 2022. [23] P. Yu, X. Tan, and D. V. Dimarogonas, “Continuous-time control synthesis under nested signal temporal logic specifications,” IEEE Transactions on Robotics , vol. 40, pp. 2272–2286, 2024. [24] G. Yang, C. Belta, and R. Tron, “Continuous-time signal temporal logic planning with control barrier functions,” in 2020 American Control Conference (ACC) , pp. 4612–4618, IEEE, 2020. [25] J. Verhagen, L. Lindemann, and J. Tumova, “Temporally robust multi-agent stl motion planning in continuous time,” in 2024 American Control Conference (ACC) , pp. 251–258, 2024. [26] Y. Yuan, T. Quartz, and J. Liu, “Signal temporal logic planning with time-varying robustness,” IEEE Control Systems Letters , vol. 8, pp. 3015–3020, 2024. [27] Y. Yuan, “Continuous-time control synthesis for multiple quadro-tors under signal temporal logic specifications,” arXiv preprint arXiv:2505.07240 , 2025. [28] G. Marchesini, S. Liu, L. Lindemann, and D. V. Dimarogonas, “Sampling-based planning under stl specifications: A forward invari-ance approach,” CoRR , vol. abs/2506.10739, 2025. [29] P. Elango, D. Luo, A. G. Kamath, S. Uzun, T. Kim, and B. Ac ¸ıkmes ¸e, “Continuous-time successive convexification for constrained trajectory optimization,” Automatica , vol. 180, p. 112464, 2025. [30] G. M. Chari, A. G. Kamath, P. Elango, and B. Ac ¸ıkmes ¸e, “Fast monte carlo analysis for 6-dof powered-descent guidance via gpu-accelerated sequential convex programming,” in AIAA SCITECH 2024 Forum ,p. 1762, 2024. [31] S. Uzun, P. Elango, A. G. Kamath, T. Kim, and B. Ac ¸ıkmes ¸e, “Successive convexification for nonlinear model predictive control with continuous-time constraint satisfaction,” in 8th IFAC Conference on Nonlinear Model Predictive Control , (Kyoto, Japan), Aug. 2024. [32] T. Kim, A. G. Kamath, N. Rahimi, B. Ac ¸ıkmes ¸e, M. Mesbahi, and J. Corleis, “Six-degree-of-freedom aircraft landing trajectory planning with runway alignment,” Journal of Guidance, Control, and Dynamics ,vol. 48, no. 10, pp. 2225–2242, 2025. [33] S. Uzun, B. Ac ¸ıkmes ¸e, and J. M. Carson, “Sequential convex pro-gramming for 6-dof powered descent guidance with continuous-time compound state-triggered constraints,” in AIAA SCITECH 2025 Forum , p. 1895, 2025. [34] S. Uzun, B. Ac ¸ıkmes ¸e, and S. Di Cairano, “Motion planning for in-formation acquisition via continuous-time successive convexification,” 
+
+IEEE Control Systems Letters , 2025. [35] S. Mceowen, C. M. Morales, D. J. Calderone, S. Uzun, E. M. Cook, and B. Acikmese, “Auto-tuned primal-dual successive convexification for powered descent guidance,” in AIAA SCITECH 2026 Forum ,p. 0972, 2026. [36] A. G. Kamath, S. Uzun, G. M. Chari, B. Ac ¸ıkmes ¸e, P. Elango, and M. Szmuk, “SCvxGEN: Successive convexification with automatic custom code generation for fast and embedded general-purpose tra-jectory optimization,” 2025. [37] H. G. Bock and K. J. Plitt, “A multiple shooting algorithm for direct solution of optimal control problems,” IFAC proceedings volumes ,vol. 17, pp. 1603–1608, July 1984. [38] J. Bradbury, R. Frostig, P. Hawkins, M. J. Johnson, C. Leary, D. Maclaurin, G. Necula, A. Paszke, J. VanderPlas, S. Wanderman-Milne, et al. , “JAX: composable transformations of Python+ NumPy programs,” 2018. [39] S. Diamond and S. Boyd, “CVXPY: A python-embedded modeling language for convex optimization,” Journal of Machine Learning Research , vol. 17, no. 83, pp. 1–5, 2016. [40] G. M. Chari and B. Ac ¸ikmes ¸e, “QOCO: A quadratic objective conic optimizer with custom solver generation,” arXiv preprint arXiv:2503.12658 , 2025.

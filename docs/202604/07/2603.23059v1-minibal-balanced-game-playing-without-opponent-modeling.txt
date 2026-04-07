@@ -1,0 +1,310 @@
+Title: Minibal: Balanced Game-Playing Without Opponent Modeling
+
+URL Source: https://arxiv.org/pdf/2603.23059v1
+
+Published Time: Wed, 25 Mar 2026 01:01:33 GMT
+
+Number of Pages: 11
+
+Markdown Content:
+# Minibal: Balanced Game-Playing Without Opponent Modeling 
+
+# Quentin Cohen-Solal 1 , Tristan Cazenave 11LAMSADE, Universit´ e Paris-Dauphine, PSL, CNRS, Paris, France quentin.cohen-solal@dauphine.psl.eu , tristan.cazenave@lamsade.dauphine.fr 
+
+# Abstract 
+
+Recent advances in game AI, such as AlphaZero and Ath´ enan, have achieved superhuman performance across a wide range of board games. While highly powerful, these agents are ill-suited for human–AI interaction, as they consistently overwhelm human players, offering little enjoyment and limited educational value. This paper addresses the problem of balanced play, in which an agent challenges its opponent without either dominating or conceding. We introduce Minibal (Minimize & Balance), a variant of Minimax specifically designed for balanced play. Building on this concept, we propose several modifications of the Unbounded Minimax algorithm explicitly aimed at discovering balanced strategies. Experiments conducted across seven board games demonstrate that one variant consistently achieves the most balanced play, with average outcomes close to perfect balance. These results establish Minibal as a promising foundation for designing AI agents that are both challenging and engaging, suitable for both entertainment and serious games. 
+
+# 1 Introduction 
+
+Artificial intelligence (AI) applied to games has achieved remarkable progress over the past decade. Systems such as AlphaGo [31] and later AlphaZero [32] demonstrated superhuman performance in complex games like Go, Chess, and Shogi, vastly surpassing the strongest human experts. More recently, the Ath´ enan algorithm [6; 7; 11; 14; 8], notably based on Unbounded Minimax search [25], has set a new benchmark by winning 57 gold medals at the Computer Olympiad [9; 10; 13], the premier international competition for board-game AI. Ath´ enan has also proven to outperform AlphaZero in many games [12]. While these breakthroughs highlight the power of modern reinforcement learning and tree-search approaches, they also expose a fundamental limitation: a superhuman agent relentlessly dominates a human opponent, which, from the player’s perspective, is neither enjoyable nor conducive to learning. To make human–AI interaction more engaging and pedagogically effective, it is essential to design algorithms capable of balanced play—that is, challenging the human opponent without systematically dominating them, yet without conceding artificial victories. This challenge extends beyond entertainment: it is directly relevant to serious games, defined as game-based environments developed for purposes other than entertainment, such as education, professional training, advertising, healthcare, or social awareness. In these contexts, an agent’s ability to adjust its playing strength is crucial: an opponent that is too strong may discourage learners, whereas one that is too weak prevents skill acquisition and reduces engagement [18]. Balanced-playing algorithms therefore support user progression, facilitate knowledge discovery, and foster long-term retention. Several approaches have been explored to address this challenge. One option is to dynamically adapt an agent’s playing strength during interaction [34; 28; 20; 22]. However, general reinforcement learning techniques for games typically require tens of thousands of matches to be effective, which is impractical when adapting to human players. Another widely used approach is matchmaking [35; 30; 5; 16; 3; 29; 2; 27; 1], where algorithms estimate a player’s skill level and assign an opponent of comparable ability. While effective in large-scale video game environments, this method relies on a history of games to provide reliable estimates, which fails to offer a satisfying experience for new players. Furthermore, in a human–AI context, separate AI agents would need to be designed for each skill level, which is costly and difficult. A third, less explored approach is to develop algorithms that are intrinsically capable of playing in a balanced manner, without online learning or prior knowledge of the opponent. This is the direction pursued in our work. We propose new search algorithms that exploit general reinforcement learning–based game state evaluation functions, trained through self-play and originally designed to maximize winning. However, our algorithms repurpose these functions to balance the match by aligning their playing strength with that of the opponent from the very beginning of the game, in a fully autonomous and general manner. These contributions open the way to a new generation of intelligent agents that are not only powerful but also genuinely adapted to human needs 
+
+> arXiv:2603.23059v1 [cs.AI] 24 Mar 2026
+
+in both entertainment and educational contexts. In this paper, we focus on zero-sum, two-player, perfect-information games. Nevertheless, the algorithms we introduce should generalize with minimal modification to other classes of adversarial games with complete information, including stochastic [11] and simultaneous-action games. The remainder of this paper is organized as follows. In Section 2, we review related work, covering classical game algorithms such as minimax, α–β pruning, Monte Carlo Tree Search, and Unbounded Minimax, as well as modern reinforcement learning approaches, including AlphaZero, Ath´ enan, and the Dynamic Difficulty Adjustment framework. Section 3 introduces our modeling of balanced play, defining the concepts of Minibal n and Minibal +, and presenting the corresponding Unbounded algorithms. In Section 4, we describe our experimental protocol, including the evaluation setup, technical details, and the set of games considered, followed by a detailed presentation and analysis of the results in Section 4.3. In Section 5, we discuss our algorithms and their results. Finally, Section 6 concludes the paper and outlines directions for future work. 
+
+# 2 Related Work 
+
+The design of game-playing agents that are both strong and enjoyable opponents spans multiple subfields, including classical adversarial search, Monte Carlo methods, modern reinforcement learning combined with tree search (e.g., the AlphaZero family and Ath´ enan), and Dynamic Difficulty Adjustment (DDA) for human players. In this section, we briefly review each subfield, presenting the prerequisites and related work relevant to this study. See also [8] for a detailed empirical comparison of game-search algorithms aimed at maximizing winning performance. 
+
+2.1 Games as Trees for Best Action Searching 
+
+The vast majority of game-search algorithms rely on representing a game as a tree, where nodes correspond to game states and edges correspond to actions that allow transitions from one state to another. The terminal nodes represent end-game states and are assigned values according to the final outcome (typically +1 for a win, 0 for a draw, and −1 for a loss). This valuation can be propagated to the other nodes under the assumption that both players play optimally. However, this theoretical valuation is generally intractable in practice, as game trees represent enormous state spaces. Consequently, algorithms must estimate these values or the corresponding strategies to make practical game-playing decisions. 
+
+2.2 Classical Adversarial Search 
+
+The minimax algorithm is the canonical approach for deterministic two-player zero-sum games: it constructs a game tree to a fixed depth, evaluates the leaf nodes with a heuristic evaluation function, and propagates these values back up the tree under the assumption of optimal play by both sides. Minimax remains the simplest and most fundamental framework for reasoning about adversarial behavior. In minimax, the value of a state where the agent must play is the maximum of its child-state values, while the value of a state where the opponent must play is the minimum of its child-state values. Alpha–beta pruning [23] is the standard improvement that reduces the number of expanded nodes by cutting off branches that cannot influence the minimax decision. With good move ordering, it can dramatically increase the effective search depth for the same computational budget. Alpha–beta and many of its practical refinements — such as move ordering [17], iterative deepening [24], transposition tables [19] — are widely used in traditional high-level game engines. 
+
+2.3 Monte-Carlo Tree Search 
+
+Monte Carlo Tree Search (MCTS) [15; 4] reframed game search for domains where hand-crafted evaluation functions are inadequate. Instead of evaluating every leaf node with a heuristic, MCTS performs randomized simulations (playouts) and uses their outcomes to guide a best-first expansion of the search tree through four iterative steps: selection, expansion, simulation, and backpropagation. MCTS has achieved remarkable success across a wide range of board and real-time games. 
+
+2.4 AlphaZero 
+
+AlphaZero [32] generalized the idea of combining a learned evaluation and policy with tree search. A convolutional neural network outputs both a state-value estimate and move priors, which are used within an exploration term called PUCT to guide planning. AlphaZero is a general self-play training algorithm that produces extremely strong playing agents across games such as Go, chess, and shogi. Its paradigm has become a dominant template for achieving superhuman performance in many perfect-information games. 
+
+2.5 Ath´ enan: Unbounded and Descent Minimax 
+
+More recent work on search algorithms revisits minimax in the era of self-play reinforcement learning. The Ath´ enan framework has been prominent in recent Computer Olympiad results, winning numerous gold medals and demonstrating that variants of classical search can still lead the field in practice. It relies on the following two main algorithms. First, Unbounded Minimax [8; 14; 6; 7; 25] explores the game tree in a best-first manner without being limited to a fixed depth. Second, Descent Minimax [6; 10; 12] explores action sequences until terminal states in a best-first fashion, rather than to a fixed ply, enabling faster learning. Unlike AlphaZero, Ath´ enan does not require a learned policy. Its learning process allows it to learn more quickly and at a lower computational cost [12]. Unbounded Minimax has been enhanced with the completion technique [6; 14] , which determines whether the value of a state is approximate or exact, thereby improving decision quality. States are labeled with two additional values, c and r: the value c (s) indicates the endgame binary value of the corresponding state s or 
+
+0 if this value is not known, while r (s) indicates whether the state s is resolved (i.e., whether the values v (s) and 
+
+c (s) are exact). The tree search algorithm for Unbounded Algorithm 1 Definition of the algorithms best action( s,
+
+A), which computes the a priori best action, and backup resolution( s), which updates the resolution of s from its children states (see Table 1 for the definitions of symbols). 
+
+Minimax with completion is described in Algorithm 2. It is based on two methods. The first, best action(), selects after the search the action of best value, by playing a winning action whenever possible and avoiding losing actions (see Algorithm 1). Note that actions with equal values are explicitly tie-broken using the number of times the actions have been selected, following lexicographic order. In other words, it first optimizes c(s) (to guarantee a win), then optimizes v(s) (to obtain the best heuristic value), and finally optimizes the number of selections (i.e. ns,a ). The second method is backup resolution(), which uses the resolution values of the children to compute that of the parent: a state is resolved if it has a resolved winning child, or if all its children are resolved (see Algorithm 1). 
+
+2.6 Dynamic Difficulty Adjustment 
+
+The games research community has a long history of developing mechanisms to keep human players within the so-called flow window—challenged but not overwhelmed. Dynamic Difficulty Adjustment (DDA) research encompasses a wide range of approaches: selecting a static difficulty level before the game starts [18], adjusting difficulty parameter multipliers [33], modeling and clustering players to estimate their skill [26; 36], using domain-dependent parameterized MCTS for balancing [21], and designing online player models that adapt content to maximize engagement [36]. However, these approaches suffer from at least one of three main limitations [18]: 1. reliable player modeling requires information about the opponent (such as a history of interactions); 2. DDA systems typically modify game parameters rather than the intrinsic decision-making process of the agent; and 3. they rely on domain-dependent techniques. 
+
+2.7 AlphaDDA 
+
+The work most closely related to ours is the AlphaDDA algorithm [18]. AlphaDDA is a general algorithm and a variant of AlphaZero that adapts its decision-making process to the level of its opponent, notably during the course of a game. However, it has two main limitations: first, it is 
+
+Algorithm 2 Unbounded Minimax tree search algorithm with completion (i.e., including the calculation of the resolution values c and r of the states ; see Table 1 for symbol definitions and Algorithm 3 for best action( s) and backup resolution( s)definitions). Note: T = ( v, c, r, n ).
+
+highly parameterized, and this parameterization relies on grid search, which requires costly tuning; second, it necessitates a large number of matches against the opponent with whom balanced play is desired (or against any players of equivalent skill). AlphaDDA preserves the architecture of AlphaZero — a deep residual neural network combined with Monte Carlo Tree Search — but modifies the decision-making process so that the agent can dynamically weaken or strengthen itself according to the estimated value of the current game state. The core insight is that the value computed by AlphaZero provides a reasonably accurate estimate of the win probability from the current board state. By mapping this value to control parameters of the search or evaluation, the agent can intentionally deviate from optimal play to better match its opponent’s strength. Three versions of AlphaDDA have been proposed: • AlphaDDA1 adjusts the number of MCTS simulations based on the estimated game state value, thereby controlling search depth and effective playing strength. The number of simulations is given by the following formula: 
+
+Nsim (v) = min 
+
+
+
+Nmax ,
+
+l
+
+10 Asim (¯ v+Bsim0 )m 
+
+where ¯v is the mean of the estimated values of the last 
+
+Nh game states (from the current player’s perspective), ⌈x⌉
+
+is the ceiling function, and Asim , Bsim0 , Nh, and Nmax are parameters. These values are determined via grid search to Symbols Definition                                                                        
+
+> actions ( s)action set of the state sfor the current player
+> root –player ( s)true if the current player of the state sis the player of the root of the current search tree
+> balanced –player (s) true if the current player of the state sis the balanced player
+> terminal (s) true if sis an end-game state
+> a(s)state obtained after playing the action ain the state s
+> time () current time in seconds
+> random () returns a uniformly random number from [0 ,1]
+> Skeys of the transposition table TTtransposition table (contains states labels as function v; depends on the used search algorithm)
+> τsearch time per action
+> ns,a number of times the action ais selected in state s(initially, n(s, a ) = 0 for all sand a)
+> vsvalue of state sin the game tree
+> vs,a value obtained after playing action ain state scscompletion value of state s(0by default)
+> cs,a completion value obtained after playing action ain state srsresolution value of state s(0by default)
+> rs,a resolution value obtained after playing action ain state sf(s)the used evaluation function (point of view of the root player): f(s) =
+> (
+> ft(s)if terminal ( s)
+> fθ(s)otherwise
+> fθ(s)adaptive evaluation function (of non-terminal game tree leaves ; point of view of the root player)
+> ft(s)evaluation of terminal states, e.g. scoring (point of view of the root player)
+> bt(s)binary evaluation of terminal states, e.g. gain game: -1 / 0 / 1 (point of view of the root player) Table 1: Index of symbols
+
+minimize the difference in win and loss rates against a pool of opponents. • AlphaDDA2 introduces a dropout layer at inference time in the neural network, with a dropout probability depending on the estimated value. This reduces the network’s accuracy in a controllable way, weakening the agent when necessary. • AlphaDDA3 modifies the UCT score used in MCTS so that the agent prefers suboptimal moves, thereby reducing its likelihood of winning. In experiments, AlphaDDA1 achieves the best results. 
+
+# 3 Contribution: Modeling the Balanced Player 
+
+We now turn to the modeling of an artificial player designed to play in a balanced manner—that is, to challenge its opponents without either overwhelming them or deliberately conceding victory. Our goal is to develop a general algorithm that genuinely adapts its strategy to its opponent—rather than merely adjusting parameters—while requiring no prior knowledge about the opponent, a property that, to our knowledge, no existing algorithm in the literature satisfies. Note that when we refer to a strategy in the context of balancing concepts, we mean a probability distribution over the available actions. In contrast, the algorithms we propose operate in the setting of extensive-form games with deterministic action choices. We denote by g the gain function (i.e. the payoff, e.g. the score) of the game, taking values in ]− inf , + inf[ .
+
+3.1 First Modeling 
+
+Our first modeling choice is simple and intuitive: the agent’s objective is to achieve a final outcome as close as possible to a neutral result. Formally, this corresponds to minimizing the absolute value of the game outcome at the end of the match: 
+
+min  
+
+> x∈X
+
+min  
+
+> y∈Y
+
+g (x, y )
+
+where X denotes the set of strategies available to the balanced player, Y the set of strategies of the opponent, and 
+
+g the game outcome (from the balanced player’s perspective) at the end of the match when the balanced player follows strategy x and the opponent follows strategy y. We refer to this principle of balanced play as the Minibal n concept (Minimum-Balance-Near). The challenge then lies in identifying which search algorithm should be employed to achieve this objective. To this end, we propose an adaptation of Unbounded Minimax to the balanced-play setting. The adaptation follows a best-first expansion scheme: • Balanced player’s turn: the agent selects the action leading to the successor state with the smallest absolute value. • Opponent’s turn: the search assumes the opponent acts rationally, selecting the action that maximizes its own score (equivalently, minimizes the balanced player’s score). We call this algorithm Unbounded Minibal n. Its overall search procedure is identical to Unbounded Minimax (see Algorithm 2), but it differs in its two core functions: best action() and backup resolution()—which are described in Algorithm 3. Method best action() applies the optimization of the chosen action following the minibal concept and backup resolution() computes the resolution of Algorithm 3 Definition of the following algorithms for Unbounded Minibal n: best action( s, A), which computes the a priori best action using completion, and backup resolution( s), which updates the resolution of s based on its child states. 
+
+Algorithm 4 Definition of best action( s, A) for Unbounded 
+
+Minibal +, which computes the a priori best action. 
+
+states: a state where the balanced player acts is resolved if it has a resolved draw action or if all its children are resolved. 
+
+3.2 Second Modeling 
+
+As we will show in the experimental section, the first algorithm performs poorly—it loses far too often. We therefore adopt a different modeling approach. This time, the objective is no longer to obtain a final score as close as possible to zero. Instead, the goal is to achieve a positive score that is as close to zero as possible. If such a result cannot be attained, the agent aims for a negative score that is as close to zero as possible. Formally: 
+
+min 
+
+> x∈X
+
+
+
+1R−∗
+
+
+
+min  
+
+> y∈Y
+
+g (x, y )
+
+
+
+, min  
+
+> y∈Y
+
+g (x, y )
+
+
+
+where tuple minimization is performed lexicographically, 
+
+1R−∗ (z) = 
+
+1 if z < 00 otherwise , X denotes the set of strategies of the balanced player, Y the set of strategies of the opponent, and g the game outcome (from the balanced player’s perspective) at the end of the match when the balanced player follows strategy x and the opponent follows strategy y.We refer to this principle as the Minibal + concept (Minimum-Balance-Positive). To implement this concept, we propose a corresponding adaptation of Unbounded Minimax, which we call Unbounded Minibal +. Its overall search algorithm is identical to that of Unbounded Minibal n (i.e., Algorithm 2 with backup resolution() defined in Algorithm 3), but the best action() function is modified and defined in Algorithm 4. The only difference from Unbounded Minibal n lies in the balanced player’s decision rule: • If at least one successor state has a positive evaluation, the agent selects the action leading to the smallest positive value. • If no such state exists, the agent selects the action leading to the largest (i.e., least negative) evaluation. 
+
+# 4 Experiments 
+
+We now present the experiments conducted to evaluate the contributions of this paper. Our primary objective is to assess the ability of our three algorithms to balance matches. To this end, we design a series of matches involving both high-level neural evaluation functions (trained via reinforcement learning) and low-level neural evaluation functions (also trained via reinforcement learning). More specifically, our aim is to compare how effectively algorithms using strong neural networks can balance against weaker networks. We analyze the results from two complementary perspectives. First, we examine the win rate, where a rate close to 50% indicates balanced play. Second, we evaluate the average minimax value of the final states of the matches, with an average value of 0 corresponding to balanced outcomes. 
+
+4.1 Evaluation Protocol 
+
+We evaluate Unbounded Minibal n, Unbounded Minibal +,and classical Unbounded Minimax as a reference. The first performance metric, binary gain , corresponds to the average game outcome: a victory counts as +1 and a defeat as −1 (this metric is more informative than the win rate for games that allow draws). The gain is averaged across all matches. The second performance metric, score , corresponds to the average terminal evaluation: 1
+
+> |S|
+
+P 
+
+> s∈S
+
+ft (s), where S
+
+denotes the set of endgame states reached in the performed matches, and ft is the terminal evaluation function used by the search algorithms. For each performance metric, the best balancing algorithm is the one whose average evaluation is closest to zero, indicating superior adaptation to its opponent. Each evaluated algorithm employs a high-level evaluation function and plays against Unbounded Minimax equipped with a low-level evaluation function. Performance is averaged over all high-level/low-level evaluation function pairs. Experiments are conducted across seven games: International Draughts, Chess, Lines of Action, Connect6, Outer-Open-Gomoku, Xiangqi, and Havannah. Overall, results are averaged across all these games. 
+
+4.2 Technical Details 
+
+For the balanced player, we evaluate multiple search budgets to study how binary gain and score evolve as a function of this parameter. For each game, we trained 40 state evaluation functions via reinforcement learning using the Descent Minimax algorithm from the Ath´ enan framework, over a total of 70 days of training. Figure 1: Average binary gain (left) and average scores (right) as a function of search time (in seconds) for Minibal n (dotted green curve), Minibal + (dashed cyan curve), and Unbounded Minimax (black line) across the studied games (in percentage).                             
+
+> Unbounded gain 95% C.R win draw loss score 95% C.R Minimax 92.68 0.91 94.77 3.14 2.09 0.59 0.016
+> Minibal +-2.96 1.95 21.45 54.14 24.41 -0.024 0.011
+> Minibal n-68.95 1.24 1.19 30.05 69.45 -0.21 0.011
+> Table 2: Average binary gains and win, draw, loss rates in percentage and scores at 20 seconds of search time per move across the seven games.
+
+• The 20 strongest evaluation functions constitute the set of high-level evaluations. • The 20 weakest evaluation functions constitute the set of low-level evaluations. To further amplify the difference in level, the low-level evaluation functions were reverted to their 20-day checkpoint rather than using their final 70-day versions. For each evaluated search time and performance metric, an algorithm’s performance is measured over 800 matches per game (20 high-level evaluation functions against 20 low-level evaluation functions, considering both first and second player positions). More technical details are provided in the Appendix. 
+
+4.3 Results 
+
+We now present the performance of each algorithm according to the two performance metrics: binary gain and score. The average binary gains (resp. average scores) are shown in Figure 1 (resp. in Figure 1), which presents the outcomes as a function of search time per move. The average binary gains (resp. average scores) for a search time of 20 seconds per move are reported in Table 2 (resp. in Table 2). Detailed results for each individual game are provided in Appendix. As expected, the classical Unbounded Minimax achieves a high win rate and scores, confirming that the high-level evaluation functions are indeed much stronger than the low-level ones. However, Unbounded Minibal n yields surprisingly low gains and scores (except in two games where its performance is similar to that of other balance algorithms). This suggests that Minibal n is not well suited for balanced play. Most notably, Unbounded Minibal + consistently achieves the best results across all games. Its gains and scores are the closest to zero among all tested algorithms, and in most cases, it reaches nearly perfect balance. 
+
+Interpretation 
+
+These findings demonstrate that, among the new algorithms introduced in this paper, Minibal + appears to be apractical and effective approach for achieving balanced play, sometimes even managing to produce perfectly balanced matches. Minibal n, on the other hand, behaves like a player who loses very frequently, yet almost always by a narrow margin. 
+
+# 5 Discussion 
+
+5.1 Very Weak Opponents 
+
+We also repeated the experiments of this paper against extremely weak opponents by replacing the weak baselines with a standard MCTS player (i.e., MCTS with UCT and no evaluation function; see Appendix for details). The results show that when the skill gap between players is very large, the balancing algorithm cannot achieve perfect balancing within a reasonable computation time. This limitation is not unexpected: similarly to algorithms designed to maximize winning probability, it is generally impossible to guarantee an optimal balancing strategy under tight time constraints due to the size of the search space. For example, in this additional experiment, Minibal + achieves an average binary gain of 37 .95 against MCTS with a 20-second search time. Nevertheless, the balancing algorithm consistently and substantially reduce the initial skill gap. Indeed, Unbounded Minimax achieves an average binary gain of 100 against MCTS. These results suggest that balancing algorithms should be viewed as practical, ready-to-use operators whose purpose is to significantly narrow the strength gap between players, rather than to guarantee perfect balance in extreme cases. Importantly, we recall that they operate without any domain-specific knowledge, parameter tuning, or learning phase. Thus, the proposed balancing algorithm remains effective even against very weak opponents. Although perfect balance cannot always be achieved, increasing the degree of balance is sufficient to improve the user experience and therefore justifies its practical use. Moreover, Minibal + can be combined with other balancing mechanisms, in particular matchmaking approaches, to further enhance balance. For instance, a matchmaking algorithm may first select an evaluation function whose playing strength is closest to that of the user. Then, Minibal + can be applied on top of this selection to further narrow the remaining gap and adapt the opponent more precisely to the user’s skill level. Finally, it is worth noting that a very simple yet parametric method can also be used to obtain perfect balanced gameplay against very weak opponents with Minibal +, namely by adjusting the search time (see the experiment reported in Appendix). As the search time increases, the average binary gain monotonically increases and eventually reaches zero, at which point perfect balancing is achieved. If the opponent is substantially weaker, further increasing the search time leads to a positive average gain, thereby degrading the balancing performance as the outcome moves away from zero, until it stabilizes around a fixed value. Consequently, selecting an appropriate search time is sufficient to achieve a zero average binary gain in this setting. Importantly, this method does not hold for Unbounded Minimax. In the experiment against MCTS, Unbounded Minimax already achieves a win rate of 99.64% with only 0.01 seconds of the search time, leaving no practical parameter range to recover balance. This contrast further highlights the usefulness of our approach, even when facing extremely weak opponents. 
+
+5.2 Reflections on User Experience 
+
+We have shown that these operators not only reduce the win-rate gap against an unknown weaker opponent without relying on any learning procedure, but also lead to significantly closer endgames. As a result, the matches produced by these algorithms are inherently more engaging for human players. More specifically, compared to win-oriented algorithms, our approach deliberately reduces playing strength, alleviates pressure on the opponent, and, as directly evidenced by our experiments, increases the user’s probability of winning. By losing by smaller margins and winning more frequently, a human player is more likely to remain engaged and to play additional games, while being exposed to situations that are more favorable for learning. Indeed, facing an opponent perceived as impossible to defeat discourages exploration of alternative strategies, hinders progress, and ultimately suppresses the desire to replay. Importantly, the win rates achieved by our balancing algorithms remain sufficiently high to ensure challenging and meaningful interactions. A remaining question is whether these algorithms may deliberately produce artificial defeats. For Minibal n, this behavior is both experimentally confirmed and directly follows from its definition: since it explicitly aims to minimize the absolute final game outcome, it may prefer a near-draw defeat over a crushing victory. By contrast, Minibal + cannot intentionally concede wins by design. It first aims to win and, only when it believes it will win, it attempts to minimize the margin of victory. However, when faced with a choice between a strongly winning solved action and an action that it evaluates as only weakly winning, 
+
+Minibal + will select the latter. This behavior can sometimes lead to an eventual loss that could theoretically be perceived as artificial, but only when the strongly winning action is trivially winning. This potential issue can be addressed by a simple micro-adjustment by applying the following rule: always selecting a solved winning action whenever one is available. While this modification naturally increases the win rate, additional experiments (not reported in this paper) show that its impact on the average binary gain remains slightly moderate, increasing it from −2.96% to 9.82% in the experimental setting considered here. This indicates that a strong level of balance is preserved, even though it is no longer nearly perfect. Moreover, this adjustment involves playing non-trivial resolved winning states, which, if omitted, would not have been perceived as artificial wins by human players. A finer improvement can therefore be achieved by restricting this rule to wins resolved to a depth of at most d. Finally, as previously noted, any excess gain introduced by such modifications can, if necessary, be compensated by a reduction in thinking time. Finally, note that a rigorous statistical study in which balancing algorithms face human players, in order to verify that no other problematic cases arise, is a research perspective that is beyond our current means. 
+
+# 6 Conclusion 
+
+Summary 
+
+In this paper, we addressed the problem of balanced play, that is, designing agents capable of challenging their opponents without either overwhelming them or conceding artificially. We first proposed two conceptual models of balance, then introduced the corresponding algorithms — Unbounded 
+
+Minibal n and Unbounded Minibal + — specifically designed to enable artificial agents to play in a balanced manner. These algorithms contrast, on the one hand, with classical methods whose sole objective is winning, such as Unbounded Minimax. On the other hand, they stand in opposition to Dynamic Difficulty Adjustment approaches in the literature, which either rely on domain-dependent heuristics, require prior knowledge of the opponent to achieve balance, or do not adapt their strategy dynamically to the opponent. Our experimental evaluation across seven board games demonstrated that Unbounded Minibal +is capable of producing outcomes closest to zero gain. Remarkably, in many settings, it achieved nearly perfect balance, providing compelling evidence that it represents a significant step forward in the design of game-playing agents adapted to human needs. By contrast, Unbounded Minibal n exhibited unexpectedly poor performance, with a disproportionately high loss rate, making it unsuitable for balanced play. Nevertheless, it appears to be a promising candidate for scenarios where an opponent that loses frequently , but only by narrow margins, is desirable. Overall, these results show that Minibal + currently constitutes the most effective approach for producing balanced agents without online learning or prior knowledge of the opponent. This contribution opens the way to new applications not only in entertainment and video games but also in serious games and educational contexts, where maintaining user engagement without discouragement is essential. 
+
+Future work 
+
+Several avenues for future work naturally follow from this study. First, it is crucial to investigate the causes of the high loss rate observed for Minibal n. Our working hypothesis is that this strategy too frequently selects marginally losing states; in practice, this would provide many opportunities for weaker opponents to convert matches into wins, driving the balanced player’s win rate well below 50%. A targeted analysis is therefore required to validate this hypothesis and identify remedies. Beyond that, further research should explore extensions to imperfect-information and stochastic games. The design of terminal evaluation functions adapted to the balancing objective also requires in-depth study. Finally, large-scale evaluations involving human players are needed to measure, in addition to statistical balance, the effects on player engagement, learning outcomes, and long-term retention in both entertainment and serious-game contexts. References 
+
+[1] Sharad Agarwal and Jacob R Lorch. Matchmaking for online games and other latency-sensitive p2p systems. In Proceedings of the ACM SIGCOMM 2009 conference on Data communication , pages 315–326, 2009. 1 [2] Josh Alman and Dylan McKay. Theoretical foundations of team matchmaking. In Proceedings of the 16th Conference on Autonomous Agents and MultiAgent Systems , pages 1073–1081, 2017. 1 [3] Michał Boro´ n, Jerzy Brzezi´ nski, and Anna Kobusi´ nska. P2p matchmaking solution for online games. Peer-to-peer networking and applications , 13(1):137–150, 2020. 1 [4] Cameron B Browne, Edward Powley, Daniel Whitehouse, Simon M Lucas, Peter I Cowling, Philipp Rohlfshagen, Stephen Tavener, Diego Perez, Spyridon Samothrakis, and Simon Colton. A survey of monte carlo tree search methods. Transactions on Computational Intelligence and AI in games , 4(1):1–43, 2012. 2.3 [5] Mingliu Chen, Adam N Elmachtoub, and Xiao Lei. Matchmaking strategies for maximizing player engagement in video games. Available at SSRN 3928966 , 2021. 1 [6] Quentin Cohen-Solal. Learning to play two-player perfect-information games without knowledge. arXiv preprint arXiv:2008.01188 , 2020. 1, 2.5 [7] Quentin Cohen-Solal. Completeness of unbounded best-first game algorithms. arXiv preprint arXiv:2109.09468 , 2021. 1, 2.5 [8] Quentin Cohen-Solal. Study and improvement of search algorithms in two-players perfect information games. 
+
+arXiv preprint arXiv:2505.09639 , 2025. 1, 2, 2.5 [9] Quentin Cohen-Solal and Tristan Cazenave. Descent wins five gold medals at the computer olympiad. ICGA Journal , 43(2):132–134, 2021. 1 [10] Quentin Cohen-Solal and Tristan Cazenave. Athenan wins sixteen gold medals at the computer olympiad. 
+
+ICGA Journal , 45(3), 2023. 1, 2.5 [11] Quentin Cohen-Solal and Tristan Cazenave. Learning to play stochastic two-player perfect-information games without knowledge. arXiv preprint arXiv:2302.04318 ,2023. 1 [12] Quentin Cohen-Solal and Tristan Cazenave. Minimax strikes back. AAMAS , 2023. 1, 2.5 [13] Quentin Cohen-Solal and Tristan Cazenave. Ath´ enan wins 11 gold medals at the 2024 computer olympiad. 
+
+ICGA Journal , page 13896911251315102, 2025. 1 [14] Quentin Cohen-Solal and Tristan Cazenave. On some improvements to unbounded minimax. arXiv preprint arXiv:2505.04525 , 2025. 1, 2.5 [15] R´ emi Coulom. Efficient selectivity and backup operators in monte-carlo tree search. In Computers and Games, 5th International Conference, CG 2006, Turin, Italy, May 29-31, 2006. Revised Papers , pages 72–83, 2007. 2.3 [16] Qilin Deng, Hao Li, Kai Wang, Zhipeng Hu, Runze Wu, Linxia Gong, Jianrong Tao, Changjie Fan, and Peng Cui. Globally optimized matchmaking in online games. In Proceedings of the 27th ACM SIGKDD Conference on Knowledge Discovery & Data Mining , pages 2753– 2763, 2021. 1 [17] William Fink. An enhancement to the iterative, alpha-beta, minimax search procedure. ICGA Journal ,5(1):34–35, 1982. 2.2 [18] Kazuhisa Fujita. Alphadda: strategies for adjusting the playing strength of a fully trained alphazero system to a suitable human training partner. PeerJ Computer Science , 8:e1123, 2022. 1, 2.6, 2.7 [19] Richard D Greenblatt, Donald E Eastlake, and Stephen D Crocker. The greenblatt chess program. In 
+
+Computer chess compendium , pages 56–66. Springer, 1988. 2.2 [20] Maurice Hendrix, Tyrone Bellamy-Wood, Sam McKay, Victoria Bloom, and Ian Dunwell. Implementing adaptive game difficulty balancing in serious games. 
+
+IEEE Transactions on Games , 11(4):320–327, 2018. 1 [21] Makoto Ishihara, Suguru Ito, Ryota Ishii, Tomohiro Harada, and Ruck Thawonmas. Monte-carlo tree search for implementation of dynamic difficulty adjustment fighting game ais having believable behaviors. In 2018 IEEE Conference on Computational Intelligence and Games (CIG) , pages 1–8. IEEE, 2018. 2.6 [22] Michael D Kickmeier-Rust and Dietrich Albert. Educationally adaptive: Balancing serious games. 
+
+International Journal of Computer Science in Sport (International Association of Computer Science in Sport) , 11(1), 2012. 1 [23] Donald E Knuth and Ronald W Moore. An analysis of alpha-beta pruning. Artificial Intelligence , 6(4):293– 326, 1975. 2.2 [24] Richard E Korf. Depth-first iterative-deepening: An optimal admissible tree search. Artificial Intelligence ,27(1):97–109, 1985. 2.2 [25] Richard E Korf and David Maxwell Chickering. Best-first minimax search. Artificial intelligence , 84(1-2):299–337, 1996. 1, 2.5 [26] Diana Lora, Antonio A S´ anchez-Ruiz, Pedro AGonz´ alez-Calero, and Marco Antonio G´ omez-Mart´ ın. Dynamic difficulty adjustment in tetris. In FLAIRS ,pages 335–339, 2016. 2.6 [27] Justin Manweiler, Sharad Agarwal, Ming Zhang, Romit Roy Choudhury, and Paramvir Bahl. Switchboard: a matchmaking system for multiplayer mobile games. In Proceedings of the 9th international conference on Mobile systems, applications, and services , pages 71– 84, 2011. 1 [28] Ashey Noblega, Aline Paes, and Esteban Clua. Towards adaptive deep reinforcement game balancing. In 
+
+ICAART (2) , pages 693–700, 2019. 1 [29] Muhammad Farrel Pramono, Kevin Renalda, HLHS Warnars, Dedy Prasetya Kristiadi, and Worapan Kusakunniran. Matchmaking problems in moba games. 
+
+Indonesian Journal of Electrical Engineering and Computer Science , 11(3):908–917, 2018. 1 [30] Anurag Sarkar and Seth Cooper. An online system for player-vs-level matchmaking in human computation games. In 2021 IEEE conference on games (CoG) ,pages 1–4. IEEE, 2021. 1 [31] David Silver, Aja Huang, Chris J Maddison, Arthur Guez, Laurent Sifre, George Van Den Driessche, Julian Schrittwieser, Ioannis Antonoglou, Veda Panneershelvam, Marc Lanctot, et al. Mastering the game of go with deep neural networks and tree search. 
+
+Nature , 529(7587):484, 2016. 1 [32] David Silver, Thomas Hubert, Julian Schrittwieser, Ioannis Antonoglou, Matthew Lai, Arthur Guez, Marc Lanctot, Laurent Sifre, Dharshan Kumaran, Thore Graepel, et al. A general reinforcement learning algorithm that masters chess, shogi, and go through self-play. Science , 362(6419):1140–1144, 2018. 1, 2.4 [33] Rhio Sutoyo, Davies Winata, Katherine Oliviani, and Dedy Martadinata Supriyadi. Dynamic difficulty adjustment in tower defence. Procedia Computer Science , 59:435–444, 2015. 2.6 [34] Hanke Vermeiren, Abe D Hofman, Maria Bolsinova, Han LJ van der Maas, and Wim Van Den Noortgate. Balancing stability and flexibility: Investigating adynamic k value approach for the elo rating system in adaptive learning environments. Preprint , 2024. 1 [35] Kai Wang, Haoyu Liu, Zhipeng Hu, Xiaochuan Feng, Minghao Zhao, Shiwei Zhao, Runze Wu, Xudong Shen, Tangjie Lv, and Changjie Fan. Enmatch: Matchmaking for better player engagement via neural combinatorial optimization. In Proceedings of the AAAI Conference on Artificial Intelligence , volume 38, pages 9098–9106, 2024. 1 [36] Su Xue, Meng Wu, John Kolen, Navid Aghdaie, and Kazi A Zaman. Dynamic difficulty adjustment for maximized engagement in digital games. In 
+
+Proceedings of the 26th international conference on world wide web companion , pages 465–471, 2017. 2.6 
+
+# 7 Appendix 
+
+Section 7.1 provides details about the experiment described in the article. Section 7.2 details the results of the experiment described in the article. Section 7.3 adds an additional experiment against a very weak opponent. Finally, Section 7.4 adds further discussion of the algorithms. 
+
+7.1 More Technical Details 
+
+We will now present the missing technical details of the experiments. evaluation Chess summed piece values Xiangqi summed piece values International Draughts summed piece values Lines of Action additive depth heuristic Havannah multiplicative depth heuristic Outer-Open-Gomoku multiplicative depth heuristic Connect6 multiplicative depth heuristic 
+
+> Table 3: Terminal evaluation functions used for each game (see the Ath´ enan paper for their definitions).
+
+The search time for the low-level player is fixed at 1 second per move. To determine the strongest and weakest evaluation, the evaluation functions were ranked by strength according to the results of a round-robin tournament (using Unbounded Minimax as the search algorithm with 1 second per move). We verified that using 20-day checkpoint rather than using their final 70-day versions downgrade effectively reduced their strength. The number of matches for evaluate each algorithm across all seven games is 5,600 for each evaluated search time. The search times considered were: 
+
+{0.01 , 0.1, 0.5, 1, 2.5, 5, 7.5, 10 , 12 .5, 15 , 17 .5, 20 } seconds per move. All experiments were conducted on the Adastra supercomputer. Each compute node consists of one AMD Trento EPYC 7A53 processor (64 cores, 2.0 GHz), 256 GiB DDR4-3200 MHz RAM, 4 Slingshot 200 Gb/s NICs, and 8 GPU devices (4 AMD MI250X accelerators, each comprising 2 GPUs), with a total of 512 GiB HBM2 memory. All programs were implemented in Python using TensorFlow. The specific terminal functions used for each game are listed in Table 3. The terminal evaluation functions have been normalized to be in [−1, 1] 
+
+7.2 Details Results 
+
+We now present the details of the results of the main paper experiment: the evolution of the average win rate of the algorithms studied for each game (Figure 2) and the evolution of their average scores for each game (Figure 3). 
+
+7.3 Additional Experience Against Very Weak Opponent 
+
+We now present an additional experiment evaluating the performance of the algorithms in the context of a very weak adversary: the standard MCTS. 
+
+Evaluation Protocol 
+
+We evaluate Unbounded Minibal n, Unbounded Minibal +,and classical Unbounded Minimax as a reference. Each evaluated algorithm employs a high-level evaluation function (as in the paper main experiment) and plays against the base MCTS (using UCT and not using an evaluation function). Performance is averaged over all high-level functions and over 20 repetitions. Figure 2: Average binary gains as a function of search time (in seconds) for Minibal n (dotted green curve), Minibal + (dashed cyan curve), and Unbounded Minimax (black line) across the studied games (C.R.: confidence radius). 
+
+Figure 3: Average scores as a function of search time (in seconds) for Minibal n (dotted green curve), Minibal + (dashed cyan curve), and Unbounded Minimax (black line) across all studied games. Figure 4: Average binary gain (left) and average scores (right) as a function of search time (in seconds) for Minibal n (dotted green curve), Minibal + (dashed cyan curve), and Unbounded Minimax (black line) across the studied games against MCTS (in percentage).           
+
+> Unbounded gain 95% C.R win draw loss
+> Minibal +2.16 1.89 27.16 47.84 25
+> Table 4: Average binary gains and win, draw, loss rates in percentage at 1 second of search time per move across the seven games.
+
+Experiments are conducted across the same seven games. Overall, results are averaged across all these games. 
+
+Technical Details 
+
+For the balanced player, we evaluate multiple search budgets to study how performance evolve as a function of this parameter. We use the same strong 20 evaluation functions as for the main paper experiment. For each evaluated search time, an algorithm’s performance is measured over 800 matches per game (20 high-level evaluation functions, considering both first and second player positions, and repeted 20 times). The search times considered for the balanced algorithms were: {0.01 , 0.1, 0.5, 1, 2.5, 5, 7.5, 10 , 12 .5, 15 , 17 .5, 20 }
+
+seconds per move. The search time for MCTS is fixed at 1 second per move. 
+
+Results 
+
+We now present the performance of each algorithm according to the binary performance metrics. The average binary gains (resp. average scores) are shown in Figure 4, which presents the outcomes as a function of search time per move. Despite the very weak opponent, the algorithms manage to achieve a significant balancing gain. The average binary gain for a search time of 1 second per move are reported in Table 4. For this parameter, the balancing is almost perfect for Minibal +.
+
+7.4 More Discussion 
+
+We now provide additional discussions. 
+
+Balanced Learning Problem 
+
+Note that, in our experiments, the evaluation functions used for balancing were trained to maximize winning probability. This choice raises an important theoretical issue, even though our experiments proves highly effective in practice. On the one hand, a stronger player benefits from more accurate state-value estimates, which improves its ability to control the game outcome and thus to play in abalanced manner. On the other hand, as the skill gap increases, the distribution of states encountered during matches departs significantly from those seen during training, leading to less reliable evaluations. This mismatch is particularly pronounced when facing very weak opponents. In other words, the state space induced by self-play training differs substantially from the state space encountered when interacting with a much weaker player. Consequently, learning to optimally master a game may partially conflict with learning to play in a balanced way against a given target skill level, especially when the state space is large and the target level is far from optimal play. This issue could be mitigated by developing evaluation functions explicitly trained for balancing, which remains an open research problem, as well as by addressing well-known challenges of neural and adaptive function approximators, such as catastrophic forgetting and limited generalization. 
+
+Opponent of Equal Strength 
+
+Note that if a balancing algorithm faces an algorithm that aims to win, and both use the same evaluation function, the balancing algorithm will have a lower effective playing strength. Indeed, on the one hand, fewer resources are devoted to winning with the balancing algorithm, since it seeks to play in a balanced manner; on the other hand, the resulting strategy is closer to a draw and therefore more likely to lead to a loss. It is thus preferable to use an evaluation function that is stronger than the opponent’s, but not excessively so, as explained in the previous section.

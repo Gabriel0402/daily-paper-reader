@@ -1,0 +1,451 @@
+Title: MOMO: Mars Orbital Model Foundation Model for Mars Orbital Applications
+
+URL Source: https://arxiv.org/pdf/2604.02719v1
+
+Published Time: Mon, 06 Apr 2026 00:29:38 GMT
+
+Number of Pages: 23
+
+Markdown Content:
+# MOMO: Mars Orbital Model Foundation Model for Mars Orbital Applications 
+
+# Mirali Purohit 1,2 R Bimal Gajera 1∗ Irish Mehta 1∗ Bhanu Tokas 1∗
+
+# Jacob Adler 1 Steven Lu 2 Scott Dickenshied 1 Serina Diniega 2
+
+# Brian Bue 2 Umaa Rebbapragada 2 Hannah Kerner 11Arizona State University 
+
+> 2
+
+# Jet Propulsion Laboratory, California Institute of Technology 
+
+# Abstract 
+
+We introduce MOMO, the first multi-sensor foundation model for Mars remote sensing. MOMO uses model merge to integrate representations learned independently from three key Martian sensors (HiRISE, CTX, and THEMIS), spanning resolutions from 0.25 m/pixel to 100 m/pixel. Cen-tral to our method is our novel Equal Validation Loss (EVL) strategy, which aligns checkpoints across sensors based on validation loss similarity before fusion via task arith-metic. This ensures models are merged at compatible con-vergence stages, leading to improved stability and general-ization. We train MOMO on a large-scale, high-quality cor-pus of ∼ 12 million samples curated from Mars orbital data and evaluate it on 9 downstream tasks from Mars-Bench. MOMO achieves better overall performance compared to ImageNet pre-trained, earth observation foundation model, sensor-specific pre-training, and fully-supervised baselines. Particularly on segmentation tasks, MOMO shows consis-tent and significant performance improvement. Our re-sults demonstrate that model merging through an optimal checkpoint selection strategy provides an effective approach for building foundation models for multi-resolution data. The model weights, pretraining code, pretraining data, and evaluation code are available at: github.com/kerner-lab/MOMO. 
+
+# 1. Introduction 
+
+Foundation models (FMs) have demonstrated strong capa-bility in learning representations from large-scale data, en-abling improved downstream task performance compared to conventional supervised training from scratch [29, 42]. In recent years, more than 150 FMs have been proposed for 
+
+> RCorresponding Author: mpurohi3@asu.edu
+> *Equal Contribution
+
+Earth observation (EO) applications [29, 42]. These EO-FMs are being actively used in applications such as food security, disaster response, and climate change [9, 64]. Similar to Earth-orbiting satellites, Mars-orbiting satel-lites systematically collect remote sensing observations of the planet’s surface and atmosphere. In contrast to the ac-tive research on EO-FMs in recent years, no FM has been proposed for Mars remote sensing applications to date. An FM for Mars remote sensing would enable planetary sci-entists to train models for custom science tasks at a lower cost compared to fully supervised methods. Researchers are already using ImageNet pre-trained models for Mars re-mote sensing applications [57, 74, 75], but in-domain pre-training could improve performance and generalization, as suggested by preliminary findings in [58]. Developing FMs for remote sensing data requires signif-icant domain expertise and computational resources [63]. Satellite images are acquired from multiple sensors, each operating at different wavelengths, spatial resolutions, and spectral channels. The EO community has proposed cus-tomized model architectures specifically designed for Earth satellite data and applications [4, 26, 71]. While effective for EO data, these approaches do not extend directly to Mars remote sensing data due to differences in sensor properties and availability. We propose MOMO (Mars Orbital Mo del), the first FM for Mars remote sensing applications. We introduce a novel approach to handle data efficiently from multiple sensors that measure different physical properties at different spa-tial scales. We pre-train individual models on data from each sensor and subsequently merge them using our novel checkpoint selection strategy. We evaluate MOMO on all 9 orbital downstream tasks from Mars-Bench [59]. We com-pare our proposed method to a range of strong baselines. Overall, MOMO outperforms models pre-trained on Earth Observation data, sensor-specific Mars data, and ImageNet, demonstrating superior performance on segmentation tasks 
+
+> arXiv:2604.02719v1 [cs.CV] 3 Apr 2026 Landslide Monitoring
+> 1.12 km 22.4 km
+> HiRISE
+> (Optical )
+> CTX
+> (Optical)
+> THEMIS
+> (Infrared )
+> 0.056 km
+> Crater Mapping
+> Locating Boulders Figure 1. MOMO can be effectively ap-plied across a wide range of resolutions and a broad spectrum of Martian remote sensing tasks. By leveraging diverse sen-sors, our approach enables a single model to generalize across different orbital ap-plications, including large-scale crater or landslide mapping and precise boulder lo-calization.
+
+and comparable performance on classification. In summary, our main contributions are as follows: • We introduce MOMO, the first foundation model for Mars orbital applications. MOMO efficiently handles multi-sensor and multi-resolution data. To the best of our knowledge, this is the first systematically developed, an-alyzed, and evaluated foundation model for Mars tasks. • We propose a novel technique to build a multi-sensor foundation model through model merging, using our op-timal checkpoint selection strategy for stable fusion. • We conduct extensive comparisons of MOMO against multiple baselines, including ImageNet pre-training, Earth-observation foundation models, sensor-specific pre-training, and other checkpoint selection strategies. Our results on Mars-Bench demonstrate that MOMO achieves superior overall performance across tasks. 
+
+# 2. Related Work 
+
+Self-Supervised Learning for Mars Orbital Tasks. 
+
+There are a few preliminary studies that have explored self-supervised learning for Mars remote sensing. Jiang et al. pre-trained a model on just 13 HiRISE images for landform detection [34], but their focus is only on the landmark de-tection task. In contrast, Purohit et al. pre-trained a model on 1 million CTX image patches and demonstrated that in-domain pre-training can surpass ImageNet pre-training for certain tasks [58]. However, this work only uses data from a single instrument and evaluates on 2 downstream tasks. 
+
+Foundation Models for Earth Observation. Over the past 4-5 years, researchers have introduced numerous FMs for EO applications. Many of these include masked autoencoder-based models such as SatMAE [14], Scale-MAE [62], SatMAE++ [53], Presto [71]; contrastive learning-based models like SeCo [45], SatCLIP [37], Geo-CLIP [73], CROMA [19]; and other approaches includ-ing msGFM [26], AnySat [4], Galileo [72], Satlas [5], SkySense [25], SpectralGPT [28], and SpectralEarth [8]. Earth and Mars remote sensing data have some similarities, such as multispectral/multi-sensor observations and over-head imaging geometry, but they are very different. Mars has different atmospheric conditions, illumination, surface materials, and sensor characteristics. We would not expect EO-FMs to generalize to Mars remote sensing tasks. 
+
+Model-editing. Model-editing methods aim to enhance generalization, robustness, and out-of-distribution perfor-mance without incurring extra inference costs. Model edit-ing has been applied across various domains and tasks. Techniques include merging weights of multiple fine-tuned models via simple weight averaging or ensembling, layer-wise matching, and soft alignment; to create a single model that outperforms its individual components. There are dozens of proposed research methods based on model av-eraging [17, 24, 32, 35, 39, 40, 68, 77] and ensembling techniques, combining the outputs of two or more models [6, 18, 38, 48, 55, 76]. Researchers have studied more ef-ficient methods for modifying a model’s behavior through interventions after pre-training, referring to this process by different names, such as patching [22, 31, 51, 67], editing [49, 50, 65], aligning [3, 54], and layer-wise editing [66]. Prior work has focused on merging models trained on similar or different distributions, but limited focus has been given to checkpoint selection before merging. Existing methods typically merge models at their final checkpoints without considering differences in training trajectories. In contrast, we introduce a novel checkpoint selection strategy based on validation loss alignment, which ensures models trained on different data distributions (in our case, varying spatial resolutions) are merged at their most com-patible stage. To the best of our knowledge, this is the first task-arithmetic approach to introduce a systematic check-point selection strategy. 3. MOMO 
+
+3.1. Motivation 
+
+Before describing our methodology, we first provide a brief overview of how foundation models are typically developed in Earth Observation and how our approach differs. Most EO-FMs take one of two approaches to combine data from multiple sensors: 1) stacking spatially- and temporally-aligned data from each sensor as different channels to a sin-gle encoder or a separate tokenizer for each sensor (e.g., [14, 71, 72]), or 2) combining data from multiple sensors in a single heterogeneous pre-training dataset (e.g., [5]). The stacking approach requires a large number of coin-cident (spatially and temporally overlapping) observations from each sensor and sensors with somewhat similar spatial resolutions (e.g., 10-30 m/pixel). Mars orbital sensors have very different coverage (e.g., CTX covers nearly 100% of the planet [16], but HiRISE only covers less than 3% [47]) and spatial resolutions (e.g., THEMIS is 100 m/pixel com-pared to HiRISE at 0.25 m/pixel; see Figure 1). The data-combination approach is feasible, but would require train-ing a new model whenever a new sensor is added. To address these challenges, we propose a methodol-ogy that avoids directly combining heterogeneous data from multiple sensors. Instead, we pre-train independent masked autoencoder models for each sensor, allowing each model to first learn the unique distribution and feature character-istics of its respective sensor. We then merge these sensor-specific models (Figure 1) using our proposed Equal Vali-dation Loss (EVL) strategy, which aligns checkpoints based on validation loss similarity to ensure compatibility before fusion. This is the first work to employ a model-merging strategy to construct a remote sensing foundation model. Additionally, we introduce a customized cost function de-signed to optimize the reconstruction process by capturing both pixel-level and perceptual information. Full method-ological details are provided in the following sections. 
+
+3.2. Cost Function 
+
+Loss functions play a key role in training deep learning models. An unsuitable objective function can lead to con-vergence toward suboptimal local minima or undesirable optimization directions. Following widely adopted practices for training Masked AutoEncoders (MAEs) [27], we initially pre-trained our model using mean squared error (MSE) as the reconstruc-tion objective. However, after visualizing the reconstructed outputs, we observed that while the model could accurately recover the color distribution and surface textures of masked regions, it often failed to reconstruct structural details of key geomorphologic features (e.g., the accurate shape of a crater) when such regions were masked (sample reconstruc-tions in Appendix C.2). This limitation arises because MSE is a pixel-level loss, emphasizing low-level intensity matching rather than per-ceptual or structural fidelity. Although MSE effectively captures color and tone consistency, it lacks sensitivity to higher-order spatial features such as shape, boundary conti-nuity, and object geometry. To address this, we introduce additional perceptual and structure-aware components in our loss function to guide the model toward learning edge-level and shape-consistent representations. We add terms that minimize LPIPS [79] and maximize structural similarity (SSIM) [52]. In addition, to enforce spatial smoothness and structural consistency, we penalize the difference between horizontal and vertical gra-dients of predicted and ground-truth images [43, 66]. For an image I and its reconstruction ˆI, the gradient loss is for-mulated as an ℓ1 penalty: 
+
+Lgrad = 1
+
+N
+
+X
+
+> i,j
+
+
+
+∂xIi,j − ∂x ˆIi,j + ∂y Ii,j − ∂y ˆIi,j 
+
+
+
+(1) The final combined pre-training objective function is: 
+
+Ltotal = λ1LMSE + λ2LSSIM + λ3LLPIPS + λ4Lgrad , (2) where LSSIM is (1 − SSIM ) and λi are weighting coeffi-cients. By combining pixel-wise, perceptual, and gradient-aware objectives, MOMO achieves reconstructions that pre-serve both spatial and structural details, particularly impor-tant for Martian features such as crater rims, cones, and landslide boundaries. 
+
+3.3. Optimal Checkpoint Selection Strategy 
+
+We define our checkpoint selection strategy as follows: Let there be n distinct sensors, each associated with a dataset Di
+
+(i = 1 , 2, . . . , n ) representing distinct spatial resolutions, modalities, or imaging characteristics. We train n indepen-dent models {M i}ni=1 , where each Mi is optimized on Di
+
+for k epochs denoted as E = {e1, e 2, e 3, ..., e k}. During training, we record the validation loss L(e) 
+
+> i
+
+for every epoch 
+
+e ∈ E. Here, each model is pre-trained by optimizing the loss, which is defined in Equation 2. Instead of merging all models at their final checkpoints, we introduce the Equal Validation Loss (EVL) strategy, which aligns checkpoints across sensors based on valida-tion loss similarity prior to model fusion. This ensures that models trained on heterogeneous data distributions are com-bined at a mutually compatible convergence stage. 
+
+Loss alignment. Let L(e) 
+
+> i
+
+denote the validation loss of sensor i at epoch e, for i ∈ { 1, . . . , n } and e ∈ E. We define a candidate epoch tuple ,
+
+tc = ( e1, e 2, . . . , e n),where ei denotes the selected epoch for model Mi. To cre-ate a candidate tuple, we iterate over epoch indices and form candidate epoch tuples by taking one epoch from each sen-sor and checking whether the losses in that tuple are mu-tually close. A tuple tc is considered loss-aligned if the validation losses across all sensors are mutually close, i.e., 
+
+∆ij = L(eia ) 
+
+> i
+
+− L (ejb )
+
+> j
+
+∀ i, j ∈ { 1, . . . , n }; a, b ∈ { 1, . . . , k }; i̸ = j; ∆ ij ≤ ϵ
+
+where eia represents the ath epoch on the model trained on 
+
+ith sensor. ϵ > 0 is a small tolerance hyperparameter. The set of all loss-aligned tuples tc is denoted as EEVL .
+
+Distance-guided checkpoint selection. For each loss-aligned tuple tc ∈ E EVL , we measure how far the selected epochs deviate from their respective early-stopping epochs (ses ). We define the normalized average epoch distance as 
+
+¯D(tc) = 1
+
+n
+
+> n
+
+X
+
+> i=1
+
+| ei − sies |
+
+The optimal tuple is then chosen as 
+
+tc⋆ = min 
+
+> tc∈E EVL
+
+¯D(tc)
+
+This criterion favors checkpoint tuples that are jointly loss-aligned and closest on average to the individual early-stopping epochs. The purpose of this selection step is to identify the most representative checkpoint combination for model fusion. Each sensor’s early-stopping epoch ses i corresponds to its best generalization point, as determined by validation per-formance. Selecting epochs too far from these points in-creases the risk that one or more sensors contribute check-points that are either overfitted (if much later than ses i ) or underfitted (if much earlier). By minimizing the average epoch deviation ¯D(tc), we ensure that the selected tuple 
+
+tc⋆ remains close to the generalization-optimal region for all sensors, thereby reducing the likelihood of combining mismatched or unstable model states. This provides a bal-anced and reliable basis for subsequent model merging. 
+
+Model fusion using the optimal tuple. Once the opti-mal loss-aligned tuple tc⋆ = ( e1
+
+> ⋆
+
+, e 2
+
+> ⋆
+
+, . . . , e n⋆ ) is identified, we retrieve the corresponding checkpoints {θ(ei⋆) 
+
+> i
+
+}ni=1 from each sensor-specific model {M i}ni=1 . These checkpoints represent mutually compatible convergence stages across sensors. We then merge the selected models using a task arith-metic algorithm, which operates directly on the model pa-rameters to form a unified representation. The resulting merged model is denoted as 
+
+MOMO = T
+
+
+
+θ(e1 
+
+> ⋆)1
+
+, θ (e2 
+
+> ⋆)2
+
+, . . . , θ (en⋆ )
+
+> n
+
+
+
+,
+
+where T indicates task arithmetic operation. Specifically, we employ the addition operation defined in [30] to merge models. This approach ensures that the fusion process integrates models trained to comparable validation performance lev-els and located near their respective generalization optima, thereby enhancing stability and reducing the risk of over-fitted or underfitted contributions from individual sensors. We illustrate the intuition behind why EVL is more stable and generalizable compared to other checkpoint selection strategies in Section 6.1. 
+
+# 4. Pre-training Data 
+
+As discussed in Section 1, MOMO is an orbital foundation model trained on a large-scale, diverse dataset derived from multiple Martian sensors. Specifically, we utilize data from three key sources: • the High Resolution Imaging Science Experiment (HiRISE) [46] available at 0.25 m/pixels ,• the ConTeXt Camera (CTX) [7, 44] available at 5 m/pix-els , and • the THermal EMission Imaging System (THEMIS) [12] available at 100 m/pixel .We select these sensors because all the orbital down-stream tasks [59] used and evaluated in this study belong to these three sensors. Details of the sensor types, charac-teristics, and the pre-training data preparation from all three sensors are provided in Appendix A.1. As THEMIS is a low-resolution sensor, even with full surface coverage, we obtained a total of ∼ 4M (millions) images from it. However, HiRISE and CTX contain ∼
+
+16 M and ∼ 10 M images, respectively. To ensure balanced representation, we sample 4M images from each sensor. To include samples from a wide range of surface types and ensure that HiRISE and CTX retain their original distri-bution after downsampling to 4M, we proportionally sample data based on the geologic map units from the USGS Sci-entific Investigations Map 3292 — The Geologic Map of Mars (GMoM) [69]. The GMoM divides Mars into 44 sur-face geologic units that represent a wide range of ages, mor-phologies, and compositions. We perform stratified sam-pling within each GMoM unit proportional to the unit’s area coverage for each of the three instrument datasets. This ap-proach ensures that the final dataset not only balances sam-ple counts across sensors but also preserves the geographic and geologic representativeness inherent to the original or-bital coverage. To ensure the quality and reliability of the pre-training corpus, we apply a filtering pipeline to remove low-quality samples containing satellite artifacts, noise, or blur. For HiRISE CTX THEMIS 
+
+> Figure 2. Illustrative samples of poor- and high-quality image samples from the HiRISE, CTX, and THEMIS sensors. The top row shows rejected low-quality samples exhibiting artifacts, blur, or noise, while the bottom row shows high-quality samples retained for pre-training.
+
+each image from the three sensors, we compute two quanti-tative quality metrics: • Structural Similarity Index (SSIM) [52]: We apply Gaus-sian smoothing to each image to reduce high-frequency noise while preserving structural content, and then com-pute the SSIM between the smoothed and original image. • Noise Estimate [41]: The noise level is estimated by applying a Laplacian-like high-pass filter to emphasize intensity variations, followed by computing a statistical measure ( σ) of the mean absolute filtered image. Both metrics range from 0 to 1, where lower values indicate poor image quality. We discard samples with values below 0.4 (decided based on human verification) in both metrics for all sensors. This automated filtering step substantially reduces artifacts and ensures that only visually consistent, high-quality images contribute to pre-training. A few exam-ples of good and poor-quality images are shown in Figure 2. Finally, we split the data from all three sensors into train-ing and validation sets using the HEALPix strategy [23], which partitions a sphere into equal-area cells. These cells are then randomly divided into training and validation sub-sets. The same set of cells is used across all three sensors to prevent data leakage during model merging. The result-ing global distribution and data splits for all three sensors are provided in Appendix A.1. We will publicly release this dataset as open-source to support future research in Mars science and foundation models. 
+
+# 5. Experimental Framework 
+
+5.1. Baselines 
+
+We evaluate MOMO against a variety of baseline mod-els to assess the effectiveness of our proposed approach. As discussed in Section 1, ImageNet pre-trained models remain the default initialization strategy for many plane-tary and geospatial applications; therefore, we include an ImageNet pre-trained model as one of our baselines. We also consider a zero-shot setting with randomly initialized weights to quantify the contribution of pre-training, referred as scratch .Since no prior foundation models have been developed specifically for Mars, we further compare MOMO with sev-eral leading EO-FMs, including SatMAE , CROMA , Prithvi ,and TerraFM . In addition, motivated by the strong represen-tation quality demonstrated by DINOv3 in large-scale visual pre-training studies, we include its satellite pre-trained vari-ant (trained on the SAT-493M dataset). We also evaluate sensor-specific pre-training baselines, where models are trained exclusively on data from a single sensor and then fine-tuned on corresponding downstream tasks. This allows us to analyze the relative benefits of same-sensor versus cross-sensor pre-training compared to MOMO. Furthermore, we consider a joint data pre-training 
+
+configuration, referred to as the Data Merge (DM) setting, in which data from all three sensors are directly combined to pre-train a single unified model. Lastly, since we propose an optimal checkpoint selec-tion strategy, we compare it against other checkpoint se-lection approaches. Specifically, we evaluate two alterna-tives: Early Stopping (ES) and Last Epoch (LE) merging. In the ES setting, models are merged using the early-stopping checkpoint from each sensor, while in the LE setting, mod-els are merged using their final training checkpoint from each sensor. 
+
+5.2. Pre-training 
+
+We pre-train a separate model on data from each sensor for five epochs. As described in Section 4, each model is trained on ∼ 4M samples. During training, we perform val-AtmosDust DoMars16k Frost Landmark Boulder ConeQuest Crater Binary Crater Multi MMLS Avg. Rank ↓                                                                                                                                                                                                                                
+
+> Scratch 0.94 ±0.003 0.73 ±0.008 0.95 ±0.007 0.79 ±0.010 0.07 ±0.012 0.52 ±0.035 0.37 ±0.047 0.05 ±0.017 0.50 ±0.017 4.11 ImageNet 0.92 ±0.010 0.91 ±0.003 0.97 ±0.009 0.92 ±0.003 0.16 ±0.034 0.70 ±0.022 0.55 ±0.012 0.11 ±0.007 0.57 ±0.014 2.33 DINOv3 0.97 ±0.000 0.90 ±0.000 0.99 ±0.013 0.91 ±0.000 0.12 ±0.106 0.51 ±0.000 0.32 ±0.000 0.01 ±0.000 0.29 ±0.000 3.67 CROMA 0.83 ±0.021 0.41 ±0.010 0.76 ±0.000 0.47 ±0.000 0.17 ±0.018 0.44 ±0.000 0.27 ±0.000 0.01 ±0.001 0.14 ±0.014 5.89 Prithvi 0.81 ±0.000 0.64 ±0.008 0.81 ±0.000 0.63 ±0.000 0.04 ±0.051 0.49 ±0.000 0.18 ±0.000 0.01 ±0.000 0.23 ±0.025 6.11 SatMAE 0.96 ±0.000 0.93 ±0.000 0.97 ±0.000 0.92 ±0.000 0.05 ±0.000 0.68 ±0.000 0.46 ±0.000 0.04 ±0.003 0.32 ±0.000 3.00 TerraFM 0.97 ±0.000 0.89 ±0.000 0.99 ±0.000 0.86 ±0.002 0.21 ±0.052 0.38 ±0.021 0.44 ±0.000 0.04 ±0.003 0.14 ±0.103 3.67 MOMO 0.96 ±0.005 0.92 ±0.000 0.98 ±0.003 0.91 ±0.003 0.20 ±0.005 0.71 ±0.008 0.54 ±0.005 0.12 ±0.014 0.57 ±0.009 1.67
+
+Table 1. Performance comparison of different baselines with MOMO. Reported metrics include F1-Score for classification tasks and mIoU for segmentation tasks. Bold and Underlined numbers indicate the best and second best performance. 
+
+MOMO Boulder ConeQuest Crater Binary 
+
+ES 0.12 ± 0.078 0.68 ± 0.0134 0.50 ± 0.014 LE 0.18 ± 0.031 0.70 ± 0.005 0.50 ± 0.015 EVL (Ours) 0.20 ± 0.005 0.71 ± 0.008 0.54 ± 0.005 
+
+Table 2. Performance comparison across different checkpoint se-lection strategies with the proposed EVL technique. 
+
+idation after every ∼ 100 k samples, recording the loss and saving a model checkpoint at each validation step. These intermediate checkpoints are later used for loss alignment and model merging procedures. Details about other hyper-parameters are provided in Appendix B. 
+
+5.3. Downstream Tasks 
+
+We evaluate MOMO and baselines on all orbital tasks from Mars-Bench [59]. For datasets where performance has already saturated, we present results in Appendix A.2 (two classification tasks). In the main paper, we re-port results for four classification tasks: AtmosDust , Do-Mars16k , Frost , and Landmark ; and five segmentation 
+
+tasks: Boulder , ConeQuest , Crater Binary , Crater Multi ,and MMLS . A concise summary and representative visual samples for all tasks are provided in Appendix A.2. For each dataset–model combination, we perform hyperparam-eter tuning and report the best-performing configuration. 
+
+# 6. Results and Analysis 
+
+In this section, we present the results from all experi-ments, and compare MOMO against all baseline methods described in Section 5.1. The quantitative results are shown in Table 1. For classification tasks, we report the weighted F1-score. And for segmentation tasks, we report mean In-tersection over Union (mIoU). Since mIoU alone does not fully capture a model’s ability to accurately localize distinct features, we include the Object F1-Score as a complemen-tary metric to provide a more comprehensive evaluation of segmentation performance. 
+
+Training from scratch and model pre-trained on nat-ural images. Table 1 demonstrates that directly training a model on downstream tasks performs worse than a pre-trained version of models. Comparing overall results with the ImageNet pre-trained version of the model, MOMO marginally outperforms ImageNet pre-training in the case of classification and segmentation tasks. For classification tasks, MOMO outperforms the ImageNet baseline, achiev-ing an average improvement of ∼ 1.25% F1-score across all four tasks, achieving significant improvement ( ∼ 4% )for AtmosDust. ImageNet only outperforms in Landmark; however, the margin of improvement compared to MOMO is only 1%. For segmentation, we also observe a similar trend where MOMO outperforms the ImageNet baseline, achieving an average improvement of ∼ 1% mIoU across all five tasks, achieving significant improvement ( ∼ 4% )for Boulder. These results indicate that while ImageNet pre-training provides comparable representations for classifica-tion, it fails to capture the spatial and textural characteristics required for precise feature localization. 
+
+Models Pre-trained on Earth Satellite data. Consistent with the earlier observations, all EO-FMs perform on a sim-ilar level as MOMO in the case of classification tasks, but when comparing results in segmentation, overall MOMO outperforms compared to EO-FMs. DINOv3 shows com-petitive results for classification tasks. 
+
+Simple vs . Complex Tasks. Mars-Bench contains tasks of varying levels of complexity, which is also reflected in the results presented in Table 1. For instance, in the classi-fication category, binary classification datasets such as At-mosDust and Frost exhibit relatively higher performance, with F1-scores ranging from 0.96 to 0.98. In contrast, multi-class classification datasets such as DoMars16k and land-mark yield slightly lower values, typically between 0.90 and 0.92. A similar trend is observed in segmentation tasks, where the Boulder and MMLS datasets differ significantly in performance. The Boulder dataset achieves considerably lower scores (mIoU ∼ 0.04–0.21), whereas MMLS obtains AtmosDust DoMars16k Frost Landmark Boulder ConeQuest Crater Binary Crater Multi MMLS                                                                                                                                        
+
+> HiRISE 0.93 ±0.018 0.88 ±0.002 0.97 ±0.009 0.90 ±0.005 0.12 ±0.024 0.66 ±0.014 0.49 ±0.017 0.06 ±0.014 0.52 ±0.040 CTX 0.94 ±0.012 0.90 ±0.004 0.95 ±0.013 0.91 ±0.004 0.17 ±0.016 0.70 ±0.015 0.48 ±0.008 0.07 ±0.007 0.54 ±0.008 THEMIS 0.94 ±0.005 0.88 ±0.003 0.94 ±0.012 0.90 ±0.004 0.17 ±0.021 0.69 ±0.024 0.50 ±0.019 0.07 ±0.021 0.51 ±0.068 DM 0.94 ±0.026 0.90 ±0.003 0.44 ±0.139 0.89 ±0.004 0.14 ±0.060 0.67 ±0.012 0.52 ±0.005 0.08 ±0.019 0.48 ±0.064 MOMO 0.96 ±0.005 0.92 ±0.002 0.98 ±0.012 0.91 ±0.003 0.20 ±0.005 0.71 ±0.008 0.54 ±0.005 0.12 ±0.012 0.57 ±0.009
+
+Table 3. Performance comparison across sensor-specific pre-training, joint data pre-training (DM - Data Merge), and MOMO. Here, highlighted indicates the sensor associated with that downstream task. Bold number indicates the best performance. 
+
+much higher values in some models (mIoU ∼ 0.14–0.57). This large performance gap primarily arises from the dif-ferences in object scale and count. In Boulder segmenta-tion, each image typically contains 25 or more small ob-jects, making feature localization and boundary detection substantially more difficult. In contrast, MMLS contains only one or two large landslides per image, with some occu-pying more than 50% of the total area, allowing the model to learn their spatial features more easily and achieve higher mIoU. A similar pattern is also seen in the Crater Multi 
+
+and Crater Multi datasets. While the model performs well in identifying crater regions ( Crater Binary ), it struggles to classify them into their corresponding morphological types (Crater Multi ), resulting in a noticeable performance drop between the two tasks. 
+
+Comparison with Sensor-specific Pre-training. We an-alyze the effect of fine-tuning performance under two set-tings: pre-training on the same sensor and pre-training on a different sensor (cross-sensor). The results are presented in Table 3. It can be clearly observed that same-sensor pre-training consistently improves performance across all downstream tasks compared to cross-sensor pre-training. However, cross-sensor pre-training does not lead to a sig-nificant drop in performance, indicating reasonable gener-alization across sensors. When compared with MOMO ,it achieves an improvement of 1.75% in classification and 4.2% in segmentation. Although the gain in classification is relatively small, MOMO offers a key advantage over sensor-specific training. Specifically, sensor-specific ap-proaches require maintaining separate models for each sen-sor, whereas MOMO provides a unified model that can han-dle all sensors simultaneously. 
+
+Comparison with Joint Data Pre-training. We compare MOMO with Data Merge (DM) approach. Table 3 shows that MOMO outperforms baselines by 15.25% in classifi-cation and 5.4% in segmentation, demonstrating its consis-tently strong performance across tasks. Also, the DM ap-proach suffers from significant limitations in scalability and modularity. Specifically, if additional data or tasks from a new sensor become available in the future, DM would require complete re-training using data aggregated from all sensors. In contrast, MOMO supports easy integration by pre-training a model only on the new sensor and then merging it with existing sensor-specific models using the same EVL-based merging framework. This design makes MOMO more flexible, computationally efficient, and gen-eralizable across new sensors and modalities. 
+
+Comparison of Checkpoint Selection Strategies. To demonstrate the effectiveness of our proposed EVL-based checkpoint selection strategy, we evaluate downstream per-formance using different checkpoint selection methods. Since classification tasks generally show minimal variation across models, this analysis is conducted only on segmen-tation tasks, selecting one downstream task from each sen-sor. As shown in Table 2, the EVL-based MOMO consis-tently achieves the best overall performance with average 
+
+∼ 2.5% mIoU improvement across three tasks. The only exception is observed in the ConeQuest dataset, where the difference remains negligible ( 1% ) compared to the Early Stopping (ES) and Last Epoch (LE) strategies. Moreover, the definition of the “last epoch” itself is ambiguous, as it may occur at any iteration depending on the training setup (e.g., epoch 5 or 500), making it an unreliable criterion for checkpoint selection. These results highlight that EVL pro-vides a more stable approach for merging models trained across different sensors. 
+
+6.1. Intuition Behind EVL 
+
+To further show the efficiency of the optimal checkpoint strategy, we conduct experiments where we examine the loss landscape resulting from various model-merging strate-gies. To visualize this landscape, we adopt the projection method used by Garipov et al. [21], Wortsman et al. [77], which maps models onto a two-dimensional plane. This method employs Gram-Schmidt orthogonalization to iden-tify two orthogonal directions in the weight space, defining the x- and y-axes of the landscape illustrated in Figure 3. The basis vectors for the orthogonalization are derived from the ImageNet, HiRISE, and CTX pre-trained models. The parameters α and β denote unit displacements along the x and y axes, respectively. Figure 3. Loss landscape visualization across different checkpoint selection strategies on DoMars16k and Landmark datasets. The red markers represent MOMO obtained using Early Stopping (ES), Last Epoch (LE), and Equal Validation Loss (EVL), respectively. 
+
+As it can be observed from Table 1, binary classifica-tion tasks do not show significant performance differences (only 1-2% different), we select DoMars16k and Landmark 
+
+datasets for this analysis. The losses are computed on the 
+
+DoMars16k and Landmark datasets using class-balanced versions of their respective test sets. In Figure 3, each plot presents the interpolated loss surface among the HiRISE, CTX, and THEMIS models. Across all merging strategies, the task-vector-based merged model consistently achieves an equal or lower loss com-pared to its constituent models. This demonstrates that task-vector merging can produce models that outperform the originals from which they were derived. Prior work [2, 20, 61] suggests that optimal merging oc-curs when constituent models lie within the same loss basin, as this promotes stability and enhanced performance. Fig-ure 3 shows that relative to both LE and ES, the EVL strat-egy selects model checkpoints that are more closely aligned in weight space. Consequently, EVL is expected to yield the most stable and best-performing merged model. 
+
+# 7. Conclusions 
+
+In this work, we introduced MOMO, the first foundation model designed for Mars orbital applications. MOMO ef-fectively integrates multi-sensor and multi-resolution data through a model-merging framework that leverages our proposed optimal checkpoint selection strategy. This ap-proach ensures stable and compatible model fusion, allow-ing the model to generalize efficiently across diverse data sources. Trained on a large-scale corpus of ∼ 12 million curated samples from HiRISE, CTX, and THEMIS sensors, MOMO demonstrates strong performance across all Mars-Bench orbital downstream tasks. Findings from experimen-tal results indicate that MOMO outperforms compared to ImageNet pre-training, EO-FMs, sensor-specific training, data merge approach, and different checkpoint selection strategies. Particularly, MOMO demonstrates consistently superior performance in segmentation tasks, which require precise identification of fine-grained details within images. Moreover, our approach offers a scalable training frame-work that enables efficient integration of new sensors with-out requiring complete re-training. In summary, MOMO represents the first foundation model in planetary science, and we believe this effort will inspire the development of future foundation models for planetary science research. 
+
+Limitations Our approach builds on a model-merging framework; however, due to computational constraints, we did not include additional model-merging-based baselines for comparison. We also do not explore alignment-based techniques in this work, which can be used in conjunction with our method and may further improve performance, as suggested in literature [1, 70, 78]. Finally, our method re-lies on the assumption of linear mode connectivity between models. While this assumption holds in many practical set-tings, it may not strictly apply when models are trained on highly divergent data distributions or when models are func-tionally equivalent but differ due to network symmetries. Acknowledgment: Part of this research was carried out at the Jet Propulsion Laboratory, California Institute of Tech-nology, under a contract with the National Aeronautics and Space Administration. 
+
+# References 
+
+[1] Samuel Ainsworth, Jonathan Hayase, and Siddhartha Srini-vasa. Git re-basin: Merging models modulo permutation symmetries. In The Eleventh International Conference on Learning Representations , 2023. 8 [2] Samuel K Ainsworth, Jonathan Hayase, and Siddhartha Srinivasa. Git re-basin: Merging models modulo permuta-tion symmetries. arXiv preprint arXiv:2209.04836 , 2022. 8 [3] Amanda Askell, Yuntao Bai, Anna Chen, Dawn Drain, Deep Ganguli, Tom Henighan, Andy Jones, Nicholas Joseph, Ben Mann, Nova DasSarma, et al. A general language assistant as a laboratory for alignment. arXiv preprint arXiv:2112.00861 , 2021. 2 [4] Guillaume Astruc, Nicolas Gonthier, Clement Mallet, and Loic Landrieu. AnySat: An earth observation model for any resolutions, scales, and modalities. arXiv preprint arXiv:2412.14123 , 2024. 1, 2 [5] Favyen Bastani, Piper Wolters, Ritwik Gupta, Joe Ferdi-nando, and Aniruddha Kembhavi. Satlaspretrain: A large-scale dataset for remote sensing image understanding. In 
+
+Proceedings of the IEEE/CVF International Conference on Computer Vision , pages 16772–16782, 2023. 2, 3 [6] Eric Bauer and Ron Kohavi. An empirical comparison of voting classification algorithms: Bagging, boosting, and variants. Machine learning , 36:105–139, 1999. 2 [7] JF Bell III, MC Malin, MA Caplinger, J Fahle, MJ Wolff, BA Cantor, PB James, T Ghaemi, LV Posiolova, MA Ravine, et al. Calibration and performance of the mars reconnais-sance orbiter context camera (ctx). International Journal of Mars Science and Exploration , 8:1–14, 2013. 4 [8] Nassim Ait Ali Braham, Conrad M Albrecht, Julien Mairal, Jocelyn Chanussot, Yi Wang, and Xiao Xiang Zhu. Spec-tralEarth: Training hyperspectral foundation models at scale. 
+
+arXiv preprint arXiv:2408.08447 , 2024. 2 [9] Christina Butsko, Kristof Van Tricht, Gabriel Tseng, Gior-gia Milli, David Rolnick, Ruben Cartuyvels, Inbal Becker Reshef, Zoltan Szantoi, and Hannah Kerner. Deploying geospatial foundation models in the real world: Lessons from worldcereal. arXiv preprint arXiv:2508.00858 , 2025. 1[10] California Institute of Technology - Division of Geologi-cal and Planetary Sciences. The Bruce Murray Labora-tory for Planetary Visualization. http://murray-lab. caltech.edu/CTX/ . 13 [11] PR Christensen, NS Gorelick, GL Mehall, and KC Mur-ray. Mars odyssey thermal emission imaging system in-frared reduced data record. Technical report, ODY-M-THM-5-IRRDR-V1. 0.[Dataset]. NASA Planetary Data System. https://pds . . . , 2001. 13 [12] Philip R Christensen, Bruce M Jakosky, Hugh H Kieffer, Michael C Malin, Harry Y McSween Jr, Kenneth Nealson, Greg L Mehall, Steven H Silverman, Steven Ferry, Michael Caplinger, et al. The thermal emission imaging system (themis) for the mars 2001 odyssey mission. Space Science Reviews , 110(1):85–130, 2004. 4, 13 [13] P. R. Christensen, E. Engle, S. Anwar, S. Dickenshied, D. Noss, N. Gorelick, and M. Weiss-Malik. Jmars – a planetary gis. http://adsabs.harvard.edu/ abs / 2009AGUFMIN22A . .06C , 2009. NASA/JPL-Caltech/Arizona State University. 23 [14] Yezhen Cong, Samar Khanna, Chenlin Meng, Patrick Liu, Erik Rozi, Yutong He, Marshall Burke, David Lobell, and Stefano Ermon. SatMAE: Pre-training transformers for tem-poral and multi-spectral satellite imagery. Advances in Neu-ral Information Processing Systems , 35:197–211, 2022. 2, 3[15] JL Dickson, LA Kerber, CI Fassett, and BL Ehlmann. Aglobal, blended ctx mosaic of mars with vectorized seam mapping: A new mosaicking pipeline using principles of non-destructive image editing. In Lunar and planetary sci-ence conference , pages 1–2. Lunar and Planetary Institute The Woodlands, TX, USA, 2018. 13 [16] JL Dickson, BL Ehlmann, LH Kerber, and CI Fassett. Re-lease of the global ctx mosaic of mars: An experiment in informationpreserving image data processing. In 54th Lunar and Planetary Science Conference , pages 1–2, 2023. 3, 13 [17] Pierre Foret, Ariel Kleiner, Hossein Mobahi, and Behnam Neyshabur. Sharpness-aware minimization for efficiently improving generalization. arXiv preprint arXiv:2010.01412 ,2020. 2 [18] Yoav Freund and Robert E Schapire. A decision-theoretic generalization of on-line learning and an application to boosting. Journal of computer and system sciences , 55(1): 119–139, 1997. 2 [19] Anthony Fuller, Koreen Millard, and James Green. CROMA: Remote sensing representations with contrastive radar-optical masked autoencoders. Advances in Neural Informa-tion Processing Systems , 36, 2024. 2 [20] Antonio Andrea Gargiulo, Donato Crisostomi, Maria Sofia Bucarelli, Simone Scardapane, Fabrizio Silvestri, and Emanuele Rodola. Task singular vectors: Reducing task in-terference in model merging. In Proceedings of the Com-puter Vision and Pattern Recognition Conference , pages 18695–18705, 2025. 8 [21] Timur Garipov, Pavel Izmailov, Dmitrii Podoprikhin, Dmitry P Vetrov, and Andrew G Wilson. Loss surfaces, mode connectivity, and fast ensembling of dnns. Advances in neural information processing systems , 31, 2018. 7 [22] Karan Goel, Albert Gu, Yixuan Li, and Christopher R´ e. Model patching: Closing the subgroup performance gap with data augmentation. arXiv preprint arXiv:2008.06775 , 2020. 2[23] Krzysztof M Gorski, Benjamin D Wandelt, Frode K Hansen, Eric Hivon, and Anthony J Banday. The healpix primer. 
+
+arXiv preprint astro-ph/9905275 , 1999. 5 [24] Hao Guo, Jiyong Jin, and Bin Liu. Stochastic weight aver-aging revisited. Applied Sciences , 13(5):2935, 2023. 2 [25] Xin Guo, Jiangwei Lao, Bo Dang, Yingying Zhang, Lei Yu, Lixiang Ru, Liheng Zhong, Ziyuan Huang, Kang Wu, Dingxiang Hu, Huimei He, Jian Wang, Jingdong Chen, Ming Yang, Yongjun Zhang, and Yansheng Li. Skysense: A multi-modal remote sensing foundation model towards universal interpretation for earth observation imagery. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pat-tern Recognition (CVPR) , pages 27672–27683, 2024. 2 [26] Boran Han, Shuai Zhang, Xingjian Shi, and Markus Reich-stein. Bridging remote sensors with multisensor geospatial foundation models. In Proceedings of the IEEE/CVF Con-ference on Computer Vision and Pattern Recognition , pages 27852–27862, 2024. 1, 2 [27] Kaiming He, Xinlei Chen, Saining Xie, Yanghao Li, Piotr Doll´ ar, and Ross Girshick. Masked autoencoders are scalable vision learners. In Proceedings of the IEEE/CVF conference on computer vision and pattern recognition , pages 16000– 16009, 2022. 3, 19 [28] Danfeng Hong, Bing Zhang, Xuyang Li, Yuxuan Li, Chenyu Li, Jing Yao, Naoto Yokoya, Hao Li, Pedram Ghamisi, Xi-uping Jia, et al. SpectralGPT: Spectral remote sensing foun-dation model. IEEE Transactions on Pattern Analysis and Machine Intelligence , 2024. 2 [29] Ziyue Huang, Hongxi Yan, Qiqi Zhan, Shuai Yang, Ming-ming Zhang, Chenkai Zhang, YiMing Lei, Zeming Liu, Qingjie Liu, and Yunhong Wang. A survey on remote sens-ing foundation models: From vision to multimodality. arXiv preprint arXiv:2503.22081 , 2025. 1 [30] Gabriel Ilharco, Marco Tulio Ribeiro, Mitchell Wortsman, Suchin Gururangan, Ludwig Schmidt, Hannaneh Hajishirzi, and Ali Farhadi. Editing models with task arithmetic. arXiv preprint arXiv:2212.04089 , 2022. 4, 19, 22 [31] Gabriel Ilharco, Mitchell Wortsman, Samir Yitzhak Gadre, Shuran Song, Hannaneh Hajishirzi, Simon Kornblith, Ali Farhadi, and Ludwig Schmidt. Patching open-vocabulary models by interpolating weights. Advances in Neural Infor-mation Processing Systems , 35:29262–29277, 2022. 2 [32] Pavel Izmailov, Dmitrii Podoprikhin, Timur Garipov, Dmitry Vetrov, and Andrew Gordon Wilson. Averaging weights leads to wider optima and better generalization. arXiv preprint arXiv:1803.05407 , 2018. 2 [33] Douglas M. Jennewein, Johnathan Lee, Chris Kurtz, William Dizon, Ian Shaeffer, Alan Chapman, Alejandro Chi-quete, Josh Burks, Amber Carlson, Natalie Mason, Arhat Kobawala, Thirugnanam Jagadeesan, Praful Bhargav Basani, Torey Battelle, Rebecca Belshe, Deb McCaffrey, Marisa Brazil, Chaitanya Inumella, Kirby Kuznia, Jade Buzinski, Dhruvil Deepakbhai Shah, Sean M. Dudley, Gil Speyer, and Jason Yalim. The sol supercomputer at arizona state uni-versity. In Practice and Experience in Advanced Research Computing 2023: Computing for the Common Good , page 296–301, New York, NY, USA, 2023. Association for Com-puting Machinery. 19 [34] Shancheng Jiang, Fan Wu, Kai-Leung Yung, Yingqiao Yang, WH Ip, Ming Gao, and James Abbott Foster. A robust end-to-end deep learning framework for detecting martian land-forms with arbitrary orientations. Knowledge-Based Sys-tems , 234:107562, 2021. 2 [35] Jean Kaddour. Stop wasting my time! saving days of ima-genet and bert training with latest weight averaging. arXiv preprint arXiv:2209.14981 , 2022. 2 [36] Hannah Rae Kerner, Kiri L Wagstaff, Brian D Bue, Patrick C Gray, James F Bell, and Heni Ben Amor. Toward general-ized change detection on planetary surfaces with convolu-tional autoencoders and transfer learning. IEEE Journal of Selected Topics in Applied Earth Observations and Remote Sensing , 12(10):3900–3918, 2019. 17 [37] Konstantin Klemmer, Esther Rolf, Caleb Robinson, Lester Mackey, and Marc Rußwurm. SatCLIP: Global, general-purpose location embeddings with satellite imagery. arXiv preprint arXiv:2311.17179 , 2023. 2 [38] Balaji Lakshminarayanan, Alexander Pritzel, and Charles Blundell. Simple and scalable predictive uncertainty estima-tion using deep ensembles. Advances in neural information processing systems , 30, 2017. 2 [39] Margaret Li, Suchin Gururangan, Tim Dettmers, Mike Lewis, Tim Althoff, Noah A Smith, and Luke Zettlemoyer. Branch-train-merge: Embarrassingly parallel training of ex-pert language models. arXiv preprint arXiv:2208.03306 ,2022. 2 [40] Tao Li, Zhehao Huang, Yingwen Wu, Zhengbao He, Qinghua Tao, Xiaolin Huang, and Chih-Jen Lin. Trainable weight averaging: A general approach for subspace training. 
+
+arXiv preprint arXiv:2205.13104 , 2022. 2 [41] Ce Liu, William T Freeman, Richard Szeliski, and Sing Bing Kang. Noise estimation from a single image. In 2006 IEEE Computer Society Conference on Computer Vision and Pat-tern Recognition (CVPR’06) , pages 901–908. IEEE, 2006. 5[42] Siqi Lu, Junlin Guo, James R Zimmer-Dauphinee, Jordan M Nieusma, Xiao Wang, Steven A Wernke, Yuankai Huo, et al. Vision foundation models in remote sensing: A survey. IEEE Geoscience and Remote Sensing Magazine , 2025. 1 [43] Cheng Ma, Yongming Rao, Yean Cheng, Ce Chen, Jiwen Lu, and Jie Zhou. Structure-preserving super resolution with gradient guidance. In Proceedings of the IEEE/CVF con-ference on computer vision and pattern recognition , pages 7769–7778, 2020. 3 [44] Michael C Malin, James F Bell III, Bruce A Cantor, Michael A Caplinger, Wendy M Calvin, R Todd Clancy, Kenneth S Edgett, Lawrence Edwards, Robert M Haberle, Philip B James, et al. Context camera investigation on board the mars reconnaissance orbiter. Journal of Geophysical Re-search: Planets , 112(E5), 2007. 4, 13 [45] Oscar Manas, Alexandre Lacoste, Xavier Gir´ o-i Nieto, David Vazquez, and Pau Rodriguez. Seasonal contrast: Un-supervised pre-training from uncurated remote sensing data. In Proceedings of the IEEE/CVF International Conference on Computer Vision , pages 9414–9423, 2021. 2 [46] Alfred S McEwen, Eric M Eliason, James W Bergstrom, Nathan T Bridges, Candice J Hansen, W Alan Delamere, John A Grant, Virginia C Gulick, Kenneth E Herkenhoff, Laszlo Keszthelyi, et al. Mars reconnaissance orbiter’s high resolution imaging science experiment (hirise). Journal of Geophysical Research: Planets , 112(E5), 2007. 4 [47] Alfred S McEwen, Shane Byrne, C Hansen, Ingrid J Daubar, Sarah Sutton, Colin M Dundas, Nicole Bardabelias, Nicole Baugh, J Bergstrom, R Beyer, et al. The high-resolution imaging science experiment (hirise) in the mro extended sci-ence phases (2009–2023). Icarus , 419:115795, 2024. 3, 13 [48] Hector Mendoza, Aaron Klein, Matthias Feurer, Jost Tobias Springenberg, and Frank Hutter. Towards automatically-tuned neural networks. In Workshop on automatic machine learning , pages 58–65. PMLR, 2016. 2 [49] Eric Mitchell, Charles Lin, Antoine Bosselut, Chelsea Finn, and Christopher D Manning. Fast model editing at scale. 
+
+arXiv preprint arXiv:2110.11309 , 2021. 2 [50] Eric Mitchell, Charles Lin, Antoine Bosselut, Christopher D Manning, and Chelsea Finn. Memory-based model editing at scale. In International Conference on Machine Learning ,pages 15817–15831. PMLR, 2022. 2 [51] Shikhar Murty, Christopher D Manning, Scott Lundberg, and Marco Tulio Ribeiro. Fixing model bugs with natural lan-guage patches. arXiv preprint arXiv:2211.03318 , 2022. 2 [52] Jim Nilsson and Tomas Akenine-M¨ oller. Understanding ssim. arXiv preprint arXiv:2006.13846 , 2020. 3, 5 [53] Mubashir Noman, Muzammal Naseer, Hisham Cholakkal, Rao Muhammad Anwer, Salman Khan, and Fahad Shah-baz Khan. Rethinking transformers pre-training for multi-spectral satellite imagery. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) , pages 27811–27819, 2024. 2 [54] Long Ouyang, Jeffrey Wu, Xu Jiang, Diogo Almeida, Car-roll Wainwright, Pamela Mishkin, Chong Zhang, Sandhini Agarwal, Katarina Slama, Alex Ray, et al. Training language models to follow instructions with human feedback. Ad-vances in neural information processing systems , 35:27730– 27744, 2022. 2 [55] Yaniv Ovadia, Emily Fertig, Jie Ren, Zachary Nado, David Sculley, Sebastian Nowozin, Joshua Dillon, Balaji Lakshmi-narayanan, and Jasper Snoek. Can you trust your model’s uncertainty? evaluating predictive uncertainty under dataset shift. Advances in neural information processing systems ,32, 2019. 2 [56] Elena Plekhanova, Damien Robert, Johannes Dollinger, Emilia Arens, Philipp Brun, Jan Dirk Wegner, and Niklaus E. Zimmermann. Ssl4eco: A global seasonal dataset for geospatial foundation models in ecology. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) Workshops , pages 2428–2439, 2025. 13 [57] Mirali Purohit, Jacob Adler, and Hannah Kerner. Conequest: A benchmark for cone segmentation on mars. In Proceed-ings of the IEEE/CVF Winter Conference on Applications of Computer Vision , pages 6026–6035, 2024. 1 [58] MV Purohit, S Lu, S Diniega, UD Rebbapragada, and HR Kerner. Investigating the benefits of foundation models for mars science. LPI Contributions , 3007:3535, 2024. 1, 2 [59] Mirali Purohit, Bimal Gajera, Vatsal Malaviya, Irish Mehta, Kunal Sunil Kasodekar, Jacob Adler, Steven Lu, Umaa Reb-bapragada, and Hannah Kerner. Mars-bench: A benchmark for evaluating foundation models for mars science tasks. In 
+
+The Thirty-ninth Annual Conference on Neural Information Processing Systems Datasets and Benchmarks Track , 2025. 1, 4, 6, 15 [60] Mirali Purohit, Gedeon Muhawenayo, Esther Rolf, and Han-nah Kerner. How does the spatial distribution of pre-training data affect geospatial foundation models? In Workshop on Preparing Good Data for Generative AI: Challenges and Ap-proaches , 2025. 13 [61] Xingyu Qu. Rethinking model re-basin and linear mode con-nectivity. 2024. 8 [62] Colorado J Reed, Ritwik Gupta, Shufan Li, Sarah Brock-man, Christopher Funk, Brian Clipp, Kurt Keutzer, Salvatore Candido, Matt Uyttendaele, and Trevor Darrell. Scale-MAE: A scale-aware masked autoencoder for multiscale geospatial representation learning. In Proceedings of the IEEE/CVF International Conference on Computer Vision , pages 4088– 4099, 2023. 2 [63] Esther Rolf, Konstantin Klemmer, Caleb Robinson, and Hannah Kerner. Position: Mission critical–satellite data is a distinct modality in machine learning. In Forty-first Inter-national Conference on Machine Learning , 2024. 1 [64] David Rolnick, Alan Aspuru-Guzik, Sara Beery, Bistra Dilk-ina, Priya L Donti, Marzyeh Ghassemi, Hannah Kerner, Claire Monteleoni, Esther Rolf, Milind Tambe, et al. Application-driven innovation in machine learning. arXiv preprint arXiv:2403.17381 , 2024. 1 [65] Shibani Santurkar, Dimitris Tsipras, Mahalaxmi Elango, David Bau, Antonio Torralba, and Aleksander Madry. Edit-ing a classifier by rewriting its prediction rules. Advances in Neural Information Processing Systems , 34:23359–23373, 2021. 2 [66] George Stoica, Daniel Bolya, Jakob Bjorner, Pratik Ramesh, Taylor Hearn, and Judy Hoffman. Zipit! merging mod-els from different tasks without training. arXiv preprint arXiv:2305.03053 , 2023. 2, 3 [67] Yi-Lin Sung, Varun Nair, and Colin A Raffel. Training neu-ral networks with fixed sparse masks. Advances in Neural Information Processing Systems , 34:24193–24205, 2021. 2 [68] Christian Szegedy, Wei Liu, Yangqing Jia, Pierre Sermanet, Scott Reed, Dragomir Anguelov, Dumitru Erhan, Vincent Vanhoucke, and Andrew Rabinovich. Going deeper with convolutions. In Proceedings of the IEEE conference on computer vision and pattern recognition , pages 1–9, 2015. 2[69] Kenneth L Tanaka, James A Skinner, James M Dohm, Ross-man P Irwin, Eric J Kolb, Corey M Fortezzo, Thomas Platz, Gregory G Michael, and Trent M Hare. Geologic map of Mars . Astrogeology Research Program (USGS), 2014. 4 [70] Alexander Theus, Alessandro Cabodi, Sotiris Anagnostidis, Antonio Orvieto, Sidak Pal Singh, and Valentina Boeva. Generalized linear mode connectivity for transformers. In 
+
+The Thirty-ninth Annual Conference on Neural Information Processing Systems , 2025. 8 [71] Gabriel Tseng, Ruben Cartuyvels, Ivan Zvonkov, Mirali Purohit, David Rolnick, and Hannah Kerner. Lightweight, pre-trained transformers for remote sensing timeseries. arXiv preprint arXiv:2304.14065 , 2023. 1, 2, 3 [72] Gabriel Tseng, Anthony Fuller, Marlena Reil, Henry Her-zog, Patrick Beukema, Favyen Bastani, James R Green, Evan Shelhamer, Hannah Kerner, and David Rolnick. Galileo: Learning global and local features in pretrained remote sens-ing models. arXiv preprint arXiv:2502.09356 , 2025. 2, 3 [73] Vicente Vivanco Cepeda, Gaurav Kumar Nayak, and Mubarak Shah. GeoCLIP: Clip-inspired alignment be-tween locations and images for effective worldwide geo-localization. Advances in Neural Information Processing Systems , 36:8690–8701, 2023. 2 [74] Kiri Wagstaff, You Lu, Alice Stanboli, Kevin Grimes, Thamme Gowda, and Jordan Padams. Deep mars: Cnn clas-sification of mars imagery for the pds imaging atlas. In Pro-ceedings of the AAAI Conference on Artificial Intelligence ,2018. 1 [75] Kiri Wagstaff, Steven Lu, Emily Dunkel, Kevin Grimes, Brandon Zhao, Jesse Cai, Shoshanna B Cole, Gary Doran, Raymond Francis, Jake Lee, et al. Mars image content clas-sification: Three years of NASA deployment and recent ad-vances. In Proceedings of the AAAI Conference on Artificial Intelligence , pages 15204–15213, 2021. 1, 23 [76] Florian Wenzel, Jasper Snoek, Dustin Tran, and Rodolphe Jenatton. Hyperparameter ensembles for robustness and un-certainty quantification. Advances in Neural Information Processing Systems , 33:6514–6527, 2020. 2 [77] Mitchell Wortsman, Gabriel Ilharco, Samir Ya Gadre, Re-becca Roelofs, Raphael Gontijo-Lopes, Ari S Morcos, Hongseok Namkoong, Ali Farhadi, Yair Carmon, Simon Ko-rnblith, et al. Model soups: averaging weights of multiple fine-tuned models improves accuracy without increasing in-ference time. In International conference on machine learn-ing , pages 23965–23998. PMLR, 2022. 2, 7 [78] Binchi Zhang, Zaiyi Zheng, Zhengzhang Chen, and Jundong Li. Beyond the permutation symmetry of transformers: The role of rotation for model fusion. In Forty-second Interna-tional Conference on Machine Learning , 2025. 8 [79] Richard Zhang, Phillip Isola, Alexei A Efros, Eli Shecht-man, and Oliver Wang. The unreasonable effectiveness of deep features as a perceptual metric. In Proceedings of the IEEE conference on computer vision and pattern recogni-tion , pages 586–595, 2018. 3 A. Data Overview 
+
+A.1. Pre-training Data Details  
+
+> Figure 4. Example of a HiRISE map-projected image used in our study. The dark border around the image represents no-data regions that were filtered out during pre-processing to ensure high-quality crop selection.
+
+HiRISE is mounted on the Mars Reconnaissance Orbiter (MRO) satellite and has been collecting data since 2006. HiRISE captures visible spectrum images at very high-resolution, i.e., ∼ 0.25 meters/pixel. HiRISE images cover a cumulative area of ∼ 4.5% 
+
+of the martian surface; however, unique coverage (excluding repeats for stereo and mon-itoring) is < 3% [47]. We used grayscale data from the RED band of map-projected Reduced Data Record (RDR) products, and from the Primary and Extended Science Phases (PSP and ESP) 1. Our square image crops were extracted from map-projected HiRISE images. We applied a filter to exclude crops that extended into the no-data HiRISE border (black area in the Figure 4). We gathered ∼ 16 M image crops, which were selected from images acquired between November 2006 through May 2025. From these, we first filter the data using SSIM and Noise Estimate, and then further down-sample to ∼ 4M using GMOM stratified sampling as described in Section 4. We adopt GMOM-based sampling instead of random sampling to ensure uniform geographic cov-erage, as random sampling may miss certain regions of the surface. As shown in prior work [56, 60], geographic distribution plays an important role in model performance. 
+
+CTX is another visible imager on MRO with a wider ground footprint. To prepare pre-training data for CTX, we used open-source CTX data from the Murray Lab 2 (up-dated March 2023) [10]. The dataset is a seam-corrected global image mosaic of Mars rendered at 5.0 meters/pixel [16, 44]. Data covers the entirety of the Martian surface (> 99 .5% ). The global image data is divided into 3960 geotiff tiles (4 ◦ × 4◦) from 88 ◦Sto 88 ◦N [15, 16]. Each tile is subdivided into four subtiles (2 ◦ × 2◦). On the Murray Lab, CTX data was last updated in March 2023. To create almost even geographic dis-tribution from all subtiles, in each subtile, we randomly sample 630 points and crop data samples. This way, we make sure that we are capturing the diversity of the terrain across the Martian surface. This resulted in ∼ 10 M CTX data samples globally, and then we filter this data to remove noisy samples (using SSIM and Noise Estimate). From there, we further sample ∼ 4M data samples using GMOM as described in Section 4. 
+
+THEMIS is a thermal infrared imager on the Mars Odyssey Orbiter and has been collecting data since 2001. We used THEMIS day-time images at 100 meters/pixel resolution. THEMIS has global coverage [12]. Similar to HiRISE data, original THEMIS tiles are tilted. Thus, we have used the same process (as HiRISE) to create crops from THEMIS tiles as well. We have used Projected Brightness Temperatures (PBT) products from THEMIS archive 3 [11]. Although THEMIS has global coverage, due to low-resolution data, we got a total of ∼ 4M data samples. We have exported and processed data from October 2002 to April 2025. As described in Section 4, we use a HEALPix strategy to create geographically consistent training and validation sets. We use a HEALPix pixel size of 64, ensuring that all samples within a given cell are assigned exclusively to either the training or validation split. From our ∼ 4M curated samples, we split 95% for training and 5% for validation for each sensor, respectively. This prevents cross-sensor leakage and preserves geographic diversity within each split. The resulting spatial distribution and the final train/validation assignments for HiRISE, CTX, and THEMIS are summarized in Figure 5, Figure 6, and Figure 7, respectively. 
+
+> 1https://hirise-pds.lpl.arizona.edu/PDS/RDR/
+> 2https://murray-lab.caltech.edu/CTX/tiles/beta01/
+> 3https://static.mars.asu.edu/pds/ODTGEO_v2/data/
+
+Figure 5. HiRISE pre-training data distribution 
+
+Figure 6. CTX pre-training data distribution Figure 7. THEMIS pre-training data distribution 
+
+A.2. Downstream Tasks 
+
+As mentioned in Section 5, we evaluate MOMO on all orbital tasks from Mars-Bench [59]. In this section, we describe details of each downstream task and which sensor that downstream task belongs to. For simplicity, we remove the prefix “mb-” from all datasets, and for long dataset names, we represent that with a short, meaningful name. 
+
+A.2.1. Classification AtmosDust This is a binary classification dataset and focuses on classifying between “ Dusty ” and “ Non dusty ” regions in Mars surface imagery captured by the HiRISE sensor on the MRO. This dataset has two versions provided in Mars-Bench, i.e., EDR (Experimental Data Record) and RDR (Reduced Data Record). As both datasets have the same characteristics, we have evaluated only on the RDR version of the dataset (Figure 8). The EDR refers to raw images from the sensor that have not been calibrated or stitched together; while the RDR is a downsampled or processed version of the EDR, typically used for quick viewing or initial analysis. 
+
+> Figure 8. AtmosDust
+
+DoMars16k This is a multi-class classification dataset designed for geomorphologic feature recognition on Mars using im-agery from the CTX sensor. It consists of 15 classes (Figure 9) grouped into five thematic categories: (1) Aeolian Bedforms: 
+
+Aeolian Curved, Aeolian Straight; (2) Topographic Landforms: Channel, Cliff, Mounds, Ridge; (3) Slope Features: Gul-lies, Mass Wasting, Slope Streaks; (4) Impact Landforms: Crater, Crater Field; and (5) Basic Terrain: Mixed Terrain, Rough Terrain, Smooth Terrain, Textured Terrain. This is one of the largest and most diverse orbital datasets in terms of #of classes. Hence, the dataset presents a unique challenge due to its class granularity, significant variability within classes, and subtle differences between classes, making it valuable for evaluating models. 
+
+> Figure 9. DoMars16k
+
+Landmark This dataset is a multi-class classification corpus derived from orbital HiRISE imagery. Each image is assigned to one of eight geomorphological feature classes: Bright Dune, Crater, Dark Dune, Impact Ejecta, Slope Streak, Spider, Swiss Cheese , and Other (Figure 10). The class distribution is highly imbalanced, with Other dominating the dataset and 
+
+Impact Ejecta representing the rarest (minority) class. 
+
+> Figure 10. Landmark
+
+Frost This is a binary classification dataset designed to detect the presence or absence of surface frost in Mars satellite imagery. The dataset consists of HiRISE images labeled as either “ Frost ” or “ Non Frost ” (Figure 11). Among all datasets in Mars-Bench, this is the largest in terms of the # of samples, and the dataset is well-balanced in terms of class distribution. 
+
+Saturated Task Apart from the tasks described above, we exclude the mb-change cls task from our study, as both of its available versions, HiRISE and CTX, are already saturated. In prior benchmarks and in MOMO, this task consistently reaches near-perfect performance. Although the task exists in both HiRISE and CTX variants, the CTX version additionally suffers from an insufficient number of test samples for statistically meaningful evaluation. For completeness, we only evaluate the mb-change cls hirise dataset, but we do not include it in our core experiments. Figure 11. Frost 
+
+mb-change cls hirise This dataset is designed for binary classification of surface changes using temporal image pairs; specifically, one image taken before and another after some time period, from the same Martian location. The task involves identifying whether meaningful surface change has occurred and classifying between “ Change ” and “ No change ”. Unlike standard single-image classification, this task requires forming a composite input from two grayscale images (Figure 12). Following the approach outlined by Kerner et al. [36], we adopt the composite grayscale method: the blue channel encodes the “before” image, the green channel encodes the “after” image, and the red channel is set to zero.  
+
+> (a) Change (b) No change
+> Figure 12. mb-change cls hirise
+
+For the mb-change cls hirise dataset, we conducted experiments using MOMO and all baseline models, excluding EO-FMs and DINOv3. All models achieved 100% accuracy and F1-score, indicating that the task is already saturated. Therefore, we did not include these results in the main paper and did not perform further experiments on EO-FMs for this dataset. 
+
+A.2.2. Segmentation Boulder This is a binary segmentation dataset focused on segmenting boulders on the Martian surface using high-resolution orbital imagery from the HiRISE sensor. The dataset comprises manually annotated binary masks indicating the presence or absence of boulders within each image (Figure 13). Boulders were annotated by planetary scientists using precise polygon outlines, ensuring high-quality labels. This is one of the smallest datasets in Mars-Bench, with only tens of samples (i.e., 39), and that makes it challenging for the computer vision community. 
+
+> Figure 13. Boulder
+
+ConeQuest This is a binary segmentation dataset focused on identifying volcanic cones on the Martian surface using CTX imagery. It was developed to support global mapping and morphologic analysis of small-scale volcanic landforms. The dataset spans three geographically diverse regions on Mars, capturing substantial variation in cone shape, size, and appear-ance, making it a challenging benchmark for model generalization. Each sample consists of an image and its corresponding binary mask (Figure 14), with all annotations created and validated by expert geologists to ensure scientific accuracy. Particu-larly, the dataset includes negative samples (images without any cones), which introduces additional complexity by requiring models to correctly predict true negatives rather than detecting cones in every image. 
+
+> Figure 14. ConeQuest
+
+MMLS This is a binary segmentation dataset designed to identify landslides on the Martian surface, with a focus on the Valles Marineris region from the CTX sensor. All annotations were manually created by expert geologists, ensuring high-quality, scientifically accurate labels. Each image sample includes multi-modal satellite data comprising 7 channels: RGB (3), Digital Elevation Model (DEM), thermal inertia, slope, and grayscale intensity (Figure 15 visualizes grayscale channels only). This rich set of modalities captures the complex geomorphology of landslide-prone regions, making the dataset especially valuable for developing and benchmarking robust segmentation models in planetary science. All experiments in this paper utilize only the RGB channels for training and evaluation. 
+
+> Figure 15. MMLS
+
+Crater Binary & Crater Multi These two datasets focus on crater segmentation using THEMIS imagery. In partic-ular, mb-crater binary seg is a binary segmentation dataset that distinguishes crater vs. non-crater regions, while mb-crater multi seg is a multi-class segmentation dataset with four crater types: Other , Layered , Buried , and Secondary 
+
+(Figure 16). 
+
+# B. Experiments Details 
+
+Pre-training Experiments. All pre-training experiments are conducted on the ViT-Base model on a single NVIDIA A100 GPU with a batch size of 256 at the JPL computing infrastructure. We apply only a random horizontal flip as data aug-mentation during training and use no augmentation for validation. Models are pre-trained with a learning rate of 10 −3, a weight decay of 0.05 , a patch size of 16 , and a mask ratio of 0.75 . For each sensor-specific dataset, we train the model for 
+
+5 epochs. We record the model state and loss values after every 100 k processed samples, enabling consistent comparison of validation loss across all individually pre-trained models. During pre-training, all loss weights λi are set to 0.25 , ensuring equal weightage to pixel-based and perceptual loss. For loss alignment, we use a patience of 5 and a tolerance parameter (a) Crater Binary 
+
+> (b) Crater Multi
+> Figure 16. Crater Segmentation Datasets
+
+of ϵ = 10 −4. We analyze the effect of different values of the tolerance parameter in Section C.4. During model merging, we apply a scaling coefficient of 0.3, following the recommendation of Ilharco et al. [30]. We further analyze the sensi-tivity of our approach to different scaling coefficients in Section C.3. For the Data Merge experiments, we apply the same hyperparameter configuration. For the ImageNet-pretrained baseline, we use the model provided by He et al. [27]. During pre-training, a ViT-Base model requires approximately 12 hours to train on ∼4M samples for each individual sensor. In con-trast, pre-training a ViT-Base model using the Data Merge ( ∼ 12 M data samples in pre-training) setup takes approximately 35 hours. 
+
+Downstream Tasks Experiments. For all downstream classification and segmentation tasks, we perform extensive hyper-parameter tuning for each model–dataset combination. For classification, a linear layer is applied on top of the pre-trained encoder, whereas segmentation uses a U-NetFormer decoder. All classification datasets use cross-entropy loss, while seg-mentation employs a weighted combination of Dice, cross-entropy, and boundary losses. Because certain datasets are highly imbalanced (e.g., Landmark), we apply dataset-specific balancing strategies: no balancing for AtmosDust and Frost (nearly balanced), loss reweighting for DoMars16k, and oversampling for Landmark. For all segmentation tasks, we adopt loss reweighting, as background pixels dominate the ground-truth masks. All models are trained for up to 100 epochs with an early-stopping patience of 5, 10 . We perform a sweep over hyperparam-eters: learning rates ∈ 1 × 10 −3, 1 × 10 −4, weight decays ∈ 5 × 10 −2, 1 × 10 −1, layer decays ∈ 0.5, 0.6, 0.75 , and warm-up epochs ∈ 0, 5, 10 . For segmentation, the loss-weighting coefficients are tuned using two settings: (Dice , CE , Boundary ) = (0 .5, 0.2, 0.3) and (0 .3, 0.5, 0.2) .For the DINOv3 model, we use the variant pre-trained on Earth satellite data, specifically the SAT-493M dataset. For the remaining EO-FMs, most do not provide an end-to-end fine-tuning reference codebase for downstream tasks, so we implement our own framework for both classification and segmentation. To ensure robustness, we run each experiment five times with different random seeds and report the mean and standard deviation. All downstream experiments are conducted on A100 GPUs on ASU [33] or JPL servers, depending on GPU availability. 
+
+# C. Extended Results 
+
+In this section, we present additional experiments and analyses that complement the results discussed in the main paper. These include the effect of model size, detailed evaluations of reconstruction quality, the influence of the scaling coefficient, comparison with the model currently deployed in the NASA PDS system, and examples demonstrating MOMO’s capability for generating global maps. 
+
+C.1. Effect of Model Size                                       
+
+> MOMO AtmosDust DoMars16k Frost Landmark Boulder ConeQuest Crater Binary Crater Multi MMLS
+> ViT-Small 0.96 0.92 0.96 0.92 0.22 0.71 0.54 0.09 0.58 ViT-Base 0.96 0.93 0.97 0.93 0.18 0.72 0.56 0.12 0.58 ViT-Large 0.96 0.92 0.96 0.93 0.19 0.73 0.58 0.14 0.60
+> Table 4. Performance comparison of ViT variants. Reported metrics include F1-Score for classification tasks, and mIoU for segmentation tasks. Bold numbers indicate the highest value in each column.
+
+To evaluate the robustness of our proposed approach across different model capacities, we conducted experiments using three Vision Transformer (ViT) variants: ViT-Small, ViT-Base, and ViT-Large. Each variant was pre-trained and evaluated under the same setup across all downstream tasks to examine how model size influences performance. The results are summarized in Table 4. From the results, we observe that in classification tasks, the performance difference across all three ViT variants is neg-ligible, typically less than 1%. However, in segmentation tasks, increasing model size clearly improves performance, with ViT-Large achieving the best results in most cases. An exception is observed in the Boulder dataset, where ViT-Small outper-forms larger models. This can be attributed to the small size of the dataset and the limited number of samples per class, which may lead to overfitting in larger models. Overall, these results indicate that while classification remains largely invariant to model capacity, segmentation benefits significantly from increased model size. 
+
+C.2. Reconstruction     
+
+> Original HiRISE CTX THEMIS HCT
+> Figure 17. Reconstruction results using ViT-Base models pre-trained with only MSE loss. The figure compares the Original image against reconstructions from sensor-specific models (HiRISE, CTX, THEMIS) and the Data Merge model (HCT). The top row displays a HiRISE sample, and the second row displays a CTX sample.
+
+As described in Section B, our pre-training objective combines pixel-based loss with a perceptual loss. In this section, we evaluate the impact of this formulation by comparing it against a baseline that uses only MSE loss. Figure 17 illustrates reconstruction results when ViT-Base is pre-trained on each sensor independently as well as using the Data Merge approach. We show one randomly selected HiRISE sample (top row) and one CTX sample (bottom row). Under the MSE-only objective, several patches are poorly reconstructed: the model often recovers the overall surface tone but fails to regenerate fine-scale geomorphological features. For example, in the CTX example (second row), when ∼ 20% of the crater is masked, the model reconstructs the surrounding terrain reasonably well but is unable to recover the crater structure itself. Original Masked HiRISE CTX THEMIS HCT 
+
+> HiRISE data sample reconstruction
+> CTX data sample reconstruction
+> THEMIS data sample reconstruction
+
+Figure 18. Reconstruction results using models pre-trained with the proposed combined loss function (pixel-based + perceptual). This figure visualizes reconstructions for data samples from all three sensors: HiRISE (top rows), CTX (middle rows), and THEMIS (bottom rows). The columns display the Original image, the Masked input, and the outputs from the individual sensor models and the HCT model. 
+
+In contrast, Figure 18 shows reconstructions from models pre-trained using our proposed combined loss. We visualize two samples from each of the three sensors. Across all sensors, the reconstructions capture not only the correct color distribution but also the underlying surface morphology with substantially higher clarity. These results highlight the effectiveness of our loss formulation in guiding the model to learn feature-aware representations that preserve critical geomorphological structures. C.3. Scaling coefficient 
+
+To analyze the sensitivity of our method to the scaling coefficient used during model merging, we conducted experiments by varying the coefficient from 0.1 to 1.0 in increments of 0.1. These experiments were performed only on downstream tasks that showed significant differences compared to baselines and among different checkpoint selection strategies. Hence, binary classification datasets and Boulder and ConeQuest segmentation tasks were excluded. 0.2 0.4 0.6 0.8 1.0 
+
+> Scaling coefficient
+> 0.0
+> 0.2
+> 0.4
+> 0.6
+> 0.8
+> Performance Metric
+> Metric as a function of the scaling coefficient
+> Datasets
+> mb-crater_binary_seg
+> mb-crater_multi_seg
+> mb-domars16k
+> mb-landmark_cls
+> mb-mmls
+
+Figure 19. Performance as a function of the scaling coefficient on classification and segmentation downstream tasks. 
+
+Figure 19 presents the results for both classification and seg-mentation tasks, where we report the F1-Score for classifica-tion and mIoU for segmentation. As shown in the figure, the performance of the proposed approach remains largely stable across different scaling coefficients, indicating that our method is not highly sensitive to this parameter. This observation is consistent with the findings reported by Ilharco et al. [30]. Ad-ditionally, as the scaling coefficient increases beyond a certain threshold, performance decreases across most datasets, indicat-ing that excessively high scaling values are not beneficial, again consistent with Ilharco et al. [30]. 
+
+C.4. Ablation on Tolerance hyperparameter ( ϵ)
+
+To evaluate the sensitivity of our method to the tolerance hy-perparameter ( ϵ), we conduct experiments by varying its value to 10 −2 and 10 −3, and compare these results with the default setting of 10 −4. The results are reported in Table 5. We observe that changing ϵ has minimal impact on performance across most datasets, with results either remaining consistent or im-proving slightly by 1–2%. The only exception is the ConeQuest dataset, where performance decreases marginally; however, the drop is limited to approximately 2%, indicating that the method remains robust to variations in ϵ.                
+
+> ϵDoMars16k Landmark ConeQuest Crater Multi
+> 10 −20.92 0.92 0.70 0.15
+> 10 −30.93 0.94 0.69 0.15
+> 10 −40.92 0.91 0.71 0.14
+
+Table 5. Results for different values of the tolerance hyperparameter ( ϵ).            
+
+> DoMars16k Landmark ConeQuest Crater Multi
+> (H + C) + T 0.92 0.93 0.69 0.15 MOMO 0.92 0.91 0.71 0.14
+
+Table 6. Results for incremental sensor merging, where a THEMIS model is merged with an existing HiRISE and CTX model ((H + C) + T), compared with MOMO. 
+
+C.5. Merging New Modality 
+
+To evaluate how performance is affected when incorporating a new sensor, we conduct an experiment simulating incremental sensor addition. In this setup, we assume access to independently trained models along with their validation loss trajectories. We first consider models trained on HiRISE and CTX as existing sensors, and then introduce THEMIS as a new sensor modality. Based on the validation trajectory of the THEMIS model, we select the checkpoint whose validation loss is closest to that of the existing models and merge it accordingly. Due to computational constraints, we report results on two classification datasets and two segmentation datasets. The results are summarized in Table 6. We observe that incorporating the new sensor does not significantly affect performance, with changes remaining within ±1-2% across all evaluated tasks. 
+
+C.6. Research Impact 
+
+In this section, we discuss real-world use cases of MOMO .
+
+C.6.1. Comparison with PDS deployed Model 
+
+The NASA Planetary Data System (PDS) archives data from planetary science missions, and its Cartography and Imaging Sciences Node (Imaging Node) provides public access to millions of planetary images. To help scientists search for images based on visual content rather than metadata alone, the Imaging Node introduced a content-based image search capability in 2017. This system, developed using machine learning classification techniques by Wagstaff et al. [75], enables researchers to efficiently identify images relevant to their investigations.                             
+
+> Bright dune Crater Dark dune Impact ejecta Other Slope Streak Spider Swiss cheese Macro Avg
+> PDS 0.86 0.79 0.87 0.30 0.96 0.67 0.04 0.94 0.68 MOMO 0.90 0.75 0.91 0.40 0.96 0.78 0.05 0.99 0.72
+> Table 7. Per-class F1-scores for PDS and MOMO models on the PDS dataset. Bold numbers indicate the higher F1-score for each class.
+
+We compare MOMO with the model currently deployed at NASA’s Planetary Data System (PDS) [75], focusing on the landmark classification dataset used by the PDS Imaging Node. As shown in Table 7, MOMO outperforms the PDS model across most classes, achieving higher F1-scores in seven out of eight categories and improving the overall macro-average by 4%. Notably, MOMO shows significant improvements in Slope Streak , Impact ejecta , and Swiss cheese , with gains of 11%, 10%, and 5%, respectively, demonstrating its effectiveness in capturing complex surface morphologies and fine-grained Martian features. Although the PDS model performs slightly better on the Crater class, MOMO achieves more balanced and consistent performance across diverse geologic feature types, making it a stronger candidate for large-scale automated mapping and planetary data analysis. 
+
+C.6.2. Creating Global Maps 
+
+Scientists and planetary geologists are interested in studying geologic features on Mars and understanding their global dis-tribution. To achieve this, they typically create small labeled datasets and train machine learning models to generate global maps of specific features. Given its strong segmentation performance, MOMO can serve as an effective tool for producing such large-scale global maps of Martian surface features.      
+
+> Figure 20. Example of global map generation using MOMO on the out-of-distribution region of the ConeQuest dataset. The center panel shows the orig-inal large-scale HiRISE tile, and the right panel shows the stitched prediction map after inference. The left and top panels display representative 512×512 data samples and their corresponding segmentation outputs. This experiment demon-strates MOMO’s capability to generalize to unseen regions and its potential for large-scale planetary surface mapping.
+
+To demonstrate the efficiency and prac-tical utility of MOMO , we perform infer-ence on the ConeQuest dataset using out-of-distribution (OOD) data. To replicate this pro-cess, we exported new data from JMARS [13]. JMARS (Java Mission-planning and Analysis for Remote Sensing) is a geospatial informa-tion system developed to visualize, analyze, and export planetary data from multiple Mars missions, focusing on regions not included in the original training set. Each data tile in ConeQuest provides lati-tude and longitude information, which allowed us to select a previously unseen region cen-tered at 15° latitude and 84° longitude. We exported CTX imagery covering an area of ap-proximately 1.5 km × 1.5 km (12288 x 12288 pixels), sampled into 512 × 512 pixel tiles with an overlap of 256 pixels, resulting in a total of 2,306 image samples. Figure 20 illustrates an example of this ex-periment. The left panel shows the original large-scale tile, and the right panel shows the stitched output generated after performing in-ference with MOMO. For reference, we also display a few example 512 × 512 tiles used for prediction. These results demonstrate that MOMO can be effectively used to produce global-scale maps of geologic features from unseen regions, highlighting its potential for planetary-scale mapping applications.
