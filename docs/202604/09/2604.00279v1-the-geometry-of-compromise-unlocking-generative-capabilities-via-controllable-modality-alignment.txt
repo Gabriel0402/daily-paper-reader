@@ -1,0 +1,750 @@
+Title: The Geometry of Compromise: Unlocking Generative Capabilities via Controllable Modality Alignment
+
+URL Source: https://arxiv.org/pdf/2604.00279v1
+
+Published Time: Thu, 02 Apr 2026 00:22:08 GMT
+
+Number of Pages: 13
+
+Markdown Content:
+# The Geometry of Compromise: Unlocking Generative Capabilities via Controllable Modality Alignment 
+
+Hongyuan Liu 1 Qinli Yang 1 Wen Li 2 Zhong Zhang 1 Jiaming Liu 1
+
+Wei Han 1 Zhili Qin 1 Jinxia Guo 1 Junming Shao 11University of Electronic Science and Technology of China 2University of Bristol 
+
+# Abstract 
+
+Vision-Language Models (VLMs) such as CLIP learn a shared embedding space for images and text, yet their representations remain geometrically separated, a phenomenon known as the modality gap. This gap limits tasks requiring cross-modal interchangeability, such as captioning and joint clus-tering. Existing post-processing approaches can par-tially improve cross-modal compatibility; however, we show through geometric analysis that they pri-marily reduce the global centroid offset while leaving the underlying distributional mismatch intact. We decompose the modality gap into a Centroid Gap and a Distribution Gap, and demonstrate that the Distribution Gap is the true predictor of cross-modal task quality ( R2 = 0 .986 ), whereas the commonly used Raw Gap is misleading ( R2 = 0 .691 ). Moti-vated by this observation, we propose TPC-CMA (Three-Phase Curriculum for Cross-Modal Align-ment), a fine-tuning framework that explicitly re-duces both components. The proposed CMA jointly mitigates centroid offsets and reshapes the distri-butional structure, while a three-phase curriculum with gradient-aware scheduling progressively intro-duces alignment during training to enable stable optimization. Experiments demonstrate that our method significantly improves cross-modal align-ment. With αtarget =0.05 , the modality gap is re-duced by 66.6% with only 4.84% accuracy drop. Under stronger alignment ( αtarget = 0.5), the gap is reduced by 82.3%, clustering ARI improves from 0.318 to 0.516, and captioning CIDEr increases by 57.1% over the original model. Our code and pre-trained models will be made publicly available upon acceptance. 
+
+Keywords: Modality Gap, Vision-Language Models, Curriculum Learning, Multi-task Optimiza-tion, Zero-shot Learning 
+
+# 1 Introduction 
+
+Vision-Language Models (VLMs) such as CLIP Rad-ford et al. [2021], ALIGN Jia et al. [2021], SigLIP Zhai et al. [2023], and their successors Li Modality Gap = 0.733   
+
+> (a) Original CLIP
+> Separated Islands
+> Image
+> Text
+> Modality Gap = 0.685
+> (b) Mean-Centering
+> Distribution Mismatch
+> Modality Gap = 0.130
+> (c) Our Method
+> True Alignment
+> Original
+> CLIP
+> Mean-
+> Centering
+> Ours
+> 0.0
+> 0.1
+> 0.2
+> 0.3
+> 0.4
+> CIDEr
+> 0.210 0.227
+> 0.330
+> (d) Image Captioning
+> Original
+> CLIP
+> Mean-
+> Centering
+> Ours
+> 0.0
+> 0.1
+> 0.2
+> 0.3
+> 0.4
+> 0.5
+> 0.6
+> ARI  0.318 0.306
+> 0.516
+> (e) Joint Clustering
+
+Figure 1: The t-SNE visualization of multimodal fea-tures (top) and downstream performance of different methods (bottom). (a) Original CLIP: image and text embeddings form separated islands. (b) Mean-CenteringLiang et al. [2022], Li et al. [2025], An et al. [2025], Yamashita et al. [2025]: centroids overlap but distributional mismatch persists. (c) Our alignment method (TPC-CMA, αtarget = 0.5): true semantic interleaving. Each panel reports the Modality Gap, defined as the residual cosine distance after centroid alignment (see Section 2.2); lower values indicate better structural alignment. Bottom : downstream impact on two zero-shot tasks. (d) Image caption-ing CIDEr improves from 0.210 to 0.330. (e) Joint clustering ARI improves from 0.318 to 0.516. et al. [2023a], Yu et al. [2022], Sun et al. [2024], Cherti et al. [2023], Chen et al. [2024], Mu et al. [2022] have become foundational to modern multi-modal AI, enabling powerful zero-shot transfer Zhou et al. [2022], Gao et al. [2024], Zhai et al. [2022] via a joint image-text embedding space. Despite their success, a persistent modality gap exists: image and text embeddings occupy disjoint regions of the hypersphere Liang et al. [2022], Fahim et al. [2024], Schrodi et al. [2025], Ramasinghe et al. [2024], Huang et al. [2025]. While this gap has lim-ited impact on zero-shot classification, it restricts tasks that require cross-modal feature interchange-1
+
+> arXiv:2604.00279v1 [cs.CV] 31 Mar 2026
+
+ability. As shown in Figure 1(d) and (e), directly feeding image embeddings into a text decoder results in poor captioning performance, and joint image-text clustering yields limited semantic grouping qual-ity. These results indicate that the two modalities fail to form a unified representation space, limiting the applicability of VLMs in generation Grassucci et al. [2026], Li et al. [2023b], Mokady et al. [2021], Tewel et al. [2022], Zeng et al. [2024], reasoning Xu et al. [2024], and broader multimodal understanding tasks Liu et al. [2023]. To mitigate this issue, methods that operate on pretrained embeddings have been widely ex-plored due to their practical advantages. These approaches avoid expensive retraining and preserve the generalization ability of existing VLMs, and can partially improve cross-modal compatibility, as re-flected by measurable gains in downstream tasks (Figure 1(d)(e)). However, the improvements re-main limited, especially for tasks requiring deeper cross-modal interaction. This observation suggests that current approaches address only a limited as-pect of the underlying modality gap. In this work, we analyze this limitation from a geometric perspective. We use representative ap-proaches, such as Mean-Centering Liang et al. [2022], Li et al. [2025], An et al. [2025], Yamashita et al. [2025], as a diagnostic tool to examine how cross-modal alignment is achieved in practice. As shown in Figure 1(a), image and text embeddings form two separated regions in the feature space, indicating a fundamental structural discrepancy. We decom-pose the modality gap into two components: a Cen-troid Gap, which captures the global shift between modalities, and a Distribution Gap, which reflects differences in their underlying geometric structure. Through this lens, we find that existing approaches primarily reduce the Centroid Gap while leaving the Distribution Gap largely unchanged. This leads to 
+
+superficial alignment as illustrated in Figure 1(b), where embeddings become closer in position but remain structurally mismatched. We argue that effective alignment requires consistent geometric structure across modalities. These observations indicate that resolving the modality gap requires modifying the feature geome-try itself, rather than only applying global transfor-mations. To address this limitation, we propose the Three-Phase Curriculum for Cross-Modal Alignment (TPC-CMA ), a framework that explicitly reduces both centroid and distribution gaps progressively, which enables an effective geometric-consistent cross-modal alignment as shown in Figure 1(c). We in-troduce a Cross-Modal Alignment (CMA) loss that replaces cross-modal repulsion with intra-modal ge-ometry matching, encouraging consistent structures across modalities. We further design a three-phase curriculum strategy with gradient-aware schedul-ing Chen et al. [2018] that gradually transitions from the original CLIP objective to the alignment objec-tive, enabling stable adaptation of pretrained repre-sentations. Extensive experiments demonstrate that our method significantly improves tasks requiring structural cross-modal alignment, while maintaining strong zero-shot performance. The summary of our contributions is as follows: 1. We propose TPC-CMA, a cross-modal align-ment framework that reduces the modality gap in a progressive manner. 2. We introduce a CMA loss that explicitly ad-dresses both centroid and distribution discrep-ancies by replacing cross-modal repulsion with intra-modal geometry matching, enabling struc-turally consistent cross-modal alignment. 3. We design a TPC strategy with gradient-aware ramp-up Chen et al. [2018] that gradually tran-sitions from the original CLIP objective to the alignment objective, enabling stable adaptation of pretrained feature geometry without abrupt disruption. 4. We demonstrate that Distribution Gap, not the commonly used Raw Gap, is a near-perfect predictor of cross-modal task quality ( R2 =0.986 vs. 0.691 ). Extensive experiments show up to 82.3% gap reduction, substantial gains in clustering (ARI: 0.318 → 0.551) and captioning (CIDEr +57.1%), while maintaining strong zero-shot performance. 
+
+# 2 Preliminary 
+
+2.1 Pattern Analysis of CLIP 
+
+CLIP Radford et al. [2021] learns a shared embed-ding space via contrastive learning. Given an im-age encoder fI and a text encoder fT , inputs are mapped to ℓ2-normalized features vi = fI (xi) and 
+
+ti = fT (yi), with similarity defined as s(vi, tj ) = 
+
+v⊤ 
+
+> i
+
+tj . The model is trained using a symmetric In-foNCE loss van den Oord et al. [2018]: 
+
+LCLIP = − 12N
+
+> N
+
+∑
+
+> i=1
+
+[
+
+log eτ v⊤ 
+
+> iti
+
+∑ 
+
+> j
+
+eτ v⊤ 
+
+> itj
+
++ log eτ t⊤ 
+
+> ivi
+
+∑ 
+
+> j
+
+eτ t⊤ 
+
+> ivj
+
+]
+
+(1) where τ is a learnable temperature. This objective can be decomposed into an attractive term Lalign 
+
+and a repulsive term Loppose . Following Shi et al. Shi et al. [2023], the image-to-text direction decomposes 2into: 
+
+Li2t = − 1
+
+N
+
+> N
+
+∑
+
+> i=1
+
+τ v⊤ 
+
+> i
+
+ti
+
+︸ ︷︷ ︸ 
+
+> Lalign :attraction
+
++ 1
+
+N
+
+> N
+
+∑
+
+> i=1
+
+log 
+
+> N
+
+∑
+
+> j=1
+
+eτ v⊤ 
+
+> itj
+
+︸ ︷︷ ︸ 
+
+> Loppose :repulsion
+
+(2) with an analogous decomposition for the text-to-image direction. Since each positive pair is con-trasted against N −1 negatives, the cumulative re-pulsive gradient dominates, introducing a structural asymmetry between attraction and repulsion. As a result, CLIP representations exhibit a characteristic pattern: matched pairs are locally aligned, while im-age and text embeddings remain globally separated into distinct regions on the hypersphere. From this perspective, the modality gap can be attributed to the intrinsic geometry induced by the contrastive objective rather than initialization Liang et al. [2022]. We provide a theoretical analysis in Appendix A showing that the opposition term encourages the two modalities to separate in the feature space, leading to an antipodal tendency. This asymmetry explains the coexistence of local alignment and global separation, which we further analyze in the following section. 
+
+2.2 Modality Gap Decomposition 
+
+To better understand this phenomenon, we analyze the modality gap from two complementary geomet-ric perspectives. Given N image-text pairs with 
+
+ℓ2-normalized image embeddings vi and text em-beddings ti, the standard modality gap is defined as Gap = 1 − 1
+
+> N
+
+∑ 
+
+> i
+
+v⊤ 
+
+> i
+
+ti, which we refer to as the Raw Gap, conflates two geometrically distinct phe-nomena Role et al. [2025]. We decompose it into (formal definitions in Appendix B): 
+
+• Centroid Gap (GC ): ∥¯v − ¯t∥2, where ¯v =
+
+> 1
+> N
+
+∑ 
+
+> i
+
+vi and ¯t = 1
+
+> N
+
+∑ 
+
+> i
+
+ti are the modal cen-troids. 
+
+• Distribution Gap (GD ): the residual gap af-ter centroid alignment, measured as the average cosine distance between centered embeddings 
+
+ˆvi = ( vi − ¯v)/∥vi − ¯v∥ and ˆti = ( ti −¯t)/∥ti −¯t∥.
+
+GC and GD capture complementary geometric as-pects of the modality gap rather than forming a strict additive decomposition. Intuitively, GC mea-sures how far apart the two modal clouds are, while 
+
+GD characterizes how differently they are structured. Effective cross-modal alignment requires reducing both components, as correcting centroid shift alone does not resolve structural mismatch. 
+
+Analysis Results : Figure 3 applies this decom-position to Mean-Centering. While the Centroid Gap drops by 97% (0.686 → 0.020), the Distribution Gap remains unchanged (0.685). We provide a the-oretical analysis in Appendix B (Proposition B.1) supporting that translation-based methods preserve 
+
+GD by shifting centroids without altering relative deviations, and ROUGE-L remains at 0.250, con-firming no downstream improvement. This shows that post-processing methods reduce global offsets but fail to address structural discrepancies. Since cross-modal interchangeability is governed by dis-tributional consistency, the unresolved distribution gap becomes the primary bottleneck, motivating alignment strategies that directly enforce structural consistency in the embedding space. 
+
+# 3 Methodology 
+
+Bridging the modality gap requires addressing the structural discrepancy between modalities, particu-larly the distributional mismatch that existing ap-proaches do not resolve. Our approach combines a Cross-Modal Alignment (CMA) mechanism to reduce both centroid and distributional gaps (Sec-tion 3.2), with a three-phase training strategy (Sec-tion 3.3) that gradually introduces alignment during optimization to ensure stable convergence. 
+
+3.1 Overview 
+
+As illustrated in Figure 2, our framework consists of three parts. In Part A, image-text pairs are processed by a CLIP backbone to obtain feature embeddings. In Part B, we introduce a CMA mod-ule that reduces the modality gap by addressing both centroid offsets and distributional discrepan-cies. In Part C, we design a TPC that progressively introduces the alignment objective during training to ensure stable and effective convergence. 
+
+3.2 Cross-Modal Alignment 
+
+Section 2.1 shows that the modality gap arises from both centroid offset and distributional mismatch. Existing methods typically address only one aspect, leading to limited improvement in cross-modal align-ment. To overcome this limitation, we propose a CMA mechanism that jointly targets both compo-nents through two complementary designs: (1) Neg-ative Reweighting, which reduces the Centroid Gap, and (2) Intra-modal Geometry Matching, which re-shapes the distributional structure to reduce the Distribution Gap. 3C. Three -Phase Curriculum (TPC) Schedule for 𝜶 
+
+A. Feature Extraction 
+
+(CLIP Backbone) 
+
+B. CMA Loss Mechanisms 
+
+> Combined CMA Loss
+> … …
+> … …… … …
+
+Stage 1 : Anchor epochs Stage 2 : Ramp -up epochs Stage 3 : Stabilize epochs           
+
+> Alignment
+> Parameter  𝛼
+> 𝛼 =0(Standard CLIP) 𝛼 :0→𝛼 !"#$%! 𝛼 =𝛼 !"#$%!
+
+Training Epochs      
+
+> Gradual geometric
+> deformation
+> Convergence to
+> new geometry
+> Adaptation to stable
+> backbone
+> Mechanism 2: Intra -modal Geometry Matching (Reshape Manifolds)
+> Mechanism 1: Negative Reweighting (Weakens Repulsion)
+> Weight
+> Mask 𝐌
+> Logit Matrix 𝑺
+
+×  
+
+> Element -wise
+> Multiply
+> (𝐌 ⊙𝑺 )
+> Reweighted Logits
+
+Σ         
+
+> Image
+> Encoder
+> Text
+> Encoder
+> The image
+> of two
+> penguins
+> Reduce Modality Gap
+> Image -to -Text Neighborhood (S!"! )Text -to -Image Neighborhood (S#$% )
+> Reduce Distribution Gap
+> L&'( =
+> (1−𝛼 )L#)
+> +𝛼 L*+!#"
+> 𝛼 controls
+> balance Final Aligned Geometry
+> Minimal
+> Centroid Gap
+> Distribution
+> matching
+
+Figure 2: Overview of TPC-CMA. A: CLIP backbone extracts image and text embeddings. B: CMA Loss combines Negative Reweighting (reduces Centroid Gap) and Intra-modal Geometry Matching (reduces Distribution Gap) via α. C: Three-Phase Curriculum schedules α from 0 to αtarget across Anchor, Gradient-aware Ramp-up, and Stabilize stages, with the transition speed dynamically modulated by the observed gradient dynamics between loss terms. Original      
+
+> CLIP
+> Mean
+> Centering
+> 0.0
+> 0.2
+> 0.4
+> 0.6
+> 0.8 0.686
+> 0.020
+> Centroid Gap
+> Original
+> CLIP
+> Mean
+> Centering
+> 0.0
+> 0.2
+> 0.4
+> 0.6
+> 0.8 0.685 0.685
+> Distribution Gap
+> Original
+> CLIP
+> Mean
+> Centering
+> 0.0
+> 0.1
+> 0.2
+> 0.3 0.250 0.250
+> ROUGE-L
+
+Figure 3: Gap decomposition under Mean-Centering. Despite a 97% Centroid Gap reduction, both Dis-tribution Gap and ROUGE-L remain unchanged, showing that correcting the centroid offset alone does not improve cross-modal compatibility. 
+
+3.2.1 Mechanism 1: Negative Reweighting 
+
+As shown in Eq. 2, the opposition term Loppose 
+
+accumulates repulsive gradients from all N −1 un-matched pairs, pushing the two modal distributions toward antipodal regions and sustaining the Cen-troid Gap. Specifically, to mitigate this effect, we propose Negative Reweighting, which weakens the contribu-tion of negative pairs in the cross-modal similarity matrix. Let S ∈ RN ×N be the cross-modal logit matrix with Sij = τ v⊤
+
+i tj . We define a weight mask 
+
+M:
+
+Mij =
+
+{
+
+1 if i = j
+
+1 − β if i̸ = j (3) where β = 0 .05 α controls the strength of reweight-ing in Eq. 8. We set the coefficient to 0.05 so that 
+
+β remains small (at most 0.05), ensuring that in-dividual negative logits are only mildly suppressed while the cumulative effect over N −1 negatives is substantial. The reweighted logits M ⊙ S are used in place of S when computing the cross-entropy loss: 
+
+Lrw = CE (M ⊙ S, y) + CE (M ⊙ S⊤, y) (4) where CE denotes the cross-entropy loss, ⊙ de-notes element-wise (Hadamard) product, and y =(1 , 2, . . . , N ) are the ground-truth labels. Geomet-rically, the reduced denominator weakens the gra-dient on negative pairs, allowing the centroid gap to shrink while still matching pairs correctly. How-ever, reweighting only removes the repulsive barrier without reshaping the distributions. 
+
+3.2.2 Mechanism 2: Intra-modal Geometry Matching 
+
+As shown in Section 2.2, even after the Centroid Gap is reduced, the Distribution Gap remains unchanged because the two modalities retain different manifold shapes. Negative Reweighting removes the repulsive barrier but does not prescribe how the underlying manifold geometry should be restructured to achieve distributional consistency. To close the Distribution Gap, we need to reshape the manifolds so that paired embeddings occupy cor-responding positions within their respective distribu-tions. We therefore propose Intra-modal Geometry Matching (IGM), which replaces the cross-modal comparison (“is this image close to its text among all texts?”) with an intra-modal comparison (“is 4this image’s paired text closer than all other texts to this text?”), forcing the two manifolds to adopt geometrically consistent and matching structures. Specifically, we construct two auxiliary logit ma-trices: 
+
+ˆS(txt ) 
+
+> ij
+
+=
+
+{
+
+τ t⊤ 
+
+> i
+
+vi if i = jτ t⊤ 
+
+> i
+
+tj if i̸ = j (5) 
+
+ˆS(img ) 
+
+> ij
+
+=
+
+{
+
+τ v⊤ 
+
+> i
+
+ti if i = jτ v⊤ 
+
+> i
+
+vj if i̸ = j (6) Consider row i in ˆS(txt ): off-diagonal entries 
+
+τ t⊤ 
+
+> i
+
+tj capture the intra-modal structure of text 
+
+i, while the diagonal τ t⊤ 
+
+> i
+
+vi measures cross-modal similarity to the paired image. Cross-entropy forces the paired image to rank higher than all other texts: 
+
+Lintra = CE (ˆS(txt ), y) + CE (ˆS(img ), y) (7) By minimizing CE ( ˆS(txt ), y), each image vi is forced to be closer to its paired text ti than any other text, effectively “inserting” each image into the structure of its paired modality. The symmetric term CE ( ˆS(img ), y) does the same in reverse. Over the full batch, this bidirectional matching reshapes both manifolds to adopt the same structure, thereby closing the Distribution Gap. Unlike the standard CLIP loss that compares across modalities, Lintra 
+
+compares within a single modality, replacing cross-modal opposition with intra-modal uniformity terms Zbontar et al. [2021], Bardes et al. [2022], Grill et al. [2020] whose optima are consistent with alignment (Appendix C, Proposition C.1). 
+
+3.2.3 Combined CMA Loss 
+
+The two mechanisms are combined with the align-ment parameter α ∈ [0 , 1] , which controls the trade-off between standard contrastive learning and geometry alignment. Let svt ij =τ v⊤ 
+
+> i
+
+tj , stt ij =τ t⊤ 
+
+> i
+
+tj ,
+
+svv ij =τ v⊤ 
+
+> i
+
+vj , and β=0.05 α. The overall CMA loss is defined as:   
+
+> LCMA =12
+
+[(1 −α) Lrw + α Lintra 
+
+]  
+
+> =−12N
+
+∑
+
+> i
+
+[
+
+> (1 −α)
+
+(  
+
+> log esvt ii
+> esvt ii +
+
+∑   
+
+> j̸=i
+> e(1 −β)svt ij
+> + log esvt ii
+> esvt ii +
+
+∑ 
+
+> j̸=i
+> e(1 −β)svt ji
+
+) 
+
+> +α
+
+(  
+
+> log esvt ii
+> esvt ii +
+
+∑   
+
+> j̸=i
+> estt ij
+> + log esvt ii
+> esvt ii +
+
+∑ 
+
+> j̸=i
+> esvv ij
+
+)]
+
+> (8)
+
+where svt ij =τ v⊤ 
+
+> i
+
+tj denotes the scaled cross-modal similarity, stt ij =τ t⊤ 
+
+> i
+
+tj and svv ij =τ v⊤ 
+
+> i
+
+vj denote intra-modal similarities, α ∈ [0 , 1] is the alignment param-eter, and β=0.05 α controls the negative reweight-ing strength. The first two terms correspond to the reweighted contrastive loss Lrw , where (1 −β)
+
+down-scales cross-modal negative logits; the last two terms correspond to the intra-modal geometry matching loss Lintra , where negatives come from the same modality. Note that all four terms share the standard log-softmax form − log (es+ /∑ 
+
+> j
+
+esj
+
+); they differ only in which similarities populate the denom-inator (see Appendix E for complete pseudocode). When α = 0 , β = 0 so Lrw reduces to LCLIP . As α
+
+increases, the loss continuously and smoothly tran-sitions from standard contrastive learning toward full intra-modal geometry matching. 
+
+3.3 Three-Phase Curriculum with Gradient-Aware Ramp 
+
+While the CMA loss explicitly enforces cross-modal alignment, directly applying the full objective throughout training may lead to suboptimal con-vergence, as the pretrained representations are not immediately adapted to the modified objective. To address this, we introduce a TPC with gradient-aware scheduling. The curriculum is governed by a weighting parameter α, which controls the strength of the alignment objective. Specifically, TPC gradu-ally increases α during training, allowing the feature geometry to adapt progressively and converge to a stable optimum. 
+
+Stage 1: Anchor ( c epochs, α = 0 ). The model is trained with standard CLIP loss only, allowing it to adapt to the fine-tuning data while anchoring discriminative structure. All α configurations share the same peak accuracy at the end of this stage. 
+
+Stage 2: Gradient-aware Ramp-up ( r epochs, 
+
+α: 0 → αtarget ). After c epochs of anchoring, the training shifts into the ramp-up phase. A naive ap-proach would increase α at a constant (linear) rate, but the contrastive loss Lrw and the alignment loss 
+
+Lintra exhibit different convergence dynamics: we observe that ∥∇L intra ∥ dominates early in training (ratio ≈ 2.3 :1), indicating gradient conflict, while the ratio converges toward equilibrium ( ≈ 1 :1) as training progresses. Inspired by multi-task gradient balancing Chen et al. [2018], we modulate the ramp speed based on this convergence signal. Concretely, we maintain a slow EMA ¯ℓs and a fast EMA ¯ℓf of the contrastive loss Lrw . Their ratio ρ = ¯ℓf /¯ℓs serves as a convergence indicator: ρ ≈ 1 signals stability, 
+
+ρ < 1 signals that the loss is still dropping (not ready for more alignment), and ρ > 1 signals that alignment is hurting discriminative quality. The per-step α update is: 
+
+∆α = αtarget − αT − t · (0.5 + s(ρ)), (9) 
+
+s(ρ) = 
+
+{
+
+ρ if ρ ≤ 1,
+
+2 − ρ otherwise , ρ = clip 
+
+( ¯ℓf
+
+¯ℓs
+
+, 0, 2
+
+)
+
+5where T −t is the number of remaining ramp steps and the clip operation bounds ρ to [0 , 2] , ensuring 
+
+s(ρ) ∈ [0 , 1] and the speed factor (0 .5 + s(ρ)) ∈
+
+[0 .5, 1.5] . The base rate (αtarget −α)/(T −t) provides a catch-up mechanism that guarantees α reaches 
+
+αtarget by step T : if previous steps were slow, the remaining budget per step automatically increases. The speed factor modulates around the base rate, accelerating when gradients are balanced ( s → 1,
+
+ρ ≈ 1) and decelerating when gradient conflict is detected ( s → 0). 
+
+Stage 3: Stabilize ( h epochs, α = αtarget ). 
+
+Finally, the last few epochs stabilize the finetuned feature space. α is held at the target for convergence to a stable geometric configuration. The full schedule is defined by four values: 
+
+(c, r, h, α target ). We use c=3, r=5, h=2 for a to-tal of 10 epochs across all experiments. The only parameter that users need to choose is αtarget , which controls the operating point on the Pareto frontier: 
+
+αtarget ≤ 0.05 for minimal accuracy loss (retrieval, classification); αtarget ≥ 0.1 for deep alignment (clus-tering, generative tasks). This makes TPC-CMA a protocol: users select αtarget based on their down-stream task, and the method delivers the optimal geometry. 
+
+# 4 Experiments 
+
+4.1 Experimental Setup 
+
+Datasets and Metrics. We use Conceptual Cap-tions 3M (CC3M) Sharma et al. [2018], a widely adopted image-text dataset containing approxi-mately 3.3 million web-crawled pairs, as the train-ing set for all fine-tuning methods. We evaluate on five complementary tasks spanning discrimina-tive, generative, and structural dimensions: (i) Im-ageNet Deng et al. [2009] zero-shot classification (multi-template, consistent with CLIP’s original protocol); (ii) COCO Lin et al. [2014] image-text retrieval (5K test split, R@1); (iii) multi-dataset zero-shot classification (CIFAR-10/100, Food-101, Caltech-101, Flowers-102); (iv) zero-shot caption-ing (COCO, 5K images): following DeCap Li et al. [2023b], we train a separate lightweight GPT-2 Rad-ford et al. [2019] decoder per model variant on text embeddings and directly feed image embed-dings as the decoder prefix at test time. Since the decoder is trained exclusively on text embeddings and tested on image embeddings, CIDEr improve-ments reflect the degree to which image embeddings have become interchangeable with text embeddings, not the decoder’s capacity. We report CIDEr and ROUGE-L; (v) joint image-text clustering: follow-ing the group-wise evaluation protocol of Grassucci et al. Grassucci et al. [2026], we sample 200 classes from ImageNet validation (50 images per class), pair each image with a text prompt “a photo of a {class-name}”, combine all image and text embeddings into a single pool (20,000 vectors), and run KMeans with k= 200 . Ground-truth labels are semantic class identities (shared across modalities). We report V-Measure Rosenberg and Hirschberg [2007] and Adjusted Rand Index (ARI) as clustering quality metrics. 
+
+Implementation Details. We fine-tune the pre-trained ViT-B/32 Dosovitskiy et al. [2021], Vaswani et al. [2017] on CC3M for 10 epochs with a learn-ing rate of 1×10 −5 and an effective batch size of 4096. The learnable temperature τ is initialized from the pre-trained checkpoint and continues to be optimized during fine-tuning. The three-phase curriculum uses c=3, r=5, h=2 throughout. For generalization, we additionally evaluate ViT-B/16 and ViT-L/14 (see Appendix F). 
+
+Baselines. We compare against five represen-tative methods mitigating the modality gap with post-processing, fine-tuning, and pre-training stage: (1) Mean-Centering Liang et al. [2022], a post-processing translation that subtracts modal cen-troids; (2) AlignCLIP Eslami and de Melo [2025] (ICLR’25), which trains a CLIP model from scratch with an alignment objective; (3) M2-Mix Oh et al. [2023] (NeurIPS’23), which generates hard negatives via geodesic interpolation; (4) CLIP-Refine Yamaguchi et al. [2025] (CVPR’25), which applies random-reference feature alignment during pre-training; (5) CS-Aligner Yin et al. [2025] (ICLR’26), which adds a Cauchy–Schwarz diver-gence term to InfoNCE for distributional alignment. All fine-tuning and post-processing baselines use the same training data, number of epochs, and backbone architecture for a fair comparison. Better Alignment 
+
+Figure 4: Gap vs. Accuracy Pareto Frontier. TPC-CMA forms a smooth efficient frontier that en-velopes all selected baselines. AlignCLIP and M 2-Mix fall significantly below the frontier, while CLIP-Refine fails to reduce the gap. 6Table 1: Main comparison across gap reduction, discriminative, generative, and structural tasks. Method Type Gap Gap ↓% GD ImageNet I2T R@1 T2I R@1 V-Measure CIDEr ROUGE-L Original CLIP Radford et al. [2021] Pretrained 0.733 - 0.685 62.62 53.42 35.36 0.769 0.210 0.250 Mean-Centering Liang et al. [2022] Post-proc 0.685 6.5 0.685 60.23 43.74 34.44 0.766 0.227 0.250 AlignCLIP Eslami and de Melo [2025] † From-scratch 0.353 51.8 0.550 32.79 33.64 22.28 0.749 0.112 0.244 M2-Mix Oh et al. [2023] Fine-tune 0.710 3.1 0.637 54.24 42.98 31.00 0.762 0.197 0.239 CLIP-Refine Yamaguchi et al. [2025] Fine-tune 0.747 −1.9 0.647 62.99 53.90 36.31 0.765 0.236 0.265 CS-Aligner Yin et al. [2025] Fine-tune 0.734 −0.1 0.617 61.37 49.15 32.89 0.770 0.174 0.249 TPC-CMA αtarget =0 .01 Fine-tune 0.558 23.8 0.610 60.86 50.96 35.96 0.795 0.227 0.273 TPC-CMA αtarget =0 .05 Fine-tune 0.245 66.6 0.554 57.78 48.56 35.68 0.810 0.254 0.269 TPC-CMA αtarget =0 .3 Fine-tune 0.155 78.9 0.474 55.63 46.44 35.08 0.826 0.293 0.276 TPC-CMA αtarget =0 .5 Fine-tune 0.130 82.3 0.441 54.86 45.48 34.49 0.849 0.330 0.288 TPC-CMA αtarget =0 .9 Fine-tune 0.096 87.0 0.392 52.58 42.60 33.38 0.845 0.356 0.296  
+
+> †
+
+Evaluated with AlignCLIP released checkpoint. Training from scratch is prohibitively expensive yet generally unable to match the discriminative quality of fine-tuning a pre-trained model. Bold indicates the best result and underline the second best. The same convention applies to all subsequent tables. 
+
+4.2 The Pareto Frontier 
+
+As shown in Section 2.2, existing methods each address only part of the modality gap, leading to limited or one-sided improvements. To demonstrate that TPC-CMA overcomes this limitation by simul-taneously reducing both Centroid Gap and Distribu-tion Gap, we compare it against all baselines on five axes: gap reduction, classification, retrieval, cluster-ing, and captioning. Table 1 summarizes the results, and Figure 4 visualizes their gap vs. accuracy trade-offs. Specifically, each baseline occupies a suboptimal position on the Gap vs. Accuracy frontier. CLIP-Refine Yamaguchi et al. [2025] preserves discrimina-tive quality (ImageNet 62.99%) but fails to reduce the gap ( −1.9%). CS-Aligner Yin et al. [2025] adds a Cauchy–Schwarz divergence penalty that lowers 
+
+GD to 0.617 ( ↓9.9%) yet leaves Raw Gap unchanged (0.734), exhibiting the same centroid-gap-agnostic pattern as CLIP-Refine. M 2-Mix Oh et al. [2023] reduces the gap by only 3.1% at a disproportion-ate accuracy cost (ImageNet −8.38%). AlignCLIP achieves a low gap (0.353) but sacrifices discrimina-tive quality (ImageNet 32.79%). Mean-Centering reduces the gap by 6.5% but degrades I2T R@1 by 18.1%, the superficial alignment identified in Sec-tion 2.2. We analyze why these methods produce limited improvements through the Distribution Gap lens in Section 4.3. In contrast, TPC-CMA’s oper-ating points (blue curve in Figure 4) envelope every baseline, reducing both Raw Gap and GD simultane-ously. At mild alignment ( αtarget =0.01 ), GD drops from 0.685 to 0.610 with less than 2% ImageNet loss. At strong alignment ( αtarget =0.5), GD reaches 0.441 ( ↓36%), CIDEr improves by 57.1%, and ARI reaches 0.516. Importantly, each αtarget simultane-ously reports results on all five tasks, confirming that TPC-CMA is a single protocol with a contin-uously adjustable operating point, not a family of task-specific models. These results show that the limitations of prior methods are not inherent to the alignment problem itself. TPC-CMA provides a controllable Pareto frontier by jointly addressing both gap compo-nents identified in our decomposition analysis (Sec-tion 2.2). Table 2: DeCap zero-shot captioning on COCO. Image embeddings are directly used as the decoder prefix without any learned projection layer. Method GD CIDEr BLEU-4 ROUGE-L Original CLIP 0.685 0.210 0.029 0.250 Mean-Centering 0.685 0.227 0.040 0.250 AlignCLIP 0.550 0.112 0.015 0.244 CLIP-Refine 0.647 0.236 0.045 0.265 M2-Mix 0.637 0.197 0.032 0.239 CS-Aligner 0.617 0.174 0.036 0.249 TPC-CMA αtarget =0 .01 0.610 0.227 0.050 0.273 TPC-CMA αtarget =0 .05 0.554 0.254 0.044 0.269 TPC-CMA αtarget =0 .3 0.474 0.293 0.048 0.276 TPC-CMA αtarget =0 .5 0.441 0.330 0.057 0.288 TPC-CMA αtarget =0 .9 0.392 0.356 0.065 0.296 
+
+Table 3: Joint image-text clustering following Gras-succi et al. Grassucci et al. [2026] (ImageNet val, 200 classes × 50 imgs, KMeans k=200 ). Method GD V-Measure ARI Original CLIP 0.685 0.769 0.318 Mean-Centering 0.685 0.766 0.306 AlignCLIP 0.550 0.749 0.304 M2-Mix 0.637 0.762 0.298 CLIP-Refine 0.647 0.765 0.310 CS-Aligner 0.617 0.770 0.315 TPC-CMA αtarget =0 .01 0.610 0.795 0.330 TPC-CMA αtarget =0 .05 0.554 0.810 0.385 TPC-CMA αtarget =0 .3 0.474 0.826 0.435 TPC-CMA αtarget =0 .5 0.441 0.849 0.516 TPC-CMA αtarget =0 .7 0.417 0.863 0.551 
+
+TPC-CMA αtarget =0 .9 0.392 0.845 0.492 
+
+4.3 Generative and Structural Tasks 
+
+To verify that alignment can substantially improve generative and structural capabilities beyond what the original model achieves, we evaluate TPC-CMA on two tasks that directly depend on cross-modal geometric coherence: zero-shot captioning without projection (Table 2), which tests feature interchange-ability, and joint image-text clustering (Table 3), 7which tests the quality of unified semantic grouping across modality boundaries. 0.4 0.5 0.6 0.7    
+
+> Distribution Gap
+> 0.175
+> 0.200
+> 0.225
+> 0.250
+> 0.275
+> 0.300
+> 0.325
+> 0.350
+> 0.375
+> DeCap CIDEr (no projection)
+> R2=0.986
+> (TPC-CMA)
+> (a) Distribution Gap vs CIDEr
+> TPC-CMA
+> Original CLIP
+> Mean-Cent.
+> CLIP-Refine
+> M²-Mix
+> CS-Aligner
+> 0.2 0.4 0.6
+> Raw Gap (Modality Gap)
+> 0.175
+> 0.200
+> 0.225
+> 0.250
+> 0.275
+> 0.300
+> 0.325
+> 0.350
+> DeCap CIDEr (no projection)
+> R2=0.691
+> (TPC-CMA)
+> Gap but
+> CIDEr>0!
+> (b) Raw Gap vs CIDEr
+
+Figure 5: Distribution Gap vs. Raw Gap as predic-tors of DeCap CIDEr score. (a) Distribution Gap is a near-perfect predictor ( R2 = 0 .986 ); (b) Raw Gap yields a substantially weaker fit ( R2 = 0 .691 ). Specifically, for zero-shot captioning (Table 2), we feed image embeddings directly to a text decoder without DeCap’s memory-bank projection, testing cross-modal feature interchangeability. For TPC-CMA, Distribution Gap GD decreases monotonically from 0.610 ( αtarget = 0.01 ) to 0.392 ( αtarget = 0.9), and CIDEr increases correspondingly from 0.227 to 0.356 (69.5% higher than the Original CLIP baseline of 0.210). Figure 5 formalizes this relationship: GD
+
+is a near-perfect linear predictor of CIDEr for TPC-CMA ( R2 = 0 .986 ), whereas Raw Gap yields a much weaker fit ( R2 = 0 .691 ). This confirms that Dis-tribution Gap, not Raw Gap, governs cross-modal interchangeability, validating the decomposition in Section 2.2. The baselines corroborate this finding. Mean-Centering’s GD remains identical to Original CLIP (0.685), confirming the Section 2.2 analysis; its marginal CIDEr gain reflects centroid shift alone, not structural improvement. CLIP-Refine’s slightly lower GD (0.647) correctly predicts its higher CIDEr despite a larger Raw Gap. M 2-Mix and AlignCLIP fall below the trend line because degraded repre-sentation quality prevents GD reduction from trans-lating into proportional CIDEr gains, indicating that GD governs interchangeability given adequate representation quality . We provide qualitative cap-tioning examples in Appendix G to illustrate the improvement. For joint clustering (Table 3), Original CLIP achieves ARI = 0.318, reflecting limited semantic coherence in joint clustering. TPC-CMA progres-sively improves clustering quality as GD decreases, with ARI rising from 0.330 ( αtarget = 0.01 ) to 0.551 (αtarget =0.7), while ARI at αtarget = 0.9 shows a de-cline (0.492) despite further GD reduction. We an-alyze the spectral properties underlying this satu-ration in Section 5. Mean-Centering achieves only ARI = 0.306, barely above Original CLIP despite centroid alignment, confirming that structural re-shaping, not just centroid correction, is needed for meaningful improvement in joint clustering quality across modalities. These task-specific optima underscore the neces-sity of controllable alignment strength: CIDEr fa-vors high αtarget , ARI peaks at moderate αtarget ,and discriminative accuracy favors low αtarget (vi-sualized in Appendix H). No single fixed operating point can satisfy all tasks simultaneously, making TPC-CMA’s controllable αtarget a geometric neces-sity rather than a mere convenience. 
+
+4.4 Discriminative Tasks 
+
+Table 4: COCO retrieval (5K test split). Method I2T R@1 I2T R@5 T2I R@1 T2I R@5 Original CLIP 53.42 77.18 35.36 61.52 Mean-Centering 43.74 70.70 34.44 60.03 TPC-CMA αtarget =0 .01 50.96 76.10 35.96 62.16      
+
+> TPC-CMA αtarget =0 .05 48.56 74.86 35.68 61.87
+
+Table 5: Multi-dataset zero-shot classification. Method ImageNet CIFAR-100 Food-101 Caltech Flowers Orig. CLIP 62.62 69.80 79.50 85.90 67.20                  
+
+> Mean-Centering 60.23 67.60 78.50 83.90 62.00 TPC-CMA αtarget =0 .01 60.86 67.80 77.00 87.10 64.00 TPC-CMA αtarget =0 .05 57.78 66.20 75.30 87.00 62.30
+
+To show that mild alignment ( αtarget ≤ 0.05 ) can preserve, or even improve, discriminative quality, we compare TPC-CMA at low αtarget against Original CLIP and Mean-Centering on COCO retrieval (Ta-ble 4) and five zero-shot classification benchmarks (Table 5). We focus on Original CLIP and Mean-Centering as references, since Table 1 shows that the remaining baselines are unsuitable comparisons here: M 2-Mix and AlignCLIP suffer severe accuracy degradation (ImageNet −8.38% and 32.79%, respec-tively), while CLIP-Refine fails to reduce the gap at all ( −1.9% change). For retrieval (Table 4), at αtarget = 0.01 , T2I R@1 slightly exceeds Original CLIP while I2T R@1 drops by only 2.46 points, far less than Mean-Centering’s 9.68-point collapse. For zero-shot classification (Table 5), coarse-grained benchmarks like Caltech-101 improve (85 .90 → 87 .10% ), benefiting from tighter image-to-class-name correspondence, while fine-grained benchmarks like ImageNet show only mild degradation ( −1.76% at αtarget = 0.01 ). These results establish that mild alignment occupies a “better-than-baseline” regime for concept-level tasks ,refuting the assumption that gap reduction and discriminative quality are strictly antagonistic. 
+
+4.5 Ablation Studies 
+
+To isolate the contribution of each component in TPC-CMA, namely Negative Reweighting (NR), Intra-modal Geometry Matching (Intra), and the Three-Phase Curriculum (TPC), we conduct a com-ponent removal ablation (Table 6) at two represen-tative α values. 8Table 6: Component ablation. w/o Intra applies Negative Reweighting only. CMA-Only applies both CMA mechanisms but with constant α from epoch 1 (no three-phase curriculum). Variant NR Intra TPC α Modal. Gap ↓                                                   
+
+> ImageNet Top-1 ARI w/o NR ✓✓0.5 0.282 54.66 0.453 w/o Intra ✓✓0.5 0.239 53.13 0.348 CMA-Only ✓✓0.5 0.133 49.75 0.362 TPC-CMA ✓✓✓0.5 0.130 54.86 0.516
+> w/o NR ✓✓0.05 0.364 55.47 0.372 w/o Intra ✓✓0.05 0.379 55.19 0.342 CMA-Only ✓✓0.05 0.244 51.71 0.335 TPC-CMA ✓✓✓0.05 0.245 57.78 0.385
+
+Geometry Matching is essential. Without Geometry Matching (w/o Intra, α=0.5), Negative Reweighting alone reduces the gap but ARI reaches only 0.348. Adding Geometry Matching boosts ARI to 0.516 ( 1.5×), confirming that manifold reshap-ing, not just repulsion reduction, is essential for structural tasks. 
+
+Curriculum is essential. CMA-Only applies both CMA mechanisms but at a constant α=0.5
+
+from epoch 1. Despite reaching a nearly identical gap (0.133 vs. 0.130), it suffers 1.4× ARI degrada-tion and 5% ImageNet loss compared to full TPC-CMA. Abrupt alignment destroys the pretrained discriminative structure before the model can adapt, so even a well-closed gap lacks the feature quality for meaningful clustering. The three-phase curricu-lum prevents this by anchoring features first and increasing alignment only as fast as the observed gradient equilibrium permits. 
+
+Additional ablations and generalization. We further validate curriculum hyperparameters (sched-ule type and anchor phase length) and confirm that TPC-CMA generalizes across model sizes with con-sistent gap reduction ratios and no architecture-specific tuning. These results are detailed in Ap-pendix F. 
+
+# 5 Discussion 
+
+The preceding experiments reveal task-specific op-tima at different αtarget values, suggesting an in-trinsic cost to strong alignment. We examine the spectral properties of the aligned feature space to understand this cost. 
+
+Effective rank and the cost of over-alignment. As shown in Figure 6(a), the effec-tive rank Roy and Vetterli [2007] of each modality’s feature space follows an inverted-U: at moderate alignment, CMA’s uniformity component expands feature utilization beyond the original model, but at high αtarget alignment pressure compresses fea-tures into a lower-dimensional subspace. This rank collapse explains why accuracy drops and ARI sat-urates under strong alignment. 
+
+Modality Fusion Index. We define FusionIdx 10 2 10 1 10 0   
+
+> target
+> 140
+> 145
+> 150
+> 155
+> 160
+> 165
+> 170
+> 175
+> 180
+> Effective Rank
+> Orig. MC
+> CR
+> M²
+> (a) Effective Rank vs
+> Image Rank
+> Text Rank
+> 0.6 0.8 1.0 1.2
+> Modality Fusion Index
+> 0.30
+> 0.35
+> 0.40
+> 0.45
+> 0.50
+> 0.55
+> Clustering ARI
+> =0.01
+> =0.05
+> =0.5
+> =0.9
+> (b) Fusion Index vs ARI
+> Original CLIP
+> Mean-Cent.
+> CLIP-Refine
+> M²-Mix
+> 0.25
+> 0.30
+> 0.35
+> 0.40
+> 0.45
+> 0.50
+> 0.55
+> 0.60
+> Clustering ARI
+> 0.2
+> 0.4
+> 0.6
+> 0.8
+> target
+
+Figure 6: Effective rank dynamics. (a) Single-modal effective rank vs. αtarget ; rank follows an inverted-U, peaking near αtarget = 0.1 before declining. Baselines are shown as horizontal dotted lines. (b) Modality Fusion Index vs. ARI. = JointRank / mean(ImgRank, TxtRank) to quan-tify cross-modal complementarity, where a value near 2 indicates orthogonal subspaces and near 1 indicates full overlap. Figure 6(b) shows that Fusion-Idx peaks at αtarget =0.05 and declines as stronger alignment forces both modalities into the same sub-space. Notably, CLIP-Refine’s FusionIdx of 0.504 (below 1, indicating redundant collapse) explains its failure to improve ARI beyond the Original CLIP baseline (0.310 vs. 0.318) despite a low Raw Gap, reinforcing that spectral health, not gap magnitude, determines cross-modal utility. 
+
+Implications for controllable alignment. 
+
+These spectral dynamics bracket the useful oper-ating range: too low αtarget leaves the Distribution Gap intact, while too high triggers rank collapse that erodes representation quality. Since tasks differ in sensitivity to these pressures, TPC-CMA’s ad-justable αtarget is a geometric necessity for effective deployment across diverse tasks. 
+
+# 6 Related Work 
+
+6.1 Understanding the Modality Gap. 
+
+Liang et al. Liang et al. [2022] first identified the modality gap in CLIP Radford et al. [2021], attribut-ing the separation to a “cone effect” from random initialization. Subsequent work challenged this view: Fahim et al. Fahim et al. [2024] and Shi et al. Shi et al. [2023] show the gap is intrinsic to the con-trastive objective, while Schrodi et al. Schrodi et al. [2025] link it to object bias and information imbal-ance. Wang and Isola Wang and Isola [2020] reveal a tension between alignment and uniformity, extended to multimodal settings by Yin et al. Yin et al. [2026, 2025]. Further geometric analyses include similar-ity structure Yi et al. [2025], feature norm dispari-ties Yaras et al. [2025], and global/residual decom-position Role et al. [2025] related to our framework. On the impact side, Grassucci et al. Grassucci et al. [2026] show the gap disrupts semantic consistency, 9Ramasinghe et al. Ramasinghe et al. [2024] argue a moderate gap can benefit retrieval, and Yu et al. Yu et al. [2026] leverage it for MLLM scaling. These findings suggest the gap is task-dependent rather than uniformly harmful. However, none of these works propose an explicit decomposition into centroid and distributional components with quan-titative evidence that the Distribution Gap is the true predictor of cross-modal task quality, nor do they offer a controllable mechanism to navigate this trade-off. Our work addresses this gap by providing both a principled decomposition and an effective controllable alignment framework. 
+
+6.2 Mitigating the Modality Gap 
+
+On the post-processing side, several methods at-tempt to close the gap without retraining. Mean-Centering Liang et al. [2022] subtracts modal cen-troids; GR-CLIP Li et al. [2025] and I0T An et al. [2025] apply learned affine transforms; Yamashita et al. Yamashita et al. [2025] calibrate the similarity distribution with pseudo-positive samples. These approaches are training-free but share a fundamen-tal limitation: affine or translation-based opera-tions can only move centroids closer, not reshape manifold geometry. On the training side, meth-ods that modify model weights can in principle reshape feature distributions. Among our baselines, AlignCLIP Eslami and de Melo [2025] trains from scratch with an alignment objective but struggles to recover pre-trained discriminative quality; M 2-Mix Oh et al. [2023] generates hard negatives via geodesic interpolation but does not directly target the gap; CLIP-Refine Yamaguchi et al. [2025] pro-poses random-reference feature alignment whose stochastic directions lack a consistent alignment sig-nal. Other recent efforts tackle the gap from diverse angles, including modality inversion Mistretta et al. [2025], diffusion-based bridging Lee et al. [2025], dis-tributional divergence minimization Yin et al. [2025], softer contrastive objectives Jing et al. [2024], and curriculum-based strategies Sofer et al. [2025]. De-spite these advances, existing methods share two lim-itations: they do not distinguish centroid offset from distributional mismatch, and they produce a sin-gle fixed operating point rather than a controllable trade-off. TPC-CMA addresses both with a dual-mechanism loss, a gradient-aware curriculum sched-ule inspired by multi-task gradient balancing Chen et al. [2018], and a single user-controlled parameter 
+
+αtarget that governs the alignment strength. 
+
+# 7 Conclusion & Future Work 
+
+By decomposing the modality gap into Centroid Gap and Distribution Gap, we show that Distri-bution Gap predicts cross-modal task quality far better than Raw Gap. Guided by this insight, TPC-CMA replaces cross-modal repulsion with intra-modal geometry matching and a three-phase cur-riculum for stable optimization. A single parameter 
+
+αtarget yields a controllable Pareto frontier: mild alignment preserves discriminative quality, while stronger alignment unlocks captioning and cluster-ing. Spectral analysis reveals an intrinsic alignment-expressiveness tension: aggressive alignment trig-gers rank collapse, confirming that no single fixed operating point is universally optimal across tasks. Future directions include automating αtarget se-lection via validation-driven scheduling, designing rank-preserving constraints to push the Pareto frontier further, and extending to other modality pairs. Since the decomposition and curriculum are modality-agnostic, we expect TPC-CMA to readily transfer to audio-text and video-text settings with minimal architectural modification. 
+
+# References 
+
+Na Min An, Eunki Kim, James Thorne, and Hyun-jung Shim. I0T: Embedding standardization method towards zero modality gap. In Proceed-ings of the 63rd Annual Meeting of the Association for Computational Linguistics (Volume 1: Long Papers) , pages 27182–27199, 2025. Adrien Bardes, Jean Ponce, and Yann LeCun. Vi-creg: Variance-invariance-covariance regulariza-tion for self-supervised learning. In International Conference on Learning Representations , 2022. Zhao Chen, Vijay Badrinarayanan, Chen-Yu Lee, and Andrew Rabinovich. Gradnorm: Gradient normalization for adaptive loss balancing in deep multitask networks. In International Conference on Machine Learning , pages 794–803. PMLR, 2018. Zhe Chen, Jiannan Wu, Wenhai Wang, Weijie Su, Guo Chen, Sen Xing, Muyan Zhong, Qinglong Zhang, Xizhou Zhu, Lewei Lu, et al. Internvl: Scaling up vision foundation models and aligning for generic visual-linguistic tasks. In Proceedings of the IEEE/CVF Conference on Computer Vi-sion and Pattern Recognition , pages 24185–24198, 2024. Mehdi Cherti, Romain Beaumont, Ross Wightman, Mitchell Wortsman, Gabriel Ilharco, Cade Gor-don, Christoph Schuhmann, Ludwig Schmidt, and Jenia Jitsev. Reproducible scaling laws for con-trastive language-image learning. Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , pages 2818–2829, 2023. Jia Deng, Wei Dong, Richard Socher, Li-Jia Li, Kai Li, and Li Fei-Fei. Imagenet: A large-scale 10 hierarchical image database. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , pages 248–255, 2009. Alexey Dosovitskiy, Lucas Beyer, Alexander Kolesnikov, Dirk Weissenborn, Xiaohua Zhai, Thomas Unterthiner, Mostafa Dehghani, Matthias Minderer, Georg Heigold, Sylvain Gelly, Jakob Uszkoreit, and Neil Houlsby. An image is worth 16x16 words: Transformers for image recognition at scale. In International Conference on Learning Representations , 2021. Sedigheh Eslami and Gerard de Melo. Mitigate the gap: Improving cross-modal alignment in CLIP. In International Conference on Learning Repre-sentations , 2025. Abrar Fahim, Alex Murphy, and Alona Fyshe. It’s not a modality gap: Characterizing and ad-dressing the contrastive gap. arXiv preprint arXiv:2405.18570 , 2024. Peng Gao, Shijie Geng, Renrui Zhang, Teli Ma, Rongyao Fang, Yongfeng Zhang, Hongsheng Li, and Yu Qiao. Clip-adapter: Better vision-language models with feature adapters. Interna-tional Journal of Computer Vision , 132:581–595, 2024. Eleonora Grassucci, Giordano Cicchetti, Emanuele Frasca, Aurelio Uncini, and Danilo Comminiello. Closing the modality gap aligns group-wise se-mantics. In International Conference on Learning Representations , 2026. Jean-Bastien Grill, Florian Strub, Florent Altché, Corentin Tallec, Pierre Richemond, Elena Buchatskaya, Carl Doerhan, Bernardo Avila Pires, Zhaohan Chen, and Michal Valko. Bootstrap your own latent: A new approach to self-supervised learning. In Advances in Neural Information Pro-cessing Systems , volume 33, pages 21271–21284, 2020. Linlan Huang, Xusheng Cao, Haori Lu, Yifan Meng, Fei Yang, and Xialei Liu. Mind the gap: Pre-serving and compensating for the modality gap in clip-based continual learning. In Proceedings of the IEEE/CVF International Conference on Computer Vision , pages 3777–3786, 2025. Chao Jia, Yinfei Yang, Ye Xia, Yi-Ting Chen, Zarana Parekh, Hieu Pham, Quoc Le, Yun-Hsuan Sung, Zhen Li, and Tom Duerig. Scaling up vi-sual and vision-language representation learning with noisy text supervision. In International Con-ference on Machine Learning , pages 4904–4916. PMLR, 2021. Dong Jing, Xiaolong He, Yutian Luo, Nanyi Fei, Guoxing Yang, Wei Wei, Huiwen Zhao, and Zhiwu Lu. Fineclip: Self-distilled region-based clip for better fine-grained understanding. volume 37, pages 27896–27918, 2024. Jeong Ryong Lee, Yejee Shin, Geonhui Son, and Dosik Hwang. Diffusion bridge: Leveraging diffu-sion model to reduce the modality gap between text and vision for zero-shot image captioning. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , pages 4050–4059, 2025. Binxu Li, Yuhui Zhang, Xiaohan Wang, Weixin Liang, Ludwig Schmidt, and Serena Yeung-Levy. Closing the modality gap for mixed modality search. arXiv preprint arXiv:2507.19054 , 2025. Junnan Li, Dongxu Li, Silvio Savarese, and Steven Hoi. Blip-2: Bootstrapping language-image pre-training with frozen image encoders and large language models. In International Conference on Machine Learning , pages 19730–19742. PMLR, 2023a. Wei Li, Linchao Zhu, Longyin Wen, and Yi Yang. Decap: Decoding clip latents for zero-shot cap-tioning via text-only training. In International Conference on Learning Representations , 2023b. Weixin Liang, Yuhui Zhang, Yongchan Kwon, Ser-ena Ye, and James Zou. Mind the gap: Under-standing the modality gap in multi-modal con-trastive representation learning. In Advances in Neural Information Processing Systems , vol-ume 35, pages 17612–17625, 2022. Tsung-Yi Lin, Michael Maire, Serge Belongie, James Hays, Pietro Perona, Deva Ramanan, Piotr Dol-lár, and C Lawrence Zitnick. Microsoft coco: Common objects in context. In European Confer-ence on Computer Vision , pages 740–755, 2014. Haotian Liu, Chunyuan Li, Qingyang Wu, and Yong Jae Lee. Visual instruction tuning. In Ad-vances in Neural Information Processing Systems ,volume 36, 2023. Marco Mistretta, Alberto Baldrati, Lorenzo Ag-nolucci, Marco Bertini, and Andrew David Bag-danov. Cross the gap: Exposing the intra-modal misalignment in CLIP via modality inversion. In 
+
+International Conference on Learning Represen-tations , 2025. Ron Mokady, Amir Hertz, and Amit H Bermano. Clipcap: Clip prefix for image captioning. arXiv preprint arXiv:2111.09734 , 2021. Norman Mu, Alexander Kirillov, David Wagner, and Saining Xie. Slip: Self-supervision meets language-image pre-training. In European Con-ference on Computer Vision , pages 529–544, 2022. 11 Changdae Oh, Junhyuk So, Hoyoon Byun, Yong-Taek Lim, Minchul Shin, Jong-June Jeon, and Kyungwoo Song. Geodesic multi-modal mixup for robust fine-tuning. In Advances in Neural In-formation Processing Systems , volume 36, 2023. Alec Radford, Jeffrey Wu, Rewon Child, David Luan, Dario Amodei, and Ilya Sutskever. Lan-guage models are unsupervised multitask learners. 
+
+OpenAI blog , 2019. Alec Radford, Jong Wook Kim, Chris Hallacy, Aditya Ramesh, Gabriel Goh, Sandhini Agarwal, Girish Sastry, Amanda Askell, Pamela Mishkin, Jack Clark, et al. Learning transferable visual models from natural language supervision. In In-ternational conference on machine learning , pages 8748–8763. PmLR, 2021. Sameera Ramasinghe, Violetta Shevchenko, Gil Avraham, and Ajanthan Thalaiyasingam. Accept the modality gap: An exploration in the hyper-bolic space. In Proceedings of the IEEE/CVF Con-ference on Computer Vision and Pattern Recog-nition , 2024. François Role, Sébastien Meyer, and Victor Am-blard. Fill the gap: Quantifying and reducing the modality gap in image-text representation learning. arXiv preprint arXiv:2505.03703 , 2025. Andrew Rosenberg and Julia Hirschberg. V-measure: A conditional entropy-based external cluster eval-uation measure. In Jason Eisner, editor, Pro-ceedings of the 2007 Joint Conference on Em-pirical Methods in Natural Language Processing and Computational Natural Language Learning (EMNLP-CoNLL) , pages 410–420, Prague, Czech Republic, June 2007. Association for Computa-tional Linguistics. URL https://aclanthology. org/D07-1043/ .Olivier Roy and Martin Vetterli. The effective rank: A measure of effective dimensionality. In European Signal Processing Conference (EUSIPCO) , pages 606–610, 2007. Simon Schrodi, David T. Hoffmann, Maximilian Argus, Volker Fischer, and Thomas Brox. Two effects, one trigger: On the modality gap, object bias, and information imbalance in contrastive vision-language models. In International Confer-ence on Learning Representations , 2025. Piyush Sharma, Nan Ding, Sebastian Goodman, and Radu Soricut. Conceptual captions: A cleaned, hypernymed, image alt-text dataset for automatic image captioning. In Proceedings of the 56th An-nual Meeting of the Association for Computational Linguistics , pages 2556–2565, 2018. Peiyang Shi, Michael C. Welle, Mårten Björkman, and Danica Kragic. Towards understanding the modality gap in clip. In ICLR 2023 Workshop on Multimodal Representation Learning , 2023. Amit Sofer, Yoav Goldman, and Shlomo E. Chazan. Pull it together: Reducing the modality gap in contrastive learning. In Proc. Interspeech ,pages 196–200, 2025. doi: 10.21437/Interspeech. 2025-1664. Quan Sun, Yuxin Fang, Ledell Wu, Xinlong Wang, and Yue Cao. Eva-clip: Improved training tech-niques for clip at scale. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , 2024. Yoad Tewel, Yoav Shalev, Idan Schwartz, and Lior Wolf. Zerocap: Zero-shot image-to-text genera-tion for visual-semantic arithmetic. In Proceedings of the IEEE/CVF Conference on Computer Vi-sion and Pattern Recognition , pages 17918–17928, 2022. Aaron van den Oord, Yazhe Li, and Oriol Vinyals. Representation learning with contrastive predic-tive coding. arXiv preprint arXiv:1807.03748 ,2018. Ashish Vaswani, Noam Shazeer, Niki Parmar, Jakob Uszkoreit, Llion Jones, Aidan N Gomez, Łukasz Kaiser, and Illia Polosukhin. Attention is all you need. In Advances in Neural Information Processing Systems , volume 30, 2017. Tongzhou Wang and Phillip Isola. Understand-ing contrastive representation learning through alignment and uniformity on the hypersphere. In 
+
+International Conference on Machine Learning ,pages 9929–9939. PMLR, 2020. Hu Xu, Saining Xie, Xiaoqing Ellen Tan, Po-Yao Huang, Russell Howes, Vasu Sharma, Shang-Wen Li, Gargi Ghosh, Luke Zettlemoyer, and Christoph Feichtenhofer. Demystifying clip data. In International Conference on Learning Repre-sentations , 2024. Shin’ya Yamaguchi, Dewei Feng, Sekitoshi Kanai, Kazuki Adachi, and Daiki Chijiwa. Post-pre-training for modality alignment in vision-language foundation models. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , pages 4256–4266, 2025. Shuhei Yamashita, Daiki Shirafuji, and Tatsuhiko Saito. Bridging the modality gap by similarity standardization with pseudo-positive samples. In 
+
+Proceedings of the 39th Pacific Asia Conference on Language, Information and Computation , pages 126–139, 2025. 12 Can Yaras, Siyi Chen, Peng Wang, and Qing Qu. Explaining and mitigating the modality gap in contrastive multimodal learning. In Conference on Parsimony and Learning , volume 280 of Pro-ceedings of Machine Learning Research , pages 1365–1387. PMLR, 2025. Lingjie Yi, Raphael Douady, and Chao Chen. Deci-pher the modality gap in multimodal contrastive learning: From convergent representations to pair-wise alignment. arXiv preprint arXiv:2510.03268 ,2025. Wenzhe Yin, Zehao Xiao, Pan Zhou, Shujian Yu, Jiayi Shen, Jan-Jakob Sonke, and Efstratios Gavves. Distributional vision-language alignment by cauchy-schwarz divergence. arXiv preprint arXiv:2502.17028 , 2025. Wenzhe Yin, Pan Zhou, Zehao Xiao, Jie Liu, Shu-jian Yu, Jan-Jakob Sonke, and Efstratios Gavves. Towards uniformity and alignment for multi-modal representation learning. arXiv preprint arXiv:2602.09507 , 2026. Jiahui Yu, Zirui Wang, Vijay Vasudevan, Legg Ye-ung, Mojtaba Seyedhosseini, and Yonghui Wu. Coca: Contrastive captioners are image-text foun-dation models. Transactions on Machine Learning Research , 2022. Xiaomin Yu, Yi Xin, Wenjie Zhang, Chonghan Liu, Hanzhen Zhao, Xiaoxing Hu, Xinlei Yu, Ziyue Qiao, Hao Tang, Xue Yang, Xiaobin Hu, Cheng-wei Qin, Hui Xiong, Yu Qiao, and Shuicheng Yan. Modality gap-driven subspace alignment training paradigm for multimodal large language models. 
+
+arXiv preprint arXiv:2602.07026 , 2026. Jure Zbontar, Li Jing, Ishan Misra, Yann LeCun, and Stéphane Deny. Barlow twins: Self-supervised learning via redundancy reduction. In Interna-tional Conference on Machine Learning , pages 12310–12320, 2021. Zequn Zeng, Yan Zhang, Hao Wang, Guangshuai Lu, and Wei Lu. Meacap: Memory-augmented zero-shot image captioning. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , pages 14100–14110, 2024. Xiaohua Zhai, Xiao Wang, Basil Mustafa, Andreas Steiner, Daniel Keysers, Alexander Kolesnikov, and Lucas Beyer. Lit: Zero-shot transfer with locked-image text tuning. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , pages 18123–18133, 2022. Xiaohua Zhai, Basil Mustafa, Alexander Kolesnikov, and Lucas Beyer. Sigmoid loss for language image pre-training. In Proceedings of the IEEE/CVF in-ternational conference on computer vision , pages 11975–11986, 2023. Kaiyang Zhou, Jingkang Yang, Chen Change Loy, and Ziwei Liu. Learning to prompt for vision-language models. International Journal of Com-puter Vision , 130:2337–2348, 2022. 13

@@ -6,130 +6,115 @@
 </div>
 
 ## 每次日报
-- 最新运行日期：2026-04-08
-- 运行时间：2026-04-08 20:09:24 UTC
+- 最新运行日期：2026-04-09
+- 运行时间：2026-04-09 20:17:40 UTC
 - 运行状态：成功
-- 本次总论文数：36
-- 精读区：23
+- 本次总论文数：31
+- 精读区：18
 - 速读区：13
 
 ### 今日简报（AI）
-今日精选 36 篇前沿论文，重点攻克具身智能 VLA 模型的模块化构建与高效推理难题。
-满分论文 StarVLA 提供了乐高式开发框架，而 VLA-InfoEntropy 实现了无需训练的推理加速与成功率双提升。
-建议深入探索 VLA 模型在复杂机器人任务中的工程化落地，把握具身智能从理论到实战的效率拐点。
-- 详情：[/202604/08/README](/202604/08/README)
+今日精选 31 篇前沿论文，重点聚焦全透明开源 VLA 模型与量子-经典混合遥感分割网络。
+满分神作 A1 实现了视觉-语言-动作模型的高效透明化，而 HQF-Net 则通过量子计算大幅提升了复杂图像的分割精度。
+建议优先关注大模型在机器人控制及科研自动化（AI Scientist）领域的跨界融合趋势。
+- 详情：[/202604/09/README](/202604/09/README)
 
 ### 精读区论文标签
-1. [StarVLA: A Lego-like Codebase for Vision-Language-Action Model Developing](/202604/08/2604.05014v1-starvla-a-lego-like-codebase-for-vision-language-action-model-developing)  
-   标签：评分：10.0/10、query:vlm-rl
-   evidence：视觉-语言-动作模型开发的基准代码库
-2. [VLA-InfoEntropy: A Training-Free Vision-Attention Information Entropy Approach for Vision-Language-Action Models Inference Acceleration and Success](/202604/08/2604.05323v1-vla-infoentropy-a-training-free-vision-attention-information-entropy-approach-for-vision-language-action-models-inference-acceleration-and-success)  
-   标签：评分：10.0/10、query:vlm-rl
-   evidence：视觉-语言-动作（VLA）模型推理加速
-3. [Uncovering Linguistic Fragility in Vision-Language-Action Models via Diversity-Aware Red Teaming](/202604/08/2604.05595v1-uncovering-linguistic-fragility-in-vision-language-action-models-via-diversity-aware-red-teaming)  
-   标签：评分：10.0/10、query:vlm-rl
-   evidence：视觉-语言-动作模型与强化学习红队测试
-4. [Grounding Hierarchical Vision-Language-Action Models Through Explicit Language-Action Alignment](/202604/08/2604.05614v1-grounding-hierarchical-vision-language-action-models-through-explicit-language-action-alignment)  
-   标签：评分：10.0/10、query:vlm-rl
-   evidence：分层VLA模型中语言与动作的显式对齐
-5. [A1: A Fully Transparent Open-Source, Adaptive and Efficient Truncated Vision-Language-Action Model](/202604/08/2604.05672v1-a1-a-fully-transparent-open-source-adaptive-and-efficient-truncated-vision-language-action-model)  
+1. [A1: A Fully Transparent Open-Source, Adaptive and Efficient Truncated Vision-Language-Action Model](/202604/09/2604.05672v2-a1-a-fully-transparent-open-source-adaptive-and-efficient-truncated-vision-language-action-model)  
    标签：评分：10.0/10、query:vlm-rl
    evidence：用于机器人操作的高效截断式视觉-语言-动作模型
-6. [MARL-GPT: Foundation Model for Multi-Agent Reinforcement Learning](/202604/08/2604.05943v1-marl-gpt-foundation-model-for-multi-agent-reinforcement-learning)  
+2. [HQF-Net: A Hybrid Quantum-Classical Multi-Scale Fusion Network for Remote Sensing Image Segmentation](/202604/09/2604.06715v1-hqf-net-a-hybrid-quantum-classical-multi-scale-fusion-network-for-remote-sensing-image-segmentation)  
+   标签：评分：10.0/10、query:mmseg
+   evidence：使用DINOv3骨干网络的遥感图像分割
+3. [Compressing Correct-by-Design Synthesis for Stochastic Homogeneous Multi-Agent Systems with Counting LTL](/202604/09/2604.06868v1-compressing-correct-by-design-synthesis-for-stochastic-homogeneous-multi-agent-systems-with-counting-ltl)  
    标签：评分：10.0/10、query:vlm-rl
-   evidence：基于GPT的多智能体强化学习基础模型
-7. [DVGT-2: Vision-Geometry-Action Model for Autonomous Driving at Scale](/202604/08/2604.00813v2-dvgt-2-vision-geometry-action-model-for-autonomous-driving-at-scale)  
+   evidence：计数线性时态逻辑规范下的多智能体系统
+4. [ProVG: Progressive Visual Grounding via Language Decoupling for Remote Sensing Imagery](/202604/09/2604.01893v1-provg-progressive-visual-grounding-via-language-decoupling-for-remote-sensing-imagery)  
+   标签：评分：9.0/10、query:mmseg
+   evidence：遥感图像中的视觉定位与定位
+5. [Differentiable SpaTiaL: Symbolic Learning and Reasoning with Geometric Temporal Logic for Manipulation Tasks](/202604/09/2604.02643v2-differentiable-spatial-symbolic-learning-and-reasoning-with-geometric-temporal-logic-for-manipulation-tasks)  
    标签：评分：9.0/10、query:vlm-rl
-   evidence：用于自动驾驶的视觉-语言-动作（VLA）模型
-8. [Neuromorphic Realization of Best Response in Finite-Action Games](/202604/08/2604.03222v1-neuromorphic-realization-of-best-response-in-finite-action-games)  
-   标签：评分：9.0/10、query:gt-mai
-   evidence：有限博弈中最佳反应的类脑神经形态实现
-9. [Single-agent vs. Multi-agents for Automated Video Analysis of On-Screen Collaborative Learning Behaviors](/202604/08/2604.03631v1-single-agent-vs-multi-agents-for-automated-video-analysis-of-on-screen-collaborative-learning-behaviors)  
+   evidence：用于机器人操作的可微时空逻辑
+6. [OMNI-PoseX: A Fast Vision Model for 6D Object Pose Estimation in Embodied Tasks](/202604/09/2604.02759v1-omni-posex-a-fast-vision-model-for-6d-object-pose-estimation-in-embodied-tasks)  
    标签：评分：9.0/10、query:vlm-rl
-   evidence：多智能体设置下的VLM用于自动化视频分析
-10. [A Complete Characterization of Convexity in Flow Games](/202604/08/2604.04729v1-a-complete-characterization-of-convexity-in-flow-games)  
-   标签：评分：9.0/10、query:gt-mai
-   evidence：网络流问题中合作博弈的凸性
-11. [Nash Approximation Gap in Truncated Infinite-horizon Partially Observable Markov Games](/202604/08/2604.05131v1-nash-approximation-gap-in-truncated-infinite-horizon-partially-observable-markov-games)  
-   标签：评分：9.0/10、query:gt-mai
-   evidence：部分可观测马尔可夫博弈中的纳什近似
-12. [Formal specification and behavioral simulation of the holiday gift exchange game](/202604/08/2604.05219v1-formal-specification-and-behavioral-simulation-of-the-holiday-gift-exchange-game)  
-   标签：评分：9.0/10、query:gt-mai
-   evidence：博弈的形式化处理与策略结构
-13. [Strategic Delay and Coordination Efficiency in Global Games](/202604/08/2604.05298v1-strategic-delay-and-coordination-efficiency-in-global-games)  
-   标签：评分：9.0/10、query:gt-mai
-   evidence：全球博弈框架下的协作模型
-14. [UAVReason: A Unified, Large-Scale Benchmark for Multimodal Aerial Scene Reasoning and Generation](/202604/08/2604.05377v1-uavreason-a-unified-large-scale-benchmark-for-multimodal-aerial-scene-reasoning-and-generation)  
-   标签：评分：9.0/10、query:mmseg
-   evidence：针对VLM的多模态航空场景推理与遥感基准
-15. [Learning to Synergize Semantic and Geometric Priors for Limited-Data Wheat Disease Segmentation](/202604/08/2604.05415v1-learning-to-synergize-semantic-and-geometric-priors-for-limited-data-wheat-disease-segmentation)  
-   标签：评分：9.0/10、query:mmseg
-   evidence：引导SAM进行病害分割
-16. [Cross-Stage Attention Propagation for Efficient Semantic Segmentation](/202604/08/2604.05431v1-cross-stage-attention-propagation-for-efficient-semantic-segmentation)  
-   标签：评分：9.0/10、query:mmseg
-   evidence：通过跨阶段注意力传播实现高效语义分割
-17. [Few-Shot Semantic Segmentation Meets SAM3](/202604/08/2604.05433v1-few-shot-semantic-segmentation-meets-sam3)  
-   标签：评分：9.0/10、query:mmseg
-   evidence：SAM3用于少样本语义分割
-18. [Not All Agents Matter: From Global Attention Dilution to Risk-Prioritized Game Planning](/202604/08/2604.05449v1-not-all-agents-matter-from-global-attention-dilution-to-risk-prioritized-game-planning)  
-   标签：评分：9.0/10、query:gt-mai
-   evidence：自动驾驶中的风险优先博弈规划
-19. [Semantic-Topological Graph Reasoning for Language-Guided Pulmonary Screening](/202604/08/2604.05620v1-semantic-topological-graph-reasoning-for-language-guided-pulmonary-screening)  
-   标签：评分：9.0/10、query:mmseg
-   evidence：结合LLaMA-3-V与MedSAM进行医学分割
-20. [LUDOBENCH: Evaluating LLM Behavioural Decision-Making Through Spot-Based Board Game Scenarios in Ludo](/202604/08/2604.05681v1-ludobench-evaluating-llm-behavioural-decision-making-through-spot-based-board-game-scenarios-in-ludo)  
-   标签：评分：9.0/10、query:gt-mai
-   evidence：评估LLM在多智能体棋盘游戏中的策略推理
-21. [Discrete Mean Field Games on Finite Graphs as Initial Value Optimization](/202604/08/2604.05685v1-discrete-mean-field-games-on-finite-graphs-as-initial-value-optimization)  
-   标签：评分：9.0/10、query:gt-mai
-   evidence：用于非合作交互智能体的平均场博弈
-22. [Hierarchical Reinforcement Learning with Augmented Step-Level Transitions for LLM Agents](/202604/08/2604.05808v1-hierarchical-reinforcement-learning-with-augmented-step-level-transitions-for-llm-agents)  
+   evidence：用于具身任务6D位姿估计的视觉基础模型
+7. [VitaTouch: Property-Aware Vision-Tactile-Language Model for Robotic Quality Inspection in Manufacturing](/202604/09/2604.03322v1-vitatouch-property-aware-vision-tactile-language-model-for-robotic-quality-inspection-in-manufacturing)  
    标签：评分：9.0/10、query:vlm-rl
-   evidence：大语言模型智能体的分层强化学习
-23. [Action Images: End-to-End Policy Learning via Multiview Video Generation](/202604/08/2604.06168v1-action-images-end-to-end-policy-learning-via-multiview-video-generation)  
+   evidence：用于机器人的视-触-觉语言模型
+8. [Scaling Multi-agent Systems: A Smart Middleware for Improving Agent Interactions](/202604/09/2604.03430v1-scaling-multi-agent-systems-a-smart-middleware-for-improving-agent-interactions)  
    标签：评分：9.0/10、query:vlm-rl
-   evidence：用于机器人策略学习的世界动作模型
+   evidence：改进基于大语言模型的多智能体系统交互的中间件
+9. [Breakthrough the Suboptimal Stable Point in Value-Factorization-Based Multi-Agent Reinforcement Learning](/202604/09/2604.05297v1-breakthrough-the-suboptimal-stable-point-in-value-factorization-based-multi-agent-reinforcement-learning)  
+   标签：评分：9.0/10、query:vlm-rl
+   evidence：基于价值分解的多智能体强化学习
+10. [CoEnv: Driving Embodied Multi-Agent Collaboration via Compositional Environment](/202604/09/2604.05484v1-coenv-driving-embodied-multi-agent-collaboration-via-compositional-environment)  
+   标签：评分：9.0/10、query:vlm-rl
+   evidence：具有时态推理和决策空间的具身多智能体系统
+11. [Coalitional Zero-Sum Games for ${H_{\infty}}$ Leader-Following Consensus Control](/202604/09/2604.06089v1-coalitional-zero-sum-games-for-hinfty-leader-following-consensus-control)  
+   标签：评分：9.0/10、query:gt-mai
+   evidence：用于多智能体一致性的联盟零和博弈
+12. [Learning to Interrupt in Language-based Multi-agent Communication](/202604/09/2604.06452v1-learning-to-interrupt-in-language-based-multi-agent-communication)  
+   标签：评分：9.0/10、query:vlm-rl
+   evidence：基于语言的大模型多智能体通信
+13. [On Emotion-Sensitive Decision Making of Small Language Model Agents](/202604/09/2604.06562v1-on-emotion-sensitive-decision-making-of-small-language-model-agents)  
+   标签：评分：9.0/10、query:gt-mai
+   evidence：语言模型智能体的博弈论评估
+14. [KD-MARL: Resource-Aware Knowledge Distillation in Multi-Agent Reinforcement Learning](/202604/09/2604.06691v1-kd-marl-resource-aware-knowledge-distillation-in-multi-agent-reinforcement-learning)  
+   标签：评分：9.0/10、query:vlm-rl
+   evidence：多智能体强化学习中从大规模专家模型到轻量级智能体的知识蒸馏
+15. [Walk the Talk: Bridging the Reasoning-Action Gap for Thinking with Images via Multimodal Agentic Policy Optimization](/202604/09/2604.06777v1-walk-the-talk-bridging-the-reasoning-action-gap-for-thinking-with-images-via-multimodal-agentic-policy-optimization)  
+   标签：评分：9.0/10、query:vlm-rl
+   evidence：多模态智能体策略优化，弥合多模态大模型的推理与行动差距
+16. [Fast-dVLM: Efficient Block-Diffusion VLM via Direct Conversion from Autoregressive VLM](/202604/09/2604.06832v1-fast-dvlm-efficient-block-diffusion-vlm-via-direct-conversion-from-autoregressive-vlm)  
+   标签：评分：9.0/10、query:vlm-rl
+   evidence：通过块扩散实现用于机器人和自动驾驶的高效VLM
+17. [CloudMamba: An Uncertainty-Guided Dual-Scale Mamba Network for Cloud Detection in Remote Sensing Imagery](/202604/09/2604.06844v1-cloudmamba-an-uncertainty-guided-dual-scale-mamba-network-for-cloud-detection-in-remote-sensing-imagery)  
+   标签：评分：9.0/10、query:mmseg
+   evidence：使用Mamba网络的遥感图像云检测
+18. [Emergence of cooperation in nonlinear higher-order public goods games](/202604/09/2604.07228v1-emergence-of-cooperation-in-nonlinear-higher-order-public-goods-games)  
+   标签：评分：9.0/10、query:gt-mai
+   evidence：演化博弈论与公共物品博弈中的合作
 
 ### 速读区论文标签
-1. [PoseDriver: A Unified Approach to Multi-Category Skeleton Detection for Autonomous Driving](/202604/08/2603.23215v1-posedriver-a-unified-approach-to-multi-category-skeleton-detection-for-autonomous-driving)  
+1. [Learning-guided Prioritized Planning for Lifelong Multi-Agent Path Finding in Warehouse Automation](/202604/09/2603.23838v1-learning-guided-prioritized-planning-for-lifelong-multi-agent-path-finding-in-warehouse-automation)  
+   标签：评分：8.0/10、query:gt-mai
+   evidence：用于仓库自动化的多智能体路径规划强化学习
+2. [GenMask: Adapting DiT for Segmentation via Direct Mask](/202604/09/2603.23906v1-genmask-adapting-dit-for-segmentation-via-direct-mask)  
    标签：评分：8.0/10、query:mmseg
-   evidence：自动驾驶中的骨架检测
-2. [MemCollab: Cross-Agent Memory Collaboration via Contrastive Trajectory Distillation](/202604/08/2603.23234v1-memcollab-cross-agent-memory-collaboration-via-contrastive-trajectory-distillation)  
-   标签：评分：8.0/10、query:gt-mai
-   evidence：LLM智能体之间的跨智能体记忆协作与交互
-3. [Learning Multi-Agent Local Collision-Avoidance for Collaborative Carrying tasks with Coupled Quadrupedal Robots](/202604/08/2603.23278v1-learning-multi-agent-local-collision-avoidance-for-collaborative-carrying-tasks-with-coupled-quadrupedal-robots)  
-   标签：评分：8.0/10、query:gt-mai
-   evidence：用于协作机器人搬运的多智能体强化学习
-4. [GeoSANE: Learning Geospatial Representations from Models, Not Data](/202604/08/2603.23408v1-geosane-learning-geospatial-representations-from-models-not-data)  
+   evidence：将生成模型适配用于直接语义分割
+3. [From AI Assistant to AI Scientist: Autonomous Discovery of LLM-RL Algorithms with LLM Agents](/202604/09/2603.23951v1-from-ai-assistant-to-ai-scientist-autonomous-discovery-of-llm-rl-algorithms-with-llm-agents)  
+   标签：评分：8.0/10、query:vlm-rl
+   evidence：自动发现语言模型的策略优化算法
+4. [From Pixels to Digital Agents: An Empirical Study on the Taxonomy and Technological Trends of Reinforcement Learning Environments](/202604/09/2603.23964v1-from-pixels-to-digital-agents-an-empirical-study-on-the-taxonomy-and-technological-trends-of-reinforcement-learning-environments)  
+   标签：评分：8.0/10、query:vlm-rl
+   evidence：强化学习从物理模拟向语言驱动基础智能体的转变
+5. [HyDRA: Hybrid Domain-Aware Robust Architecture for Heterogeneous Collaborative Perception](/202604/09/2603.23975v1-hydra-hybrid-domain-aware-robust-architecture-for-heterogeneous-collaborative-perception)  
    标签：评分：8.0/10、query:mmseg
-   evidence：用于遥感基础模型的地理空间模型库
-5. [Biased Error Attribution in Multi-Agent Human-AI Systems Under Delayed Feedback](/202604/08/2603.23419v1-biased-error-attribution-in-multi-agent-human-ai-systems-under-delayed-feedback)  
-   标签：评分：8.0/10、query:gt-mai
-   evidence：多智能体人机交互
-6. [Large Neighborhood Search for Multi-Agent Task Assignment and Path Finding with Precedence Constraints](/202604/08/2603.28968v1-large-neighborhood-search-for-multi-agent-task-assignment-and-path-finding-with-precedence-constraints)  
-   标签：评分：7.0/10、query:gt-mai
-   evidence：具有优先级约束的多智能体任务分配与路径规划
-7. [Distributed Predictive Control Barrier Functions: Towards Scalable Safety Certification in Modular Multi-Agent Systems](/202604/08/2603.29560v1-distributed-predictive-control-barrier-functions-towards-scalable-safety-certification-in-modular-multi-agent-systems)  
-   标签：评分：7.0/10、query:gt-mai
-   evidence：模块化多智能体系统的安全认证
-8. [Near-Miss: Latent Policy Failure Detection in Agentic Workflows](/202604/08/2603.29665v1-near-miss-latent-policy-failure-detection-in-agentic-workflows)  
+   evidence：多智能体系统中异构协作感知的混合融合策略
+6. [Offline Constrained RLHF with Multiple Preference Oracles](/202604/09/2604.00200v1-offline-constrained-rlhf-with-multiple-preference-oracles)  
    标签：评分：7.0/10、query:vlm-rl
-   evidence：基于逻辑指标的智能体工作流策略失效检测
-9. [ShapE-GRPO: Shapley-Enhanced Reward Allocation for Multi-Candidate LLM Training](/202604/08/2603.29871v1-shape-grpo-shapley-enhanced-reward-allocation-for-multi-candidate-llm-training)  
+   evidence：带有安全约束的离线受限强化学习
+7. [Signals: Trajectory Sampling and Triage for Agentic Interactions](/202604/09/2604.00356v1-signals-trajectory-sampling-and-triage-for-agentic-interactions)  
    标签：评分：7.0/10、query:vlm-rl
-   evidence：用于多候选LLM训练和奖励分配的强化学习
-10. [MMFace-DiT: A Dual-Stream Diffusion Transformer for High-Fidelity Multimodal Face Generation](/202604/08/2603.29029v1-mmface-dit-a-dual-stream-diffusion-transformer-for-high-fidelity-multimodal-face-generation)  
-   标签：评分：6.0/10、query:mmseg
-   evidence：结合分割掩码的多模态融合人脸生成
-11. [Polyhedral Unmixing: Bridging Semantic Segmentation with Hyperspectral Unmixing via Polyhedral-Cone Partitioning](/202604/08/2603.29438v1-polyhedral-unmixing-bridging-semantic-segmentation-with-hyperspectral-unmixing-via-polyhedral-cone-partitioning)  
-   标签：评分：6.0/10、query:mmseg
-   evidence：将语义分割与高光谱解混相结合
-12. [A Comprehensive Information-Decomposition Analysis of Large Vision-Language Models](/202604/08/2603.29676v1-a-comprehensive-information-decomposition-analysis-of-large-vision-language-models)  
+   evidence：基于大语言模型的智能体交互循环与轨迹筛选
+8. [A Dual-Stream Transformer Architecture for Illumination-Invariant TIR-LiDAR Person Tracking](/202604/09/2604.00363v1-a-dual-stream-transformer-architecture-for-illumination-invariant-tir-lidar-person-tracking)  
+   标签：评分：7.0/10、query:mmseg
+   evidence：自主移动机器人使用红外和激光雷达的多模态融合
+9. [Distributed Safety-Critical Control of Multi-Agent Systems with Time-Varying Communication Topologies](/202604/09/2604.00429v1-distributed-safety-critical-control-of-multi-agent-systems-with-time-varying-communication-topologies)  
+   标签：评分：7.0/10、query:gt-mai
+   evidence：时变拓扑下多智能体系统的分布式控制
+10. [The Geometry of Compromise: Unlocking Generative Capabilities via Controllable Modality Alignment](/202604/09/2604.00279v1-the-geometry-of-compromise-unlocking-generative-capabilities-via-controllable-modality-alignment)  
    标签：评分：6.0/10、query:vlm-rl
-   evidence：大型视觉语言模型中多模态融合的分析
-13. [Better than Average: Spatially-Aware Aggregation of Segmentation Uncertainty Improves Downstream Performance](/202604/08/2603.29941v1-better-than-average-spatially-aware-aggregation-of-segmentation-uncertainty-improves-downstream-performance)  
+   evidence：视觉语言模型（VLM）模态对齐
+11. [TP-Seg: Task-Prototype Framework for Unified Medical Lesion Segmentation](/202604/09/2604.00684v1-tp-seg-task-prototype-framework-for-unified-medical-lesion-segmentation)  
    标签：评分：6.0/10、query:mmseg
-   evidence：自动驾驶中的分割不确定性
+   evidence：跨模态统一医学病灶分割
+12. [Revisiting Human-in-the-Loop Object Retrieval with Pre-Trained Vision Transformers](/202604/09/2604.00809v1-revisiting-human-in-the-loop-object-retrieval-with-pre-trained-vision-transformers)  
+   标签：评分：6.0/10、query:mmseg
+   evidence：使用预训练视觉Transformer进行目标检索
+13. [PDA: Text-Augmented Defense Framework for Robust Vision-Language Models against Adversarial Image Attacks](/202604/09/2604.01010v1-pda-text-augmented-defense-framework-for-robust-vision-language-models-against-adversarial-image-attacks)  
+   标签：评分：6.0/10、query:vlm-rl
+   evidence：视觉语言模型的鲁棒性
 
 
 <div class="dpr-home-promo-card">
