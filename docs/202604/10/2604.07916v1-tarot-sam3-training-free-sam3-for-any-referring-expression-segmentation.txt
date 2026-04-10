@@ -1,0 +1,984 @@
+Title: Tarot-SAM3: Training-free SAM3 for Any Referring Expression Segmentation
+
+URL Source: https://arxiv.org/pdf/2604.07916v1
+
+Published Time: Fri, 10 Apr 2026 00:51:32 GMT
+
+Number of Pages: 19
+
+Markdown Content:
+# Tarot-SAM3: Training-free SAM3 for Any Referring Expression Segmentation 
+
+Weiming Zhang 1⋆, Dingwen Xiao 1∗, Songyue Guo 1∗, Guangyu Xiang 1∗, Shiqi Wen 1, Minwei Zhao 1, Lei Chen 1, and Lin Wang 2† 
+
+> 1
+
+The Hong Kong University of Science and Technology (Guangzhou)  
+
+> 2
+
+Nanyang Technological University 
+
+{wzhang915, dxiaoaf, sguo349, gxiang190, swen750, mzhao886}@connect.hkust-gz.edu.cn ; leichen@cse.ust.hk linwang@ntu.edu.sg Standing kid Girl in pink helmet with bat White train closest       
+
+> What part of the
+> lion in this
+> picture is a
+> defining
+> characteristic of
+> male lions?
+> What part of a
+> tree in the
+> picture offers a
+> suitable spot
+> for birds to do
+> so?
+> Tarot-SAM 3
+> Explicit  Implicit
+> What in the picture can provide stability and enable the skater to spin gracefully?
+> MLLM
+> “Skate”
+> SAM3 Agent Image Ground Truth
+> MLLM
+> “Skate”
+> EVOL -SAM3
+> MLLM
+> “Ice skating
+> blade”
+> Tarot -SAM3
+> What parts in the picture can
+> potentially serve as a resting
+> spot for birds?
+> Ground
+> Truth
+> Tarot -
+> SAM3
+> EVOL -
+> SAM3
+> SAM3
+> Agent
+
+Fig. 1: Tarot-SAM3 achieves reliable referring segmentation for both explicit (top row) and implicit (middle row) reasoning queries. The bottom row highlights that Tarot-SAM3 breaks the strong reliance of prior methods [2,56] on direct MLLM parsing (left) and naive SAM3 text-mask predictions (right). 
+
+Abstract. Referring Expression Segmentation (RES) aims to segment image regions described by natural-language expressions, serving as a bridge between vision and language understanding. Existing RES meth-ods, however, rely heavily on large annotated datasets and are lim-ited to either explicit or implicit expressions, hindering their ability to generalize to any referring expression. Recently, the Segment Anything Model 3 (SAM3) has shown impressive robustness in Promptable Con-cept Segmentation. Nonetheless, applying it to RES remains challenging: 
+
+1) SAM3 struggles with longer or implicit expressions; 2) Naïve coupling SAM3 with a multimodal large language model (MLLM) makes the final results overly dependent on the MLLM’s reasoning capability, without enabling refinement of SAM3’s segmentation outputs. To this end, we present Tarot-SAM3 , a novel training-free framework that can ac-curately segment from any referring expression. Specifically, our Tarot-SAM3 consists of two key phases. Firstly, the Expression Reasoning  
+
+> ⋆
+
+Equal contribution. †Corresponding author.          
+
+> arXiv:2604.07916v1 [cs.CV] 9 Apr 2026 2Zhang. Author et al.
+> Interpreter (ERI) phase is dedicated to introduce reasoning-assisted prompt options to support structured expression parsing and evaluation-aware rephrasing. This subtly transforms arbitrary queries into robust heterogeneous prompts for generating reliable masks with SAM3. Sec-ondly, the Mask Self-Refining (MSR) phase is then designed to se-lect the best mask across prompt types and performs self-refinement by leveraging DINOv3’s rich feature relationships to compare discriminative regions among ERI outputs. It then infers regions’ affiliation to the tar-get, thereby correcting over-/under-segmentation. Extensive experiments demonstrate that Tarot-SAM3 achieves strong performance on both ex-plicit and implicit RES benchmarks, as well as open-world scenarios. Ablation studies further validate the effectiveness of each phase.
+> Keywords: SAM3 ·Referring Expression Segmentation ·Training-free
+
+1 Introduction 
+
+Referring Expression Segmentation (RES) [12, 45, 54, 59] aims to generate a seg-mentation mask for an image region described by a natural-language expression and has become an essential benchmark for fine-grained vision–language ground-ing and human–image interaction. It enables a wide range of applications such as multimodal visual reasoning [28, 55], embodied navigation [6, 65], and vision-based dialogue systems [37, 58], where users can specify targets through natural language rather than explicit bounding boxes or pixel annotations. Specifically, due to the nature of textual queries, they can be broadly categorized into two types (see Fig. 1): 1) Explicit expressions , which are concise and direct descrip-tions that clearly specify the target object; and 2) Implicit expressions , which are reasoning-dependent descriptions that identify the target through attributes, re-lations, contextual cues, or commonsense knowledge. Despite recent progress, existing RES approaches [14, 15, 20, 51] remain heavily reliant on large-scale annotated datasets, whose construction is extremely labor-intensive, limiting generalization to open-world scenarios. Moreover, most methods are specialized for either explicit expressions or implicit ones, rather than addressing both in a unified manner. Consequently, current models lack a generalized reasoning mechanism for handling any referring expressions in real-world settings. Recently, the Segment Anything Model 3 (SAM3) [2] has demonstrated strong robustness and generalization in text-prompted segmentation, exhibiting promising zero-shot performance across diverse visual concepts [13, 18, 50, 56]. However, directly applying SAM3 to the RES task still remains highly chal-lenging: 1) SAM3 is not inherently designed to handle long, compositional, or implicit referring expressions that require multi-step reasoning; 2) existing at-tempts [2, 56] that couple SAM3 with an MLLM often rely on the MLLM to directly interpret the expression and generate prompts, making the final segmen-tation highly dependent on language reasoning while leaving SAM3’s predictions unrefined and unchanged (See Fig. 1). To overcome these challenges, we explore a novel question: How can we efficiently and effectively bridge MLLM and SAM3 to perform accurate referring segmentation for any referring expression? Tarot-SAM3 3
+
+To this end, we propose Tarot-SAM3 , a training-free framework that en-ables SAM3 to segment from any referring expression by coupling the reason-ing power of an MLLM with the object-aware feature coherence of DINOv3 [36]. Specifically, our Tarot-SAM3 consists of two novel phases that jointly bridge linguistic reasoning and geometric segmentation. 1) The Expression Reason-ing Interpreter (ERI) phase (Sec. 3.2) addresses the challenge of handling implicit and long expressions by reformulating them into structured, multi-type prompts. Specifically, ERI utilizes dedicated reasoning-assisted prompt options to enhance the controllability and precision of MLLM outputs, enabling struc-tured expression parsing and evaluation-aware rephrasing before generating di-verse mask candidates with SAM3. 2) The Mask Self-Refining (MSR) phase 
+
+(Sec. 3.3) further improves segmentation quality by selecting the most promis-ing mask and refining it through DINOv3’s object-aware feature coherence. By modeling feature relationships within discriminative regions, MSR identifies and corrects over- and under-segmentation, yielding more consistent object-level pre-dictions. This Unified Text-Reasoning Mask-Self-Refinement process enhances adaptability to complex language expressions while improving segmentation con-sistency beyond naive language-guided coupling. We conducted extensive experiments to validate the effectiveness of our Tarot-SAM3 across multiple RES benchmarks. In explicit referring scenarios, Tarot-SAM3 accurately localizes and segments objects with clear linguistic cues, outperforming existing training-free methods ( e.g . 75.5 gIoU on the RefCOCO testA set.) In implicit referring scenarios, Tarot-SAM3 surpasses both dataset-specific fine-tuned models and existing training-free approaches, achieving state-of-the-art performance ( e.g . 74.3 gIoU on the ReasonSeg test set) while demon-strating strong robustness without any additional supervision. As illustrated in Fig. 8, our Tarot-SAM3 exhibits remarkable generalization to the open-world scenarios, underscoring the novelty and effectiveness of our training-free design. In summary, our contributions are as follows: (I) We propose Tarot-SAM3 ,a novel framework that unifies multimodal reasoning and mask-level self-refinement without any task-specific training. (II) We introduce a two-phase design consist-ing of the Expression Reasoning Interpreter and the Mask Self-Refining 
+
+phases, which progressively enhance linguistic adaptability and visual consis-tency by bridging structured reasoning with feature-coherent mask refinement. 
+
+(III) Extensive experiments show that Tarot-SAM3 achieves strong zero-shot performance across explicit, implicit, and open-world benchmarks, and ablation studies validate the effectiveness of each phase. 
+
+2 Related Work 
+
+Referring Expression Segmentation. Referring Expression Segmentation (RES) [5, 9, 19, 57, 59] is a multimodal task that bridges language and vision modalities, aiming to segment image regions at the pixel level according to natural language descriptions. Based on linguistic complexity, expressions can be categorized into two types: explicit and implicit. For explicit RES, the text 4 Zhang. Author et al. 
+
+prompt is typically simple and direct, clearly referring to the specific object in the image. Early explicit RES models [8, 14, 22, 53, 59] based on CNN–LSTM performed simple feature concatenation for multimodal fusion. Later attention-based methods [12, 20, 23] improved cross-modal alignment through graph and parsing reasoning. Recent Transformer frameworks [15, 54] and CLIP-adapted models [45, 51] further unify vision–language representations, achieving stronger spatial–semantic correspondence and generalization. In contrast, implicit RES shifts from direct reference understanding to reasoning-driven segmentation, re-quiring models to infer the intended target through contextual or commonsense reasoning. The ReasonSeg benchmark, introduced with LISA [16], established a reasoning-before-segmentation paradigm. Subsequent works [3, 25, 27, 35, 52] follow this direction, integrating large language models or chain-of-thought rea-soning to enhance logical inference and segmentation accuracy. However, ex-isting approaches [10, 43] mainly rely on substantial annotated data, hindering generalization across diverse expressions. To this end, we propose a training-free paradigm that efficiently leverages pretrained VLM and DINOv3 to handle diverse expressions without fine-tuning. 
+
+SAM3 and Its Adaptations for RES. The Segment Anything Model 3 (SAM3) [2] is trained on billions of masks and diverse visual–language data, endowing it with strong robustness and open-vocabulary generalization across varied visual concepts and domains. However, its design primarily assumes di-rect concept-level prompts and does not inherently support long, compositional, or implicit expressions, limiting its applicability to arbitrary referring inputs [2, 18]. SAM3 Agent [2] leverages an MLLM to translate complex expressions into simplified prompts for SAM3; SAM3-I [18] introduces a training-based instruction-aware adaptor to enhance structured language understanding; and EVOL-SAM3 [56]adopts a training-free evolutionary prompting strategy for im-proved zero-shot segmentation. While effective in extending SAM3 to complex expressions, these approaches largely depend on the MLLM’s direct understand-ing of the raw query, lacking structured control over language outputs, and leave SAM3’s mask predictions unrefined after target identification. In contrast, Tarot-SAM3 addresses these challenges in two stages: ERI improves the relia-bility of complex expression interpretation by structured prompt reformulation, while MSR refines SAM3 predictions through feature-coherent self-refinement. 
+
+Positioning of our work: Our approach adopts a training-free paradigm that leverages pretrained models for robust referring segmentation with-out additional fine-tuning. By integrating reasoning-guided prompt genera-tion and mask self-refinement, our approach effectively handles diverse refer-ring expressions while reducing reliance on direct MLLM parsing and naive SAM3’s output, achieving SOTA performance among training-free methods. Tarot-SAM3 5Negative Prompt Shift 
+
+Eq. ( 13 )
+
+High -Confidence 
+
+Region 
+
+Sampling Eq. ( 8)
+
+Explicit/ 
+
+Implicit? 
+
+Single/ 
+
+Multi -Obj? 
+
+Refer 
+
+Object? 
+
+Adjective 
+
+Expression? 
+
+Reasoning -assisted 
+
+Prompt Options 
+
+Segmentor 
+
+Confusion? 
+
+Object -
+
+Level? 
+
+MLLM 
+
+Final Output 
+
+Find ‘Camera ’
+
+(Refer Object Name) 
+
+Interpret Camera Base 
+
+(Target Object Name) 
+
+Input Image !
+
+“In order to take a clear 
+
+and stable photo or video, 
+
+what equipment in the 
+
+picture can be used to hold 
+
+the camera steady? ”
+
+Referring Expression "
+
+Target/Refer Object Name 
+
+Extraction 
+
+Eqs. ( 1 & 2)
+
+Dinov3 similarity matrix 
+
+#!
+
+Mask point prompt 
+
+$"#$ 
+
+$%&' 
+
+Yes %()% 
+
+Discriminative Region 
+
+Partition Eq. ( 11 )
+
+Object -awareness Prompt Modification Block 
+
+Over -Seg? 
+
+"*
+
+> Expression Reasoning Interpreter  Phase  Mask Self -Refining  Phase
+
+Positive Point 
+
+Prompt Flow 
+
+Negative Point 
+
+Prompt Flow 
+
+Positive Point 
+
+MLLM 
+
+Reasoning 
+
+Steps 
+
+Interpretation 
+
+Augmented Text Prompt 
+
+Camera 
+
+Base 
+
+$+
+
+> ,
+
+Tripod 
+
+$+
+
+> -
+
+Irrelevant Candidate 
+
+Filter Eq. ( 6)
+
+Camera 
+
+Mount 
+
+$+
+
+> .
+
+Target Object Name Augmentation 
+
+Eq. ( 3)
+
+Evaluation Criterion 
+
+Construction Eq. ( 4)
+
+Camera Base $+
+
+> ,
+
+Camera $*
+
+> ,
+
+[‘Relation’: ‘ hold’] $/
+
+> ,
+
+Evaluation Criterion Map 
+
+$* 
+
+> ,
+
+&*
+
+> ,
+
+&+
+
+> 0%)
+
+Bounding 
+
+Box Output Rephrased Expression Generation 
+
+Eq. ( 5)
+
+> Reason
+
+“The Camera Base hold the 
+
+camera. ”(Shorter Expression )
+
+“The Camera Base is under the camera and 
+
+holds the camera. It is in front of the 
+
+woman. ” (Longer Expression )
+
+"1
+
+"2
+
+&+
+
+> 1
+
+&+
+
+> 2
+
+$+
+
+> ,
+
+$+
+
+> .
+
+$+
+
+> -
+
+&+
+
+> 0%)
+
+'+&34 
+
+> )
+
+…
+
+'556 
+
+> 7
+
+Multi -type Prompt Mask Candidates 
+
+Intra -Prompt -Type Optimal 
+
+Selection Eq. ( 7)
+
+Positive/Negative Point 
+
+Prompt Generation Eq. ( 9)
+
+'+&34  
+
+> 8
+
+'556 
+
+> 8
+
+'+&34 
+
+> 8
+
+'556 
+
+> 8
+
+'9#)%4 
+
+> 8
+
+'+&34 
+
+> 8
+
+'556 
+
+> 8
+
+'9#)%4 
+
+> 8
+
+Inter -Prompt -Type Optimal 
+
+Selection Eq. ( 10 )
+
+'5&$4  
+
+> 8
+
+(!
+
+> 5&$4
+
+(!
+
+> 9#)%4
+
+#!
+
+> 5&$4
+
+#!
+
+> 9#)%4
+
+No 
+
+Positive Prompt Shift/Add 
+
+Eq. ( 12 )
+
+Text Prompt 
+
+or its output 
+
+Bounding Box 
+
+Prompt or its 
+
+output 
+
+Point Prompt 
+
+or its output 
+
+SAM3 
+
+Model 
+
+Dinov3 
+
+Model 
+
+Negative Point 
+
+New Positive Point 
+
+> Reason
+> Reason
+> Reason
+> Reason
+> Reason
+
+MLLM 
+
+'9#)%4 
+
+> 8
+
+Under -Seg? 
+
+Over -Seg? 
+
+Under -Seg? 
+
+> Reason
+
+MLLM 
+
+Fig. 2: Overview of our Tarot-SAM3 Framework. Zoom in for better view. 
+
+3 Method 
+
+3.1 Overview 
+
+As shown in Fig. 2, Tarot-SAM3 is a training-free framework that empow-ers SAM3 to handle both explicit and implicit referring expressions. There-fore, Given an image X and a text query T as inputs, we treat all backbone models— EMLLM , EDINO , and ESAM —as frozen. However, a naïve combination of these three pretrained models cannot fully address the challenges of the RES task. This is mainly due to two factors: (1) A naïve coupling of an MLLM with SAM3 relies heavily on the MLLM’s reasoning capability to translate long or complex expressions into short noun-phrase. Any misinterpretation of the target concept directly propagates to SAM3, leading to erroneous segmentation results. (2) Such a combination also treats SAM3 as a static mask predictor, overlooking common issues such as over- and under-segmentation. Although DINOv3 can capture pixel-level similarity structures, neither the MLLM nor SAM3 can ex-plicitly leverage these feature relationships to refine mask predictions after initial segmentation. To overcome these challenges, we introduce two novel phases: the Expression Reasoning Interpreter (ERI) (Sec. 3.2) and the Mask Self-Refining (MSR) phase (Sec. 3.3). We now describe these phases in detail. 
+
+3.2 Expression Reasoning Interpreter (ERI) Phase 
+
+The goal of the ERI phase is to progressively decompose long or complex refer-ring expressions into structured target components and transform them into 6 Zhang. Author et al. 
+
+multiple heterogeneous prompt types compatible with SAM3, ultimately se-lecting the most reliable mask within each prompt type. Specifically, to sta-bilize the MLLM’s responses and prevent it from disregarding prior reasoning states, we introduce a set of Reasoning-assisted Prompt Options TR in the ERI phase. The TR comprises six structured dimensions— explicit/implicit identification , single/multi-object determination , refer-object analysis , adjective expression identification , object-level reasoning , and segmentor confusion aware-ness —providing a comprehensive decomposition of linguistic semantics and po-tential grounding ambiguities. Given the T , ERI first leverages the MLLM rea-soning conditioned on the structured representation TR to obtain the final target object name Nt and a set of refer object names Nr . Specifically, the target name 
+
+Nt is determined as:       
+
+> Nt=
+> (
+> Extract MLLM (T),if the target is explicitly mentioned in T,
+> Infer MLLM (T, T R),otherwise ,(1)
+
+where Extract MLLM (·) denotes MLLM-based span extraction of the target noun phrase from T , while Infer MLLM (·) performs MLLM-based semantic inference to recover an implicit target concept conditioned on (T, T R). The refer object set 
+
+Nr is defined as:            
+
+> Nr={n∈Noun( T)\ { Nt} | Rel MLLM (n, N t|T, T R) = 1 },(2)
+
+where Noun( T ) extracts noun candidates from T , and Rel MLLM (·) evaluates whether a noun is semantically related to Nt based on contextual reasoning. After obtaining the target object name Nt, we further enhance it to better align the textual description with SAM3’s concept-level segmentation space. Specifi-cally, Tarot-SAM3 leverages the MLLM’s semantic reasoning ability to expand 
+
+Nt with synonymous or semantically related expressions, thereby reducing the linguistic–visual representation gap and improving prompt–model compatibility. Formally, we define:            
+
+> PT= Aug MLLM (Nt) =
+> n
+> PaT, P bT, P cT
+> o
+> ,PaT=Nt,(3)
+
+where PT denotes a set of augmented target text prompts generated by the MLLM to better match SAM3’s concept space. For the extracted refer object set Nr , ERI further exploits the interaction between SAM3 and the MLLM to ground refer objects and construct evaluation criteria for subsequent mask fil-tering. Concretely, for a refer object name, we first use it as a text prompt 
+
+P aR to query SAM3, obtaining a refer-object bounding box BaR. We then feed 
+
+(Nt, P aR, B aR) into the MLLM to derive an evaluation criterion map that explic-itly describes the expected relationship between the target and the refer object, which will be used to assess and filter SAM3 mask candidates in later steps. The evaluation criterion map is formally defined as follows:     
+
+> PaC= Crit MLLM (Nt, N r, B aR),(4)
+
+where P aC is a structured textual criterion (e.g., relation predicate) capturing the target–refer affiliation for evaluation. Subsequently, ERI leverages the evaluation Tarot-SAM3 7
+
+criterion map P aC to rephrase the original complex expression into more explicit target-centric descriptions. Specifically, the MLLM generates two complemen-tary forms of rephrased expressions: shorter expression TS and longer expression 
+
+TL that incorporates relational context between the target and refer objects, which can be formally expressed as follows: 
+
+(TS , T L) = Rephrase MLLM (T, N t, Nr , P aC ), (5) 
+
+We then feed the rephrased expressions (TS , T L) together with the original query 
+
+T into the MLLM to obtain target bounding box prompts ({BIni T , B ST , B LT }).After obtaining the augmented text prompts PT and bounding box prompts 
+
+{BIni T , B ST , B LT }, ERI queries SAM3 to generate multi-type mask candidates, de-noted as {M i
+
+> Text
+
+} and {M j
+
+> BBX
+
+}. Unlike prior approaches (e.g., EVOL-SAM3 [56]) that rely on exhaustive MLLM evaluation over all mask candidates, Tarot-SAM3 introduces a lightweight prompt-consistency filtering step to reduce unnecessary reasoning overhead. Specifically, text-prompt masks that do not spatially overlap with their corresponding bounding box prompts are discarded: 
+
+M i 
+
+> Text
+
+←
+
+n
+
+M i 
+
+> Text
+
+| IoU( M i
+
+> Text
+
+, B kT ) > τ 
+
+o
+
+, (6) 
+
+where τ is an overlap threshold. Subsequently, for each prompt type, MLLM selects the most semantically consistent mask among the remaining candidates: 
+
+M Ot = argmax  
+
+> Mit
+
+Score MLLM (M it , T R), t ∈ { Text , BBX }, (7) 
+
+where t denotes the prompt type and M Ot is the selected optimal mask within each type. After obtaining the optimal masks M O 
+
+> Text
+
+and M O
+
+> BBX
+
+, ERI further exploits the point-prompt capability of SAM3 for refinement. ERI first defines a high-confidence region as the overlap of the two masks and sample anchor pixels within this region. DINOv3 is then used to construct an accumulated pixel-level similarity map: 
+
+Ω = M O 
+
+> Text
+
+∩ M O
+
+> BBX
+
+, P = Sample( Ω), SD = X
+
+> p∈P
+
+Sim DINO (p, X ), (8) 
+
+where P denotes the set of sampled anchor coordinates from the high-confidence overlapping region, and SD represents the accumulated DINOv3 pixel-level sim-ilarity map obtained by aggregating similarity responses from all anchors. Based on SD , we generate positive and negative point prompts as: 
+
+ppos = arg max  
+
+> x∈Ω
+
+SD , pneg = arg max 
+
+> x∈Ω
+
+(−∇ SD · dpos ) , (9) 
+
+where ∇SD is the spatial gradient of the similarity map and dpos is the unit di-rection from ppos to x. ppos denotes the pixel coordinate within the overlapping region that achieves the highest accumulated similarity response. The negative point pneg is selected outside the overlapping region along the direction of max-imal similarity decay from ppos , capturing the nearest feature-inconsistent loca-tion, with a similarity value smaller than the hyperparameter sneg . The resulting point prompts are then fed into SAM3 to obtain the mask M O
+
+> Point
+
+.8 Zhang. Author et al. 
+
+3.3 Mask Self-Refining (MSR) Phase 
+
+The MSR phase introduces a self-refinement mechanism that integrates feature-level coherence from DINOv3 with semantic consistency reasoning from the MLLM to progressively rectify potential over- and under-segmentation produced by SAM3 from the ERI phase. MSR first performs inter-prompt-type optimal selection over the masks obtained from ERI. Given the three optimal masks from different prompt types, MSR employs the MLLM to conduct pairwise preference comparison and select the globally preferred mask: 
+
+M O 
+
+> Best
+
+= argmax    
+
+> m∈{ MO
+> Text , M O
+> BBX , M O
+> Point }
+
+Pref MLLM (m; T, T R), (10) 
+
+where Pref MLLM (·) denotes the MLLM-based preference score under the refer-ring query T and reasoning options TR, and M O 
+
+> Best
+
+is the globally selected mask across prompt types. Although M O 
+
+> Best
+
+is globally preferred by the MLLM, it may still contain geometric inaccuracies such as over- or under-segmentation. To iden-tify such discrepancies, MSR leverages the complementary mask M O
+
+> Point
+
+—generated via point prompts that integrate both textual and spatial cues—to construct dis-criminative regions for consistency analysis: 
+
+RBest  
+
+> D
+
+= M O 
+
+> Best
+
+\ M O
+
+> Point
+
+, RPoint  
+
+> D
+
+= M O 
+
+> Point
+
+\ M O
+
+> Best
+
+. (11) 
+
+Here, RBest  
+
+> D
+
+captures regions exclusively predicted by the best mask, while RPoint 
+
+> D
+
+captures regions exclusively predicted by the point-prompt mask. Instead of directly asking the MLLM to assess the completeness of the seg-mentation, MSR reformulates segmentation verification as a region-level object affiliation problem. For each discriminative region, we extract its center coordi-nate and feed it into DINOv3 to obtain the similarity map, denoted as SBest  
+
+> D
+
+and 
+
+SPoint  
+
+> D
+
+, respectively. For RBest  
+
+> D
+
+, we use the minimum similarity value within the 
+
+RBest  
+
+> D
+
+as a threshold to identify areas that may not belong to the target object. For RPoint  
+
+> D
+
+, we use the maximum similarity value within the RPoint  
+
+> D
+
+to identify potentially missing object regions. These filtered regions, together with the over-lapping high-confidence region, are then provided to the MLLM to determine whether they belong to the same target object. If RBest  
+
+> D
+
+is judged inconsistent with the overlapping region, it indicates over-segmentation. If RPoint  
+
+> D
+
+is judged consistent with the overlapping region, it indicates under-segmentation. Once MSR detects an under-/over-segmentation case via the region-level affiliation check, we enter an object-awareness prompt modification block to up-date point prompts and re-query SAM3 for refinement. For under-segmentation, we adjust the positive prompt by shifting it toward RPoint  
+
+> D
+
+or adding an extra positive point inside RPoint  
+
+> D
+
+:
+
+P′ 
+
+> pos
+
+=
+
+(
+
+{ ppos ← c(RPoint  
+
+> D
+
+) }, (shift) 
+
+Ppos ∪ { c(RPoint  
+
+> D
+
+) }, (add)  (12) 
+
+where c(·) denotes the region center coordinate. For over-segmentation, we shift the negative prompt into the over-claimed discriminative region: 
+
+p′ 
+
+> neg
+
+← c(RBest  
+
+> D
+
+), (13) Tarot-SAM3 9
+
+Table 1: Comparison with state-of-the-art methods on explicit RES benchmarks. Bold 
+
+marks the overall best result, while underline highlights the strongest zero-shot result among methods without training on explicit RES datasets. Model Training RefCOCO RefCOCO+ RefCOCOg Name Version RES val testA testB val testA testB val (U) test (U) val (G) LISA [16] LLaVA 7B ✓ 74.9 79.1 72.3 65.1 70.8 58.1 67.9 70.6 –GSVA [48] 13B ✓ 79.2 81.7 77.1 70.3 73.8 63.6 75.7 77.0 –GLaMM [33] Vicuna 7B ✓ 79.5 83.2 76.9 72.6 78.7 64.6 74.2 74.9 –SAM4MLLM [4] LLaVA1.6 7B ✓ 79.6 82.8 76.1 73.5 77.8 65.8 74.5 75.6 –SAM4MLLM [4] LLaVA1.6 8B ✓ 79.8 82.7 74.7 74.6 80.0 67.2 75.5 76.4 –GLEE [47] Plus ✓ 79.5 – – 68.3 – – 70.6 – –GLEE [47] Pro ✓ 80.0 – – 69.6 – – 72.9 – –DETRIS [11] DETRIS-L ✓ 81.0 81.9 79.0 75.2 78.6 70.2 74.6 75.3 –UniLSeg [26] UniLSeg-20 ✓ 80.5 81.8 78.4 72.7 77.0 67.0 78.4 79.5 –UniLSeg [26] UniLSeg-100 ✓ 81.7 83.2 79.9 73.2 78.3 68.2 79.3 80.5 –PSALM [64] Phi1.5 1.3B ✓ 83.6 84.7 81.6 72.9 75.5 70.1 73.8 74.4 –EVF-SAM [63] RC ✓ 82.1 83.7 80.0 75.2 78.3 70.1 76.8 77.4 –EVF-SAM [63] Extra Data ✓ 82.4 84.2 80.2 76.5 80.0 71.9 78.2 78.3 –RICE [49] Qwen2.5-7B ✓ 83.5 85.3 81.7 79.4 82.8 75.4 79.8 80.4 –MLCD-seg [1] Qwen2.5-7B ✓ 83.6 85.3 81.5 79.4 82.9 75.6 79.7 80.5 –HyperSeg [46] Phi2 2.7B ✓ 84.8 85.7 83.4 79.0 83.5 75.2 79.4 78.9 –LENS [66] Qwen2.5-VL 3B ✓ 84.2 85.3 81.0 79.4 82.8 74.3 81.2 81.0 –SAM-Veteran [7] Qwen2.5-VL 7B ✓ – 80.8 – – 76.6 – – 73.4 –SAM-Veteran [7] Qwen2.5-VL 32B ✓ – 80.4 – – 77.4 – – 73.4 –READ [32] LLaVA1.5 7B ✓ 78.1 80.2 73.2 68.4 73.7 60.4 70.1 71.4 –SegAgent [67] Qwen-VL 7B ✓ 79.2 81.4 75.7 71.5 76.7 65.4 74.8 74.6 –X-SAM [40] Phi3 3.8B ✓ 85.1 87.1 83.4 78.0 81.0 74.4 83.8 83.9 –GL-CLIP [61] ResNet-50 × 32.7 35.3 30.1 37.7 40.7 34.9 41.6 42.9 44.0 GL-CLIP [61] ViT-B/32 × 32.9 34.9 30.1 38.4 42.1 32.7 42.0 42.0 42.7 CaR [38] ViT-B/16 × 33.6 35.4 30.5 34.2 36.0 31.0 36.7 36.6 36.6 Ref-Diff [31] VAE × 37.2 38.4 37.2 37.3 40.5 33.0 44.0 44.5 44.3 TAS [39] ResNet-50 × 39.9 42.9 35.9 44.0 50.6 36.4 47.7 47.4 48.7 TAS [39] ViT-B/32 × 39.8 41.1 36.2 43.6 49.1 36.5 46.6 46.8 48.1 IterRPrimeE [44] – × 40.2 46.5 33.9 44.2 51.6 35.3 46.0 45.1 45.8 Pseudo-RIS [62] CRIS × 39.8 44.8 33.0 42.2 46.3 34.5 43.7 43.4 43.8 Pseudo-RIS [62] ETRIS × 41.1 48.2 33.5 44.3 51.4 35.1 46.0 46.7 46.8 LGD+DINO [17] ViT-B/32 × 49.5 54.7 41.0 49.6 58.4 38.6 50.3 51.1 52.5 VLM-VG [42] ResNet-50 × 47.7 51.8 44.7 41.2 45.9 34.7 46.6 47.1 –VLM-VG [42] ResNet-101 × 49.9 53.1 46.7 42.7 47.3 36.2 48.0 48.5 –HybridGL [24] ViT-B/32 × 49.5 53.4 45.2 43.4 49.1 37.2 51.3 51.6 –SAM 3 Agent [2] Qwen2.5-VL 7B × 59.4 64.3 55.0 51.4 57.0 44.9 57.2 58.8 59.7 EVOL-SAM3 [56] Qwen2.5-VL 3B × 66.8 70.9 59.9 56.1 63.1 49.3 63.0 63.5 64.0 EVOL-SAM3 [56] Qwen2.5-VL 7B × 68.7 73.7 64.4 64.4 67.8 54.0 64.7 65.5 65.9 
+
+✰ Tarot-SAM3 (ours) Qwen2.5-VL 3B × 67.1 71.7 60.6 58.3 64.9 50.1 64.2 64.7 65.1 
+
+✰ Tarot-SAM3 (ours) Qwen2.5-VL 7B × 71.8 75.5 65.5 64.8 70.7 56.0 67.1 69.4 67.2 
+
+The updated point prompts and M O
+
+Best are then fed into SAM3 to obtain the refined output. Through this self-refinement mechanism, Tarot-SAM3 progres-sively enforces feature-level coherence and object-level consistency, effectively mitigating both over- and under-segmentation issues. 
+
+4 Experiment 
+
+4.1 Datasets and Implementation Details Datasets. We evaluate on four benchmarks across two distinct tasks to assess both basic perception and high-level reasoning.: For explicit text-guided tasks, we utilize RefCOCO [60], RefCOCO+ [60], and RefCOCOg [30], which build upon MS COCO by adding natural-language expressions. For implicit reason-ing tasks, we employ the LISA dataset [16], which introduces 1,218 reasoning-intensive triplets that require commonsense or logical inference beyond direct visual grounding. More details are provided in the supplementary material. 10 Zhang. Author et al. 
+
+Table 2: Comparison with state-of-the-art methods on the ReasonSeg benchmark for implicit RES. Training Data denotes whether the model is fine-tuned on any RES data. Model Training Data Val Set Test Set Test (Short) Test (Long) Name Version RES ReasonSeg gIoU cIoU gIoU cIoU gIoU cIoU gIoU cIoU SEEM [68] - × × 25.5 21.2 24.3 18.7 20.1 11.5 25.6 20.8 Grounded SAM [34] - × × 26.0 14.5 21.3 16.4 17.8 10.8 22.4 18.6 OVSeg [21] - × × 28.5 18.6 26.1 20.8 18.0 15.5 28.7 22.5 GLaMM [33] Vicuna 7B ✓ × 47.4 47.2 – – – – – –SAM4MLLM [4] Qwen-VL 7B ✓ × 46.7 48.1 – – – – – –SAM4MLLM [4] LLaVA1.6 8B ✓ × 58.4 60.4 – – – – – –Seg-Zero [27] Qwen2.5-VL 3B ✓ × 58.2 53.1 56.1 48.6 – – – –Seg-Zero [27] Qwen2.5-VL 7B ✓ × 62.6 62.0 57.5 52.0 – – – –X-SAM [40] Phi3 3.8B ✓ ✓ 56.6 32.9 57.8 41.0 47.7 48.1 56.0 40.8 HyperSeg [46] Phi2 3B ✓ ✓ 59.2 56.7 – – – – – –Ref-Diff [31] LLaVA1.5 7B × × – 52.4 – 48.7 – 48.0 – 49.1 Ref-Diff [31] LLaVA1.5 13B × × – 60.5 – 49.9 – 48.7 – 51.0 LISA [16] LLaVA 7B ✓ × 44.4 46.0 36.8 34.1 37.6 34.4 36.6 34.7 LISA [16] LLaVA 7B ✓ ✓ 52.9 54.0 47.3 34.1 40.6 40.6 49.4 51.0 LISA [16] LLaVA 13B ✓ × 48.9 46.9 44.8 45.8 39.9 43.3 46.4 46.5 LISA [16] LLaVA 13B ✓ ✓ 56.2 62.9 51.7 51.1 44.3 42.0 54.0 54.3 LISA [16] Llama2 13B ✓ ✓ 60.0 67.8 51.5 51.3 43.9 45.8 54.0 53.8 LISA [16] LLaVA1.5 7B ✓ × 53.6 52.3 48.8 47.1 48.3 48.8 49.2 48.9 LISA [16] LLaVA1.5 7B ✓ ✓ 61.3 62.9 55.6 56.9 48.3 46.3 57.9 59.7 LISA [16] LLaVA1.5 13B × ✓ 57.7 60.3 53.8 50.8 50.8 50.0 54.7 50.9 LISA [16] LLaVA1.5 13B ✓ ✓ 65.0 72.9 61.3 62.2 55.4 50.6 63.2 65.3 LENS [66] Qwen2.5-VL-3B ✓ ✓ 62.1 64.9 57.2 58.0 – – – –HRSeg [46] LLaVA1.1 7B ✓ ✓ 57.4 54.7 43.4 41.7 54.4 54.5 51.6 50.5 HRSeg [46] LLaVA1.6 7B ✓ ✓ 64.9 63.1 49.5 48.7 59.2 58.9 57.0 57.2 SAM-Veteran [7] Qwen2.5-VL 7B ✓ ✓ 68.2 67.3 62.6 56.1 – – – –SAM-Veteran [7] Qwen2.5-VL 32B ✓ ✓ 72.3 70.0 62.9 58.2 – – – –READ [32] LLaVA1.5 7B ✓ ✓ 59.8 67.6 58.5 58.6 52.6 49.5 60.4 61.0 SegAgent [67] Qwen2.5-VL 7B ✓ ✓ 33.0 25.4 33.5 31.3 – – – –LLM-Seg [41] LLaVA1.1 7B ✓ ✓ 52.3 47.5 47.9 46.2 41.1 40.2 49.8 49.1 RSVP [29] LLaVA1.6 7B × × 59.2 56.7 56.9 50.7 47.9 42.0 58.4 53.0 RSVP [29] Qwen2-VL 7B × × 58.6 48.5 56.1 51.6 48.5 44.3 57.1 53.0 RSVP [29] Gemini1.5-Flash × × 56.9 49.2 57.1 59.2 47.3 40.2 60.2 65.6 RSVP [29] GPT-4o × × 64.7 63.1 60.3 60.0 55.4 50.4 61.9 62.5 Gemini Seg Gemini2.5 Flash ? ? 28.3 13.3 30.6 9.2 16.5 8.0 35.0 9.5 SAM 3 Agent [2] Qwen2.5-VL 7B × × 62.2 49.1 63.0 53.5 59.4 43.5 64.1 56.2 SAM 3 Agent [2] Qwen2.5-VL 72B × × 74.6 65.1 70.8 64.0 70.3 55.7 71.0 66.3 SAM 3 Agent [2] Llama4 Maverick × × 68.5 61.5 67.1 60.9 66.8 59.4 67.2 61.3 EVOL-SAM3 [56] Qwen2.5-VL 3B × × 66.9 57.1 65.9 58.9 62.0 47.3 67.1 62.5 EVOL-SAM3 [56] Qwen2.5-VL 7B × × 70.7 63.4 72.5 67.4 67.0 46.8 74.3 73.3 
+
+✰ Tarot-SAM3 (ours) Qwen2.5-VL 3B × × 67.5 57.3 66.7 59.5 62.8 47.5 67.9 63.1 
+
+✰ Tarot-SAM3 (ours) Qwen2.5-VL 7B × × 71.8 63.9 74.3 68.8 67.7 47.6 75.1 73.9 
+
+Implementation Details. For the backbones, the MLLM is Qwen2.5-VL-7B, and the DINOv3 adopts the ViT-B backbones. We set the hyperparameters 
+
+τ = 0 .80 and sneg = 0 .30 . All experiments are conducted on 4 NVIDIA A800-80G GPUs. For evaluation, we report gIoU on explicit referring benchmarks, and both gIoU and cIoU on implicit reasoning benchmarks. All results are re-ported as percentages, following the experimental protocols of prior works. More implementation details are provided in the supplementary material. 
+
+4.2 Comparisons with Existing Works 
+
+Here, we conduct experiments on multiple RES benchmarks. Tab. 1 & Tab. 2 present the quantitative results across various existing methods and different model versions on the explicit and implicit RES benchmarks, respectively. Fig. 3 & Fig. 4 provide visual comparisons on explicit and implicit RES datasets. Tarot-SAM3 11 RES                 
+
+> Refcoco Refcoco+ Refcocog
+> SAM3 -Agent Evol -SAM Tarot -SAM3 GT
+> “guy whose
+> elbow is
+> touching
+> batters glove ”
+> “guy on tv ”
+> “a zebra
+> under an
+> alcove ”
+> “aclear
+> mixing bowl
+> full of
+> chocolate ”
+> “left duck ”
+> “cat laying
+> on spotted
+> bed ”
+
+Fig. 3: Example visualizations on ex-plicit RES benchmarks. RES                 
+
+> ReasonSeg  Short ReasonSeg  Long
+> SAM3 -Agent Evol -SAM Tarot -SAM3 GT
+> “the part that can
+> transmit traction
+> and braking
+> torque, coming
+> into contact with
+> the ground ”
+> “something
+> used for
+> playing videos
+> or music ”
+> “the ball that can
+> only be hit into
+> the hole at last ”
+> “unopened
+> flower bud ”
+
+Fig. 4: Example visualizations on implicit RES benchmarks, zoom in for better view .
+
+Comparisons with Existing Explicit RES Works. Tab. 1 compares our method with a wide range of approaches on the RefCOCO, RefCOCO+, and RefCOCOg benchmarks, including fine-tuned models and zero-shot methods [2, 4, 16, 40, 56] evaluated without task-specific training. Several fully supervised approaches ( e.g ., X-SAM [40]) still achieve the overall best performance. How-ever, these results rely on extensive task-specific training and large-scale an-notated data. Such fine-tuned models are inherently influenced by the training distributions and therefore may suffer from limited generalization ability. In con-trast, within the zero-shot setting, Tarot-SAM3 consistently achieves the best across all three datasets and multiple evaluation splits, outperforming existing training-free methods by clear margins. Specifically, Tarot-SAM3 obtains 75.5 
+
+on the RefCOCO testA split, surpassing EVOL-SAM3 [56] by +1.8 under the same backbone and exceeding SAM3-Agent [2] by +11.2 . Fig. 3 further high-lights the effectiveness of our method. 
+
+Comparisons with Existing Implicit RES Works. Tab. 2 compares our method with various prior approaches on the ReasonSeg benchmark, includ-ing both fine-tuned models trained on RefCOCO or ReasonSeg datasets and zero-shot methods evaluated without additional training. Our Tarot-SAM3 con-sistently achieves the best performance among models using the same backbone across different Qwen variants. Specifically, with the Qwen2.5-VL 7B, Tarot-SAM3 achieves the overall best performance on the Test Set ( 74.3 gIoU and 
+
+68.8 cIoU) and the Test (Long) split ( 75.1 gIoU and 73.9 cIoU). Under the same training-free setting, Tarot-SAM3 outperforms EVOL-SAM3 by +1.8 and SAM3 Agent by +11.3 on the Test Set. Notably, Tarot-SAM3 also surpasses SAM-Veteran [7], which is fine-tuned using both RES training data, by +11.7 
+
+in gIoU. Fig. 4 also demonstrates the superiority of our Tarot-SAM3. 
+
+4.3 Ablation Studies 
+
+Tab. 3 presents the ablation study of the proposed framework using the Qwen2.5-VL 7B backbone on RefCOCO (testA) and ReasonSeg (Test Set). By progres-12 Zhang. Author et al. 
+
+Table 3: Ablation study on two key phases of Tarot-SAM3. ERI Phase MSR Phase RefCOCO(testA) ResonSeg(Test Set) RPO( TR) Text Prompt Augmentation BBox Augmentation IPS (Eq. (10)) OPM block gIoU cIoU gIoU cIoU                                                                     
+
+> ×××××35.9 40.4 60.5 55.8
+> ✓××××42.3 47.2 62.8 60.7
+> ✓✓×××53.8 51.4 69.3 64.9
+> ✓✓✓××73.8 69.1 69.5 64.9
+> ✓✓✓✓×74.4 70.8 73.0 67.4
+> ✓✓✓✓✓75.5 72.7 74.3 68.8 Input Image
+> Text Query: “man with blue backpack”
+> MLLM BBox
+> (w/ TRO )
+> MLLM BBox
+> (w/o TRO)
+> ERI Output Mask
+> (Best)
+> SAM3 Point -Mas kMLLM BBox
+> (w/ Augmented BBox)
+> Eq. ( 5)
+> SAM3 (“ man ”) SAM3 (“ Standing -man ”)
+> (w/ Augmented Tex t)
+> Eq. ( 3)
+> Eq. ( 11 )
+> Eq. ( 10 )
+> Discriminative
+> Region Similarity
+> map (Point)
+> Discriminative
+> Region (Point)
+> !!
+> "#$%& "!
+> "#$%&
+> Under -Seg!!!
+> MLLM Add New Positive
+> Point Promp t
+> Eq. ( 12 )
+> Final MSR Output Ground Truth
+
+Fig. 5: Example visualizations of the sequential application of the two phases. 
+
+sively enabling each component, we analyze the contribution of the ERI and MSR phases to the overall performance. Fig. 5 further provides qualitative visu-alizations illustrating how each phase progressively refines the predicted masks. 
+
+Effectiveness of ERI phase. In the ERI phase, we analyze the effectiveness of three key designs: Reasoning-assisted Prompt Options (RPO), Text Prompt Augmentation (Eq. (3)), and BBox Augmentation (Eq. (5)). Tab. 3 shows that 
+
+TR improves MLLM parsing stability, bringing +6.4 gIoU and +6.8 cIoU on RefCOCO testA. Fig. 5 illustrates that the MLLM correctly localizes the man 
+
+rather than the blue backpack . After applying target object name augmentation, Tarot-SAM3 achieves an additional +11.5 gIoU and +4.2 cIoU on RefCOCO, and +6.5 gIoU and +4.2 cIoU on ReasonSeg. This reveals SAM3’s sensitiv-ity to different noun-phrase expressions despite similar semantics. As shown in Fig. 6, varying the text prompt may lead to missing target regions in the pre-dicted masks. Moreover, by feeding the rephrased expressions into the MLLM to obtain augmented bounding boxes, Tarot-SAM3 further gains +20.0 gIoU and +17.7 cIoU on RefCOCO, as well as +0.2 gIoU on ReasonSeg. These improvements highlight that directly parsing complex queries can be error-prone for MLLMs, and underscore the importance of our evaluation-guided rephrasing. 
+
+Fig. 7 provides qualitative evidence that rephrased queries enable the MLLM to return more accurate bounding boxes for the target. 
+
+Effectiveness of MSR phase. In the MSR phase, we analyze the effectiveness of the Inter-Prompt-Type Optimal Selection (IPS, Eq. (10)) and the Object-awareness Prompt Modification (OPM) block. After applying IPS, the selected mask outperforms direct MLLM selection across prompt types ( +0.6 gIoU and 
+
++1.7 cIoU on RefCOCO testA). Notably, even without the OPM block for Tarot-SAM3 13 Text Query: “the places       
+
+> for further exploration”
+> Input Image
+> Ground Truth
+> SAM3 Mask
+> (“exploration area”)
+> SAM3 Mask
+> (“hole”)
+> SAM3 Mask
+> (“archways”)
+> SAM3 Mask
+> (“openings”)
+> Eq. ( 1)
+> Initial Object Query:
+> “exploration area” Eq. ( 3)
+> Augmented Object Query:
+> “hole", "archways”, “openings”
+
+Fig. 6: Visual comparisons of augmented text prompt, zoom in for better view. Text Query: “the person who     
+
+> is speaking currently”
+> Input Image
+> Ground Truth
+> MLLM Bbox
+> (Initial text query )
+> SAM3 Mask
+> (Initial text query )
+> MLLM Bbox
+> (Rephrased text query )
+> SAM3 Mask
+> (Rephrased text query )
+> Eq. ( 5)
+> Rephrased Text Query: “The woman
+> holding the microphone”
+
+Fig. 7: Ablation visualizations of rephrased expression generation. 
+
+Table 4: Influence of different settings of τ
+
+on RefCOCO testA dataset. 
+
+τ gIoU cIoU 0.70 72.6 69.8 0.80 75.5 72.7 
+
+0.90 63.4 60.2 
+
+Table 5: Influence of different settings of sneg on RefCOCO testA dataset. 
+
+sneg gIoU cIoU 0.20 74.3 72.6 0.30 75.5 72.7 
+
+0.40 70.9 68.4 
+
+Table 6: Inference time comparison of various methods on ReasonSeg test set. 
+
+Model Inference Time (s) SAM 3 Agent 37.8 EVOL-SAM3 23.2 
+
+✰ Tarot-SAM3 15.2 
+
+mask self-refinement, Tarot-SAM3 already surpasses the current best training-free method (74.4 vs. 73.7 of EVOL-SAM3). This result demonstrates the effec-tiveness of Tarot-SAM3 in bridging MLLM reasoning and SAM3 segmentation through prompt-level interpretation. After further introducing the OPM block, Tarot-SAM3 achieves an additional +1.1 gIoU and +1.9 cIoU improvement on RefCOCO, and +1.3 gIoU and +1.4 cIoU on ReasonSeg. Fig. 5 shows that OPM corrects over- and under-segmentation using refined point prompts. 
+
+Ablation study of hyperparameters. As shown in Tab. 4, different settings of τ impact the performance on the RefCOCO testA. The best results in terms of gIoU and cIoU are achieved with τ = 0 .80 . Similarly, Tab. 5 demonstrates the effect of varying sneg , where sneg = 0 .30 yields the highest performance. 
+
+4.4 Other Analysis Open-World robustness comparisons. In this section, we evaluate the open-world robustness of our method against existing training-free approaches (SAM3 Agent [2] and EVOL-SAM3 [56]). We construct the evaluation set using online and self-captured images, and generate text queries following the protocol of SAM3-I [18]. As shown in Fig. 8, Tarot-SAM3 consistently outperforms existing methods in open-world scenarios, including challenging domains such as anime-style images. These results demonstrate the strong robustness and generalization capability of our framework, highlighting the effectiveness of our design. 
+
+Performance comparisons on various MLLM versions and user study of RPO. To further evaluate the effectiveness and generalization of our prompt 14 Zhang. Author et al. RES               
+
+> “To alert others in times of
+> danger, a sound -producing
+> device is essential. Which
+> character in the picture is
+> wearing a golden bell on its
+> chest to signal for help? ”
+> SAM3 -Agent Evol -SAM Tarot -SAM3
+> “ensure her safety, the
+> female character in the
+> picture has a weapon tied to
+> the end of her hair. What is
+> it? ”
+> “Which circular food item
+> in the dishes is considered
+> to have the highest
+> concentration of complete
+> protein? ”
+> “To ensure the boat can
+> move, the light -colored
+> bear is using an object.
+> What is it? ”
+> Open  world self -captured
+
+Fig. 8: Open-world visual comparisons. Text Query: “far left crate” 
+
+A. Ambiguous Spatial Understanding   
+
+> Image Tarot -SAM3 GT
+
+Text Query: “the region exhibiting unusual color” 
+
+B. Misunderstanding about Target Level    
+
+> Image Tarot -SAM3 GT
+
+Fig. 9: Visualization of failure cases. 
+
+reasoning and MSR mechanisms, we conduct additional experiments by expand-ing the range of MLLM versions. This allows us to compare our method with previous approaches under the same backbone settings. Moreover, for the RPO design, we conduct a user study to assess its rationality and necessity. More details can be found in the supplementary material. 
+
+Inference time comparisons. In this section, we compare the inference speed of Tarot-SAM3 with existing methods (See Tab. 6). We conduct the evaluation on the ReasonSeg Test Set, whose implicit referring expressions highlight the reasoning complexity of different methods. The results show that Tarot-SAM3 achieves both superior performance and faster inference, demonstrating the ef-fectiveness of our framework design. 
+
+Limitations of Tarot-SAM3. As illustrated in Fig. 9, the failure cases of Tarot-SAM3 mainly fall into two categories. First, the model struggles with spatially ambiguous descriptions. In the first case, the query “far left crate” is mistakenly interpreted as the crate that is farthest on the left in the image, lead-ing to incorrect segmentation of the intended target. Second, Tarot-SAM3 may misinterpret the target level when processing region-based queries. In the second example, the model treats an entire leaf as a single object, thus segmenting the whole leaf as an unusual object instead of the intended abnormal-colored region. 
+
+5 Conclusion and Future Work 
+
+In this paper, we presented Tarot-SAM3, a novel training-free framework for robust referring expression segmentation. Our Tarot-SAM3 consisted of two key phases: the Expression Reasoning Interpreter (ERI), which transformed referring expressions into structured heterogeneous prompts to enable reliable SAM3 mask generation, and the Mask Self-Refining (MSR) phase, which improved segmenta-tion quality by detecting and correcting over- and under-segmentation. Extensive experiments across multiple RES benchmarks showed that Tarot-SAM3 achieved state-of-the-art performance under the training-free setting, while further abla-tions verified the effectiveness of each component in the framework. Tarot-SAM3 15 
+
+Future Work. Future work may focus on improving the efficiency of the frame-work by accelerating inference and further optimizing the reasoning interpreta-tion and mask self-refinement mechanisms to enhance generalization capability. In addition, extending Tarot-SAM3 beyond the image domain to video under-standing tasks, such as referring object tracking, is another promising direction. 
+
+References 
+
+1. An, X., Yang, K., Dai, X., Feng, Z., Deng, J.: Multi-label cluster discrimination for visual representation learning. In: European Conference on Computer Vision. pp. 428–444. Springer (2024) 2. Carion, N., Gustafson, L., Hu, Y.T., Debnath, S., Hu, R., Suris, D., Ryali, C., Alwala, K.V., Khedr, H., Huang, A., et al.: Sam 3: Segment anything with concepts. arXiv preprint arXiv:2511.16719 (2025) 3. Chen, Y.C., Li, W.H., Sun, C., Wang, Y.C.F., Chen, C.S.: Sam4mllm: Enhance multi-modal large language model for referring expression segmentation. In: Euro-pean Conference on Computer Vision. pp. 323–340. Springer (2024) 4. Chen, Y.C., Li, W.H., Sun, C., Wang, Y.C.F., Chen, C.S.: Sam4mllm: Enhance multi-modal large language model for referring expression segmentation. ArXiv 
+
+abs/2409.10542 (2024) 5. Ding, H., Liu, C., Wang, S., Jiang, X.: Vlt: Vision-language transformer and query generation for referring segmentation. IEEE Transactions on Pattern Analysis and Machine Intelligence 45 (6), 7900–7916 (2022) 6. Driess, D., Xia, F., Sajjadi, M.S.M., Lynch, C., Chowdhery, A., Ichter, B., Wahid, A., Tompson, J., Vuong, Q.H., Yu, T., Huang, W., Chebotar, Y., Sermanet, P., Duckworth, D., Levine, S., Vanhoucke, V., Hausman, K., Toussaint, M., Greff, K., Zeng, A., Mordatch, I., Florence, P.R.: Palm-e: An embodied multimodal language model. In: International Conference on Machine Learning (2023) 7. Du, T., Li, H., Fan, Z., Zhang, J., Pan, P., Zhang, Y.: Sam-veteran: An mllm-based human-like sam agent for reasoning segmentation. In: The Fourteenth International Conference on Learning Representations 8. Hu, R., Rohrbach, M., Darrell, T.: Segmentation from natural language expres-sions. In: European conference on computer vision. pp. 108–124. Springer (2016) 9. Hu, Y., Wang, Q., Shao, W., Xie, E., Li, Z., Han, J., Luo, P.: Beyond one-to-one: Rethinking the referring image segmentation. In: Proceedings of the IEEE/CVF International Conference on Computer Vision (ICCV). pp. 4067–4077 (October 2023) 10. Hu, Z., Feng, G., Sun, J., Zhang, L., Lu, H.: Bi-directional relationship inferring network for referring image segmentation. In: Proceedings of the IEEE/CVF con-ference on computer vision and pattern recognition. pp. 4424–4433 (2020) 11. Huang, J., Xu, Z., Liu, T., Liu, Y., Han, H., Yuan, K., Li, X.: Densely connected parameter-efficient tuning for referring image segmentation. In: Proceedings of the AAAI Conference on Artificial Intelligence. vol. 39, pp. 3653–3661 (2025) 12. Huang, S., Hui, T., Liu, S., Li, G., Wei, Y., Han, J., Liu, L., Li, B.: Referring image segmentation via cross-modal progressive comprehension. In: Proceedings of the IEEE/CVF conference on computer vision and pattern recognition. pp. 10488–10497 (2020) 13. Jiang, C., Ding, T., Song, C., Tu, J., Yan, Z., Shao, Y., Wang, Z., Shang, Y., Han, T., Tian, Y.: Medical sam3: A foundation model for universal prompt-driven medical image segmentation. ArXiv abs/2601.10880 (2026) 16 Zhang. Author et al. 14. Jing, Y., Kong, T., Wang, W., Wang, L., Li, L., Tan, T.: Locate then segment: A strong pipeline for referring image segmentation. In: Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition. pp. 9858–9867 (2021) 15. Kim, N., Kim, D., Lan, C., Zeng, W., Kwak, S.: Restr: Convolution-free refer-ring image segmentation using transformers. In: Proceedings of the IEEE/CVF conference on computer vision and pattern recognition. pp. 18145–18154 (2022) 16. Lai, X., Tian, Z., Chen, Y., Li, Y., Yuan, Y., Liu, S., Jia, J.: Lisa: Reasoning segmentation via large language model. 2024 IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) pp. 9579–9589 (2023) 17. Li, J., Xie, Q., Gu, R., Xu, J., Liu, Y., Yu, X.: Lgd: Leveraging generative descrip-tions for zero-shot referring image segmentation. Pattern Recognition p. 112549 (2025) 18. Li, J., Feng, Y., Guo, Y., Huang, J., Piao, Y., Bi, Q., Zhang, M., Zhao, X., Chen, Q., Zou, S., Ji, W., Lu, H., Cheng, L.: Sam3-i: Segment anything with instructions. ArXiv abs/2512.04585 (2025) 19. Li, R., Li, K., Kuo, Y.C., Shu, M., Qi, X., Shen, X., Jia, J.: Referring image segmen-tation via recurrent refinement networks. In: Proceedings of the IEEE Conference on Computer Vision and Pattern Recognition. pp. 5745–5753 (2018) 20. Liang, C., Wang, W., Zhou, T., Miao, J., Luo, Y., Yang, Y.: Local-global context aware transformer for language-guided video segmentation. IEEE Transactions on Pattern Analysis and Machine Intelligence 45 (8), 10055–10069 (2023) 21. Liang, F., Wu, B., Dai, X., Li, K., Zhao, Y., Zhang, H., Zhang, P., Vajda, P., Mar-culescu, D.: Open-vocabulary semantic segmentation with mask-adapted clip. In: Proceedings of the IEEE/CVF conference on computer vision and pattern recog-nition. pp. 7061–7070 (2023) 22. Liu, C., Lin, Z., Shen, X., Yang, J., Lu, X., Yuille, A.: Recurrent multimodal inter-action for referring image segmentation. In: Proceedings of the IEEE international conference on computer vision. pp. 1271–1280 (2017) 23. Liu, S., Hui, T., Huang, S., Wei, Y., Li, B., Li, G.: Cross-modal progressive com-prehension for referring segmentation. IEEE Transactions on Pattern Analysis and Machine Intelligence 44 (9), 4761–4775 (2021) 24. Liu, T., Li, S.: Hybrid global-local representation with augmented spatial guidance for zero-shot referring image segmentation. In: Proceedings of the IEEE/CVF Con-ference on Computer Vision and Pattern Recognition. pp. 29634–29643 (2025) 25. Liu, Y., Ma, M., Yu, X., Ding, P., Zhao, H., Sun, M., Huang, S., Wang, D.: Ssr: Enhancing depth perception in vision-language models via rationale-guided spatial reasoning. arXiv preprint arXiv:2505.12448 (2025) 26. Liu, Y., Zhang, C., Wang, Y., Wang, J., Yang, Y., Tang, Y.: Universal segmen-tation at arbitrary granularity with language instruction. In: Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition. pp. 3459– 3469 (2024) 27. Liu, Y., Peng, B., Zhong, Z., Yue, Z., Lu, F., Yu, B., Jia, J.: Seg-zero: Reasoning-chain guided segmentation via cognitive reinforcement. arXiv preprint arXiv:2503.06520 (2025) 28. Lu, P., Bansal, H., Xia, T., Liu, J., yue Li, C., Hajishirzi, H., Cheng, H., Chang, K.W., Galley, M., Gao, J.: Mathvista: Evaluating mathematical reasoning of foun-dation models in visual contexts. In: International Conference on Learning Repre-sentations (2023) 29. Lu, Y., Cao, J., Wu, Y., Li, B., Tang, L., Ji, Y., Wu, C., Wu, J., Zhu, W.: Rsvp: Reasoning segmentation via visual prompting and multi-modal chain-of-thought. Tarot-SAM3 17 In: Proceedings of the 63rd Annual Meeting of the Association for Computational Linguistics (Volume 1: Long Papers). pp. 14699–14716 (2025) 30. Mao, J., Huang, J., Toshev, A., Camburu, O., Yuille, A.L., Murphy, K.: Generation and comprehension of unambiguous object descriptions. In: Proceedings of the IEEE conference on computer vision and pattern recognition. pp. 11–20 (2016) 31. Ni, M., Zhang, Y., Feng, K., Li, X., Guo, Y., Zuo, W.: Ref-diff: Zero-shot refer-ring image segmentation with generative models. arXiv preprint arXiv:2308.16777 (2023) 32. Qian, R., Yin, X., Dou, D.: Reasoning to attend: Try to understand how< seg> token works. In: Proceedings of the Computer Vision and Pattern Recognition Conference. pp. 24722–24731 (2025) 33. Rasheed, H., Maaz, M., Shaji, S., Shaker, A., Khan, S., Cholakkal, H., Anwer, R.M., Xing, E., Yang, M.H., Khan, F.S.: Glamm: Pixel grounding large multimodal model. In: Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition. pp. 13009–13018 (2024) 34. Ren, T., Liu, S., Zeng, A., Lin, J., Li, K., Cao, H., Chen, J., Huang, X., Chen, Y., Yan, F., et al.: Grounded sam: Assembling open-world models for diverse visual tasks. arXiv preprint arXiv:2401.14159 (2024) 35. Sapkota, R., Karkee, M.: Object detection with multimodal large vision-language models: An in-depth review. Available at SSRN 5233953 (2025) 36. Sim’eoni, O., Vo, H.V., Seitzer, M., Baldassarre, F., Oquab, M., Jose, C., Khalidov, V., Szafraniec, M., Yi, S., Ramamonjisoa, M., Massa, F., Haziza, D., Wehrstedt, L., Wang, J., Darcet, T., Moutakanni, T., Sentana, L., Roberts, C., Vedaldi, A., Tolan, J., Brandt, J., Couprie, C., Mairal, J., J’egou, H., Labatut, P., Bojanowski, P.: Dinov3 (2025) 37. Song, J., Hua, Z., Zan, H., Han, Y., Peng, M.: Optimizing discriminative vision-language models for efficient multimodal intent recognition. Companion Proceed-ings of the ACM on Web Conference 2025 (2025) 38. Sun, S., Li, R., Torr, P., Gu, X., Li, S.: Clip as rnn: Segment countless visual concepts without training endeavor. In: Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition. pp. 13171–13182 (2024) 39. Suo, Y., Zhu, L., Yang, Y.: Text augmented spatial aware zero-shot referring im-age segmentation. In: Findings of the Association for Computational Linguistics: EMNLP 2023. pp. 1032–1043 (2023) 40. Wang, H., Qiao, L., Jie, Z., Huang, Z., Feng, C., Zheng, Q., Ma, L., Lan, X., Liang, X.: X-sam: From segment anything to any segmentation. arXiv preprint arXiv:2508.04655 (2025) 41. Wang, J., Ke, L.: Llm-seg: Bridging image segmentation and large language model reasoning. In: Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition. pp. 1765–1774 (2024) 42. Wang, S., Kim, D., Taalimi, A., Sun, C., Kuo, W.: Learning visual grounding from generative vision and language model. In: 2025 IEEE/CVF Winter Conference on Applications of Computer Vision (WACV). pp. 8057–8067. IEEE (2025) 43. Wang, W., Yue, T., Zhang, Y., Guo, L., He, X., Wang, X., Liu, J.: Unveiling parts beyond objects: Towards finer-granularity referring expression segmentation. In: Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition. pp. 12998–13008 (2024) 44. Wang, Y., Ni, J., Liu, Y., Yuan, C., Tang, Y.: Iterprime: Zero-shot referring image segmentation with iterative grad-cam refinement and primary word emphasis. In: Proceedings of the AAAI Conference on Artificial Intelligence. vol. 39, pp. 8159– 8168 (2025) 18 Zhang. Author et al. 45. Wang, Z., Lu, Y., Li, Q., Tao, X., Guo, Y., Gong, M., Liu, T.: Cris: Clip-driven referring image segmentation. In: Proceedings of the IEEE/CVF conference on computer vision and pattern recognition. pp. 11686–11695 (2022) 46. Wei, C., Zhong, Y., Tan, H., Liu, Y., Zhao, Z., Hu, J., Yang, Y.: Hyperseg: To-wards universal visual segmentation with large language model. arXiv preprint arXiv:2411.17606 (2024) 47. Wu, J., Jiang, Y., Liu, Q., Yuan, Z., Bai, X., Bai, S.: General object foundation model for images and videos at scale. In: Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition. pp. 3783–3795 (2024) 48. Xia, Z., Han, D., Han, Y., Pan, X., Song, S., Huang, G.: Gsva: Generalized segmen-tation via multimodal large language models. In: Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition. pp. 3858–3869 (2024) 49. Xie, Y., Yang, K., An, X., Wu, K., Zhao, Y., Deng, W., Ran, Z., Wang, Y., Feng, Z., Miles, R., et al.: Region-based cluster discrimination for visual representation learning. In: Proceedings of the IEEE/CVF International Conference on Computer Vision. pp. 1793–1803 (2025) 50. Xiong, X., Wu, Z., Lu, L., Xia, Y.: Sam3-unet: Simplified adaptation of segment anything model 3. ArXiv abs/2512.01789 (2025) 51. Xu, Z., Chen, Z., Zhang, Y., Song, Y., Wan, X., Li, G.: Bridging vision and lan-guage encoders: Parameter-efficient tuning for referring image segmentation. In: Proceedings of the IEEE/CVF international conference on computer vision. pp. 17503–17512 (2023) 52. Yang, S., Qu, T., Lai, X., Tian, Z., Peng, B., Liu, S., Jia, J.: Lisa++: An improved baseline for reasoning segmentation with large language model. arXiv preprint arXiv:2312.17240 (2023) 53. Yang, S., Wang, Y., Chen, K., Zeng, W., Fei, Z.: Attribute-aware feature encoding for object recognition and segmentation. IEEE Transactions on Multimedia 24 ,3611–3623 (2021) 54. Yang, Z., Wang, J., Tang, Y., Chen, K., Zhao, H., Torr, P.H.: Lavt: Language-aware vision transformer for referring image segmentation. In: Proceedings of the IEEE/CVF conference on computer vision and pattern recognition. pp. 18155– 18165 (2022) 55. Yang, Z., Li, L., Wang, J., Lin, K., Azarnasab, E., Ahmed, F., Liu, Z., Liu, C., Zeng, M., Wang, L.: Mm-react: Prompting chatgpt for multimodal reasoning and action. ArXiv abs/2303.11381 (2023) 56. Ye, K., You, X., Lin, J., Ji, J., Dai, P., Cao, L.: Evolving, not training: Zero-shot reasoning segmentation via evolutionary prompting. ArXiv abs/2512.24702 
+
+(2025) 57. Ye, L., Rochan, M., Liu, Z., Wang, Y.: Cross-modal self-attention network for referring image segmentation. In: Proceedings of the IEEE/CVF conference on computer vision and pattern recognition. pp. 10502–10511 (2019) 58. Yi, Z., Ouyang, J., Xu, Z., Liu, Y., Liao, T., Luo, H., Shen, Y.: A survey on re-cent advances in llm-based multi-turn dialogue systems. ACM Computing Surveys (2024) 59. Yu, L., Lin, Z., Shen, X., Yang, J., Lu, X., Bansal, M., Berg, T.L.: Mattnet: Mod-ular attention network for referring expression comprehension. In: Proceedings of the IEEE conference on computer vision and pattern recognition. pp. 1307–1315 (2018) 60. Yu, L., Poirson, P., Yang, S., Berg, A.C., Berg, T.L.: Modeling context in refer-ring expressions. In: European conference on computer vision. pp. 69–85. Springer (2016) Tarot-SAM3 19 61. Yu, S., Seo, P.H., Son, J.: Zero-shot referring image segmentation with global-local context features. In: Proceedings of the IEEE/CVF conference on computer vision and pattern recognition. pp. 19456–19465 (2023) 62. Yu, S., Seo, P.H., Son, J.: Pseudo-ris: Distinctive pseudo-supervision generation for referring image segmentation. In: European Conference on Computer Vision. pp. 18–36. Springer (2024) 63. Zhang, Y., Cheng, T., Zhu, L., Hu, R., Liu, L., Liu, H., Ran, L., Chen, X., Liu, W., Wang, X.: Evf-sam: Early vision-language fusion for text-prompted segment anything model. arXiv preprint arXiv:2406.20076 (2024) 64. Zhang, Z., Ma, Y., Zhang, E., Bai, X.: Psalm: Pixelwise segmentation with large multi-modal model. In: European Conference on Computer Vision. pp. 74–91. Springer (2024) 65. Zheng, D., Huang, S., Zhao, L., Zhong, Y., Wang, L.: Towards learning a generalist model for embodied navigation. 2024 IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) pp. 13624–13634 (2023) 66. Zhu, L., Ouyang, B., Zhang, Y., Cheng, T., Hu, R., Shen, H., Ran, L., Chen, X., Yu, L., Liu, W., et al.: Lens: Learning to segment anything with unified reinforced reasoning. arXiv preprint arXiv:2508.14153 (2025) 67. Zhu, M., Tian, Y., Chen, H., Zhou, C., Guo, Q., Liu, Y., Yang, M., Shen, C.: Segagent: Exploring pixel understanding capabilities in mllms by imitating hu-man annotator trajectories. In: Proceedings of the Computer Vision and Pattern Recognition Conference. pp. 3686–3696 (2025) 68. Zou, X., Yang, J., Zhang, H., Li, F., Li, L., Wang, J., Wang, L., Gao, J., Lee, Y.J.: Segment everything everywhere all at once. Advances in neural information processing systems 36 , 19769–19782 (2023)
