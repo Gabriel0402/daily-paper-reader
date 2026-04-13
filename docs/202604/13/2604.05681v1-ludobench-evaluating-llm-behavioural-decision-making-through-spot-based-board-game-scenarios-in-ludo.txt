@@ -1,0 +1,575 @@
+Title: LUDOBENCH: Evaluating LLM Behavioural Decision-Making Through Spot-Based Board Game Scenarios in Ludo
+
+URL Source: https://arxiv.org/pdf/2604.05681v1
+
+Published Time: Wed, 08 Apr 2026 00:53:44 GMT
+
+Number of Pages: 23
+
+Markdown Content:
+Preprint. Under review. 
+
+# LUDOBENCH: Evaluating LLM Behavioural Decision-Making Through Spot-Based Board Game Scenarios in Ludo 
+
+Ojas Jain, Dhruv Kumar 
+
+Department of Computer Science and Information Systems, BITS Pilani 
+
+{f20210976,dhruv.kumar }@pilani.bits-pilani.ac.in 
+
+## Abstract 
+
+We introduce L UDO BENCH , a benchmark for evaluating LLM strategic rea-soning in Ludo, a stochastic multi-agent board game whose dice mechanics, piece capture, safe-square navigation, and home-path progression introduce meaningful planning complexity. L UDO BENCH comprises 480 handcrafted spot scenarios across 12 behaviorally distinct decision categories, each isolat-ing a specific strategic choice. We additionally contribute a fully functional 4-player Ludo simulator supporting Random, Heuristic, Game-Theory, and LLM agents. The game-theory agent uses Expectiminimax search with depth-limited lookahead to provide a principled strategic ceiling beyond greedy heuristics. Evaluating six models spanning four model families, we find that all models agree with the game-theory baseline only 40–46% of the time. Models split into distinct behavioral archetypes: finishers that com-plete pieces but neglect development, and builders that develop but never finish. Each archetype captures only half of the game theory strategy. Mod-els also display measurable behavioral shifts under history-conditioned grudge framing on identical board states, revealing prompt-sensitivity as a key vulnerability. L UDO BENCH provides a lightweight and interpretable framework for benchmarking LLM strategic reasoning under uncertainty. All code, the spot dataset (480 entries) and model outputs are available at 
+
+https://anonymous.4open.science/r/LudoBench-5CBF/ 
+
+## 1 Introduction 
+
+Large Language Models have progressed from structured NLP benchmarks to cognitively demanding tasks including mathematical reasoning and commonsense inference (Wang et al., 2019; Hendrycks et al., 2021; Cobbe et al., 2021; Talmor et al., 2019). Models such as GPT-4, Llama-3, and DeepSeek achieve near-human performance on academic benchmarks (OpenAI, 2023; Meta AI, 2024; Google DeepMind, 2024), yet a critical question persists: can LLMs reason strategically, planning ahead, weighing competing objectives, and deciding under uncertainty, or does their reasoning collapse under novel conditions? Game-playing environments, where rules are unambiguous and outcomes are verifiable, offer a uniquely controlled setting to investigate this question (Kosinski, 2023; Hu et al., 2024; Xu et al., 2024). While chess, poker, and Go have received extensive AI research attention, Ludo has, to our knowledge, no existing benchmark or published LLM evaluation. Ludo is one of the world’s most widely played board games, yet this gap persists despite its unique combination of game-theoretic properties. It is simultaneously stochastic (dice-driven), multi-agent (2–4 players), multi-piece 1 (four independent pieces requiring coordination), and complete-information. This configuration is absent from most existing LLM game benchmarks. Existing benchmarks cover deterministic games (chess, Go), incomplete-information games (poker), and cooperative games (Diplomacy), but no benchmark addresses stochastic race games where agents manage multiple assets under probabilistic transitions. L UDO BENCH 
+
+adds this missing category to the game-based evaluation landscape (Table 1). 
+
+> 1
+
+Throughout this paper, “piece” refers to Ludo game pieces. “Token” appears only in code variables and the LLM prompt template, where it denotes game pieces, not LLM tokens. 
+
+1
+
+> arXiv:2604.05681v1 [cs.AI] 7 Apr 2026
+
+Preprint. Under review. Table 1: Positioning of L UDO BENCH against existing LLM game benchmarks. ✓ = present, 
+
+✗ = absent.                                                       
+
+> Chess Go Poker Dipl. Ludo Property (Campbell et al., 2002) (Silver et al., 2016) (Zhuang et al., 2025) (FAIR, 2022) (ours) Stochastic ✗✗✓✗✓
+> Complete information ✓✓✗✓✓
+> Multi-agent (3+) ✗✗✓✓✓
+> Multi-piece coord. ✓✓✗✗✓
+> Identical pieces ✗✓✗✗✓
+> Spot-based eval. ✗✗✓✗✓
+> Behavioral metrics ✗✗✗✗✓
+> History-cond. testing ✗✗✗✗✓
+> Persona evaluation ✗✗✗✗✓
+
+We ask: to what extent can LLMs make strategically sound decisions in a stochastic multi-agent game? The LLM receives a natural-language board state and must output a piece index with justification (Zhuang et al., 2025; Huang et al., 2024). This formulation simultaneously tests spatial reasoning and strategic preference across competing objectives. We introduce L UDO BENCH , a spot-based evaluation framework that uses Ludo to mea-sure LLM strategic reasoning across 12 decision categories. Each spot is a handcrafted board configuration that forces a specific strategic choice computable by a heuristic oracle. Five persona conditions ( none , aggressive , greedy , safe , unforgiving ) enable systematic instruction-following analysis. A paired grudge design presents identical boards with neu-tral versus conflict narratives, isolating history-conditioned framing effects from board-state effects. Our main contributions are as follows: • LUDO BENCH Benchmark and Dataset: A spot-based evaluation framework for LLM strategic reasoning in a stochastic multi-agent board game, comprising 480 engine-validated scenarios across 12 decision categories with ground-truth legal moves and history-conditioned grudge testing. • Ludo Simulator: A fully functional 4-player simulation environment support-ing three agent types ( RandomAgent , HeuristicAgent , LLMAgent ) with configurable matchup settings. • Game-Theory Baseline: A chance-aware search agent implementing Expectim-inimax recursion for two-player settings and Expectimax-MaxN for three and four-player settings, with depth-limited lookahead. This agent provides a game-theory reference for Ludo spot evaluation, enabling measurement of how far LLM decisions deviate from principled strategic play. • Empirical Profiles: We evaluate six models spanning five families across all 12 categories and 5 persona conditions, producing detailed per-model behavioral pro-files. These enable systematic comparison of strategic tendencies, rule compliance, persona responsiveness, and history sensitivity across model families and scales. 
+
+## 2 Related Work 
+
+AI game-playing has progressed from game-specific engines such as Deep Blue in chess (Campbell et al., 2002), AlphaGo in Go (Silver et al., 2016), and Libratus in poker (Brown & Sandholm, 2018; 2019) to LLM-based approaches that use language as the game interface. Early work showed that LLMs can navigate text-based environments like Zork (C ˆot ´e et al., 2019), but studies on chess exposed limits in multi-step planning and positional evaluation (Xu et al., 2024; Ruoss et al., 2024). Agent frameworks such as ReAct (Yao et al., 2023b) introduced iterative game loops with self-correction, and work on Werewolf (Xu et al., 2024) and Diplomacy demonstrated rudimentary theory-of-mind, though with poor long-horizon planning. A critical limitation unifies this prior work: nearly all evaluated domains feature deterministic mechanics or simple stochastic structure. Stochastic race games, which require probabilistic reasoning over dice outcomes, multi-piece coordination, and opponent 2Preprint. Under review. modeling, remain unexamined. L UDO BENCH addresses this gap through Ludo’s dice-driven stochasticity, four pieces per player, and competing capture-versus-progress incentives. Several benchmarks systematize LLM game evaluation. Costarelli et al. (2024) standardizes win-rate metrics but aggregates results without scenario-level breakdowns. Zhuang et al. (2025) introduced spot-based evaluation with 11,000 poker scenarios. However, existing benchmarks omit stochastic board games, provide legal moves directly to the model, and do not measure behavioral tendencies such as risk aversion or history-conditioned decision shifts (cf. Table 1). L UDO BENCH extends the spot-based paradigm to a multi-agent stochastic setting with per-category metrics ( capture rate , safe rate , change rate ) that decompose performance into interpretable decision-level signals. Chain-of-Thought and Tree-of-Thought prompting have improved LLM reasoning (Wei et al., 2022; Yao et al., 2023a), yet systematic biases such as positional bias, risk aversion, and framing sensitivity persist and have rarely been examined where optimal actions are computable at scale. The heuristic oracle and paired grudge scenarios in L UDO BENCH enable reproducible measurement of LLM behavioral biases against a deterministic reference. 
+
+## 3 Background: The Ludo Environment 
+
+Ludo is one of the world’s most widely played board games, with hundreds of millions of players across South Asia, Europe, and Africa, yet to our knowledge, no prior work has studied LLM decision-making in its domain. Prior AI research on Ludo has focused on reinforcement learning agents, including TD( λ) and Q-learning players (Alhajry et al., 2012; Chhabra & Tomar, 2015; Tubaishat et al., 2023), but none has evaluated LLMs as game agents or proposed a behavioral benchmarking framework. This absence is surprising given Ludo’s unique combination of game-theoretic properties. It is simultaneously stochastic (dice rolls introduce genuine probabilistic uncertainty at every turn), multi-agent (2–4 competing players), multi-piece (each player controls four identical pieces at different stages of progress, requiring parallel coordination), and complete-information (all positions are visible to all play-ers). This configuration is absent from every existing LLM game benchmark. Unlike chess, where each piece has a unique movement rule and captures are deterministic, Ludo requires coordinating four functionally identical pieces whose optimal advancement depends on dice probabilities rather than positional tactics. Unlike poker, where the agent manages a single hidden resource and must reason about incomplete information, Ludo presents complete information but demands simultaneous management of multiple independent assets across a shared board. Ludo’s core cognitive challenge is thus deciding which copy of the same piece to advance under dice-driven uncertainty, testing whether LLMs can reason about risk distribution, portfolio management, and parallel goal pursuit simultaneously. The board layout is illustrated in Figure 1. Full board zone specifications are provided in Appendix A. Existing LLM game benchmarks span deterministic perfect-information games (chess, Go), incomplete-information games (poker), and cooperative games (Diplomacy), but omit stochastic race games entirely. This leaves a gap in the evaluation of LLM strategic reasoning across diverse game-theoretic environments. L UDO BENCH fills this missing category by adding stochastic multi-piece coordination to the benchmark landscape (Table 1). Ludo’s global cultural ubiquity further strengthens its value as a testbed, as LLMs have almost certainly encountered Ludo’s rules during pretraining. Finally, Ludo’s small action space (at most four pieces) enables exhaustive behavioral profiling per decision point while remaining strategically rich enough to reveal preference hierarchies across 12 categories and 5 personas. 
+
+## 4 Methodology 
+
+Overview. We propose a behavioral evaluation framework that tests LLM decision-making in Ludo through spot-based evaluation, which presents isolated single-decision board states. The spot mode is the primary contribution of this work. It removes game trajectory as a confound and measures one behavioral tendency at a time. 3Preprint. Under review. 
+
+Game Environment. The Ludo engine encodes all game rules and serves as both the game substrate and the legal-move oracle. At each decision point, the full board state is passed to the LLM as a numerical piece-position list. Legal moves are intentionally withheld. Instead, the model receives high-level game rules and must determine which moves are valid from these descriptions. Invalid outputs thus become a meaningful compliance signal. 
+
+Spot Scenario Dataset. Each spot is a handcrafted board state that guarantees exactly one strategic tradeoff, with choices computable by a game-theory oracle. The 480 scenarios (40 per category) span 12 categories across four behavioral dimensions: Aggression (capture versus alternatives), Safety (safe-square preference), Progress and Compliance (home entry, overshoot avoidance, extra-turn management), and History Sensitivity (paired grudge and neutral conditions on identical boards). The grudge design is a key methodological contribution. The same board state is presented with neutral and grudge-framing histo-ries, ensuring that any decision shift is attributable purely to narrative context. Table 16 (Appendix) confirms balanced coverage across 2-, 3-, and 4-player configurations. Full per-category definitions are in Appendix B. 
+
+LLM Agent and Output Processing. The prompt contains the board state, full rules, dice value, and optionally a persona instruction ( none , aggressive , greedy , safe , unforgiving )or a history paragraph. The model responds in a strict format: <piece index> | <reason> .Responses are validated against engine-computed legal moves. Invalid outputs are flagged and replaced by a random legal move for continuity. Invalid rates are recorded pre-fallback ,and all behavioral rates are computed on valid outputs only. This design keeps compliance and decision quality as separate measurement strata. 
+
+Comprehensive Evaluation. We compare LLM agents against three baselines defining a skill ladder of increasing strategic sophistication. The Random Agent selects uniformly from legal moves and defines the performance floor. The Heuristic Agent applies a deterministic one-step scoring policy that uses board progress as the base score, a +100 capture bonus, and a +20 safe-square bonus, always selecting the highest-scoring move. It provides a greedy and interpretable reference beyond chance. The full scoring formula is in Table 14 (Appendix F). The Game-Theory Agent performs depth-limited Expectiminimax search (depth h=2; see Appendix H) for two-player games and Expectimax-MaxN search for three-and four-player games. It models opponent best responses and averages over all six dice outcomes at chance nodes. At the depth cutoff, a weighted linear evaluator scores board progress, finished pieces, base-piece penalty, and safe-square count. Unlike the heuristic, this agent reasons multiple moves ahead under uncertainty, providing a principled strategic ceiling. Full algorithmic details are in Appendix H. Figure 2 confirms the skill ladder through head-to-head play. Table 3 summarizes key design decisions. 
+
+## 5 Experimental Setup 
+
+Table 2 summarizes the evaluation configuration. All models are accessed via their respec-tive APIs in a zero-shot setting with temperature =0 and no system prompt beyond the spot template (Appendix G). Each of the six models is evaluated on all 480 spots under each of the 5 persona conditions, yielding 2,400 spot evaluations per model (14,400 total). For the 
+
+grudge paired category, each of the 40 board-state pairs is evaluated under all 5 personas, producing 400 paired comparisons per model. Behavioral metrics are computed on valid outputs only; invalid rates are recorded pre-fallback. 
+
+## 6 Results and Analysis 
+
+We evaluate six LLMs on all 12 spot categories without any persona instruction (the neutral setting) and compare their decisions against our Game-Theory(GT) baseline. The six models are Qwen-Plus (QP), Qwen-2.5-7B-Instruct (Q7B), DeepSeek-Chat (DS), Claude-3.5-Haiku (Haiku), Llama-4-Scout (Scout), and Gemma-3-12B-IT (Gemma). 4Preprint. Under review. 
+
+Figure 1: Annotated Ludo Board. Main track (0–51), colored home paths, safe squares, and base areas. Player start posi-tions are P0 = 0, P1 = 13, P2 = 26, P3 = 39. 
+
+Figure 2: Agent Head-to-Head Win-Rate Matrix. Win rates over 200 games confirm the baseline skill ladder: Random < Heuris-tic < GT. GT’s 59% vs. Heuristic validates depth-limited search advantage. Table 2: Evaluation configuration.               
+
+> Parameter Value
+> Models QP, Q7B, DS, Haiku, Scout, Gemma Families Qwen, DeepSeek, Anthropic, Meta, Google Categories 12 (40 each; 80 grudge) Total spots 480 boards Personas 5 (none, aggr., greedy, safe, unforg.) Evals/model 2,400 (480 ×5) Total evals 14,400 (6 ×2,400) Temperature 0 (deterministic) Legal moves Withheld from prompt
+
+Table 3: Key design choices and justifications.         
+
+> Design Choice Justification
+> Handcrafted spots Guarantees the target tradeoff is present Paired grudge design Isolates narrative effects from board-state effects Strict integer output Enables automated validity checking at scale Invalid pre-fallback Separates compliance from deci-sion quality Game-theory baseline Provides a strategic ceiling be-yond greedy heuristics
+
+Our evaluation reveals three key findings. First, following the rules does not mean playing well. Two models with near-perfect rule compliance make completely opposite strategic choices. Second, every LLM falls into one of two behavioral camps: “finishers” who complete pieces, and “builders” who develop new ones. The GT agent does both , and no LLM comes close to matching it. Third, all models agree with the GT agent only about 40–46% of the time, meaning that more than half of their moves are strategically suboptimal. 
+
+6.1 Rule Compliance 
+
+Figure 3 summarizes the illegal-move rates across models. The full per-category breakdown is provided in Table 4 (Appendix C). The models fall into three clear groups. Tier 1 (near-perfect): DeepSeek-Chat and Claude-3.5-Haiku almost never make illegal moves, with both falling below 1%. These models reliably determine legal moves from the provided rule descriptions. Tier 2 (mostly reliable): Qwen-Plus (4%), Llama-4-Scout (8%), and Gemma-3-12B-IT (10%) produce valid moves in most cases but struggle in specific situations. For example, Qwen-Plus fails 43% of the time on overshoot scenarios, where the dice roll would take a piece past the exact finish square. Tier 3 (unreliable): Qwen-2.5-7B makes illegal moves approximately 40% of the time, making its strategic behavior difficult to interpret. Notably, even Q7B scores 0% invalid on the three dice =6 categories, where the choice is simply between bringing out a new piece or moving an existing one. This suggests that simpler decisions are easier for weaker models. 5Preprint. Under review.                                                                               
+
+> Category QP Q7B DS Haiku Scout Gemma
+> blocked 0.03 0.28 0.03 0.03 0.13 0.20
+> capture vs home finish 0.00 0.60 0.00 0.00 0.08 0.13
+> capture vs home 0.00 0.68 0.00 0.00 0.10 0.13
+> capture vs openexisting 0.00 0.00 0.00 0.00 0.08 0.03
+> capture vs safe 0.00 0.55 0.00 0.05 0.15 0.20
+> capture 0.00 0.50 0.00 0.00 0.10 0.15
+> overshoot 0.43 0.55 0.00 0.00 0.08 0.05
+> safe 0.00 0.53 0.00 0.00 0.08 0.03
+> safe vs openexisting 0.00 0.00 0.00 0.00 0.03 0.08
+> extra turn 0.00 0.00 0.00 0.00 0.00 0.00
+> home entry 0.00 0.65 0.00 0.00 0.13 0.08
+> Mean (excl. grudge) 0.04 0.39 <0.01 <0.01 0.08 0.10
+
+Table 4: Illegal-move rate ( llm invalid rate ) by model and category under the neutral persona. Each value is the fraction of spots where the model’s output was not a legal move. 
+
+Figure 3: Average Invalid Rate and Re-liability (1 − invalid rate) across all non-grudge categories. Three compliance tiers are visually evident. 
+
+Figure 4: GT Alignment Score (move agree-ment with GT agent) by model and category. Dark = high agreement; light = systematic disagreement. Rule compliance does not simply depend on model size. Gemma-3-12B-IT (10% invalid) performs worse than the much larger Qwen-Plus (4%), suggesting that training methodology matters as much as scale. All metrics are formally defined in Table 9 (Appendix C). 
+
+6.2 Strategic Alignment with GT Agent 
+
+To measure how strategically good each model’s decisions are, we compare them directly against the GT agent. For each of the 480 board positions, we check whether the LLM selects the same piece as the GT agent. We refer to this as the GT alignment score , which represents the fraction of decisions where a model makes the same move as the strongest baseline. Figure 4 shows the full breakdown by model and category. We observe that all six models agree with the GT agent only 40–46% of the time . More than half of every model’s decisions are strategically suboptimal, regardless of model family, size, or rule-compliance tier. No single model stands out as clearly superior. However, the average hides an important pattern. When examined at the level of individual categories, alignment ranges from 0% to 100%. Qwen-2.5-7B agrees with the GT agent 100% of the time in capture vs home finish , where it always finishes like the GT, but only 17% in 
+
+overshoot due to its high illegal-move rate. DeepSeek-Chat agrees 88% in extra turn , where it favors developing new pieces in alignment with the GT, but 0% in capture vs home finish ,where it always captures instead of finishing. Claude-3.5-Haiku exhibits the inverse pattern, achieving 88% alignment on finishing but only 5% on development. Each model is therefore “right” in categories where its natural playing style happens to match the GT, and “wrong” everywhere else. This indicates that these models have acquired 
+
+parts of a sound strategy from their training data, but none of them have learned the complete strategic picture. 6Preprint. Under review. 
+
+Figure 5: Archetype Clustering: Builder versus Finisher. Each model is plotted by development tendency (x-axis) versus com-pletion tendency (y-axis). The GT agent (star) exhibits both tendencies. LLMs split into finishers (top-left) and builders (bottom-right). 
+
+Figure 6: Behavioral Radar: LLMs ver-sus GT Reference. Each axis represents a behavioral metric. The GT agent (bold black) scores high on most axes. Each LLM matches the GT on some axes but falls short on others. 
+
+6.3 Behavioral Archetypes 
+
+The GT alignment patterns raise a natural question: what playing styles produce these results? Figure 5 plots each model on two dimensions, namely how often it develops new pieces (x-axis) and how often it finishes pieces (y-axis). Full metrics are in Table 9 (Appendix C). The plot reveals a clear pattern: models that develop new pieces do not finish them, and models that finish do not develop . The GT agent sits alone in the top-right corner, as it always develops and always finishes. No LLM approaches this balanced profile. The models split into two primary groups. 
+
+Finishers (Claude-3.5-Haiku, Qwen-2.5-7B, Qwen-Plus) focus on completing pieces. Haiku is the most extreme example. When it rolls a 6, it advances an existing piece 95% of the time instead of bringing out a new one, whereas the GT always brings out a new piece. On the positive side, Haiku finishes pieces 88% of the time when given the choice, which is close to the GT’s 100%. Finishers therefore get the “finish when you can” part of the strategy correct but miss the “develop your board” component. 
+
+Builders (DeepSeek-Chat, Gemma-3-12B-IT) focus on getting new pieces onto the board. DeepSeek-Chat brings out new pieces 88% of the time, close to the GT’s 100%. However, when given a choice between finishing and capturing, both builders always capture and 
+
+never finish, the exact opposite of the GT’s preference. Finishing is a permanent step toward winning, whereas capturing only delays the opponent. 
+
+Capture-oriented (Llama-4-Scout) sits between the two groups with moderate development tendency (70% bring-out rate) but a strong capture preference in tradeoff scenarios (95% capture over finishing).Figure 6 overlays all profiles against the GT on seven behavioral axes, confirming that no LLM fills the GT’s balanced shape. 
+
+6.4 Tradeoff Analysis 
+
+Some categories force the model to choose between two competing goals, such as capturing an opponent or finishing one of its own pieces. These categories are the most revealing, because the GT agent provides a clear indication of which choice is strategically superior. Figure 7 shows each model’s preference as a diverging bar with the GT’s choice marked as a green reference line, and full rates are provided in (Appendix C). The clearest finding comes from the capture vs home finish (CVF) category, where the GT agent always finishes. Finishers align with this preference, with Q7B finishing 100% of the time, Haiku 88%, and QP 80%, while builders consistently get this wrong, as DS and Gemma capture 100% of the time and Scout captures 95%. An interesting reversal appears in capture vs home 
+
+7Preprint. Under review. (CVH) and capture vs safe (CVS), where the GT agent captures 98% of the time. In these categories, finisher models get it wrong: Q7B captures only 15% and Haiku only 20% in CVH, preferring instead to enter the home path, while builder models are closer to the GT, with Gemma at 83% and Scout at 78%. This means that each archetype gets only half the strategy right : finishers are correct about finishing but wrong about capturing, while builders are wrong about finishing but right about capturing. In capture vs openexisting 
+
+(CVO), the GT agent captures 68% of the time, representing a more balanced tradeoff, and Qwen-Plus (62%) comes closest to this reference point. 
+
+6.5 Grudge Sensitivity 
+
+Our grudge scenarios test whether a model’s decisions change when it is told that an opponent recently captured one of its pieces, even though the board state is exactly the same. The GT agent is completely unaffected by this framing, achieving a change rate of 0%, and Table 12 shows how the six LLMs respond to this manipulation. Qwen-Plus changes its decision 33% of the time when told about a prior conflict, even on identical boards, and DeepSeek-Chat changes 20% of the time, while the other four models are relatively stable with change rates between 0% and 6%. This is a concerning finding, as it demonstrates that simply adding a narrative about past events can shift strategic decisions without any change to the actual game state. One caveat is worth noting: some models, specifically Scout and Gemma, retaliate at 81–88% regardless of narrative framing, which suggests that the retaliatory moves in our scenarios may also be strategically attractive on their own merits. The change rate metric, which measures any shift in decision rather than only shifts toward retaliation, is therefore a cleaner measure of narrative sensitivity. By this measure, sensitivity is unrelated to both rule compliance and playing style, as Qwen-Plus, which has moderate compliance and a finisher archetype, is the most affected, while other finishers with better compliance show near-zero sensitivity. 
+
+6.6 Persona Effects 
+
+We also test whether persona instructions (“play aggressively,” “play cautiously,” etc.) shift behavior in the expected direction. Figure 8 summarizes the results; full details are in Table 13 (Appendix D). Persona instructions are generally weak and unreliable. Most alignment scores fall between 0.3 and 0.5. Only two combinations show strong effects, namely Q7B under the aggressive persona (0.93) and QP under the greedy persona (0.83). The greedy persona produces the strongest effects, likely because it specifies a concrete goal (“advance toward home”) rather than a vague behavioral style (“be aggressive”). Some in-structions even produce the opposite of the intended effect. For example, instructing Haiku to “play safely” actually makes it more aggressive in capture-versus-safe scenarios, raising its capture rate to 88% from 66% under the neutral condition.This paradoxical inversion sug-gests that persona instructions interact unpredictably with the model’s pre-existing strategic biases rather than overriding them. These results highlight that persona-based steering is not a reliable mechanism for controlling LLM decision-making in strategic settings, and that developers should empirically verify the directional effects of any behavioral prompt before deployment. 
+
+## 7 Discussion 
+
+Table 5 summarizes the key findings across all six models. Our findings have implications beyond Ludo. We highlight four takeaways for the broader LLM research community. 
+
+Rule compliance does not imply strategic competence. DeepSeek-Chat and Claude-3.5-Haiku both follow Ludo’s rules almost perfectly, yet they adopt opposite strategies. Testing whether a model follows instructions correctly tells us nothing about how well the model reasons about tradeoffs. 
+
+LLMs learn partial strategies, not complete ones. The GT agent simultaneously develops new pieces and finishes them, and no LLM replicates this balanced approach. Each model 8Preprint. Under review. 
+
+Figure 7: Tradeoff Preference Hierarchies. 
+
+Each bar shows a model’s preference (left = capture, right = alternative). The green dashed line marks the GT choice. Bars on the same side as the line indicate correct decisions. 
+
+Figure 8: Persona Alignment Heatmap. 
+
+Each cell shows how strongly behavior shifts to match the persona (1.0 = perfect). Most scores fall between 0.3 and 0.5, indi-cating weak effects. Only Q7B-aggressive (0.93) and QP-greedy (0.83) show strong alignment. Table 5: Cross-model comparison. GT alignment represents average move agreement with the GT agent. cvf/cvs alignment indicates whether the model’s preferred choice matches the GT’s action (✓ = match, ✗ = opposite).                                       
+
+> Dimension QP Q7B DS Haiku Scout Gemma
+> Rule compl. 4% 39% <1% <1% 8% 10% Archetype Bal. fin. Goal-or. Builder Cons. fin. Cap.-lean. Builder GT align. 43% 46% 46% 45% 40% 46% cvf align. ✓✓✗✓✗✗
+> cvs align. ✗✗✗partial ✗✗
+> Grudge chg. 33% 0% 20% 5% 6% 3%
+
+Table 6: How L UDO BENCH findings relate to real-world LLM deployment.         
+
+> Game Behavior Real-World Parallel
+> Rule compliance Legal rules, API constraints, regulations Capture vs. safe Risk in finance, medicine, autonomous driving Develop vs. advance Portfolio management, re-source allocation Narrative sensitivity Prompt injection, adversar-ial context Persona following Agent alignment, role-based assistants
+
+has picked up one half of a good strategy from its training data, and the GT alignment scores (40–46%) confirm that models agree with the GT only where their natural style matches. 
+
+Narrative framing can shift decisions on identical board states. Qwen-Plus changes its decision 33% of the time when told about a prior conflict on exactly the same board. If game narratives can shift strategy, then conversational context in real deployments could similarly shift LLM decisions in hard-to-predict ways. 
+
+Persona instructions are unreliable. Most persona instructions have weak effects, and some produce the opposite of the intended behavior. Developers building LLM agents should use concrete and measurable instructions rather than vague behavioral prompts. Table 6 maps these findings to real-world deployment contexts. 
+
+## 8 Conclusion 
+
+We introduced L UDO BENCH , a benchmark that evaluates LLM strategic reasoning through 480 handcrafted Ludo board scenarios across 12 decision categories. Evaluating six models from five families, we find that rule compliance does not predict strategic quality, that models split into finisher and builder archetypes each capturing only half of the GT agent’s balanced strategy, and that narrative context can shift decisions on identical boards by up to 33%. These findings suggest that standard win-rate evaluations may miss behavioral patterns that emerge more clearly from spot-level analysis. Future work could extend LUDO BENCH to additional models, multi-step planning, end-to-end game simulations, and other game domains. 9Preprint. Under review. 
+
+## Limitations 
+
+Our scenarios are hand-built and do not cover every possible Ludo decision; some categories (e.g., safe vs openexisting ) showed ceiling effects where all models behaved identically. We use 40 spots per category due to API cost constraints, so our rates are point estimates without confidence intervals. Spot-based evaluation tests one decision at a time, not multi-step planning, which could be studied in future work. We tested six models from five families at temperature =0; results may differ for other models or settings. Ludo has a small action space (at most four pieces) and we use English-only prompts, limiting generalizability to more complex domains or other languages. Finally, our evaluation is entirely spot-based; end-to-end simulation where LLM agents play complete multi-turn games against each other or against baseline agents remains to be conducted, and would provide complementary insights into cumulative strategic performance over full game trajectories. 
+
+## Acknowledgements 
+
+The authors acknowledge the use of AI tools such as ChatGPT, Claude, and Gemini for improving the presentation and grammar of this paper. All the results, analysis, and proposed techniques remain a concrete representation of the author’s contributions. The authors take full responsibility for the contents in this paper. 
+
+## References 
+
+Majed Alhajry, Faisal Alvi, and Moataz Ahmed. TD( λ) and Q-learning based Ludo players. In 2012 IEEE Conference on Computational Intelligence and Games (CIG) , pp. 83–90. IEEE, 2012. doi: 10.1109/CIG.2012.6374142. Noam Brown and Tuomas Sandholm. Superhuman AI for heads-up no-limit poker: Libratus beats top professionals. Science , 359(6374):418–424, 2018. Noam Brown and Tuomas Sandholm. Superhuman AI for multiplayer poker. In Science ,volume 365, pp. 885–890, 2019. Murray Campbell, A Joseph Hoane Jr, and Feng-hsiung Hsu. Deep Blue. Artificial Intelligence ,134(1–2):57–83, 2002. Veenus Chhabra and Kavita Tomar. Artificial intelligence: Game techniques ludo—a case study. ACSIT , 2(6):549–553, 2015. Karl Cobbe, Vineet Kosaraju, Mohammad Bavarian, Mark Chen, Heewoo Jun, Lukasz Kaiser, Matthias Plappert, Jerry Tworek, Jacob Hilton, Reiichiro Nakano, et al. Training verifiers to solve math word problems. arXiv preprint arXiv:2110.14168 , 2021. Anthony Costarelli, Mat Allen, Roman Hauksson, Grace Sodunke, Suhas Hariharan, Carlson Cheng, Wenjie Li, Joshua Clymer, and Arjun Yadav. Gamebench: Evaluating strategic reasoning abilities of llm agents. arXiv preprint arXiv:2406.06613 , 2024. Marc-Alexandre C ˆot ´e, ´Akos K ´ad ´ar, Xingdi Yuan, Ben Kybartas, Tavian Barnes, Emery Fine, James Moore, Matthew Hausknecht, Layla El Asri, Mahmoud Adada, Wendy Tay, and Adam Trischler. TextWorld: A learning environment for text-based games. arXiv preprint arXiv:1806.11532 , 2019. FAIR. Human-level play in the game of diplomacy by combining language models with strategic reasoning. Science , 378(6624):1067–1074, 2022. Google DeepMind. Gemma: Open models based on Gemini research and technology. arXiv preprint arXiv:2403.08295 , 2024. Dan Hendrycks, Collin Burns, Steven Basart, Andy Zou, Mantas Mazeika, Dawn Song, and Jacob Steinhardt. Measuring massive multitask language understanding. arXiv preprint arXiv:2009.03300 , 2021. 10 Preprint. Under review. Sihao Hu, Tiansheng Huang, Fatih Ilhan, Selim Tekin, Gaowen Liu, Ramana Kompella, and Ling Liu. Pok ´eLLMon: A human-parity agent for Pok ´emon battles with large language models. arXiv preprint arXiv:2402.01118 , 2024. Xu Huang, Weiwen Liu, Xiaolong Chen, Xingmei Wang, Hao Wang, Defu Lian, Yasheng Wang, and Enhong Chen. Understanding the planning of LLM agents: A survey. arXiv preprint arXiv:2402.02716 , 2024. Michal Kosinski. Theory of mind may have spontaneously emerged in large language models. arXiv preprint arXiv:2302.02083 , 2023. Meta AI. The Llama 3 herd of models. arXiv preprint arXiv:2407.21783 , 2024. OpenAI. GPT-4 technical report. arXiv preprint arXiv:2303.08774 , 2023. Anian Ruoss, Gr ´egoire Del ´etang, Sourabh Medapati, Jordi Grau-Moya, Li Ke Wenliang, Elliot Catt, John Reid, and Tim Genewein. Grandmaster-level chess without search. arXiv preprint arXiv:2402.04494 , 2024. David Silver, Aja Huang, Chris J Maddison, Arthur Guez, Laurent Sifre, George Van Den Driessche, et al. Mastering the game of Go with deep neural networks and tree search. Nature , 529:484–489, 2016. Alon Talmor, Jonathan Herzig, Nicholas Lourie, and Jonathan Berant. CommonsenseQA: A question answering challenge targeting world knowledge. In Proceedings of NAACL , 2019. Abdallah Tubaishat, Sajid Anwar, Feras N. Al-Obeidat, Babar Shah, and Muhammad Saad Razzaq. An artificially intelligent ludo player. In 2023 7th IEEE Congress on Information Science and Technology (CiSt) . IEEE, 2023. Alex Wang, Amanpreet Singh, Julian Michael, Felix Hill, Omer Levy, and Samuel Bowman. GLUE: A multi-task benchmark and analysis platform for natural language understanding. In Proceedings of ICLR , 2019. Jason Wei, Xuezhi Wang, Dale Schuurmans, Maarten Bosma, Brian Ichter, Fei Xia, Ed Chi, Quoc Le, and Denny Zhou. Chain-of-thought prompting elicits reasoning in large lan-guage models. In Advances in Neural Information Processing Systems (NeurIPS) , 2022. Zelai Xu, Chao Yu, Fei Fang, Yu Wang, and Yi Wu. Language agents with reinforcement learning for strategic play in the Werewolf game. arXiv preprint arXiv:2310.18940 , 2024. Shunyu Yao, Dian Yu, Jeffrey Zhao, Izhak Shafran, Thomas L Griffiths, Yuan Cao, and Karthik Narasimhan. Tree of thoughts: Deliberate problem solving with large language models. arXiv preprint arXiv:2305.10601 , 2023a. Shunyu Yao, Jeffrey Zhao, Dian Yu, Nan Du, Izhak Shafran, Karthik Narasimhan, and Yuan Cao. ReAct: Synergizing reasoning and acting in language models. In International Conference on Learning Representations (ICLR) , 2023b. Richard Zhuang, Richard Fang, Gail Choi, Tianjun Du, Felicia Liang, Anson Cao, and Claire Tomlin. PokerBench: Training large language models to become professional poker players. In Proceedings of AAAI 2025 , 2025. 11 Preprint. Under review. 
+
+## A Board Model Specifications 
+
+Table 7 provides the complete board zone specifications referenced in §3. Table 7: Board zone specifications. 
+
+Zone Indices Notes 
+
+Main Board 0. . . 51 (52 squares) Circular, shared by all players Base (off-board) −1 Pieces start here; leave only on dice = 6Home Path P0 52. . . 57 (home end = 57) Private; entered after one full lap Home Path P1 58. . . 63 (home end = 63) Private Home Path P2 64. . . 69 (home end = 69) Private Home Path P3 70. . . 75 (home end = 75) Private Safe Squares {0, 8, 13, 21, 26, 34, 39, 47 } Pieces cannot be captured here 
+
+A.1 Movement and Capture Rules 
+
+Table 8 summarizes the exact movement and capture rules as implemented in LudoBench .Table 8: Movement and capture rules implemented in L UDO BENCH .
+
+Rule Behavior 
+
+Dice range 1 to 6 Leave base Only on dice = 6; lands on player start square Extra turn Only on dice = 6 (NOT for capture, NOT for reaching home) Home entry Exact landing required; overshoot is illegal Capture Only on non-safe main-board squares; captured piece →
+
+base ( −1) Same-player stacking Blocked on all squares (exception: home end )Win condition All 4 pieces reach player home end 
+
+No-legal-move (non-6) Turn passes to next player No-legal-move (6) Same player continues (extra-turn rule applies) 12 Preprint. Under review. 
+
+## B Spot Category Details 
+
+Group 1: Rule Compliance 
+
+blocked . The board is configured so that one or more of the LLM’s pieces cannot legally move (e.g., destination occupied by own piece). The LLM must identify and avoid these blocked pieces, selecting a valid alternative. Metrics: block rate (fraction choosing a blocked piece among valid outputs), llm invalid rate .
+
+overshoot . A piece is positioned near home-end such that the dice roll would overshoot the exact landing requirement. The LLM must recognize that this move is illegal and select an alternative piece. This tests whether the model correctly avoids illegal moves near the end of the game. Metrics: overshoot rate (fraction attempting an overshoot), llm invalid rate .
+
+Group 2: Pure Preference 
+
+capture . A capture move is available with no competing strategic incentive (no simultane-ous home-entry or safety option). Tests whether the model exhibits a baseline aggression tendency when capture is the only salient option. Metrics: capture rate , llm invalid rate .
+
+home entry . A move entering or progressing along the home path is available without a competing capture opportunity. Tests goal-seeking behavior of whether the model priori-tizes advancing toward the win condition. Metrics: home entry rate , llm invalid rate .
+
+safe . A move landing on a safe square is available without competing capture or home-entry options. Tests risk aversion and defensive tendency in the absence of offensive opportunity. Metrics: safe rate , llm invalid rate .
+
+extra turn . Dice =6 scenario where the LLM must choose between bringing out a new piece from base versus advancing an existing piece on the board. No capture or home-entry is involved. Tests development strategy (board presence) versus advancement strategy (piece progress). Metrics: bring out rate , move existing rate .
+
+Group 3: Strategic Tradeoff 
+
+capture vs home . One piece can capture an opponent; another can enter or advance on the home path. Forces a direct choice between short-term aggression (disrupting an op-ponent) and long-term goal progress (advancing toward victory). Metrics: capture rate ,
+
+home entry rate .
+
+capture vs home finish . One piece can capture; another can land on the exact home-end position, completing that piece’s journey. The most extreme aggression-vs-objective test: choosing capture here means forgoing an immediate step toward the win condition. Metrics: 
+
+capture rate , home finish rate .
+
+capture vs openexisting . Dice =6 scenario: one piece can capture an opponent; another option is to open a new piece from base. Tests tactical aggression versus strategic develop-ment. Metrics: capture rate , open rate .
+
+capture vs safe . One piece can capture an opponent; another can move to a safe square. Directly quantifies the aggression-defense spectrum, revealing the model’s risk tolerance when both options are available. Metrics: capture rate , safe rate .
+
+safe vs openexisting . Dice =6 scenario: one piece can move to a safe square; another option is to open a new piece from base. Tests whether the model prioritizes protecting existing pieces or developing new ones. Metrics: safe rate , open rate .13 Preprint. Under review. 
+
+Group 4: History-Conditioned 
+
+grudge paired . Each scenario presents the same board state twice: once with a grudge narrative (e.g., “Player 2 captured your piece last turn despite having a safer option”) and once with neutral history. It tests whether LLMs exhibit history-sensitive deci-sion shifts and retaliation tendencies, probing a fundamental question about context-dependent behavior in deployed systems. Metrics: change rate , retaliation grudge rate ,
+
+retaliation noconflict rate .
+
+## C Metrics Definitions 
+
+All behavioral rates are computed exclusively on valid LLM outputs i.e., outputs where the selected piece index corresponded to a legal move. The sole exception is llm invalid rate ,which is computed on all outputs before heuristic fallback. This distinction is critical: it separates the question of “can the model follow the rules?” from “what does the model prefer when it does follow the rules?” Table 9: Metrics definitions. All behavioral rates computed on valid outputs only; 
+
+llm invalid rate computed on all outputs pre-fallback.            
+
+> Group Metric Definition
+> Reliability llm invalid rate Fraction of all spots where the LLM’s raw output was not a legal move. Computed before heuristic fallback. Behavioral
+> capture rate Fraction choosing the capture move.
+> safe rate Fraction choosing the safe-square move.
+> home entry rate Fraction choosing home path entry or progress.
+> home finish rate Fraction choosing to finish a piece at home end.
+> open rate Fraction choosing to bring a base piece into play (dice
+
+=6).  
+
+> bring out rate Fraction choosing to bring out a new piece on dice
+
+=6.  
+
+> move existing rate Fraction choosing to move an already-active piece on dice
+
+=6. Rule Violation block rate Fraction that chose a self-blocked piece.     
+
+> overshoot rate Fraction that attempted an overshoot move past home end. Grudge
+> change rate Fraction of pairs where the choice differed between grudge and neutral on the same board.
+> retaliation grudge rate Fraction choosing retaliatory capture under grudge framing.
+> retaliation noconflict rate Fraction choosing the same retaliatory capture under neutral framing.
+
+Derived Quantities 
+
+The grudge effect is defined as the difference ∆ = retaliation grudge rate −
+
+retaliation noconflict rate . A positive ∆ indicates that grudge framing increases re-taliatory behavior; a negative ∆ indicates suppression. Transition counts track the specific types of behavioral shifts between paired conditions (e.g., safe →capture, other →capture), providing qualitative insight beyond the aggregate change rate. 
+
+## D Persona Effect Details 
+
+Table 13 provides the full per-category persona breakdown referenced in §6.6. 14 Preprint. Under review. 
+
+Metric QP Q7B DS Haiku Scout Gemma GT Heur. Rand. 
+
+Pure Preference (none persona) 
+
+capture rate 0.50 0.55 0.15 0.53 0.22 0.29 0.88 1.00 0.45 safe rate 0.28 0.47 0.12 0.75 0.05 0.15 0.88 0.75 0.53 home entry rate 0.42 0.79 0.17 0.82 0.14 0.16 0.13 1.00 0.50 bring out rate 0.30 0.60 0.88 0.05 0.70 0.82 1.00 1.00 0.78 move existing rate 0.70 0.40 0.12 0.95 0.30 0.18 0.00 0.00 0.22 
+
+Key Tradeoff Rates (none persona) 
+
+home finish rate (cvf) 0.80 1.00 0.00 0.88 0.05 0.00 1.00 0.00 0.53 cvs capture rate 0.42 0.61 0.10 0.66 0.29 0.34 0.98 1.00 0.63 cvs safe rate 0.57 0.39 0.90 0.34 0.71 0.66 0.03 0.00 0.38 
+
+Table 10: Full behavioral profiles under the neutral persona. GT = Game-Theory Agent, Heur. = Heuristic Agent, Rand. = Random Agent. All baselines are deterministic and persona-invariant. 
+
+Category Metric QP Q7B DS Haiku Scout Gemma GT Heur. Rand. 
+
+cvs safe capture 0.42 0.61 0.10 0.66 0.29 0.34 0.98 1.00 0.63 safe 0.57 0.39 0.90 0.34 0.71 0.66 0.03 0.00 0.38 
+
+cvs home capture 0.57 0.15 0.72 0.20 0.78 0.83 0.98 1.00 0.35 home entry 0.42 0.85 0.28 0.80 0.22 0.17 0.03 0.00 0.65 
+
+cvs finish capture 0.20 0.00 1.00 0.12 0.95 1.00 0.00 1.00 0.48 home finish 0.80 1.00 0.00 0.88 0.05 0.00 1.00 0.00 0.53 
+
+cvs open capture 0.62 0.50 0.23 0.93 0.27 0.31 0.68 1.00 0.23 open 0.38 0.50 0.78 0.07 0.73 0.69 0.33 0.00 0.78 
+
+Table 11: Tradeoff category decision rates under the neutral persona. cvs = capture vs. GT = Game-Theory Agent, Heur. = Heuristic Agent, Rand. = Random Agent. 
+
+## E Persona Prompts 
+
+Each persona is injected into the LLM prompt as a dedicated PERSONA block (see Appendix G for exact placement). The persona text appears after the game rules and before the current game state, framing the model’s strategic orientation before it processes board information. 
+
+none (neutral) 
+
+No persona block is included. The model receives the standard game prompt only, establish-ing a baseline behavioral profile uninfluenced by instructional framing. All metrics under the none condition serve as the reference point for measuring persona effects. 
+
+aggressive 
+
+--------------------PERSONA --------------------You must play with this persona style: You are an aggressive Ludo player. Prioritize capturing opponent pieces whenever possible. Attacking opponents is more important than protecting your own pieces or advancing toward home. 
+
+Expected effect: Elevated capture rate across all tradeoff categories. Reduced safe rate 
+
+and home entry rate .15 Preprint. Under review. 
+
+Metric QP Q7B DS Haiku Scout Gemma 
+
+change rate 0.33 0.00 0.20 0.05 0.06 0.03 ret. grudge 0.80 0.57 0.78 0.31 0.86 0.88 ret. noconflict 0.68 0.57 0.73 0.33 0.83 0.85 grudge effect ( ∆) +0.12 0.00 +0.05 −0.03 +0.03 +0.03 
+
+Table 12: Grudge sensitivity under the neutral persona. change rate = fraction of spots where the model’s decision changed between neutral and grudge framing on identical boards. The GT agent scores 0% on all metrics. Table 13: Persona effects on key metrics across all six models. n=none, a=aggressive, g=greedy, s=safe, u=unforgiving; cvf=capture vs home finish, cvs=capture vs safe, cap=capture, hom=home entry, ext=extra turn.                                                                                                                                                                                                                                                              
+
+> QP Q7B DS Haiku Scout Gemma Cat. Met. nagsunagsunagsunagsunagsunagsu
+> cvf cap .20 .93 .12 .62 .57 .00 .14 .06 .00 .16 1.0 1.0 1.0 1.0 1.0 .12 .05 .15 .03 .25 .95 .97 1.0 .92 1.0 1.0 1.0 1.0 .94 .95 cvf fin .80 .07 .88 .38 .42 1.0 .86 .94 1.0 .84 .00 .00 .00 .00 .00 .88 .95 .85 .97 .75 .05 .03 .00 .08 .00 .00 .00 .00 .06 .05 cvs cap .42 .15 .53 .40 .15 .61 .71 .80 .63 .39 .10 .20 .23 .15 .25 .66 .84 .75 .88 .72 .29 .19 .21 .09 .19 .34 .14 .17 .11 .17 cvs safe .57 .85 .47 .60 .85 .39 .29 .20 .37 .61 .90 .80 .77 .85 .75 .34 .16 .25 .12 .28 .71 .81 .79 .91 .81 .66 .86 .83 .89 .83 cap cap .50 .28 .57 .38 .33 .55 .67 .50 .68 .65 .15 .17 .30 .07 .17 .53 .90 .78 .85 .74 .22 .16 .29 .17 .19 .29 .16 .24 .21 .16 hom h e .42 .33 .47 .33 .30 .79 .69 .77 .80 .69 .17 .15 .28 .23 .25 .82 .97 .93 .97 .80 .14 .00 .05 .10 .05 .16 .05 .03 .05 .05 ext b o .30 .20 .28 .30 .28 .60 .30 .42 .42 .38 .88 .55 .90 .90 .72 .05 .05 .03 .05 .05 .70 .33 .47 .51 .57 .82 .51 .58 .51 .64
+
+greedy 
+
+--------------------PERSONA --------------------You must play with this persona style: You are a greedy Ludo player focused on winning. Prioritize advancing your own pieces toward home above all else. Getting pieces to the finish is more important than capturing opponents. 
+
+Expected effect: Elevated home entry rate and home finish rate . Reduced capture rate .
+
+safe 
+
+--------------------PERSONA --------------------You must play with this persona style: You are a cautious Ludo player. Prioritize moving to safe squares and avoiding risky positions. Protecting your pieces from capture is more important than aggressive play. 
+
+Expected effect: Elevated safe rate . Reduced capture rate across tradeoff categories. 
+
+unforgiving 
+
+--------------------PERSONA --------------------You must play with this persona style: You are an unforgiving Ludo player. If an opponent has captured your piece, prioritize retaliating by capturing their pieces in return. Do not let attacks go unpunished. 
+
+Expected effect: Elevated retaliation grudge rate and change rate in grudge scenarios. Higher capture rate specifically targeting prior aggressors. 16 Preprint. Under review. 
+
+## F Heuristic Agent Scoring Formula 
+
+The HeuristicAgent provides a deterministic, reproducible baseline for comparing LLM decisions. For each legal piece move, it computes a numeric score and selects the piece with the highest value. The complete scoring logic, extracted from agents.py , is as follows. 
+
+Scoring Rules    
+
+> piece State Score Formula Range
+> Base (pos
+
+= −1) Fixed value 50 Main board, stays on main rel pos + dice 0–51 Main board, enters home 52 + home step 53+ Already in home path 52 + ( new pos − 
+
+> home start
+
++ 1) 
+
+> Increasing Capture available
+
++100 bonus (non-safe square, oppo-nent present) Additive Safe square destina-tion 
+
++20 bonus (dest. is safe) Additive 
+
+Table 14: HeuristicAgent scoring formula. The agent selects the piece with the highest composite score among all legal moves. 
+
+Resulting Priority Order 
+
+The scoring formula produces the following implicit priority hierarchy: 1. Capture (+100): Any legal capture on a non-safe square dominates all other move types. The heuristic always captures when possible. 2. Home path progress (52 +): Entering or advancing in the home path is valued above all non-capture main-board moves. 3. Leave base (50): Bringing a piece out of base is valued slightly below home entry but above most main-board advancement. 4. Safe square (+20): Landing on a safe square provides a moderate defensive bonus, but does not override capture or home-entry incentives. 5. Main-board advancement (0 –51): Basic forward progress, with higher scores for posi-tions further from start. 17 Preprint. Under review. 
+
+## G LLM Prompt Template 
+
+The following is the complete prompt template provided to the LLM agent, repro-duced from llm agent.py . Fields in [CAPS] are populated dynamically from the spot configuration. In spot evaluation mode, the legal moves section is omitted 
+
+(include legal moves in prompt=False ). 
+
+Full Prompt 
+
+You are an AI agent playing Ludo as Player [PLAYER_ID]. Your job is to choose exactly ONE of your token indices. IMPORTANT: - You must output ONLY a token index (0,1,2,3) followed by " | " and a one-line reason. - Do NOT output board positions or text without the token index. - The token index MUST refer to one of your own 4 tokens (0-3). - If you output anything else, it is invalid. --------------------BOARD & POSITION SYSTEM --------------------1. Main circular board: 52 squares (0-51). 2. Each player has a fixed START square. 3. Tokens move forward relative to START. 4. After one full lap (52 steps), tokens enter that player 's HOME PATH. 5. Each player has a UNIQUE HOME PATH (>= 52). 6. Final home position is HOME_END. 7. Tokens must land EXACTLY on HOME_END. 8. Overshooting HOME_END is illegal. --------------------TOKEN STATES --------------------- Position = -1 : Token is in base - Position 0-51 : Token is on main board - Position >= 52 : Token is in home path - HOME_END : Token has finished --------------------GAME RULES --------------------1. All tokens start in base (-1). 2. Leave base ONLY on dice = 6. 3. Leaving base places token at START square. 4. Tokens move forward by dice value. 5. No stacking (one token per square). 6. CAPTURE: land on opponent on non-safe square -> opponent sent to base (-1). 7. Captures NEVER happen on safe squares. 8. Safe squares protect tokens from capture. 9. Rolling 6 grants an extra turn. 10. No legal move -> turn skipped. 11. First to move ALL tokens to HOME_END wins. 12. Home paths are private to each player. 
+
+18 Preprint. Under review. 
+
+--------------------CURRENT GAME STATE --------------------Number of players: [NUM_PLAYERS] Active player ids: [PLAYER_IDS] Dice rolled: [DICE] Your token positions (Player [PLAYER_ID]): [YOUR_TOKENS] Other players ' token positions: [OTHER_PLAYERS_TOKENS] Your start square: [START_POS] Your home path: [HOME_START] to [HOME_END] Safe squares: [SAFE_SQUARES] Player path ranges: [PLAYER_INFO] [PERSONA BLOCK | if persona active] [HISTORY BLOCK | if grudge scenario] Choose the BEST legal move to win. --------------------OUTPUT FORMAT (STRICT) --------------------<int> | <one line reason> 
+
+Dynamic Blocks 
+
+Two optional blocks are injected depending on experimental condition: 
+
+Persona Block. When a persona is active (all conditions except none ), the following block is inserted after the game state: 
+
+--------------------PERSONA --------------------You must play with this persona style: [PERSONA_TEXT] 
+
+History Block. For grudge paired scenarios, a history block is injected providing narrative context about prior game events: 
+
+--------------------HISTORY / CONTEXT --------------------[HISTORY_TEXT] 
+
+19 Preprint. Under review. Table 15: Dataset summary. † Each category’s source file follows the pattern 
+
+spots <category>.json . grudge paired contains 40 boards × 2 conditions (neutral a and grudge b), yielding 80 entries from 40 unique boards.                                          
+
+> Category Entries Unique Boards History
+> blocked 40 40 No
+> capture 40 40 No
+> capture vs home 40 40 No
+> capture vs home finish 40 40 No
+> capture vs openexist. 40 40 No
+> capture vs safe 40 40 No
+> extra turn 40 40 No
+> grudge paired 80 40 Yes
+> home entry 40 40 No
+> overshoot 40 40 No
+> safe 40 40 No
+> safe vs openexist. 40 40 No
+> Total 520 480
+
+Table 16 shows the distribution across game configurations and LLM player assignments, confirming balanced coverage. 
+
+Player Count Category 2P 3P 4P 
+
+blocked 14 13 13 
+
+capture 14 13 13 
+
+capture vs home 14 13 13 
+
+capture vs home finish 14 13 13 
+
+capture vs openexist. 14 13 13 
+
+capture vs safe 14 13 13 
+
+extra turn 14 13 13 
+
+grudge paired † 28 26 26 
+
+home entry 14 13 13 
+
+overshoot 14 13 13 
+
+safe 14 13 13 
+
+safe vs openexisting 14 13 13 Table 16: Distribution of spots across player configurations (2-player, 3-player, 4-player). 
+
+> †
+
+grudge paired counts are doubled due to a/ b pairing. All non-grudge categories are approximately balanced across configurations. Each spot entry contains the fields shown in Table 17. Figure 9 provides a representative example. 20 Preprint. Under review. 
+
+Field Type Description 
+
+id string Unique identifier (e.g., cvs 2p 001 , grudge pair1001 a )
+
+scenario string Category label matching one of the 12 evaluation types 
+
+players list[int] Active player IDs in this game (e.g., [0, 1] for 2-player) 
+
+llm player id int Which player index the LLM controls 
+
+current player int Whose turn it is (always equals llm player id )
+
+dice int Dice roll value for this decision (1–6) 
+
+tokens dict Token positions for all players; keys are player IDs, val-ues are lists of 4 positions ( −1 = base, 0–51 = main board, 
+
+≥ 52 = home path) 
+
+note string Human-readable description of the intended decision 
+
+history text string (grudge paired only) Narrative context: neutral or grudge framing Table 17: JSON schema for each spot entry. The history text field is present only in 
+
+grudge paired scenarios.     
+
+> {"id": "cvs_2p_001", "scenario": "capture_vs_safe", "players": [0, 1], "llm_player_id": 1, "current_player": 1, "dice": 6, "tokens": { "0": [49, -1, -1, -1], "1": [43, 41, -1, -1] }, "note": "One capture option and one safe-square option." }
+> (a) capture vs safe spot
+> // Pair _a (neutral): {"id": "grudge_pair1001_a", "scenario": "grudge", "dice": 5, "tokens": { "0": [18, 11, -1, -1], "1": [23, 16, -1, -1] }, "history_text": "No prior conflicts noted." }// Pair _b (grudge): {"id": "grudge_pair1001_b", // identical tokens & dice "history_text": "Player 1 captured one of your tokens earlier in the game." }
+> (b) grudge paired spot pair
+
+Figure 9: Example spot entries. (a) A capture vs safe scenario: Player 1 (LLM) with dice =6can either capture Player 0’s token at square 49 or move to safety. (b) A grudge pair: identical board state with neutral ( a) and grudge ( b) history framing. 21 Preprint. Under review. 
+
+## H Game-Theory Agent 
+
+The GameTheoryAgent provides a principled strategic baseline by computing move values through depth-limited search over the game tree. We describe the 2-player formulation; the multiplayer extension follows analogously. 
+
+Recursion Structure 
+
+The agent uses mutual recursion between two node types: 
+
+Decision nodes (MAX/MIN): The root player maximizes expected value; the opponent minimizes it. For each legal move a ∈ A(s, p, d), the agent applies the move to produce a successor state and recurses to a chance node. 
+
+Chance nodes : For each dice outcome d ∈ { 1, . . . , 6 }, the agent recurses to a decision node and averages the results: 
+
+Vchance (s, p, h) = 16
+
+> 6
+
+# ∑
+
+> d=1
+
+Vdec (s, p, d, h) (1) 
+
+Decision Value 
+
+For the root player (MAX): 
+
+Vdec (s, p, d, h) = max  
+
+> a∈A(s,p,d)
+
+Vchance 
+
+ T(s, p, d, a), p′, h−1 (2) For the opponent (MIN): 
+
+Vdec (s, p, d, h) = min  
+
+> a∈A(s,p,d)
+
+Vchance 
+
+ T(s, p, d, a), p′, h−1 (3) where T is the transition function, p′ = p if d = 6 (extra turn), else the other player, and h is remaining depth. 
+
+Terminal and Cutoff Values 
+
+Terminal states return +1 (root wins) or −1 (root loses). At depth cutoff ( h = 0), a weighted linear evaluator scores the state: 
+
+Veval = 0.0025 · ∆prog + 0.20 · ∆fin − 0.05 · ∆base + 0.01 · ∆safe (4) where each ∆ term is the difference between the root player’s and opponent’s count (progress along board, finished pieces, pieces in base, pieces on safe squares). Values are clipped to 
+
+[−0.999, 0.999 ].
+
+Memoization 
+
+A transposition cache stores previously computed subtrees, keyed by (node type, serialized state, current player, dice, depth). This avoids redundant computation in the exponentially branching game tree. 
+
+Multiplayer Extension (3/4 Players) 
+
+For n > 2 players, the agent switches to Expectimax-MaxN: each player maximizes their own component of a vector-valued utility. Terminal values assign +1 to the winner and 
+
+−1 /(n−1) to each loser. The evaluator returns a vector of per-player scores, centered by subtracting the mean. For 2-player games, the multiplayer agent delegates to the exact Expectiminimax implementation. 22 Preprint. Under review. 
+
+Complexity and Limitations 
+
+The agent uses a search depth of h = 2 for all experiments reported in this paper.Without memoization, the search tree grows as O(( 6b)h) where b is the average branching factor and h is depth. With caching, practical runtime is substantially reduced. The agent is depth-limited (not globally optimal), uses a hand-tuned linear evaluator, and assumes uniform dice probabilities. Despite these limitations, it provides a substantially stronger baseline than greedy heuristics by explicitly modeling opponent responses and stochastic uncertainty. 23

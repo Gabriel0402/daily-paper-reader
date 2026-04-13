@@ -1,0 +1,520 @@
+Title: Parameter-Efficient Semantic Augmentation for Enhancing Open-Vocabulary Object Detection
+
+URL Source: https://arxiv.org/pdf/2604.04444v1
+
+Published Time: Tue, 07 Apr 2026 01:27:39 GMT
+
+Number of Pages: 10
+
+Markdown Content:
+# Parameter-Efficient Semantic Augmentation for Enhancing Open-Vocabulary Object Detection 
+
+## Weihao Cao 1,2,3,† Runqi Wang 2,3,† Xiaoyue Duan 4,† Jinchao Zhang 4 Ang Yang 1,2,3 Liping Jing 1,2,3,* 1State Key Laboratory of Advanced Rail Autonomous Operation, Beijing Jiaotong University 
+
+> 2
+
+## Beijing Key Laboratory of Traffic Data Mining and Embodied Intelligence, Beijing Jiaotong University 
+
+> 3
+
+## School of Computer Science & Technology, Beijing Jiaotong University 4WeChat AI, China 
+
+## Abstract 
+
+Open-vocabulary object detection (OVOD) enables mod-els to detect any object category, including unseen ones. Benefiting from large-scale pre-training, existing OVOD methods achieve strong detection performance on general scenarios (e.g., OV-COCO) but suffer severe performance drops when transferred to downstream tasks with substan-tial domain shifts. This degradation stems from the scarcity and weak semantics of category labels in domain-specific task, as well as the inability of existing models to cap-ture auxiliary semantics beyond coarse-grained category label. To address these issues, we propose HSA-DINO, a parameter-efficient semantic augmentation framework for enhancing open-vocabulary object detection. Specifically, we propose a multi-scale prompt bank that leverages im-age feature pyramids to capture hierarchical semantics and select domain-specific local semantic prompts, pro-gressively enriching textual representations from coarse to fine-grained levels. Furthermore, we introduce a semantic-aware router that dynamically selects the appropriate se-mantic augmentation strategy during inference, thereby preventing parameter updates from degrading the general-ization ability of the pre-trained OVOD model. We eval-uate HSA-DINO on OV-COCO, several vertical domain datasets, and modified benchmark settings. The results show that HSA-DINO performs favorably against previous state-of-the-art methods, achieving a superior trade-off be-tween domain adaptability and open-vocabulary general-ization. 
+
+## 1. Introduction 
+
+Open-vocabulary object detection (OVOD) [1, 14, 17, 29] aims to enable models to detect arbitrary object cate-gories based on the category names, including those un-seen during training. Benefiting from large-scale pre-training on general object detection datasets and image-text pairs [11, 20, 26], existing OVOD models have achieved     
+
+> † Equal contribution. * Corresponding author. mAP
+> GLIP Grounding DINO YOLO-World OV-DINO OV-DINO
+> (After fine-tuning)
+> COCO
+> ArTaxOr
+> DIOR
+> UODD
+> 50
+> 25
+> 75
+
+Figure 1. Pre-trained OVOD models perform well on general do-main ( e.g. , OV-COCO [15]) but fail to generalize to vertical do-main ( e.g. , ArTaxOr [6], DIOR [13], UODD [10]) in the zero-shot setting. Although fine-tuning improves performance on vertical domain, it causes a significant degradation on general domain. 
+
+strong zero-shot detection performance on general scenar-ios ( e.g. , OV-COCO [15]). However, when transferred to datasets with professional knowledge, their performance deteriorates sharply (see the left part of Fig. 1), indicating that the generalization capability of existing OVOD mod-els is still inadequate for vertical domain. We refer to the tasks on these data as downstream tasks, which typ-ically exhibit strong domain specificity and are designed for specialized detection scenarios where category labels carry deeper semantic granularity. For instance, instead of labeling an object simply as “butterfly”, the annotations in ArTaxOr [6] may distinguish among specific butterfly species. During large-scale pre-training, such fine-grained and domain-specific categories are often scarce and seman-tically limited, leading to weak textual representations and consequently misaligned vision–language semantics. This ultimately degrades detection performance when adapting OVOD models to downstream tasks. To address the issue of weak textual representations, ex-isting methods (as illustrated in Fig. 2 (a)) typically input a predefined prompt template ( e.g. , “a photo of a [CLS]”) into a text encoder to leverage pre-trained open-vocabulary knowledge for downstream detection, where [CLS] denotes the category label [29]. Another common approach in- 
+
+> arXiv:2604.04444v1 [cs.CV] 6 Apr 2026 Probability density
+> Reconstruction error
+> Vertical domain
+> Probability density
+> Reconstruction error
+> Reduce
+> overlap
+> General domain
+> Previous prompt methods
+> on the flower
+> with wings
+> spotted
+> Multi-scale prompt bank
+> Hierarchical Semantics
+> a photo of a
+> yellow flower
+> dog
+> cat
+> ……
+> dog
+> cat
+> ……
+> Learnable context
+> Predefined text
+> butterfly
+> butterfly
+> (a) (b)
+> Large distribution overlap
+> Vertical domain
+> General domain
+
+Figure 2. Method motivation. (a) Previous methods use predefined templates or learnable vectors prepended to the category label embed-dings, ignoring detailed semantics from image features. Our multi-scale prompt bank uses hierarchical semantics from multi-scale feature pyramid to select auxiliary prompts for the category labels. (b) The dynamic routing method [33] uses the reconstruction error of an input, obtained from multiple autoencoders, as an indicator of its domain. However, the large overlap in reconstruction errors across different domains can confuse the model, leading to incorrect parameter selection. Our method explicitly models both the content and the domain of the inputs, effectively reducing this overlap and enabling more accurate routing decisions. 
+
+troduces a learnable prompt vector prepended to the cat-egory label, allowing the model to learn category-specific contextual semantics [39]. However, these methods lack multi-aspect textual descriptions of visual semantics, result-ing in low relevance between auxiliary prompt and visual content. Consequently, the textual representations remain suboptimal, leading to weak visual–language alignment. For a given image, the multi-scale feature pyramid in an OVOD model captures hierarchical semantic information, ranging from high-level contextual cues ( e.g. , flowers) to fine-grained texture details ( e.g. , spotted wings). When this domain-specific information is used as an auxiliary prompt for the category label ( e.g. , “butterfly”), the model can en-hance textual feature representations and achieve better se-mantic alignment. To this end, we propose a Multi-Scale Prompt Bank (MSPB) that serves as a bridge between image features and category labels (see Fig. 2 (a)). It leverages the multi-scale feature pyramid from the visual branch to select and train relevant prompts, which are concatenated with cat-egory labels and fed into the text encoder to learn domain-specific hierarchical semantics. Training on downstream tasks in this manner enables more effective visual–language alignment across multiple semantic levels. During infer-ence, the model adaptively selects suitable prompts for each category label based on the input image semantics, thereby enriching textual representations and substantially improv-ing detection performance. Although targeted semantic augmentation on down-stream tasks improves vertical domain performance, the domain gap between general domain and vertical do-main causes the learned semantic augmentation to be non-generalizable. As a result, the fine-tuned model exhibits a significant drop in mAP on general domain (see the right of Fig. 1), causing the OVOD model to gradually lose its open-vocabulary capability. To address this issue, we aim to enable the OVOD model to autonomously select appro-priate semantic augmentation strategies according to the task characteristics and input domain. This design allows the model to retain the semantic diversity acquired during pre-training while enhancing vertical domain understand-ing, thereby preserving its generalization capability across both general and downstream tasks. Recent work, such as MoEAdapter4CL [33], trains multiple autoencoders spe-cialized for different domain distributions and uses their reconstruction errors to guide weight selection, preserving the open-vocabulary capability of the original CLIP [21]. However, we observe that the reconstruction errors between general domain and vertical domain highly overlap (see Fig. 2 (b)), leading to ambiguous domain boundaries and incorrect parameter routing, which degrades OVOD perfor-mance. Data from different domains may share highly sim-ilar visual content ( e.g. , images of cats) but differ in domain semantics ( e.g. , cartoon vs. realistic). By focusing on con-tent reconstruction, we can mitigate the interference caused by domain gaps in semantic representations and more accu-rately identify domain to select the semantic prompts cor-respodding to each domain. Motivated by this observation, we propose a Semantic-Aware Router (SAR). It explicitly models the content and domain information of each input. During inference, it dynamically decides whether to apply domain-specific semantic augmentation or rely on the orig-inal pre-trained representations. This prevents parameter updates from affecting the generalization ability of the pre-trained model. Building upon the above designs, we propose HSA-DINO , a parameter-efficient semantic augmentation frame-work with Hierarchical Semantic Augmentation for en-hancing open-vocabulary object detection, built upon the 
+
+DINO architecture [35]. We evaluate HSA-DINO on gen-eral domain (OV-COCO [15]) , vertical domain datasets [6, 10, 13], and modified OVOD benchmark settings. Exper-imental results demonstrate that our method consistently outperforms state-of-the-arts and effectively adapting pre-trained OVOD models to downstream tasks while preserv-ing their open-vocabulary generalization capability. Our main contributions are summarized as follows: • We propose HSA-DINO, a parameter-efficient semantic augmentation framework for enhancing open-vocabulary object detection. • We design a multi-scale prompt bank that learns tex-tual prompts from hierarchical image semantics to en-hance textual representations. In addition, semantic-aware router is proposed to select appropriate semantic enhangcement prompts according to the reconstruction error of input, thereby preventing parameter updates from affecting the generalization of the pre-trained model. • The experiments show that HSA-DINO outperforms state-of-the-arts, effectively adapting pre-trained OVOD models to downstream tasks while preserving open-vocabulary generalization. 
+
+## 2. Related Work 
+
+Open-vocabulary object detection. Early methods [7, 34, 37] leverage CLIP [21] to equip models with open-vocabulary capability. With the advent of large-scale image-text datasets [11, 20, 27], GLIP [14] and Grounding DINO [17] employ pseudo labels for self-training after joint training, while YOLO-World [1] constructs high-quality image-text datasets for re-joint training. OV-DINO [29] treats the whole image as a single box associated with text descriptions. Later research reduces adaptation costs by applying parameter-efficient fine-tuning. ZiRa [3] applies dual norm penalties to the residual detection branch of both the text and image encoders for continual learning, while MR-GDINO [5] enhances few-shot continual learning with memory and retrieval mechanisms. However, these meth-ods struggle to balance domian-specific adaptability and the preservation of pre-trained open-vocabulary capability. 
+
+Prompt bank. The prompt bank is an effective ap-proach to enriching textual semantic representations. Un-like traditional prompt methods ( e.g. , CoOp [39]) that learn a fixed set of prompts, prompt bank maintains diverse learn-able prompts and dynamically selects relevant ones based on input features to improve cross-modal alignment and adaptability. For example, Tip-Adapter [36] adopts a key-value cache for weight generation on few-shot datasets. CoCoOp [38] employs a lightweight neural network for image-specific prompt adjustment. L2P [31] extends this to continual learning with a prompt pool for task adapta-tion. AttriCLIP [30] combines global visual features with an attribute-aware prompt library to further enhance cross-modal alignment. Despite these advances, most existing methods rely on single-scale global features for prompt se-lection, limiting the richness of textual representations and impairing performance on tasks like object detection that require multi-level reasoning. 
+
+## 3. Methodology 
+
+In this section, we first introduce the architecture of the proposed HSA-DINO framework, followed by detailed de-scriptions of its two core components: the multi-scale prompt bank and the semantic-aware router. Finally, we present the optimization objectives of the framework. 
+
+3.1. Framework of HSA-DINO 
+
+The overall pipeline of our proposed HSA-DINO is de-picted in Fig. 3. HSA-DINO is built upon OV-DINO [29], which consists of image encoder ΦI , text encoder ΦT and object detector Φdet . During training we keep the pre-trained parameters frozen and integrate Low-Rank Adap-tation (LoRA) [9] into the image encoder to learn hierarchi-cal and domain-specific visual features. For each training image x, the LoRA-integrated image encoder Φ′ 
+
+> I
+
+first ex-tracts multi-scale feature maps, which are used to select the most relevant prompts from the Multi-Scale Prompt Bank (MSPB). The selected prompts are concatenated with the embeddings of all category labels to form the semantic-augmented text embeddings tp, which are then fed into the text encoder to obtain text features Et. The detector Φdet re-ceives the flattened multi-scale image features Ei, the text features Et, and the detection queries Qdet , fusing them to produce the corresponding visual–semantic embeddings O
+
+for each query, along with the predicted bounding box co-ordinates B. The classification alignment score matrix C is computed by measuring the similarity between O and ETt .The overall process of model forward is formulated as: 
+
+Ei = Flatten(Φ ′ 
+
+> I
+
+(x)) , Et = Φ T (tp),
+
+{O, B } = Φ det (Ei, E t, Q det ), C = O ⊗ ETt . (1) where ETt denotes the transpose of Et, and ⊗ denotes the Kronecker product [28]. Additionally, we train the Semantic-Aware Router (SAR) on downstream task, en-abling it to accurately identify the current domain. During testing, for each input image, the model uses the domain recognition results from SAR to determine the semantic en-hancement strategy, whether to use domain-specific seman-tically augmented representations or to rely on the original pre-trained semantic representations, thereby ensuring that the semantic representations of OVOD remain optimal un-der varying domain conditions. 
+
+3.2. Multi-Scale Prompt Bank 
+
+Existing methods lack multi-aspect textual descriptions of visual semantics, resulting in low relevance between aux-iliary prompt and visual content. These methods perform textual semantic augmentation on category names, but lack multi-aspect textual descriptions of visual semantics, re-sulting in low relevance between auxiliary prompt and vi-sual content. To address this limitation, we propose the Image                       
+
+> Encoder
+> Diptera
+> Text
+> Encoder
+> 𝐤 ଵ𝐤 ୫𝐤 ଶ…
+> …𝐏 ଵ𝐏 ଶ𝐏 ୫𝐏 ୬
+> …
+> …
+> 𝐤 ୬
+> 𝐏 ே
+> …
+> …
+> 𝐤 ே
+> Araneae
+> Coleoptera
+> Lepidoptera
+> …
+> Top1 Top1 Top1
+> 𝐏 ଶ𝐏 ୫𝐏 ୒
+> …
+> Multi-scale feature maps
+> LoRA
+> Multi-Scale
+> Prompt Bank
+> (MSPB)
+> …
+> ℒୈ୍୒୓
+> : Unselected keys/prompts
+> : Selected keys
+> Vision Branch
+> Language Branch Object Detector
+> : Trainable parameters
+> : Selected prompts
+> ℒ௠
+> ℒ୮
+> (Make 𝐏 ୧orthogonal)
+> : Frozen parameters
+> Flatten Semantic-Aware
+> Router (SAR)
+> domain
+> statistics
+> Reconstruct
+> 𝑑 ௘௥௥
+> yes no
+> (b) The testing stage
+> Content
+> embedding
+> (a) The training stage
+> Autoencoder
+> 𝐏 ଶ𝐏 ୫𝐏 ୒
+> 𝐏 ଶ𝐏 ୫𝐏 ୒
+> 𝐏 ଶ𝐏 ୫𝐏 ୒
+> 𝑓 መ
+> Pre-trained
+> semantics
+> Augmented
+> semantics
+> Detection Query
+> …
+> Matching & Loss
+> OV-DINO Detector
+> [CLS]
+> 𝑑 ௘௥௥ < 𝜏 ?
+> 𝑐
+> 𝑓
+> ~
+> zଵzଶzଷzௌ
+> Feature
+> extraction
+> …
+
+Figure 3. Overview of the proposed HSA-DINO framework. We incorporate LoRA into the image encoder during training on downstream datasets. We also introduce a multi-scale prompt bank to further enhance the model’s adaptability to downstream tasks. In the test stage, we propose a semantic-aware router that can accurately identify different data distributions, enabling more precise selection between pre-trained semantics and augmented semantics for detection. 
+
+Multi-Scale Prompt Bank (MSPB), which leverages multi-scale feature maps to select and concatenate prompts with category labels. In our framework, the multi-scale fea-ture maps are extracted from the multi-stage outputs of the Swin Transformer backbone used in OV-DINO [35]. Given an input image x, we extract the multi-scale feature maps 
+
+{zs}Ss=1 = Φ ′ 
+
+> I
+
+(x), where zs ∈ RHs×Ws×D , S denotes the number of scales, Hs × Ws is the spatial resolution at scale 
+
+s, and D is the feature dimensionality. We then apply global average pooling and normalization to each scale to obtain 
+
+˜zs ∈ RD . To establish interactions between the semantics of images and labels, the prompt bank needs to contain both visual and textual information. Therefore, we construct the multi-scale prompt bank as N (key, prompt) pairs: 
+
+{K , P} △
+
+= {(k1, P1), . . . , (kN , PN )}, (2) where {K , P} denotes the scale-aware prompt bank. Each 
+
+ki ∈ RD has the same dimensionality as the image fea-ture ˜zs, and each Pi = [ pi]1 . . . [pi]M ∈ RD×M consists of M learnable vectors. We denote the set of all keys as 
+
+K = {ki}Ni=1 , and the set of all prompts as P = {Pi}Ni=1 .Here, K stores the scale-aware visual information, while P
+
+indicates the “descriptive words” corresponding to the keys. We aim for the feature maps at each scale to adaptively se-lect the most relevant keys based on their scale-specific in-formation, allowing the corresponding prompts to capture more localized and hierarchical semantics. To this end, we compute the similarity between each scale-aware feature map ˜zs and each key ki using cosine similarity function 
+
+γ [24]. The matching keys for {˜zs}Ss=1 are selected as: 
+
+˜K = {arg max  
+
+> i∈[1 ,N ]
+
+γ(˜ zs, ki)}Ss=1 , (3) where ˜K ⊂ K denotes the scale-specific selected keys. The prompts paired with these keys are then chosen as 
+
+˜P = {Ps}Ss=1 , where Ps is the prompt corresponding to the key selected for scale s. These prompts are prepended to the category label embedding of x, as illustrated in Fig. 3, forming the text description for the k-th category as: 
+
+tkp = concat( P1; . . . ; PS ; [CLS] k), (4) where concat( ·) denotes concatenation. The enhanced tex-tual descriptions for each category are then fed into the text encoder ΦT (·) to obtain the text embeddings Et =
+
+{wk}Kk=1 = {ΦT (tkp )}Kk=1 , where K is the number of category labels. These text embeddings are subsequently provided to the detector Φdet together with the image em-beddings for final detection. From a high-level perspective, the multi-scale prompt bank serves as a bridge between the visual and textual en-coders and learns domain-specific hierarchical prompts to enrich semantic representation for enhanced detection. 
+
+3.3. Semantic-Aware Router 
+
+Targeted semantic augmentation on downstream tasks can improve vertical domain performance. However, the domain gap between general domain and vertical do-main often makes the learned semantic augmentation non-generalizable. To address this, we propose a Semantic-Aware Router (SAR) to dynamically determine the seman-tic augmentation strategy during inference, whether to ap-ply domain-specific augmented semantic representations or to rely on the original pre-trained semantic representations. As discussed in the introduction, domain information can interfere with distinguishing different data distributions. To mitigate this effect, we explicitly model both the domain statistics and the content embedding, allowing the router to focus on reconstructing the content rather than being misled by domain variations. Specifically, given an input image x,we obtain its feature map f = Φ F (x) using the feature ex-tractor ΦF (·) [8], and apply average pooling to obtain ˜f .We compute the mean μ and standard deviation σ of the feature as its domain statistics: 
+
+D = {μ, σ }, μ = mean( ˜f ), σ = std( ˜f ). (5) By removing the domain components from the feature, we obtain the content embedding c as: 
+
+c = ˜f − μσ + ϵ , (6) which is then put into the autoencoder to obtain the recon-structed content embedding bc. Finally, we reapply the do-main statistics to adapt the reconstructed content back to the original domain: bf = bc · σ + μ. The reconstruction er-ror is computed as derr = | bf − ˜f |2, and compared against a predefined threshold τ to make the routing decision. If 
+
+derr < τ , the input x is considered to belong to the down-stream distribution, and the domain-specific augmented se-mantic strategy is applied; otherwise, the model uses the original pre-trained semantic representations. By explicitly modeling both domain and content infor-mation, our SAR effectively reduces the overlap in recon-struction errors across different data distributions (see Fig. 2 (b)). This leads to more accurate routing and ensures that the semantic representations of the OVOD model prevent parameter updates from affecting the generalization of the pre-trained model , thereby improving the trade-off between domain adaptation and open-vocabulary generalization. 
+
+3.4. Optimization Objectives of HSA-DINO 
+
+Our optimization objective is improved based on OV-DINO. The optimization objectives LDINO of OV-DINO is com-posed of a focal loss Lcls [16], a regression loss Lbox [22], a GIoU loss Lgiou [22], and a denoising loss Ldn [12]. Ad-ditionally, we propose two auxiliary losses for the training of MSPB, i.e. , a matching loss Lm and an orthogonal loss 
+
+Lp, which are defined as: 
+
+Lm =
+
+> S
+
+X
+
+> s=1
+
+(1 − γ (˜ zs, kis )) , (7) 
+
+Lp = 1
+
+N (N − 1) 
+
+> N
+
+X
+
+> n=1
+> N
+
+X
+
+> m=n+1
+
+| ⟨ Pi, Pj ⟩ | , (8) where ⟨· , ·⟩ denotes cosine similarity. Lm encourages the selected keys to be closer to the corresponding multi-scale image features, enabling the keys to learn domain-specific knowledge from the image samples. Lp orthogonalizes the embeddings of different prompts, making the learned prompts more semantically diverse. Therefore, the overall optimization objective L is defined as: 
+
+L = LDINO +λmLm +λpLp, (9) where λm and λp control the contributions of auxiliary losses. For the autoencoder training in SAR, we adopt a reconstruction loss Lre (i.e. , Mean Square Error). 
+
+## 4. Experiments 
+
+4.1. Experimental Setup 
+
+Datasets. We evaluate HSA-DINO on OV-COCO [15] to assess its open-vocabulary generalization ability in the gen-eral domain. OV-COCO serves as a standard benchmark in OVOD, where COCO data are excluded during pre-training, and the model is directly evaluated on the COCO dataset to measure its open-vocabulary capability. we also evaluate the model on downstream tasks, including ArTaxOr, DIOR, and UODD. These datasets cover a diverse range of vertical domains. Specifically, ArTaxOr [6] is designed for arthro-pod detection and includes 13,993 images covering 7 cate-gories. DIOR [13] comprises 18,245 remote sensing images across 20 categories, featuring complex scenes and diverse backgrounds. UODD [10] targets underwater object detec-tion, containing 2,686 images of 3 marine life categories. We additionally employ a modified OVOD benchmark, OV-COCO + (see the supplementary for more details), which in-tegrates COCO with downstream datasets and expands the category labels to jointly evaluate the model’s overall gen-eralization capability. 
+
+Baselines. We compare the proposed HSA-DINO with existing OVOD methods, including GLIP [14], Grounding DINO [17], YOLO-World [1] and OV-DINO [29], under zero-shot (ZS) and full fine-tuning (FFT) settings. FFT tunes all model parameters on downstream datasets. For parameter-efficient fine-tuning (PEFT), we compare with OV-DINO with LoRA [9] integrated into both its image and text encoders. We also compare ZiRa [3] and MR-GDINO [5] under PEFT setting. For GLIP and YOLO-World, we use their largest model versions ( i.e. , “-L/-X”). For the remaining methods, we use Swin-T [18] and BERT-base [4] as image and text encoders, respectively. 
+
+Implementation Details. All downstream tasks are fine-tuned for 24 epochs with a batch size of 16. We use the AdamW [19] optimizer with a learning rate of 1e-3 for all parameters. For MSPB, the prompt bank contains N = 10 
+
+(key, prompt) pairs, each with a prompt length of M =12 . Keys are selected using image features from the first Method ArTaxOr DIOR UODD 
+
+mAP tgt mAP coco H mAP tgt mAP coco H mAP tgt mAP coco H
+
+ZS GLIP-L [14] 12.6 51.2 20.2 4.8 51.2 8.8 4.6 51.2 8.4 GroundingDINO-T [17] 4.6 48.4 8.4 2.9 48.4 5.5 6.3 48.4 11.1 YOLO-World-X [1] 2.3 46.6 4.4 0.1 46.6 0.2 0.1 46.6 0.2 OV-DINO [29] 1.4 50.6 2.7 3.0 50.6 5.7 2.9 50.6 5.5 FFT GLIP-L [14] 73.1 7.6 13.8 67.5 15.7 25.5 36.6 27.8 31.6 GroundingDINO-T [17] 87.4 36.0 51.0 69.0 35.1 46.5 36.0 37.5 36.7 YOLO-World-X [1] 73.6 0.2 0.4 68.8 0.1 0.2 56.1 0.0 0.0 OV-DINO [29] 85.4 36.1 50.7 69.4 37.6 48.8 53.1 42.2 47.0 PEFT ZiRa [3] 81.5 44.1 57.2 59.8 42.8 49.9 46.8 46.3 46.5 MR-GDINO [5] 80.7 13.4 23.0 62.1 23.7 34.3 47.4 0.1 0.2 OV-DINO [29] 78.5 24.0 36.8 60.3 13.5 22.1 49.0 46.3 47.6 
+
+HSA-DINO (ours) 76.8 49.9 60.5 57.3 49.3 53.0 48.6 50.6 49.6 
+
+Table 1. Comparison of different methods across various downstream tasks. “ZS” denotes the zero-shot performance of the pre-trained models, while “FFT” and “PEFT” denote the models’ performance after full fine-tuning or parameter-efficient fine-tuning on downstream tasks, respectively. mAP tgt denotes the performance of models on corresponding target downstream datasets ( i.e. , ArTaxOr, DIOR, UODD); mAP coco denotes the performance of models on the OV-COCO. H denotes the harmonic mean value defined in Eq. 10. Method OV-COCO +
+
+w ArTaxOr w DIOR w UODD ZS GLIP-L [14] 48.0 33.2 49.0 GroundingDINO-T [17] 43.7 36.9 46.8 YOLO-World-X [1] 42.9 36.3 44.9 OV-DINO [29] 44.5 37.3 48.7 FFT GLIP-L [14] 11.7 13.2 24.5 GroundingDINO-T [17] 38.8 39.7 36.5 YOLO-World-X [1] 5.2 2.0 1.7 OV-DINO [29] 38.8 40.9 41.7 PEFT ZiRa [3] 46.9 44.4 46.0 MR-GDINO [5] 17.1 24.9 4.9 OVDINO [29] 26.2 20.7 46.2 
+
+HSA-DINO (ours) 52.3 50.1 50.5 
+
+Table 2. Comparison of mAP across different methods on OV-COCO +. “w” indicates the additional dataset included for joint evaluation ( e.g. , “w ArTaxOr” means OV-COCO evaluated to-gether with ArTaxOr). 
+
+three scales of the image encoder ( i.e. , S = 3 ). For SAR, we train the autoencoder on downstream data for 24 epochs using an SGD optimizer [23] with a learning rate of 1e-3. During testing, the routing threshold τ is fixed at 0.039 for all downstream tasks. All baselines follow the settings of their original papers unless otherwise specified. 
+
+Evaluation metrics. We adopt the harmonic mean [32] as the evaluation metric: 
+
+H = 2 × (mAP tgt × mAP coco )mAP tgt + mAP coco 
+
+, (10) where mAP tgt and mAP coco denote the mean Average Pre-cision [2] on the downstream task and OV-COCO, respec-tively. The mAP is computed as the mean AP50–95 across all categories. H measures the overall generalization by balancing performance on general and vertical domains. 
+
+4.2. Main Results 
+
+Comparison of H between OV-COCO and downstream tasks. We compare our method with previous ones in Ta-ble 1. Notably, for OV-DINO under PEFT setting, we in-corporate LoRA into both its image encoder and text en-coder. The results show that our method outperforms previ-ous methods in consistently achieving the highest H value across all downstream tasks after fine-tuning. This indi-cates a superior trade-off of the model between adapting to downstream tasks and retaining open-vocabulary capa-bility. Specifically, compared to the second-best H value, our method’s H value increases by 3.3, 2.8, and 2.0 on the ArTaxOr, DIOR, and UODD datasets, respectively. We also observe that under the zero-shot (ZS) setting, all meth-ods utilize a pre-trained OVOD model for detection, ex-hibiting high mAP coco but very low mAP tgt . After ei-ther FFT or PEFT on downstream datasets, these methods achieve high mAP tgt but suffer from a significant drop in 
+
+mAP coco . For example, OV-DINO after FFT and PEFT on ArTaxOr, OV-DINO’s mAP coco drops from 50.6 to 36.1 and 24.0, respectively. However, our method, despite be-ing a parameter-efficient fine-tuning approach, effectively adapts the model to downstream tasks without forgetting the open-vocabulary knowledge in the pre-trained param-eters. For example, comparing our method with zero-shot OV-DINO on the ArTaxOr dataset, our method effectively adapts the model to the dataset by increasing mAP tgt from 1.4 to 76.8, with almost no decrease in mAP coco (from 50.6 to 49.9). Similar trends are observed on other datasets. 
+
+Comparison of mAP on OV-COCO +. To further as-sess the scalability of our method under an expanded bench-56                        
+
+> 57
+> 58
+> 60
+> 61
+> 62
+> 63
+> 64
+> 59
+> 56
+> 57
+> 58
+> 60
+> 61
+> 62
+> 63
+> 64
+> 59
+> 56
+> 57
+> 58
+> 60
+> 61
+> 62
+> 63
+> 64
+> 59
+> 56
+> 57
+> 58
+> 60
+> 61
+> 62
+> 63
+> 64
+> 59
+> 6810 12 14 46810 12 0.1 0.3 0.5 0.7 0.9 0.1 0.3 0.5 0.7 0.9
+> NM
+> (a) (b) (c) (d)
+
+Figure 4. Ablation study on (a) bank size N , (b) prompt length M , (c) key matching loss weight λm, and (d) orthogonal loss weight λp.Method HArTaxOr HDIOR HUODD Hmean 
+
+Predefined + SAR 54.6 47.3 47.7 49.9 CoOp [39] + SAR 57.1 51.1 48.0 52.1 AttriCLIP [30] + SAR 58.8 51.6 48.5 53.0 
+
+MSPB + SAR (ours) 60.5 53.0 49.6 54.4 
+
+Table 3. Comparison of different textual semantic augmentation. Method HArTaxOr HDIOR HUODD Hmean 
+
+MSPB + DDAS [33] 49.0 46.4 43.1 46.2 
+
+MSPB + SAR (ours) 60.5 53.0 49.6 54.4 
+
+Table 4. Comparison of different routing mechanisms. 
+
+mark setting, we evaluate on OV-COCO +. When the num-ber of category labels is increased, categories from different tasks may interfere with each other, making joint detection more challenging. As shown in Table 2, HSA-DINO con-sistently achieves the best performance across all configu-rations. In particular, it achieves 52 .3, 50 .1, and 50 .5 mAP when combined with ArTaxOr, DIOR, and UODD, respec-tively and surpassing the second-best method by 4.3, 9.2,and 1.5 mAP. These results further demonstrate the superi-ority of HSA-DINO, achieving a superior trade-off between domain adaptability and open-vocabulary generalization. 
+
+Comparison of different textual semantic augmenta-tion. We compare MSPB against three semantic augmenta-tion strategies: (1) Predefined (“a photo of a [CLS]”) [29], (2) CoOp [39], and (3) AttriCLIP [30]. For a fair com-parison, we replace the different strategy while keeping V-LoRA ( i.e. , integrating LoRA into the image encoder) and SAR unchanged. Here, Hmean denotes the mean value of 
+
+H across all downstream datasets. The results in Table 3 show that the proposed MSPB achieves the highest H val-ues across all datasets after fine-tuning, further demonstrat-ing the effectiveness of our overall method combination. 
+
+Comparison of different routing mechanisms. For comparison, we replace the proposed SAR with its base-line, DDAS [33], which directly feeds image features into the autoencoder for reconstruction without explicitly mod-eling content and domain information. As shown in Table 4, our SAR achieves higher H values across all datasets. 
+
+4.3. Ablation Studies 
+
+Effectiveness of Different Components. We conduct ab-lations on the key components of our framework: (1) V-
+
+V-LoRA MSPB SAR mAP tgt mAP coco H
+
+1.4 50.6 2.7 
+
+✓ 61.6 22.7 33.2 
+
+✓ 22.5 0.2 0.4 
+
+✓ ✓ 79.1 0.5 1.0 
+
+✓ ✓ 59.5 50.4 54.6 
+
+✓ ✓ 22 50.3 30.6 
+
+✓ ✓ ✓ 76.8 49.9 60.5 
+
+Table 5. Ablation on different components of our framework on the ArTaxOr dataset. 
+
+Lm Lp mAP ArTaxOr mAP DIOR mAP UODD mAP avg 
+
+✓ 78.9 57.4 48.1 61.5 
+
+✓ ✓ 79.1 57.7 48.9 61.9 
+
+Table 6. Ablation on the orthogonal loss Lp.
+
+LoRA ( i.e. , integrating LoRA into the image encoder), (2) the proposed MSPB, and (3) the proposed SAR. As shown in Table 5, introducing V-LoRA significantly improves the model’s adaptability to downstream tasks ( e.g. , mAP tgt in-creases from 1.4 to 61.6 on ArTaxOr), but still leaves con-siderable room for improvement. Adding MSPB further boosts downstream performance ( e.g. , from 61.6 to 79.1), demonstrating that hierarchical semantic augmentation en-hances vision–language alignment. However, without SAR, the fine-tuned weights severely degrade performance on OV-COCO due to the loss of open-vocabulary knowledge. Incorporating SAR enables dynamic semantic augmenta-tion routing during inference, achieving a much better trade-off between mAP tgt and mAP coco . Similar trends are ob-served across all datasets (see supplementary). 
+
+Bank size N . We evaluate different values of the bank size N in MSPB and observe that the model achieves the best mAP avg across all downstream datasets when N = 10 
+
+(see Fig. 4 (a)). Here, mAP avg denotes the average perfor-mance over all downstream datasets. When N is smaller, the semantic diversity of prompts becomes limited, reduc-ing the model’s domain adaptability. Conversely, exces-sively large banks introduce redundancy among the (key, prompt) pairs, diminishing the overall performance. 
+
+Prompt length M . We also evaluate different prompt lengths and find that the model performs best when M = 12 ,as shown in Fig. 4 (b). When the prompt length becomes smaller, the semantic capacity of the prompts is insufficient, 10       
+
+> 20
+> 30
+> 40
+> 50
+> 60
+> 0.02 0.04 0.06 0.08 0.10 0.12 0.14
+
+The routing threshold τ 
+
+> Mean max: 54.4
+> τ= 0.039
+> 70
+> 0
+> SAR
+> DDAS
+> Unified_SAR
+
+Figure 5. Ablation on the routing decision threshold τ .Input image Predefined MSPB (ours) CoOp 
+
+DIOR 
+
+ArTaxOr 
+
+Figure 6. Visualization of the selected prompts at different textual semantic augmentation using Grad-CAM[25]. 
+
+leading to degraded performance. Due to the input length limitation of the text encoder, we do not further increase the prompt length. 
+
+Auxiliary loss. We further assess the effect of the auxil-iary losses. As shown in Table 6, incorporating Lp consis-tently improves the mAP of the fine-tuned model across all downstream datasets. We do not ablate Lm, since remov-ing it would block gradient flow to MSPB. In addition, we present the loss weight curves in Fig. 4 (c) and (d). From the curves, we observe that the model achieves the best per-formance when setting λp = 0 .3 and λm = 0 .7.
+
+Routing threshold τ . We evaluate SAR under differ-ent values of τ . As shown in Fig. 5, SAR consistently out-performs DDAS across all thresholds, with the best result achieved at τ = 0 .039 , which we use in all experiments. To further assess generalizability, we also train a unified SAR across all downstream datasets. Although its performance is slightly lower than the task-specific variant, it still surpasses DDAS, demonstrating strong cross-domain robustness and offering a solid foundation for future extensions to more di-verse domains. 
+
+Visualization of prompts. We visualize the prompt-wise heatmaps in Fig. 6. MSPB provides richer and more diverse textual semantics, enabling prompts to align more closely with visual content. Compared with predefined and CoOp prompts, MSPB produces more concentrated activa-tion on target regions in single-object images ( e.g. , DIOR), and attends to a broader range of relevant areas in multi-object scenes ( e.g. , ArTaxOr). Overall, our MSPB achieves stronger semantic grounding than existing methods that lack multi-aspect descriptions. (a) SAR         
+
+> Probability density
+> 00.02 0.04 0.08 0.06
+> 0
+> 100
+> 200
+> 300
+> 400
+> 500
+> 600
+> 700
+> DIOR
+> COCO
+> COCO Smooth
+> DIOR Smooth
+> Reconstruction error
+> 0.12 0.14 0.10
+> Probability density
+> 00.02 0.04 0.08 0.06
+> 0
+> 100
+> 200
+> 300
+> 400
+> 500
+> 600
+> 700
+> DIOR
+> COCO
+> COCO Smooth
+> DIOR Smooth
+> Reconstruction error
+> 0.12 0.14 0.10
+> (b) DDAS
+
+Figure 7. The probability distribution of reconstruction errors from different domain distributions ( i.e. , OV-COCO and DIOR). COCO     
+
+> ArTaxOr
+> Ground truth OV-DINO
+> (zero-shot)
+> HSA-DINO
+> (ours) OV-DINO
+> (after FFT) OV-DINO
+> (after PEFT)
+> Annotation A和coco 都
+> 能出
+> A出不来和
+> coco 能出
+> A能出和
+> c瞎出
+> A能出和
+> c瞎出（少）
+> ArTaxOr
+> COCO
+
+Figure 8. Visualization of detection results on selected samples from the ArTaxOr and COCO datasets using the proposed HSA-DINO and OV-DINO models at different stages. 
+
+The reconstruction error distribution. We evaluate the reconstruction errors of the routing module on test sam-ples from COCO and DIOR. As shown in Fig. 7, our SAR produces significantly less overlap between distributions compared to DDAS. Similar trends are observed on other datasets (see supplementary). This confirms that explic-itly modeling content and domain improves distribution dis-crimination. 
+
+Visualization of detection results. As shown in Fig. 8, the pre-trained OV-DINO (zero-shot) accurately detects ob-jects in the COCO dataset, but fails to detect objects in the downstream dataset ( i.e. , ArTaxOr). After either FFT or PEFT, OV-DINO successfully detects objects in the down-stream task, but loses its open-vocabulary capability, be-coming unable to detect objects from COCO. In contrast, our proposed HSA-DINO successfully detects objects from both COCO and ArTaxOr. 
+
+## 5. Conclusion 
+
+In this paper, we propose HSA-DINO, a parameter-efficient fine-tuning semantic augmentation framework for enhanc-ing open-vocabulary object detection. HSA-DINO effec-tively adapts OVOD models to downstream datasets in ver-tical domain while preserving the open-vocabulary capabil-ity acquired during pre-training. By integrating a multi-scale prompt bank that leverages hierarchical semantics for textual augmentation and a semantic-aware router for adaptive semantic routing, HSA-DINO prevents parame-ter updates from degrading the generalization ability of the pre-trained OVOD model. Extensive experiments demon-strate that HSA-DINO achieves an excellent balance be-tween downstream adaptability and open-vocabulary gener-alization, verifying the effectiveness of our overall design. 6. Acknowledgments 
+
+This work was partly supported by the National Key Research and Development Program of China under Grant 2024YFE0202900; the National Natural Science Foundation of China under Grant (62436001, 62536001, 62506028); the Joint Foundation of the Ministry of Ed-ucation for Innovation Team (8091B042235); the Fun-damental Research Funds for the Central Universities (No. 2025JBZX064); the Postdoctoral Innovation Tal-ent Support Program (K25M200080); and the Talent Fund of Beijing Jiaotong University (2025JBZX029 and No. 2024XKRC090). 
+
+## References 
+
+[1] Tianheng Cheng, Lin Song, Yixiao Ge, Wenyu Liu, Xing-gang Wang, and Ying Shan. Yolo-world: Real-time open-vocabulary object detection. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , pages 16901–16911, 2024. 1, 3, 5, 6 [2] Achal Dave, Piotr Doll´ ar, Deva Ramanan, Alexander Kir-illov, and Ross Girshick. Evaluating large-vocabulary object detectors: The devil is in the details. arXiv preprint , 2021. 6 [3] Jieren Deng, Haojian Zhang, Kun Ding, Jianhua Hu, Xingx-uan Zhang, and Yunkuan Wang. Zero-shot generalizable incremental learning for vision-language object detection. 
+
+Advances in Neural Information Processing Systems , 37: 136679–136700, 2024. 3, 5, 6 [4] Jacob Devlin, Ming-Wei Chang, Kenton Lee, and Kristina Toutanova. Bert: Pre-training of deep bidirectional trans-formers for language understanding. In Proceedings of the North American Chapter of the Association for Computa-tional Linguistics: Human Language Technologies , pages 4171–4186, 2019. 5 [5] Bowen Dong, Zitong Huang, Guanglei Yang, Lei Zhang, and Wangmeng Zuo. Mr-gdino: efficient open-world continual object detection. arXiv preprint , 2024. 3, 5, 6 [6] Geir Drange. Arthropod taxonomy orders object detection dataset, 2019. 1, 2, 5 [7] Xiuye Gu, Tsung-Yi Lin, Weicheng Kuo, and Yin Cui. Open-vocabulary object detection via vision and language knowledge distillation. arXiv preprint , 2021. 3 [8] Kaiming He, Xiangyu Zhang, Shaoqing Ren, and Jian Sun. Deep residual learning for image recognition. In Proceed-ings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , pages 770–778, 2016. 5 [9] Edward J Hu, Yelong Shen, Phillip Wallis, Zeyuan Allen-Zhu, Yuanzhi Li, Shean Wang, Lu Wang, Weizhu Chen, et al. Lora: Low-rank adaptation of large language models. In-ternational Conference on Learning Representations , 1(2): 3, 2022. 3, 5 [10] Lihao Jiang, Yi Wang, Qi Jia, Shengwei Xu, Yu Liu, Xin Fan, Haojie Li, Risheng Liu, Xinwei Xue, and Ruili Wang. Un-derwater species detection using channel sharpening atten-tion. In Proceedings of the ACM International Conference on Multimedia , pages 4259–4267, 2021. 1, 2, 5 [11] Aishwarya Kamath, Mannat Singh, Yann LeCun, Gabriel Synnaeve, Ishan Misra, and Nicolas Carion. Mdetr-modulated detection for end-to-end multi-modal understand-ing. In Proceedings of the IEEE/CVF international confer-ence on computer vision , pages 1780–1790, 2021. 1, 3 [12] Feng Li, Hao Zhang, Shilong Liu, Jian Guo, Lionel M Ni, and Lei Zhang. Dn-detr: Accelerate detr training by intro-ducing query denoising. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition ,pages 13619–13627, 2022. 5 [13] Ke Li, Gang Wan, Gong Cheng, Liqiu Meng, and Junwei Han. Object detection in optical remote sensing images: A survey and a new benchmark. ISPRS journal of photogram-metry and remote sensing , 159:296–307, 2020. 1, 2, 5 [14] Liunian Harold Li, Pengchuan Zhang, Haotian Zhang, Jian-wei Yang, Chunyuan Li, Yiwu Zhong, Lijuan Wang, Lu Yuan, Lei Zhang, Jenq-Neng Hwang, et al. Grounded language-image pre-training. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , pages 10965–10975, 2022. 1, 3, 5, 6 [15] Tsung-Yi Lin, Michael Maire, Serge Belongie, James Hays, Pietro Perona, Deva Ramanan, Piotr Doll´ ar, and C Lawrence Zitnick. Microsoft coco: Common objects in context. In 
+
+European conference on computer vision , pages 740–755. Springer, 2014. 1, 2, 5 [16] Tsung-Yi Lin, Priya Goyal, Ross Girshick, Kaiming He, and Piotr Doll´ ar. Focal loss for dense object detection. In Pro-ceedings of the IEEE/CVF international conference on com-puter vision , pages 2980–2988, 2017. 5 [17] Shilong Liu, Zhaoyang Zeng, Tianhe Ren, Feng Li, Hao Zhang, Jie Yang, Qing Jiang, Chunyuan Li, Jianwei Yang, Hang Su, et al. Grounding dino: Marrying dino with grounded pre-training for open-set object detection. In Euro-pean conference on computer vision , pages 38–55. Springer, 2024. 1, 3, 5, 6 [18] Ze Liu, Yutong Lin, Yue Cao, Han Hu, Yixuan Wei, Zheng Zhang, Stephen Lin, and Baining Guo. Swin transformer: Hierarchical vision transformer using shifted windows. In 
+
+Proceedings of the IEEE/CVF international conference on computer vision , pages 10012–10022, 2021. 5 [19] Ilya Loshchilov and Frank Hutter. Decoupled weight decay regularization. arXiv preprint , 2017. 5 [20] Bryan A Plummer, Liwei Wang, Chris M Cervantes, Juan C Caicedo, Julia Hockenmaier, and Svetlana Lazebnik. Flickr30k entities: Collecting region-to-phrase correspon-dences for richer image-to-sentence models. In Proceedings of the IEEE/CVF international conference on computer vi-sion , pages 2641–2649, 2015. 1, 3 [21] Alec Radford, Jong Wook Kim, Chris Hallacy, Aditya Ramesh, Gabriel Goh, Sandhini Agarwal, Girish Sastry, Amanda Askell, Pamela Mishkin, Jack Clark, et al. Learning transferable visual models from natural language supervi-sion. In International conference on machine learning , pages 8748–8763. PmLR, 2021. 2, 3 [22] Hamid Rezatofighi, Nathan Tsoi, JunYoung Gwak, Amir Sadeghian, Ian Reid, and Silvio Savarese. Generalized in-tersection over union: A metric and a loss for bounding box regression. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , pages 658–666, 2019. 5 [23] Herbert Robbins and Sutton Monro. A stochastic approxi-mation method. The annals of mathematical statistics , pages 400–407, 1951. 6 [24] Victor Sanh, Lysandre Debut, Julien Chaumond, and Thomas Wolf. Distilbert, a distilled version of bert: smaller, faster, cheaper and lighter. arXiv preprint , 2019. 4 [25] Ramprasaath R. Selvaraju, Michael Cogswell, Abhishek Das, Ramakrishna Vedantam, Devi Parikh, and Dhruv Ba-tra. Grad-cam: Visual explanations from deep networks via gradient-based localization. In Proceedings of the IEEE/CVF international conference on computer vision , 2017. 8 [26] Shuai Shao, Zeming Li, Tianyuan Zhang, Chao Peng, Gang Yu, Xiangyu Zhang, Jing Li, and Jian Sun. Objects365: A large-scale, high-quality dataset for object detection. In Pro-ceedings of the IEEE/CVF international conference on com-puter vision , pages 8430–8439, 2019. 1 [27] Piyush Sharma, Nan Ding, Sebastian Goodman, and Radu Soricut. Conceptual captions: A cleaned, hypernymed, im-age alt-text dataset for automatic image captioning. In Pro-ceedings of the Annual Meeting of the Association for Com-putational Linguistics , pages 2556–2565, 2018. 3 [28] Charles F Van Loan. The ubiquitous kronecker product. 
+
+Journal of computational and applied mathematics , 123(1-2):85–100, 2000. 3 [29] Hao Wang, Pengzhen Ren, Zequn Jie, Xiao Dong, Chengjian Feng, Yinlong Qian, Lin Ma, Dongmei Jiang, Yaowei Wang, Xiangyuan Lan, et al. Ov-dino: Unified open-vocabulary de-tection with language-aware selective fusion. arXiv preprint ,2024. 1, 3, 5, 6, 7 [30] Runqi Wang, Xiaoyue Duan, Guoliang Kang, Jianzhuang Liu, Shaohui Lin, Songcen Xu, Jinhu L¨ u, and Baochang Zhang. Attriclip: A non-incremental learner for incremental knowledge learning. In Proceedings of the IEEE/CVF Con-ference on Computer Vision and Pattern Recognition , pages 3654–3663, 2023. 3, 7 [31] Zifeng Wang, Zizhao Zhang, Chen-Yu Lee, Han Zhang, Ruoxi Sun, Xiaoqi Ren, Guolong Su, Vincent Perot, Jennifer Dy, and Tomas Pfister. Learning to prompt for continual learning. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , pages 139–149, 2022. 3 [32] Yongqin Xian, Bernt Schiele, and Zeynep Akata. Zero-shot learning-the good, the bad and the ugly. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , pages 4582–4591, 2017. 6 [33] Jiazuo Yu, Yunzhi Zhuge, Lu Zhang, Ping Hu, Dong Wang, Huchuan Lu, and You He. Boosting continual learning of vision-language models via mixture-of-experts adapters. In 
+
+Proceedings of the IEEE/CVF Conference on Computer Vi-sion and Pattern Recognition , pages 23219–23230, 2024. 2, 7[34] Yuhang Zang, Wei Li, Kaiyang Zhou, Chen Huang, and Chen Change Loy. Open-vocabulary detr with conditional matching. In European conference on computer vision ,pages 106–122. Springer, 2022. 3 [35] Hao Zhang, Feng Li, Shilong Liu, Lei Zhang, Hang Su, Jun Zhu, Lionel M Ni, and Heung-Yeung Shum. Dino: Detr with improved denoising anchor boxes for end-to-end object detection. arXiv preprint , 2022. 2, 4 [36] Renrui Zhang, Wei Zhang, Rongyao Fang, Peng Gao, Kun-chang Li, Jifeng Dai, Yu Qiao, and Hongsheng Li. Tip-adapter: Training-free adaption of clip for few-shot classi-fication. In European conference on computer vision , pages 493–510. Springer, 2022. 3 [37] Yiwu Zhong, Jianwei Yang, Pengchuan Zhang, Chun-yuan Li, Noel Codella, Liunian Harold Li, Luowei Zhou, Xiyang Dai, Lu Yuan, Yin Li, et al. Regionclip: Region-based language-image pretraining. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , pages 16793–16803, 2022. 3 [38] Kaiyang Zhou, Jingkang Yang, Chen Change Loy, and Ziwei Liu. Conditional prompt learning for vision-language mod-els. In Proceedings of the IEEE/CVF Conference on Com-puter Vision and Pattern Recognition , pages 16816–16825, 2022. 3 [39] Kaiyang Zhou, Jingkang Yang, Chen Change Loy, and Ziwei Liu. Learning to prompt for vision-language models. In-ternational Journal of Computer Vision , 130(9):2337–2348, 2022. 2, 3, 7
