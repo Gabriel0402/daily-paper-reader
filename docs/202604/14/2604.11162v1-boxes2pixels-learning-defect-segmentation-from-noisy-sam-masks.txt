@@ -1,0 +1,321 @@
+Title: Boxes2Pixels: Learning Defect Segmentation from Noisy SAM Masks
+
+URL Source: https://arxiv.org/pdf/2604.11162v1
+
+Published Time: Tue, 14 Apr 2026 02:24:20 GMT
+
+Number of Pages: 10
+
+Markdown Content:
+# Boxes2Pixels: Learning Defect Segmentation from Noisy SAM Masks 
+
+## Camile Lendering Erkut Akdag Egor Bondarev AIMS Group, Department of Electrical Engineering, Eindhoven University of Technology 
+
+{c.r.lendering, e.akdag, e.bondarev }@tue.nl 
+
+## Abstract 
+
+Accurate defect segmentation is critical for industrial inspec-tion, yet dense pixel-level annotations are rarely available. A common workaround is to convert inexpensive bound-ing boxes into pseudo-masks using foundation segmenta-tion models such as the Segment Anything Model (SAM). However, these pseudo-labels are systematically noisy on industrial surfaces, often hallucinating background structure while missing sparse defects. To address this limitation, a noise-robust box-to-pixel dis-tillation framework, Boxes2Pixels, is proposed that treats SAM as a noisy teacher rather than a source of ground-truth supervision. Bounding boxes are converted into pseudo-masks offline by SAM, and a compact student is trained with (i) a hierarchical decoder over frozen DINOv2 features for semantic stability, (ii) an auxiliary binary localization head to decouple sparse foreground discovery from class predic-tion, and (iii) a one-sided online self-correction mechanism that relaxes background supervision when the student is confident, targeting teacher false negatives. On a manually annotated wind turbine inspection bench-mark, the proposed Boxes2Pixels improves anomaly mIoU by +6.97 and binary IoU by +9.71 over the strongest baseline trained under identical weak supervision. Moreover, online self-correction increases the binary recall by +18.56, while the model employs 80% fewer trainable parameters. Code is available at https://github.com/CLendering/ Boxes2Pixels .
+
+## 1. Introduction 
+
+Visual inspection of critical infrastructure, such as wind turbine blades, is essential for predictive maintenance and failure prevention. Although automated inspection systems promise substantial reductions in operational cost and down-time, their deployment in industrial settings remains limited due to the scarcity of high-quality pixel-level annotations. Bounding-box supervision offers a practical alternative. Modern object detection models (e.g., YOLO [ 24 ] and SSD [ 17 ]) can be trained efficiently from box annotations (i) Image  (ii) YOLO BBox 
+
+(iii) SAM (Pseudo-mask)  (iv) Boxes2Pixels 
+
+Figure 1. Overview of the proposed framework, Boxes2Pixels, for sparse defect segmentation. From left to right, top to bottom: (i) an input wind turbine image, (ii) legacy YOLO bounding boxes used as coarse supervision, (iii) SAM-generated pseudo-masks exhibiting both spurious regions and missed defects, and (iv) prediction from Boxes2Pixels. Colors indicate correct detections (green), defects recovered by the student but missed by the teacher (blue), and omitted or erroneous regions (red). 
+
+and are already widely adopted in industrial inspection pipelines [ 5, 38 ]. However, downstream damage assess-ment and maintenance planning often require fine-grained segmentation. Distinguishing superficial surface contamina-tion from structural defects, such as cracks or delamination, depends on accurate spatial extent and local texture infor-mation, which cannot be reliably recovered from coarse object localization alone. Moreover, pixel-level annotation is labor-intensive, costly, and requires domain expertise thereby severely limiting scalability. Recent Vision Foundation Models (VFMs), e.g., 1
+
+> arXiv:2604.11162v1 [cs.CV] 13 Apr 2026
+
+SAM [ 12 ] provides a practical pathway from box-level super-vision and pixel-level segmentation. Given simple prompts, such as bounding boxes, SAM can generate dense masks in a zero-shot manner. However, applying SAM directly to industrial inspection remains impractical. The large SAM en-coder incurs substantial computational overhead, and more critically, its predictions on industrial imagery exhibit sys-tematic errors , including over-segmentation of background structures (e.g., shadows and texture patterns) and missed detection of thin or low-contrast defects. Therefore, SAM-generated pseudo-masks are noisy and spatially inconsistent, limiting their usefulness as direct supervision signals. This work proposes a data-centric distillation framework, Boxes2Pixels, that leverages inexpensive bounding box an-notations to train a reliable pixel-level defect segmentation model (Figure 1). During training, SAM is used to con-vert bounding boxes into initial pseudo-masks, which act as weak supervision for a lightweight student network. Cru-cially, SAM is not required at inference time: once trained, the student performs dense defect segmentation directly from the input image. A key challenge in this setting is robustness to pseudo-label noise. In the experiments, conventional segmentation architectures, such as U-Net [ 26 ] and SegFormer [ 35 ], tend to overfit the systematic errors in SAM-generated masks, thereby inheriting the teacher’s failure modes. To address this limitation, a hierarchical segmentation architecture is introduced, built upon frozen DINOv2-Small features [ 20 ]. The semantic stability of self-supervised transformer rep-resentations reduces sensitivity to high-frequency artifacts and spurious boundaries, while a lightweight detail branch preserves local structures relevant for fine-grained defect localization. Additionally, a self-correcting loss is introduced to relax the assumption of teacher correctness. Instead of enforc-ing strict consistency with pseudo-labels, the proposed loss allows the student to override unreliable supervision when predicting defect classes with high confidence. This asym-metric correction is motivated by a common failure mode in industrial settings: damage annotations are often incomplete, and subtle or sparsely distributed defects may be omitted from both bounding-box supervision and foundation-model outputs. By allowing the student to deviate from background pseudo-labels when confident defect evidence is present, the model can recover defects missed by the teacher while still benefiting from reliable supervision. To summarize, the main contributions of this work are as follows: • A data-centric distillation pipeline is introduced to learn pixel-level defect segmentation from bounding box anno-tations using noisy foundation-model pseudo-labels. • A hierarchical student architecture is proposed based on frozen DINOv2 ViT-S/14 features, combined with a one-sided self-correcting loss to enable robust learning under systematic pseudo-label noise. • Extensive evaluation is conducted on a wind turbine blade defect dataset, demonstrating improved robustness and recall compared to standard segmentation baselines trained under identical weak supervision. 
+
+## 2. Related Work 
+
+2.1. Weakly- and box-supervised segmentation 
+
+Early weakly-supervised semantic segmentation (WSSS) methods rely on class activation maps (CAMs) [ 1 , 28 , 33 ,43 ], which typically yield coarse localization and fail to capture fine-grained defect topology. More recent box-supervised segmentation approaches, including BoxSup [ 4 ], BoxInst [ 32 ] and DiscoBox [ 13 ], eliminate pixel-level su-pervision by combining projection constraints with pairwise pixel affinities. While effective on natural-image bench-marks (e.g., COCO [ 16 ]), these methods implicitly assume that the target occupies a substantial portion of the bounding box and exhibits relatively compact spatial structure. In industrial inspection, these assumptions are often vi-olated in two key ways. First, many defects are sparse, elongated, or high-frequency (e.g., hairline cracks, scattered pitting), which weakens affinity propagation and leads over-smoothing. Second, legacy bounding boxes are frequently loose, with defects occupying only a small fraction of the annotated region, which causes projection-based objectives to be dominated by background pixels. As a result, box-supervised models tend to collapse to segmenting the entire bounding box rather than isolating the sparse anomalies. Our approach mitigates this limitation by leveraging a foundation segmentation model to provide explicit pixel-level priors that are independent of defect fill-rate within the bounding box. 
+
+2.2. Foundation models for industrial inspection 
+
+Vision foundation models pretrained on large-scale data, such as CLIP [ 23 ], MAE [ 9 ], DINO [ 2], and DINOv2 [ 20 ], have enabled advancements in industrial inspection pipelines through unsupervised anomaly localization and supervised distillation. Unsupervised methods, such as PatchCore [27] and WinCLIP [ 10 ], localize deviations from a learned nor-mal manifold, but do not provide defect-type segmentation required for downstream inspection, reporting, or repair plan-ning. Moreover, their performance depends on the assump-tion that normal appearance variation is comprehensively represented during training. While effective for anomaly localization, these approaches do not address fine-grained defect segmentation. In contrast, segmentation-oriented VFMs, most notably SAM [ 12 ], enable zero-shot mask prediction from sparse prompts and have been applied to industrial imagery. How-ever, their computational cost limits large-scale deploy-2ment, motivating distillation-based variants, such as Mo-bileSAM [ 39 ], FastSAM [ 41 ] and EfficientViT-SAM [ 40 ], which train lightweight student models to approximate SAM outputs. Recent analyses of weakly-supervised semantic segmen-tation report a mismatch between improvements in pseudo-mask quality and gains in final segmentation accuracy. This suggests that downstream training dynamics play a critical role beyond mask generation alone [ 3 , 25 ]. This observa-tion motivates approaches that focus on how pseudo-labels are utilized during training , rather than solely on how they are generated . In industrial settings, pseudo-label quality varies widely due to coarse box supervision, complex surface textures, illumination changes, and background clutter. Accordingly, our method treats pseudo-masks as noisy supervision and explicitly models their unreliability during optimization. To stabilize learning under such noise, the student leverages self-supervised representations from DI-NOv2 [ 20 ], which provide strong semantic structure and dense correspondence across appearance variations [6]. 
+
+2.3. Robust learning with noisy labels 
+
+Learning under label noise has been extensively studied, with methods ranging from risk correction [ 19 , 21 ] to agreement-based filtering and small-loss selection [ 7, 14 ]. In classifica-tion, selective training strategies like Sel-CL [ 15 ] reduce the impact of corrupted samples by prioritizing high-confidence predictions and contrastive consistency. In segmentation and foundation-model distillation, noise is often manifested as structured or systematic errors rather than purely random corruption. Approaches that model anno-tator confusion [ 30 ] or prevent early memorization of noisy labels [ 34 ] demonstrate that dense prediction tasks are partic-ularly sensitive to spatially correlated label noise. In practice, such noise includes hallucinated foreground regions (e.g., shadows misclassified as defects) and omissions, where thin or low-contrast defects are missed entirely. Recent segmentation approaches address noisy pseudo-labels by estimating spatial reliability and suppressing su-pervision in uncertain regions, using entropy, predictive vari-ance, or teacher–student disagreement. Foundational work on uncertainty-aware loss weighting is introduced by Kendall and Gal [ 11 ], and later extended to dense prediction through uncertainty-aware self-ensembling and cross-teaching strate-gies [31, 36, 42]. Our work emphasizes controlled self-correction , in con-trast to most existing strategies that focus on noise rejection ,i.e., down-weighting or ignoring regions where the teacher is likely incorrect. When a pseudo-label marks background but the student confidently predicts a defect, supervision is selectively relaxed, enabling correction of likely false nega-tives. This asymmetric design targets missed sparse defects while maintaining safeguards against uncontrolled drift. 
+
+## 3. Method 
+
+Weakly supervised defect segmentation is addressed using annotated bounding boxes provided as ground-truth anno-tations in the standard YOLO format, consisting of a class identifier and normalized center and size parameters. No object detector is trained or used in this work; YOLO serves solely as an annotation representation. Pixel-level pseudo-masks are generated offline by prompting SAM [ 12 ] with the annotated bounding boxes. On industrial imagery, such pseudo-labels exhibit systematic errors, most notably false negatives for thin or low-contrast defects. To address this limitation, a hierarchical student network is trained with ob-jectives explicitly designed to recover missed defects while remaining robust to pseudo-label noise. 
+
+3.1. Problem Formulation 
+
+Pixel-level defect segmentation is studied under weak super-vision, where only bounding box annotations are available and pixel-level ground-truth masks are not provided during training. Let D = {(xi, Bi)}Ni=1 denote a dataset of indus-trial images xi ∈ RH×W ×3 and associated bounding box annotations 
+
+Bi = {(bi,m , k i,m )}Mi
+
+> m=1
+
+, (1) where Mi is the number of annotated bounding boxes in image xi, and each bounding box bi,m is associated with a defect class label ki,m ∈ { 1, . . . , K } (background corre-sponds to class 0). The objective is to learn a segmentation model 
+
+Sθ : x 7 → ˆy ∈ [0 , 1] H×W ×(K+1) , (2) that predicts a per-pixel distribution over background and 
+
+K defect classes. Training relies on pseudo-labels derived from a foundation model, while the student is optimized to remain robust to systematic teacher errors. 
+
+3.2. Teacher Pseudo-Labels from Bounding Boxes 
+
+Direct supervision from bounding boxes yields ambiguous pixel assignments. Pseudo-labels are therefore generated by the Segment Anything Model (SAM). For each image xi
+
+and annotated bounding box bi,m ∈ B i, the bounding box is provided as a prompt (without point or mask guidance), and SAM produces a single binary mask: 
+
+˜y(m) 
+
+> i
+
+= SAM( xi, b i,m ). (3) The pseudo-masks are generated offline and stored to ensure efficient student training. To construct a multi-class training target, the per-bounding-box SAM masks are rasterized into a label image 
+
+˜y ∈ { 0, . . . , K }H×W by assigning the class label ki,m to all pixels inside the predicted mask ˜y(m) 
+
+> i
+
+. In the two-class 3Global Semantic Branch (DINOv2 ViT-S/14)  
+
+> DINOv2 ViT-
+> S/14 (BitFit)
+> Projector
+> (Conv2d)
+> Projector
+> (Conv2d)
+> Projector
+> (Conv2d)
+> Projector
+> (Conv2d)
+> Residual
+> Fusion Block
+> Residual
+> Fusion Block
+> Residual
+> Fusion Block
+> Layer 7
+> Layer 4
+> Layer 2
+> Layer 1
+> Conv2d
+> (Stride=2, BN, ReLU)
+> Conv2d
+> (Stride=2, BN, ReLU)
+> Local Detail Branch (CNN)
+> Concatenation
+> (H/4xW/4x64)
+> Feature Mixer
+> (Conv 3x3, BN, ReLU)
+> Bilinear Upsample (x2)
+> Conv 3x3, BN, ReLU
+> Binary Defect Head
+> Bilinear Upsample (x2)
+> 1x1 Conv (Final)
+> Bilinear Upsample (x2)
+> Conv 3x3, BN, ReLU
+> Fine-grained Semantic Head
+> Bilinear Upsample (x2)
+> 1x1 Conv (Final)
+> Fine Prediction
+> (HxWx3)
+> Binary Prediction
+> (HxWx2)
+> Input Image
+> (518x518x3)
+> PixelShuffle
+> Upsample (x3)
+
+Figure 2. Overview of the hierarchical student architecture. The global semantic branch employs DINOv2 ViT-S/14 with BitFit adaptation to extract intermediate features from layers {7, 4, 2, 1}. Projected features F (l) are fused top-down through residual fusion blocks to produce Fglobal . In parallel, a lightweight CNN detail branch extracts local features at the same resolution, yielding Flocal . Both branches are concatenated and processed by a feature mixer to obtain Ffusion , followed by a Binary Defect Head and a Fine-grained Semantic Head for (K+1) -class segmentation. Training relies on offline SAM pseudo-masks generated from bounding boxes with objectives designed to mitigate systematic teacher errors. 
+
+setting (Dirt, Damage), YOLO class identifiers {0, 1} are mapped to pixel labels {1, 2}, with background assigned to 
+
+0.Despite its strong zero-shot capability, SAM exhibits char-acteristic failure modes on industrial imagery, including false positives due to shadows, stains, and background texture, as well as false negatives where thin cracks or low-contrast de-fects are missed despite being enclosed by the bounding box. Therefore, the student architecture and training objective are designed to mitigate both error types. 
+
+3.3. Hierarchical Student Architecture 
+
+A hierarchical student architecture is constructed to com-bine stable global semantics with high-frequency spatial detail. Given an input RGB image x ∈ RH×W ×3 (re-sized to 518 × 518 during training), the network produces two outputs: (i) a binary defect map and (ii) a fine-grained 
+
+(K+1) -class segmentation map at full image resolution. As illustrated in Figure 2, the architecture consists of a global semantic branch based on DINOv2 and a lightweight local detail branch, whose features are fused prior to prediction. 
+
+Global Semantic Branch. DINOv2 ViT-S/14 [ 20 ] is utilized as the semantic feature extractor. All pretrained weights are frozen, while only bias and normalization param-eters are optimized by BitFit-style adaptation [ 37 ]. BitFit updates only bias terms and normalization layers while keep-ing all other weights fixed, enabling lightweight domain adaptation and reducing overfitting under noisy pseudo-label supervision. As shown in Figure 2, intermediate transformer activa-tions are extracted from layers L = {1, 2, 4, 7}. Each layer output is reshaped into a 2D feature map and projected to a common decoder width via a 1 × 1 convolution, forming a multi-level feature hierarchy. The multi-level transformer features are fused in a top-down manner. Let F (l) denote the projected feature map from layer l ∈ L. Fusion proceeds from the deepest to the shallowest layer. The deepest feature F (7) initializes Fdeep .For each subsequent residual fusion block, Fdeep is fused with the next shallower lateral feature Fskip = F (l) via 
+
+Fout = σ(ϕ(Fdeep + Fskip ) + ( Fdeep + Fskip )) , (4) where ϕ(·) is a lightweight Conv–BN–ReLU–Conv–BN module and σ is ReLU. The resulting Fout becomes the new 
+
+Fdeep for the next fusion stage. After the final fusion step, the feature map is progressively upsampled with learned Pix-elShuffle blocks to a quarter-resolution grid ( H/ 4 × W/ 4), ensuring spatial consistency with the local detail branch for subsequent fusion. The final feature map of the global semantic branch is denoted as Fglobal .
+
+Local Detail Branch. Transformer features are spatially coarse-grained (DINOv2 operates at patch resolution), which can limit sensitivity to thin or high-frequency defect struc-tures. To complement global semantics, a lightweight CNN branch extracts finer-grained spatial features directly from the RGB input. Two stride-2 Conv–BN–ReLU blocks are 4employed to reduce the input resolution from H × W to 
+
+H/ 4 × W/ 4, matching the spatial resolution of Fglobal . This design preserves higher spatial granularity than the ViT patch representation while maintaining computational efficiency. The output of the local branch is denoted as 
+
+Flocal (x) ∈ R H    
+
+> 4×W
+> 4×cd
+
+, (5) where cd is the channel dimension of the detail feature map. Flocal represents the final output of the local detail branch. 
+
+Feature Fusion and Prediction Heads. The quarter-resolution feature maps Fglobal and Flocal are concatenated along the channel dimension and processed by a 3 × 3 Conv– BN–ReLU Feature Mixer block to produce a unified rep-resentation Ffusion . The mixer learns to balance semantic consistency from Fglobal with fine spatial cues from Flocal .Two prediction heads operate on Ffusion as follows. 
+
+Binary Defect Head. The binary head predicts foreground (defect) versus background. It consists of two bilinear up-sampling stages (each ×2), interleaved with a 3 × 3 Conv– BN–ReLU block, followed by a final 1 × 1 convolution producing 2 output channels. 
+
+Fine-Grained Semantic Head. The fine-grained head predicts (K+1) semantic classes. It shares the same archi-tectural structure as the binary head but produces (K+1) 
+
+output channels via the final 1 × 1 convolution. Both heads take the same fused feature map Ffusion as in-put but optimize different objectives (structural localization vs. semantic discrimination). Their logits are upsampled to full image resolution ( H × W ) to produce the final segmen-tation outputs, as illustrated on the right side of Figure 2. 
+
+3.4. Training Objectives 
+
+Training the hierarchical student architecture minimizes a composite objective combining a structural localization loss for the binary head and a semantic classification loss for the fine-grained head. 
+
+3.4.1. Binary head loss function 
+
+Defects typically occupy a small fraction of an image, caus-ing region-based losses to be dominated by background pix-els. Therefore, the binary head is supervised by an Asym-metric Dice loss [8]: 
+
+Lbin = 1 − ⟨p, g ⟩ + ϵ
+
+⟨p, g ⟩ + β⟨p, 1 − g⟩ + ⟨1 − p, g ⟩ + ϵ , (6) where ⟨· , ·⟩ denotes summation over spatial locations, p ∈
+
+[0 , 1] H×W is the predicted per-pixel defect probability, and the binary target is derived from the pseudo-mask as gi =
+
+1[˜ yi > 0] . The factor β ∈ (0 , 1) down-weights false posi-tives, biasing optimization toward recall; β = 0 .4 is used unless stated otherwise. The constant ϵ > 0 ensures numer-ical stability by preventing division by zero in defect-free regions. 
+
+3.4.2. Semantic loss function with online self-correction 
+
+Direct supervision of the semantic head with the pseudo-labels ˜y risks propagating false negatives from the teacher. To address this issue, a one-sided online self-correction mechanism is introduced, which selectively relaxes back-ground supervision when the model predicts a defect class with high confidence. The corrected target is defined as 
+
+˜ycorr  
+
+> i
+
+=
+
+(
+
+arg max c> 0 pi,c , if ˜yi = 0 ∧ max c> 0 pi,c > τ, 
+
+˜yi, otherwise ,
+
+(7) where c = 0 denotes the background, c > 0 correspond to de-fect classes, and τ ∈ (0 , 1) is a confidence threshold. Thus, only background labels are eligible for correction, while annotated defect regions remain unchanged. The correction is computed online per mini-batch and does not modify the training dataset. A short warm-up phase can be employed during which ˜ycorr = ˜ y to stabilize early training. The se-mantic head is optimized by 
+
+Lfine = CE(ˆ yfine , ˜ycorr ) , (8) where CE( ·, ·) denotes class-weighted cross-entropy to miti-gate the severe foreground–background imbalance. The final training objective is given by: 
+
+Ltotal = λbin Lbin + λfine Lfine , (9) where λbin and λfine balance structural localization and se-mantic discrimination. 
+
+3.5. Training Protocol 
+
+The student is trained end-to-end using AdamW [ 18 ] with a cosine learning-rate schedule. The initial learning rate is set to 5 × 10 −4 with a weight decay of 1 × 10 −2. Gradients are clipped to a maximum ℓ2 norm of 1.0 to improve stability under noisy pseudo-label supervision. To reduce optimization variance, an exponential moving average (EMA) of the student parameters is maintained dur-ing training [ 22 ]. Specifically, a second set of weights is updated as a running average of the current model param-eters at each iteration with decay 0.999 . This EMA model is not a separate architecture, but a smoothed version of the student network, and its weights are used for validation and inference. The binary and semantic losses are combined with equal weighting, λbin = λfine = 0 .5, which balances structural localization and semantic discrimination without introducing additional bias toward either objective. In practice, both losses operate at comparable scales after normalization, and equal weighting was found to provide stable convergence. For the asymmetric Dice loss, the false-positive weight-ing factor is set to β = 0 .4. Following [ 8], β < 1 re-duces the penalty on false positives and implicitly biases 5optimization toward recall, which is desirable in industrial inspection, where missed defects are more critical than slight over-segmentation. Online self-correction is enabled with a high confidence threshold τ = 0.9. Such conservative thresholds are commonly adopted in pseudo-labeling and teacher–student frameworks to ensure that only highly confident predictions override existing supervision. Correction is disabled during an initial warm-up phase to prevent unstable updates. 
+
+## 4. Dataset 
+
+A publicly available wind turbine inspection dataset is em-ployed in this work. The images originate from the DTU – Drone Inspection Images of Wind Turbine dataset [ 29 ], which was later released in a YOLO-annotated format by Foster et al. [ 5] and made publicly available via Kaggle. The dataset contains approximately 13,000 RGB images of size 
+
+586 × 371 captured in real-world outdoor environments. Annotations are provided exclusively as bounding boxes in YOLO format for two defect categories: damage and 
+
+surface dirt . No pixel-level segmentation masks are avail-able during training. All models are, therefore, trained us-ing bounding box supervision only , without access to pixel masks or auxiliary annotations. The dataset exhibits substantial class imbalance. Less than 25% of images contain annotated defects, and when present, defect pixels typically occupy less than 5% of the im-age area. In addition, image quality varies significantly due to motion blur, illumination changes, shadows, and strong surface textures, making boundary-accurate defect segmenta-tion particularly challenging and prone to systematic pseudo-label noise. 
+
+## 5. Experiments and Results 
+
+The proposed box-to-pixel training framework is evaluated on real-world industrial imagery with a focus on robust-ness under noisy pseudo-label supervision. A key practical challenge is incomplete box supervision in the provided an-notations: subtle defects are sometimes missing bounding boxes, and even when boxes exist, SAM may omit thin or low-contrast regions within them. Accordingly, the experi-ments address three questions: (i) Does the proposed hierarchical student improve seg-mentation quality compared to standard architectures trained under identical weak supervision? (ii) Which architectural and loss components contribute to robustness under noisy pseudo-labels? (iii) Does online self-correction enable recovery of defects missed by the teacher or absent from box annotations? 
+
+5.1. Experimental Setup 
+
+All experiments are conducted on the wind turbine inspection dataset described in Sec. 4. The original dataset provides only bounding box annotations and does not contain pixel-level segmentation masks. A realistic weakly supervised protocol is adopted. All models are trained using only bounding box annotations, which are converted into pseudo-masks using SAM. No manually annotated pixel-level ground-truth masks are used during training. To enable reliable quantitative evaluation, a held-out test split was manually annotated at pixel level to produce pixel-accurate ground-truth segmentation masks. Validation per-formance is computed against pseudo-masks and is used solely for model selection and early stopping. Test perfor-mance is computed against the manually annotated pixel-level ground-truth masks. 
+
+5.2. Quantitative Results 
+
+Quantitative results on the manually annotated test set are re-ported in Table 1. Mean Intersection-over-Union (mIoU) de-notes the average IoU computed over all (K+1) classes, in-cluding background. In contrast, anomaly mIoU (mIoU anom )averages IoU only over the defect classes (Damage and Dirt), excluding background. Binary IoU (IoU bin ) evaluates foreground–background segmentation by collapsing all defect classes into a single foreground category. Anomaly F1 (F1 anom ) measures the harmonic mean of precision and recall over defect pixels, providing a recall-sensitive assessment that is particularly relevant for detecting missed defects under severe class im-balance.                     
+
+> Table 1. Quantitative comparison on the manually annotated test split (evaluation against pixel-level ground truth). All models are trained with identical box-only supervision via SAM pseudo-masks; higher is better for all metrics.
+> Model mIoU mIoU anom F1 anom IoU bin
+> U-Net 0.7057 0.5629 0.7036 0.5427 DeepLabV3-B2 0.6867 0.5342 0.6955 0.5331 SegFormer-B2 0.7231 0.5881 0.6939 0.5312
+> Boxes2Pixels (ours) 0.7661 0.6523 0.7674 0.6226
+
+As shown in Table 1, the proposed method Boxes2Pixels outperforms all baselines across the metrics under the same weak supervision. Boxes2Pixels achieves mIoU anom =0.6523 , improving over the strongest baseline (SegFormer-B2, 0.5881) by +0 .0642 . The gain in IoU bin from 0.5312 to 0.6226 ( +0 .0914 ) indicates substantially improved fore-ground localization, which is critical when subtle defects are easily missed. While SegFormer-B2 is a strong general-purpose seg-menter, it shows limited robustness to the pseudo-label noise 6in this box-only setting. In contrast, the proposed student combines semantically stable DINOv2 features (via con-strained BitFit adaptation), a dedicated detail branch for thin structures, and explicit binary localization. This combina-tion reduces sensitivity to spurious teacher boundaries while improving the recovery of sparse defects. 
+
+5.3. Ablation Study 
+
+The contribution of individual components is evaluated through ablation studies on the validation split. Since this split is assessed against SAM pseudo-labels, the resulting metrics reflect alignment with the noisy teacher and they are used for relative comparison and checkpoint selection. The impact of the local detail branch (CNN), the auxiliary binary head, and the self-correcting loss is explored in Table 2. 
+
+Table 2. Ablation study on the validation split (evaluation against SAM pseudo-labels). Metrics reflect agreement with the noisy teacher and are used for comparison and checkpoint selection.                     
+
+> Configuration mIoU mIoU anom F1 anom IoU bin
+> Boxes2Pixels 0.6709 0.5093 0.6761 0.5107 w/o Local Detail Branch 0.6655 0.5013 0.6631 0.4960 w/o Binary Head 0.5868 0.3851 0.5693 0.3979 w/o Self-Correction 0.6679 0.5049 0.6622 0.4949
+
+As seen in Table 2, removing the binary head re-sults in the largest performance drop, with mIoU anom de-creasing from 0.5093 to 0.3851. This highlights the im-portance of explicit structural supervision for foreground localization, which decouples sparse defect discovery from fine-grained classification and mitigates overfitting to background-dominated pseudo-labels. Second, the local detail branch yields smaller but consistent improvement, supporting its role in preserving thin and high-frequency structures that are often blurred by transformer-based de-coders. Finally, self-correction yields only a small change on validation, since the pseudo-labels may not contain the missed defects it aims to recover; its effect is, therefore, evaluated on the manually annotated test set (Sec. 5.4). 
+
+5.4. Impact of Self-Correction 
+
+To assess the effect of asymmetric online self-correction, two models trained under identical settings are compared, differ-ing only in whether label correction is enabled. Evaluation is conducted on the manually annotated test set, ensuring that improvements reflect genuine recovery of defects rather than improved agreement with the teacher. Self-correction improves all reported metrics as illustrated in Table 3. The strongest effect is the increase in binary recall from 0.6195 to 0.8051 ( +0.1856 ), directly addressing the op-erational risk of missed defects. This behavior is consistent with the underlying motivation: false negatives arise not only from SAM omissions within bounding boxes, but also from 
+
+Table 3. Impact of online self-correction on the manually annotated test split (evaluation against pixel-level ground truth). Two models differ only by enabling correction; Recall bin highlights missed-defect recovery.                 
+
+> Method mIoU anom F1 anom IoU bin Recall bin
+> w/o Self-Correction 0.5826 0.6889 0.5255 0.6195
+> w/ Self-Correction (Ours) 0.6523 0.7674 0.6226 0.8051
+> Improvement +0.0697 +0.0785 +0.0971 +0.1856
+
+missing box annotations for subtle defects, both of which are treated as background during training. By selectively relax-ing background supervision, when the student exhibits high confidence, self-correction enables the recovery of sparse defects that would otherwise remain suppressed. Importantly, these gains do not require increasing model capacity and are achieved without a disproportionate in-crease in false positives, indicating the correction mechanism remains conservative and does not induce semantic drift. 
+
+5.5. Class-wise Analysis 
+
+Table 4 reports per-class IoU on the manually annotated test set. Structural damage is safety-critical, whereas surface dirt is visually confounding but generally less severe. 
+
+Table 4. Per-class IoU on the manually annotated test set.                
+
+> Model Damage Dirt ∆Damage
+> DeepLabV3-B2 53.89 52.95 -17.76 U-Net 61.01 51.57 -10.64 SegFormer-B2 71.48 46.13 -0.17
+> Boxes2Pixels (ours) 71.65 58.81 –
+
+The proposed method Boxes2Pixels matches the strongest baseline on the Damage class (71.65 vs. 71.48 for SegFormer-B2), while substantially improving Dirt (58.81 vs. 46.13). This indicates that the proposed method does not trade off structural damage detection for contamination cues; instead, it improves performance across defect types, con-sistent with enhanced foreground localization and reduced sensitivity to spurious teacher boundaries. 
+
+5.6. Model Efficiency 
+
+Table 5 compares model complexity, highlighting the param-eter efficiency of the proposed method Boxes2Pixels. By freezing the DINOv2 backbone and adapting it with BitFit, the proposed approach significantly reduces the number of trainable parameters. Despite comparable total model capacity, the proposed method uses 5.6M trainable parameters, representing an 80% reduction compared to fully trainable baselines. This con-strained adaptation limits the effective capacity exposed to noisy pseudo-labels and is attractive for industrial deploy-ment, where rapid adaptation under limited compute and 7Table 5. Efficiency comparison. Boxes2Pixels achieves real-time throughput ( > 160 FPS) while requiring 80% fewer trainable pa-rameters for adaptation.                        
+
+> Model Total Trainable FLOPs Latency FPS Params (M) Params (M) (G) (ms) DeepLabV3-B2 20.5 20.5 18.92 7.99 125.1 SegFormer-B2 27.3 27.3 58.97 13.33 75.0
+> Boxes2Pixels (ours) 27.6 5.6 43.37 6.20 161.4
+
+annotation budgets is required. Furthermore, despite higher theoretical FLOPs than DeepLabV3, Boxes2Pixels achieves the lowest inference latency (6.20 ms) and highest through-put (161.4 FPS) on an NVIDIA H100, proving its viability for real-time operation. 
+
+5.7. Qualitative Results 
+
+Figure 3 shows representative examples (YOLO boxes, SAM pseudo-masks, and student predictions). The supervision exhibits systematic noise. SAM masks are often conservative, missing thin or low-contrast defects inside the box, while bounding boxes may omit subtle dam-age entirely. Conversely, box- and SAM-derived labels can introduce false positives by segmenting shadows, stains, or surface texture as defects. The proposed student alleviates these issues through se-mantically stable features, a local detail branch, and noise-aware training. Compared to SAM, it recovers more com-plete defect regions, especially elongated cracks, while avoiding box-filling behavior on dirt. This aligns with the recall gains in Table 3 and reflects the effect of asymmetric self-correction, where confident predictions override unreli-able pseudo-labels. Overall, the qualitative results support the quantitative improvements under box-only supervision. 
+
+## 6. Conclusion 
+
+This work investigates whether reliable pixel-level defect segmentation can be learned from bounding-box supervision in real-world industrial inspection, where labels are incom-plete and foundation-model pseudo-masks are systematically noisy. Rather than treating foundation models as oracles, a data-centric distillation framework is introduced to explic-itly address dominant error modes, including missed defects caused by SAM omissions or incomplete annotations. Starting from bounding box prompts, SAM pseudo-masks are generated offline and used to train a compact hierarchi-cal student with noise-aware objectives. Frozen DINOv2 features provide semantic stability, while a binary localiza-tion head and an asymmetric online self-correction mecha-nism enable conservative recovery of missed defects with-out overriding teacher supervision. On a manually anno-tated pixel-level turbine inspection benchmark, the proposed Boxes2Pixels outperforms standard weakly supervised base-lines, with substantial gains in recall and anomaly IoU. YOLO BBox  SAM Mask  Boxes2Pixels 
+
+Figure 3. Qualitative comparison on wind turbine blade inspection images. From left to right: YOLO bounding boxes used for su-pervision, SAM-generated pseudo-masks, and predictions of the proposed Boxes2Pixels 
+
+Beyond accuracy, the method is practical: BitFit-style adaptation reduces the number of trainable parameters by 80%, enabling efficient domain adaptation under limited compute and annotation budgets. Overall, the results suggest that robust utilization of pseudo-labels during training can be more impactful than refining pseudo-label generation alone. Future work will explore transfer to additional industrial domains and uncertainty-aware self-correction. 
+
+## Acknowledgements 
+
+This work is supported by the ADVISOR ITEA 241007 project. 8References 
+
+[1] Jiwoon Ahn and Suha Kwak. Learning pixel-level semantic affinity with image-level supervision for weakly supervised semantic segmentation. In Proceedings of the IEEE conference on computer vision and pattern recognition ,pages 4981–4990, 2018. 2 [2] Mathilde Caron, Hugo Touvron, Ishan Misra, Herv´ e J´ egou, Julien Mairal, Piotr Bojanowski, and Armand Joulin. Emerging properties in self-supervised vision transformers. In Proceedings of the IEEE/CVF international conference on computer vision , pages 9650–9660, 2021. 2 [3] Zhaozheng Chen and Qianru Sun. Weakly-supervised semantic segmentation with image-level labels: from traditional models to foundation models. ACM Computing Surveys , 57(5):1–29, 2025. 3 [4] Jifeng Dai, Kaiming He, and Jian Sun. Boxsup: Exploiting bounding boxes to supervise convolutional networks for semantic segmentation. In Proceedings of the IEEE international conference on computer vision , pages 1635–1643, 2015. 2 [5] Ashley Foster, Oscar Best, Mario Gianni, Asiya Khan, Keri Collins, and Sanjay Sharma. Drone footage wind turbine surface damage detection. In 2022 IEEE 14th Image, Video, and Multidimensional Signal Processing Workshop (IVMSP) ,pages 1–5. IEEE, 2022. 1, 6 [6] Mark Hamilton, Zhoutong Zhang, Bharath Hariharan, Noah Snavely, and William T Freeman. Unsupervised semantic segmentation by distilling feature correspondences. arXiv preprint arXiv:2203.08414 , 2022. 3 [7] Bo Han, Quanming Yao, Xingrui Yu, Gang Niu, Miao Xu, Weihua Hu, Ivor Tsang, and Masashi Sugiyama. Co-teaching: Robust training of deep neural networks with extremely noisy labels. Advances in neural information processing systems , 31, 2018. 3 [8] Seyed Raein Hashemi, Seyed Sadegh Mohseni Salehi, Deniz Erdogmus, Sanjay P Prabhu, Simon K Warfield, and Ali Gholipour. Asymmetric loss functions and deep densely-connected networks for highly-imbalanced medical image segmentation: Application to multiple sclerosis lesion detection. IEEE Access , 7:1721–1735, 2018. 5 [9] Kaiming He, Xinlei Chen, Saining Xie, Yanghao Li, Piotr Doll ´ar, and Ross Girshick. Masked autoencoders are scalable vision learners. In Proceedings of the IEEE/CVF conference on computer vision and pattern recognition , pages 16000–16009, 2022. 2 [10] Jongheon Jeong, Yang Zou, Taewan Kim, Dongqing Zhang, Avinash Ravichandran, and Onkar Dabeer. Winclip: Zero-/few-shot anomaly classification and segmentation. In 
+
+Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , pages 19606–19616, 2023. 2 [11] Alex Kendall and Yarin Gal. What uncertainties do we need in bayesian deep learning for computer vision? Advances in neural information processing systems , 30, 2017. 3 [12] Alexander Kirillov, Eric Mintun, Nikhila Ravi, Hanzi Mao, Chloe Rolland, Laura Gustafson, Tete Xiao, Spencer Whitehead, Alexander C Berg, Wan-Yen Lo, et al. Segment anything. In Proceedings of the IEEE/CVF international conference on computer vision , pages 4015–4026, 2023. 2, 3 [13] Shiyi Lan, Zhiding Yu, Christopher Choy, Subhashree Radhakrishnan, Guilin Liu, Yuke Zhu, Larry S Davis, and Anima Anandkumar. Discobox: Weakly supervised instance segmentation and semantic correspondence from box supervision. In Proceedings of the IEEE/CVF international conference on computer vision , pages 3406–3416, 2021. 2 [14] Junnan Li, Richard Socher, and Steven CH Hoi. Dividemix: Learning with noisy labels as semi-supervised learning. 
+
+arXiv preprint arXiv:2002.07394 , 2020. 3 [15] Shikun Li, Xiaobo Xia, Shiming Ge, and Tongliang Liu. Selective-supervised contrastive learning with noisy labels. In Proceedings of the IEEE/CVF conference on computer vision and pattern recognition , pages 316–325, 2022. 3 [16] Tsung-Yi Lin, Michael Maire, Serge Belongie, James Hays, Pietro Perona, Deva Ramanan, Piotr Doll ´ar, and C Lawrence Zitnick. Microsoft coco: Common objects in context. In 
+
+European conference on computer vision , pages 740–755. Springer, 2014. 2 [17] Wei Liu, Dragomir Anguelov, Dumitru Erhan, Christian Szegedy, Scott Reed, Cheng-Yang Fu, and Alexander C Berg. Ssd: Single shot multibox detector. In European conference on computer vision , pages 21–37. Springer, 2016. 1 [18] Ilya Loshchilov and Frank Hutter. Decoupled weight decay regularization. arXiv preprint arXiv:1711.05101 , 2017. 5 [19] Nagarajan Natarajan, Inderjit S Dhillon, Pradeep K Ravikumar, and Ambuj Tewari. Learning with noisy labels. 
+
+Advances in neural information processing systems , 26, 2013. 3[20] Maxime Oquab, Timoth´ ee Darcet, Th´ eo Moutakanni, Huy Vo, Marc Szafraniec, Vasil Khalidov, Pierre Fernandez, Daniel Haziza, Francisco Massa, Alaaeldin El-Nouby, et al. Dinov2: Learning robust visual features without supervision. 
+
+arXiv preprint arXiv:2304.07193 , 2023. 2, 3, 4 [21] Giorgio Patrini, Alessandro Rozza, Aditya Krishna Menon, Richard Nock, and Lizhen Qu. Making deep neural networks robust to label noise: A loss correction approach. In 
+
+Proceedings of the IEEE conference on computer vision and pattern recognition , pages 1944–1952, 2017. 3 [22] Boris T Polyak and Anatoli B Juditsky. Acceleration of stochastic approximation by averaging. SIAM journal on control and optimization , 30(4):838–855, 1992. 5 [23] Alec Radford, Jong Wook Kim, Chris Hallacy, Aditya Ramesh, Gabriel Goh, Sandhini Agarwal, Girish Sastry, Amanda Askell, Pamela Mishkin, Jack Clark, et al. Learning transferable visual models from natural language supervision. In International conference on machine learning , pages 8748–8763. PmLR, 2021. 2 [24] Joseph Redmon, Santosh Divvala, Ross Girshick, and Ali Farhadi. You only look once: Unified, real-time object detection. In Proceedings of the IEEE conference on computer vision and pattern recognition , pages 779–788, 2016. 1 [25] Shenghai Rong, Bohai Tu, Zilei Wang, and Junjie Li. Boundary-enhanced co-training for weakly supervised semantic segmentation. In Proceedings of the IEEE/CVF 
+
+9conference on computer vision and pattern recognition ,pages 19574–19584, 2023. 3 [26] Olaf Ronneberger, Philipp Fischer, and Thomas Brox. U-net: Convolutional networks for biomedical image segmentation. In International Conference on Medical image computing and computer-assisted intervention , pages 234–241. Springer, 2015. 2 [27] Karsten Roth, Latha Pemula, Joaquin Zepeda, Bernhard Sch¨ olkopf, Thomas Brox, and Peter Gehler. Towards total recall in industrial anomaly detection. In Proceedings of the IEEE/CVF conference on computer vision and pattern recognition , pages 14318–14328, 2022. 2 [28] Ramprasaath R Selvaraju, Michael Cogswell, Abhishek Das, Ramakrishna Vedantam, Devi Parikh, and Dhruv Batra. Grad-cam: Visual explanations from deep networks via gradient-based localization. In Proceedings of the IEEE international conference on computer vision , pages 618–626, 2017. 2 [29] ASM Shihavuddin and X Chen. Dtu-drone inspection images of wind turbine. mendeley data, v2, 2018. 6 [30] Ryutaro Tanno, Ardavan Saeedi, Swami Sankaranarayanan, Daniel C Alexander, and Nathan Silberman. Learning from noisy labels by regularized estimation of annotator confusion. In Proceedings of the IEEE/CVF conference on computer vision and pattern recognition , pages 11244–11253, 2019. 3 [31] Antti Tarvainen and Harri Valpola. Mean teachers are better role models: Weight-averaged consistency targets improve semi-supervised deep learning results. Advances in neural information processing systems , 30, 2017. 3 [32] Zhi Tian, Chunhua Shen, Xinlong Wang, and Hao Chen. Boxinst: High-performance instance segmentation with box annotations. In Proceedings of the IEEE/CVF conference on computer vision and pattern recognition , pages 5443–5452, 2021. 2 [33] Yude Wang, Jie Zhang, Meina Kan, Shiguang Shan, and Xilin Chen. Self-supervised equivariant attention mechanism for weakly supervised semantic segmentation. In 
+
+Proceedings of the IEEE/CVF conference on computer vision and pattern recognition , pages 12275–12284, 2020. 2 [34] Xiaobo Xia, Tongliang Liu, Bo Han, Chen Gong, Nannan Wang, Zongyuan Ge, and Yi Chang. Robust early-learning: Hindering the memorization of noisy labels. In International conference on learning representations , 2020. 3 [35] Enze Xie, Wenhai Wang, Zhiding Yu, Anima Anandkumar, Jose M Alvarez, and Ping Luo. Segformer: Simple and efficient design for semantic segmentation with transformers. 
+
+Advances in neural information processing systems , 34: 12077–12090, 2021. 2 [36] Lequan Yu, Shujun Wang, Xiaomeng Li, Chi-Wing Fu, and Pheng-Ann Heng. Uncertainty-aware self-ensembling model for semi-supervised 3d left atrium segmentation. In 
+
+International conference on medical image computing and computer-assisted intervention , pages 605–613. Springer, 2019. 3 [37] Elad Ben Zaken, Yoav Goldberg, and Shauli Ravfogel. Bitfit: Simple parameter-efficient fine-tuning for transformer-based masked language-models. In Proceedings of the 60th Annual Meeting of the Association for Computational Linguistics (Volume 2: Short Papers) , pages 1–9, 2022. 4 [38] Zhao Zhanfang and Li Tuo. Enhancing wind turbine blade damage detection with yolo-wind. Scientific Reports , 15(1): 18667, 2025. 1 [39] Chaoning Zhang, Dongshen Han, Yu Qiao, Jung Uk Kim, Sung-Ho Bae, Seungkyu Lee, and Choong Seon Hong. Faster segment anything: Towards lightweight sam for mobile applications. arXiv preprint arXiv:2306.14289 , 2023. 3 [40] Zhuoyang Zhang, Han Cai, and Song Han. Efficientvit-sam: Accelerated segment anything model without performance loss. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , pages 7859–7863, 2024. 3 [41] Xu Zhao, Wenchao Ding, Yongqi An, Yinglong Du, Tao Yu, Min Li, Ming Tang, and Jinqiao Wang. Fast segment anything. arXiv preprint arXiv:2306.12156 , 2023. 3 [42] Xingyue Zhao, Peiqi Li, Xiangde Luo, Meng Yang, Shi Chang, and Zhongyu Li. Sam-driven weakly supervised nodule segmentation with uncertainty-aware cross teaching. In 2024 IEEE International Symposium on Biomedical Imaging (ISBI) , pages 1–5. IEEE, 2024. 3 [43] Bolei Zhou, Aditya Khosla, Agata Lapedriza, Aude Oliva, and Antonio Torralba. Learning deep features for discriminative localization. In Proceedings of the IEEE conference on computer vision and pattern recognition ,pages 2921–2929, 2016. 2 
+
+10
