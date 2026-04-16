@@ -1,0 +1,507 @@
+Title: RSGMamba: Reliability-Aware Self-Gated State Space Model for Multimodal Semantic Segmentation
+
+URL Source: https://arxiv.org/pdf/2604.12319v1
+
+Published Time: Wed, 15 Apr 2026 00:44:23 GMT
+
+Number of Pages: 12
+
+Markdown Content:
+> JOURNAL OF L ATEX CLASS FILES, VOL. 18, NO. 9, SEPTEMBER 2020 1
+
+# RSGMamba: Reliability-Aware Self-Gated State Space Model for Multimodal Semantic Segmentation 
+
+Guoan Xu, Yang Xiao, Guangwei Gao, Senior Member, IEEE , Dongchen Zhu, Member, IEEE , Wenjing Jia, Member, IEEE , and Guo-Jun Qi, Fellow, IEEE 
+
+Abstract —Multimodal semantic segmentation has emerged as a powerful paradigm for enhancing scene understanding by lever-aging complementary information from multiple sensing modal-ities (e.g., RGB, depth, and thermal). However, existing cross-modal fusion methods often implicitly assume that all modalities are equally reliable, which can lead to feature degradation when auxiliary modalities are noisy, misaligned, or incomplete. In this paper, we revisit cross-modal fusion from the perspective of modality reliability and propose a novel framework termed the Reliability-aware Self-Gated State Space Model (RSGMamba). At the core of our method is the Reliability-aware Self-Gated Mamba Block (RSGMB), which explicitly models modality relia-bility and dynamically regulates cross-modal interactions through a self-gating mechanism. Unlike conventional fusion strategies that indiscriminately exchange information across modalities, RSGMB enables reliability-aware feature selection and enhancing informative feature aggregation. In addition, a lightweight Lo-cal Cross-Gated Modulation (LCGM) is incorporated to refine fine-grained spatial details, complementing the global modeling capability of RSGMB. Extensive experiments demonstrate that RSGMamba achieves state-of-the-art performance on both RGB-D and RGB-T semantic segmentation benchmarks, resulting 58.8% / 54.0% mIoU on NYUDepth V2 and SUN-RGBD (+0.4% / +0.7% over prior best), and 61.1% / 88.9% mIoU on MFNet and PST900 (up to +1.6%), with only 48.6M parameters, thereby validating the effectiveness and superiority of the proposed approach. 
+
+Index Terms —Segmentation, Reliability-Aware Fusion, State Space Model (SSM), Global–Local Feature Enhancement 
+
+I. I NTRODUCTION 
+
+Semantic segmentation aims to predict dense semantic la-bels at the pixel level and has become a fundamental task in the computer vision community. It plays a vital role in a wide range of applications, such as robotic manipulations [1], [2], medical image analysis [3], [4], and autonomous driving [5], all of which require accurate perception and understanding of the surrounding environment. Despite recent progress, existing models [6], [7], [8] remain vulnerable under adverse condi-tions, such as poor illumination and severe visual interference. 
+
+Guoan Xu, Yang Xiao, and Wenjing Jia are with the Faculty of En-gineering and Information Technology, University of Technology Sydney, Sydney, NSW 2007, Australia (e-mail: xga njupt@163.com, yang.xiao-2@student.uts.edu.au, and Wenjing.Jia@uts.edu.au). Guangwei Gao is with the PCA Lab, Key Laboratory of Intelligent Percep-tion and Systems for High-Dimensional Information of Ministry of Education, School of Computer Science and Engineering, Nanjing University of Science and Technology, Nanjing 210094, China (e-mail: gwgao@njust.edu.cn). Dongchen Zhu is with Bionic Vision Systems Laboratory, Shanghai Institute of Microsystem and Information Technology, Chinese Academy of Sciences, Shanghai 200050, China (e-mail: dchzhu@mail.sim.ac.cn). Guo-Jun Qi is with the Research Center for Industries of the Future and the School of Engineering, Westlake University, Hangzhou 310024, China, and also with OPPO Research, Seattle, WA 98101 USA (e-mail: guojunq@gmail.com).    
+
+> Input images Reliability masks Heatmaps Contrast maps
+> Thermal  RGB  Depth  RGB
+
+Fig. 1. For each RGB–X sample, we visualize the input image, the corresponding reliability mask, the cross-modal response heatmap, and the modality-wise value distribution. Green circles highlight regions where the modality provides reliable and consistent cues, while red circles denote unreliable or noisy regions. As shown, RGB luminance exhibits a smooth and continuous distribution, while depth and thermal signals present highly skewed and discrete histograms, with large portions of unreliable values. This pronounced statistical heterogeneity motivates the development of a more robust cross-modal fusion strategy that adaptively regulates cross-state readout based on modality uncertainty and cross-modal consistency. 
+
+To address these challenges, additional sensing modalities, including thermal and depth, are commonly incorporated. By exploiting complementary cues across modalities, the reliabil-ity and representational capacity of vision pipelines can be significantly improved. Existing multimodal learning approaches [9], [10], [11], [12], [13] generally adopt two categories of fusion mecha-nisms: inner-interaction fusion (IIF) and outer-exchange fusion (OEF). These approaches can be further understood as three representative paradigms: simple addition, cross-attention-based interaction, and state-space-based exchange. IIF-based methods aim to enhance multimodal feature representations by explicitly modeling dependencies across different modalities. Early studies mainly relied on direct feature addition [14], but they lack explicit cross-modal interaction, limiting their ability to exploit complementary information. More recent works increasingly incorporate attention mechanisms to facilitate cross-modal interactions. In particular, Cross-Attention based designs, such as GeminiFusion [9] and TokenFusion [11], have shown strong effectiveness in capturing fine-grained inter-modal relationships. However, modeling global dependencies through attention-driven interaction often incurs substantial  
+
+> arXiv:2604.12319v1 [cs.CV] 14 Apr 2026 JOURNAL OF L ATEX CLASS FILES, VOL. 18, NO. 9, SEPTEMBER 2020 2
+
+computational and memory overhead. DiffPixelFormer [15], introduced a differential pixel-aware Transformer that applies Cross-Attention across modalities in a discrete manner, further reducing computational complexity. Nevertheless, such efficiency-oriented designs often come at the expense of fine-grained details and long-range contextual information, which may degrade segmentation performance, especially in scenarios that require precise global reasoning and subtle cross-modal cues. Moreover, interaction-based fu-sion methods often depend on large-scale RGB-X pretraining to fully exploit cross-modal interactions. A representative example is TUNI [16], which first employs depth estimation models to generate pseudo-depth from ImageNet RGB images, thereby constructing paired RGB–depth training data, and then trains modality-specific backbones together with dedicated in-backbone fusion modules. While this paradigm can achieve strong performance, it significantly increases the demands on data preparation, training time, and computational resources, resulting in greater overall development complexity. Similar observations apply to DFormer [17] in the RGB-D setting, which attains competitive results but at the cost of substantially higher training overhead. In contrast, outer-exchange-based fusion strategies can di-rectly leverage pretrained RGB backbones, while the auxiliary modality branch often shares weights with the RGB stream, enabling plug-and-play fusion with significantly lower training cost. For example, ADBNet [18] introduced an asymmet-ric encoder with enhanced depth processing and proposed CF-PVT (Conv-Former Pyramid Vision Transformer), which uses decomposed convolutional attention to strengthen depth feature extraction. Beyond CNN- and ViT-based designs, Sigma [19] explored state space modeling to avoid the quadratic complexity of self-attention and employs Cross-Mamba to facilitate efficient interaction between RGB and depth features. Following a similar direction, CM-SSM [20] extended the Cross-Mamba paradigm to RGB-T segmentation by further designing a scanning strategy that interleaves RGB and thermal tokens, thereby enabling more efficient sequence correlation modeling. Nevertheless, the efficiency of exchange-based fusion comes with more stringent fusion design require-ments. Since auxiliary modalities are often noisy or unreliable, indiscriminate fusion may introduce feature contamination and degrade overall performance. As illustrated in Fig. 1, the reliability of auxiliary modalities varies significantly across spatial regions, highlighting the importance of reliability-aware cross-modal fusion. Overall, existing multimodal fusion approaches still suf-fer from several inherent limitations. (1) Interaction-based methods typically rely on large-scale RGB-X pretraining to enable effective cross-modal interaction, resulting in substan-tial training cost and data dependency. (2) Exchange-based methods, while more efficient, often perform unconditional feature fusion and thus are highly sensitive to the quality of auxiliary modalities. Fundamentally, both paradigms overlook explicit modeling of modality reliability, making them vulner-able to noisy or misaligned auxiliary inputs. Therefore, the key challenge of multimodal fusion lies not only in how to exchange information across modalities, but also in how to selectively trust them. To address these challenges, we propose a reliability-aware fusion framework, termed RSGMamba , which explicitly models modality reliability during cross-modal interaction. Specifically, upon extracting multi-level features from the backbone, we introduce a reliability-aware fusion module to adaptively regulate cross-modal interactions between the RGB stream and the auxiliary modality. Unlike standard Cross-Mamba, which enforces unconditional cross-state coupling between modalities, our proposed Reliability-aware Self-Gated Mamba Block (RSGMB) explicitly controls cross-modal in-teractions at the feature level. In particular, it introduces: (i) an uncertainty-aware gate to estimate the reliability of each modality independently, and (ii) a consistency-aware gate to evaluate cross-modal agreement at each spatial location. These two gates jointly modulate the cross-state readout in the state space model, enabling adaptive control over the intensity of cross-modal information injection. Furthermore, we employ a low-rank cross projection with a learnable scaling factor, which constrains the fusion capacity and serves as an implicit regularizer. This design prevents overfitting to noisy auxiliary signals and encourages cross-modal fusion to function as a lightweight, reliability-driven calibration rather than a dominant transformation. In addition to global fusion, our designed Local Cross-Gated Modulation (LCGM) captures local cross-modal interactions to refine fine-grained spatial details and boundary structures. As a result, our approach effectively alleviates negative transfer caused by noisy or misaligned auxiliary modalities, leading to more robust RGB-X segmentation performance. Beyond long-sequence model-ing, we further enhance RGB representations from a local perspective. By integrating global and local representations, the proposed method improves discrimination under complex backgrounds and noise. Our contributions can be summarized as follows:  
+
+> •
+
+We propose RSGMamba, a reliability-aware state space framework that explicitly models modality reliability and cross-modal consistency, enabling efficient global cross-modal interaction with linear complexity.  
+
+> •
+
+We design a Reliability-aware Self-Gated Mamba Block (RSGMB) and a Local Cross-Gated Modulation (LCGM), which jointly model global modality reliability and cross-modal consistency, while preserving fine-grained local structures.  
+
+> •
+
+Extensive experiments on multiple RGB-D and RGB-T benchmarks, including NYUDepth v2, SUN RGB-D, MFNet, and PST900, demonstrate that our method achieves a competitive trade-off between accuracy and efficiency and consistently outperforms existing ap-proaches. II. R ELATED WORKS 
+
+A. Multimodal Semantic Segmentation 
+
+Multimodal semantic segmentation [21], [14], [12], [22] extends conventional RGB-based perception by incorporating complementary modalities such as thermal, depth, and LiDAR, which provide informative cues beyond appearance alone. JOURNAL OF L ATEX CLASS FILES, VOL. 18, NO. 9, SEPTEMBER 2020 3x-modal                                
+
+> rgb-modal
+> Stage 1
+> Stage 1
+> share
+> weights
+> Decoder
+> Fusion
+> prediction mask
+> Finetune Trainable
+> E1
+> rgb
+> E1
+> x
+> F1
+> Stage 4
+> Stage 4
+> Fusion
+> E4
+> rgb
+> E4
+> x
+> Stage 2
+> Stage 2
+> Fusion
+> E2
+> rgb
+> E2
+> x
+> F2
+> Stage 3
+> Stage 3
+> Fusion
+> E3
+> rgb
+> E3
+> x
+> F3F4
+> Encoder Decoder
+> H
+> 4×W
+> 4×C1
+> H
+> 8×W
+> 8×C2
+> H
+> 16 ×W
+> 16 ×C3
+> H
+> 32 ×W
+> 32 ×C4
+> LGLEM RSGMB
+> LCGM
+> RSGMB
+> Fi
+> Ei
+> x
+> Ei
+> rgb
+> Fig. 2. Overall architecture of our RSGMamba for RGB–X segmentation. RGB and auxiliary modalities are encoded through two weight-sharing encoders to produce multi-scale representations Ergb iand Exi. At each stage, a fusion module combines cross-modal features using the proposed Local Cross-Gated Modulation (LCGM) and Reliability-aware Self-Gated Mamba Block (RSGMB), generating fused features Fi. Finally, the four-stage fusion features F1,F2,
+> F3, and F4are fed into the decoder module for final segmentation mask generation.
+
+Effectively leveraging these heterogeneous signals requires carefully designed feature extractors and fusion mechanisms, making cross-modal representation learning a central research focus in this area. In RGB-Depth semantic segmentation, effectively integrat-ing RGB and depth representations has been shown to sub-stantially improve semantic segmentation performance. One line of research follows the inner-interaction fusion paradigm, which integrates multimodal representations through explicit cross-modal interactions, such as Cross-Attention mechanisms or feature concatenation. These methods typically perform pre-training on large-scale ImageNet-1K RGB–D paired data and then fine-tune the model on downstream RGB–D benchmarks using a unified network architecture [12], [13], [23]. However, their performance heavily depends on the quality and scale of the pretraining datasets, and the two-stage training pipeline also incurs substantial computational and training costs. An alternative line of work explores outer-exchange fusion, in which modality-specific features are encoded separately and later integrated in the decoder through dynamic fusion mech-anisms. Methods including CMX [21], TokenFusion [11], GeminiFusion [9], and Sigma [19] have demonstrated strong performance on RGB–D semantic segmentation benchmarks. 
+
+Nevertheless, these methods typically assume equal reliability across modalities. Since depth data is often affected by noise and invalid measurements, naive or symmetric fusion may introduce cross-modal interference, thereby limiting potential performance gains. 
+
+In RGB-Thermal semantic segmentation, early dual-stream frameworks such as MFNet [24] and RTFNet [25] demon-strated the feasibility of multimodal fusion, although their sim-plistic element-wise integration strategies did not adequately address cross-modal inconsistencies. Zhou et al. [26] designed an adaptive cross-modal fusion framework that applies spa-tial attention to low-level representations while leveraging channel-wise attention at higher semantic stages. By using multimodal features to construct query–key–value triplets, MFTNet [27] and MCNet-T [28] effectively promoted feature-level interactions across modalities. DFormerv2 [12] exploited geometric attention to extract informative cues from the ther-mal modality and inject them into the network for enhanced representation learning. Inspired by this design philosophy, TUNI [16] adopted a similar formulation but replaced real thermal inputs with RGB-derived pseudo-modality representa-tions, enabling geometry-aware feature enhancement without relying on additional sensor data. To reduce the computational overhead of Cross-Attention, Sigma [19] and CMSSM [20] introduced Mamba-based architectures into RGB–T semantic segmentation and adopted an outer-exchange fusion paradigm for cross-modal interaction. Although these approaches im-prove efficiency, they generally overlook modality reliability by treating RGB and thermal features symmetrically during scanning and information exchange, which may result in suboptimal fusion when one modality is degraded or noisy. B. State Space Models 
+
+Recent advances in computer vision have increasingly adopted state space models (SSMs) to address long-range dependency modeling. Among them, the structured state space sequence model [29] is particularly notable for enabling ef-fective long-range representation learning with linear com-putational complexity, making it a compelling alternative to attention-based approaches. These favorable properties have made state space models increasingly attractive for vision tasks. By enabling efficient global dependency modeling through multi-directional scanning, recent works such as Vi-sion Mamba [30] and VMamba [31] have demonstrated strong effectiveness. Meanwhile, SSMs [32] have been increasingly explored in dense prediction tasks, including segmentation, restoration, and super-resolution, highlighting their versatility. Nevertheless, recent studies often adopt state space models as generic building blocks without fully tailoring their design to the specific requirements of individual vision tasks. In addition, the application of SSMs to multimodal settings has received relatively limited attention. Recent studies that JOURNAL OF L ATEX CLASS FILES, VOL. 18, NO. 9, SEPTEMBER 2020 4RSG-SS    
+
+> L
+> DC
+> LN
+> L
+> L
+> L
+> LN
+> DC
+> Eglo
+> ErgbE�
+> L
+> f rgb
+> f x
+
+Crgb
+
+C�
+
+gu
+
+> rgb
+> LRSGL
+
+gu
+
+> x
+
+gc  
+
+> �−��
+> ��
+> �퐞��
+> 퐫� 
+> �퐞��
+> �
+
+�rgb         
+
+> ��
+> �=�퐞��
+> 퐫� ��
+> �+�퐫� ��
+> �
+> ��
+> 퐫� =�퐞��
+> ���
+> 퐫� +�퐫� ��
+> 퐫� 
+
+�x
+
+> LN
+> MLP
+> Sigm
+> LN
+> MLP
+> Sigm
+> f rgb
+> f x
+> C
+> LN
+> MLP
+> Sigm
+
+gu
+
+> rgb
+
+gu
+
+> x
+
+gc                 
+
+> LNLLinearLayerNormDCDepthwiseConvAddCConcateabsdifferenceHadamardproduct
+> (a)RSGMB(b)RSG-SS(c)RSG
+
+f rgb f x
+
+Fig. 3. (a) Overall architecture of the proposed RSGMB, where RGB and auxiliary-modal features are processed in parallel and fused via a reliability-controlled cross-state mechanism. (b) Illustration of the proposed RSG-SS module. For simplicity, certain implementation details are omitted, while the key computational components that distinguish our method from prior designs are highlighted. (c) Internal design of the reliability self-gating module (RSG), which estimates modality-wise uncertainty and cross-modal consistency to dynamically regulate cross-state readout in the Mamba-based state-space model. LL
+
+> DC  DC
+> Conv  Conv
+> Sigm
+> Sigm
+
+E rgb
+
+E �
+
+L Linear 
+
+Sigm Sigmoid Multiplation 
+
+E loc
+
+G �
+
+G rgb    
+
+> M�
+> Mrgb
+> Mxr^
+> Mrx^
+
+Fig. 4. Structure of the Local Cross-Gated Modulation (LCGM). The RGB and auxiliary features are first aligned through linear projection and cross-modal gating. The resulting features are then processed with depthwise convolutions to capture local spatial structures, yielding the enhanced feature representation Eloc .
+
+introduce Mamba [29] into RGB-based multi-modal semantic segmentation mainly include Sigma [19] and CMSSM [20]. These methods fuse multimodal features using a Cross-Mamba interaction strategy and have demonstrated notable effectiveness. However, their fusion mechanisms still have room for improvement, as they do not explicitly account for the reliability of the exchanged information. In practice, features from different modalities are often fused in a blind and symmetric manner, which may introduce cross-modal interference when one modality is noisy or unreliable. To address this limitation, we explicitly incorporate modality reliability into the fusion process. Specifically, we introduce a self-gating mechanism that first evaluates the reliability of each modality independently and then assesses cross-modal consistency. This reliability-aware and consistency-guided fu-sion strategy enables more selective cross-modal interaction, leading to improved segmentation performance. 
+
+III. M ETHODOLOGY 
+
+A. Preliminary 
+
+Structured state space sequence models (S4) are inspired by the continuous system, which maps a 1-D sequence x(t) ∈
+
+R into y(t) ∈ R, through a hidden state h(t) ∈ RN. The continuous system can be summarized as follows: 
+
+h′(t) = Ah (t) + Bx (t), y (t) = Ch (t) + Dx (t), (1) where A ∈ RN ×N , B ∈ RN ×1, C ∈ R1×N , and D ∈ R
+
+are the system parameters. To accommodate discrete inputs including visual and textual sequences, state space models usually rely on Zero-Order Hold (ZOH) discretization to map the input sequence x1, x 2, ..., x K into the output sequence 
+
+y1, y 2, ..., y K . Specifically, a timescale parameter ∆ to trans-form the continuous parameters A, B to its corresponding discrete versions A, B, this process can be formulated as 
+
+A = exp (∆ A), C = C, D = D, B = (∆ A)−1(exp (A) − I)∆ B. (2) The discretized version can be rewritten as 
+
+hk = Ah k−1 + Bx k, y k = Ch k + Dx k. (3) Selective State Space Models (S6), commonly known as Mamba, introduce input-conditioned parameterization that dy-namically modulates the state space operators, resulting in a more expressive formulation for sequential data. Specifically, the state transition and projection matrices B ∈ RB×L×N ,
+
+C ∈ RB×L×N , and ∆ ∈ RB×L×D are directly generated from the input sequence x ∈ RB×L×D. By leveraging selective state space modeling, Mamba achieves linear scalability with respect to sequence length while exhibiting strong capability in vision modeling tasks. JOURNAL OF L ATEX CLASS FILES, VOL. 18, NO. 9, SEPTEMBER 2020 5
+
+B. Overall Architecture 
+
+As illustrated in Fig. 2, our framework consists of a pre-trained encoder, a decoder, and a core fusion module for robust cross-modal interaction. We adopt SegMAN [8] as the backbone due to its favorable trade-off between lightweight design and strong performance. The RGB encoder and the auxiliary-modal encoder share the same network parameters, ensuring consistent representa-tion learning across modalities. Given an input RGB image 
+
+Irgb ∈ RH×W ×3 and its corresponding auxiliary modality 
+
+Ix ∈ RH×W ×3 (e.g., depth or thermal), the shared encoder produces four hierarchical feature levels for each modality, denoted as Ergb i ∈ R H    
+
+> 2i+1 ×W
+> 2i+1 ×Ci
+
+and Exi ∈ R H    
+
+> 2i+1 ×W
+> 2i+1 ×Ci
+
+.At each corresponding feature level, we perform cross-modal fusion by decomposing the process into global fusion and local fusion, which capture complementary contextual cues with different receptive fields. Specifically, the global fusion branch employs the proposed Reliability-aware Self-Gated Mamba Block (RSGMB) to model long-range depen-dencies and regulate cross-modal interactions in a reliability-aware manner at the state-space level. In parallel, the local fu-sion branch utilizes a Local Cross-Gated Modulation (LCGM) to emphasize fine-grained spatial details and local structural information. The outputs from the global and local fusion branches are then combined via element-wise addition, enabling comple-mentary integration of global contextual reasoning and local detail refinement. The fused multi-level features are finally forwarded to the decoder to generate the final segmentation prediction. This dual-branch fusion strategy allows our model to jointly exploit global cross-modal dependencies and local spatial cues, leading to more robust and accurate segmentation under challenging cross-modal conditions. 
+
+C. Fusion Modules 
+
+Intuitively, modality reliability reflects the confidence of each modality at different spatial locations. In real-world scenarios, auxiliary modalities (e.g., depth or thermal) often contain noise, missing values, or misalignment. Therefore, ef-fective fusion requires suppressing unreliable responses while preserving informative regions. Reliability-aware Self-Gated Mamba Block (RSGMB). As illustrated in Fig. 3, we propose a Reliability-Aware Self-Gated Mamba Block (RSGMB) to enable robust and adaptive cross-modal fusion in RGB-X segmentation tasks. The core limitation of existing fusion modules is that they either indiscriminately inject auxiliary cues or rely on dense interaction, making them vulnerable to noisy and misaligned modalities, while our RSGMB performs cross-modal interaction within a Mamba-based state-space model (SSM) and introduces an explicit reliability-driven self-gating mechanism to dynamically regulate the strength of cross-modal information flow. Specifically, given RGB and auxiliary features extracted at the same semantic level, 
+
+Ergb , Ex ∈ RH×W ×C , RSGMB processes both modalities in parallel and performs cross-state fusion at the readout stage rather than directly mixing feature representations. Cross-modal modeling often relies on high-dimensional linear projections, which can substantially increase model parameters and computational cost. To address this issue, we adopt low-rank linear projections for both modality-specific and cross-modal transformations. A standard linear mapping 
+
+W ∈ Rdout ×din is approximated by a low-rank decomposition: 
+
+W ≈ α Wup Wdown , (4) 
+
+Wdown ∈ Rr×din , Wup ∈ Rdout ×r , (5) where r ≪ min( din , d out ) is the low-rank dimension, and α is a learnable scaling factor. This design reduces the parameter complexity from O(din dout ) to O(r(din + dout )) while preserv-ing expressive capacity. Moreover, the low-rank formulation improves training stability when applied to cross-modal fusion. After projection, the RGB and auxiliary features are mod-eled using parallel Mamba-based state-space models. For the 
+
+k-th token in the flattened spatial sequence, the state updates are defined as 
+
+hrgb  
+
+> k
+
+= Argb hrgb  
+
+> k−1
+
++ Brgb f rgb  
+
+> k
+
+,
+
+hx 
+
+> k
+
+= Axhx 
+
+> k−1
+
++ Bxf x 
+
+> k
+
+, (6) where A and B are parameterized following the Mamba formulation and efficiently computed via selective scan. Unlike standard Mamba, RSGMB does not employ a fixed output projection. Instead, the output readout is dynamically mod-ulated by reliability-aware gates. To assess the reliability of each modality independently, we introduce modality-wise uncertainty-aware gates: 
+
+grgb u = σ Grgb u (f rgb ) , gx 
+
+> u
+
+= σ(Gx 
+
+> u
+
+(f x)) , (7) where Gu consists of Layer Normalization followed by a lightweight MLP. The uncertainty-aware gates estimate modality-wise reliability by measuring the stability of fea-ture responses. Regions with high uncertainty (e.g., noisy or missing values) tend to produce lower gating scores, thereby reducing their influence during cross-modal interaction. Relying solely on single-modality reliability is insufficient to determine whether cross-modal fusion should be performed. We therefore further introduce a cross-modal consistency-aware gate: 
+
+gc = σ Gc([ f rgb , f x, |f rgb − f x|])  , (8) where Gc consists of Layer Normalization followed by a lightweight MLP. It explicitly models inter-modal agreement by incorporating both raw features and their absolute differ-ence. The consistency-aware gate captures cross-modal agree-ment. When features from different modalities are consistent, the gating value is increased, promoting reliable information exchange. Conversely, inconsistent responses are suppressed to avoid feature contamination. Based on the estimated reliability and consistency, we construct dynamic cross-state matrices: 
+
+Crgb eff = grgb u · (1 − gc) · Crgb ,
+
+Cx 
+
+> eff
+
+= gx 
+
+> u
+
+· gc · Cx. (9) These effective matrices are then used in the selective scan to produce the final outputs: 
+
+yrgb k = Crgb eff hrgb k + Drgb f rgb k ,
+
+yxk = Cxeff hxk + Dxf xk . (10) JOURNAL OF L ATEX CLASS FILES, VOL. 18, NO. 9, SEPTEMBER 2020 6
+
+This formulation allows RSGMB to adaptively regulate cross-modal fusion based on modality reliability and cross-modal consistency. When the auxiliary modality is unreliable, RSGMB naturally falls back to single-modality modeling, whereas consistent modalities trigger stronger cross-modal in-teractions. This design enables token-wise, non-uniform fusion without requiring any additional supervision. Compared with Cross-Attention and fixed Cross-Mamba fusion, RSGMB offers three key advantages: (i) dynamic cross-state readout instead of static fusion weights, (ii) explicit modeling of modality reliability and cross-modal consistency, and (iii) a parameter-efficient design enabled by low-rank projections. These properties make RSGMB particularly well-suited for real-world RGB–X segmentation, where auxiliary modalities are often imperfect. This design enables dynamic modulation of cross-modal information flow, where the con-tribution of each modality is quantitatively controlled by the learned gating values. 
+
+Local Cross-Gated Modulation (LCGM). Global fusion mechanisms are effective at modeling long-range dependen-cies, but they often fail to preserve fine-grained local struc-tures that are essential for precise boundary delineation. To complement global fusion, we introduce a Local Cross-Gated Modulation (LCGM), which enables spatially adaptive, token-wise modulation between modalities at each resolution level. Given the RGB feature Ergb and auxiliary-modal feature Ex
+
+at the same resolution, both features are first projected into a reduced embedding space via linear layers: 
+
+Mrgb = Wrgb Ergb , Mx = WxEx, (11) where W rgb and W x denote the linear projection matrices. To adaptively modulate local responses within each modality, we generate modality-specific gating maps using shallow convo-lutional layers followed by sigmoid activation: 
+
+Grgb = σ(Conv (Mrgb )) , Gx = σ(Conv (Mx)) , (12) where σ represents the Sigmoid function. The gate is then applied to its own feature via element-wise multiplication, enabling self-adaptive local filtering: 
+
+ˆMrgb = DConv (Mrgb ⊙ Grgb ), ˆMx = DConv (Mx ⊙ Gx),
+
+(13) where ⊙ denotes element-wise multiplication, and DConv 
+
+means Depth-wise Convolution. The self-gated features are subsequently refined by depthwise convolutions to efficiently capture local spatial patterns while maintaining low computa-tional overhead. After this local refinement stage, cross-modal interaction is introduced through element-wise multiplication between the two modality branches: 
+
+ˆMrx = ˆMrgb ⊙ ˆMx, ˆMxr = ˆMx ⊙ ˆMrgb . (14) Finally, the fused local response is added to the RGB branch via a residual connection, producing the enhanced local rep-resentation Eloc .
+
+Eloc = Ergb + ˆMrx + ˆMxr . (15) This design allows LCGM to selectively emphasize locally consistent structures while effectively suppressing unreliable auxiliary cues, thereby providing robust fine-grained enhance-ment that complements global fusion. IV. E XPERIMENTS 
+
+A. Experimental Settings 
+
+To comprehensively assess the effectiveness of RSGMamba, we conduct experiments on several widely used multimodal semantic segmentation benchmarks. Specifically, our method is tested on two RGB–Depth datasets, NYUDepth V2 [37] and SUN-RGBD [38], as well as two RGB–Thermal datasets, MFNet [24] and PST900 [39]. These benchmarks cover diverse indoor and outdoor scenes with different modality characteristics, providing a rigorous testbed for cross-modal perception. Details of the datasets are provided below:  
+
+> •
+
+NYUDepth V2 [37] consists of 1,449 paired RGB–D images captured at a resolution of 640 × 480 . The dataset is split into 795 samples for training and 654 samples for evaluation, covering a total of 40 semantic classes.  
+
+> •
+
+SUN-RGBD [38] contains 10,335 RGB–D image pairs annotated with 37 object categories. Following the stan-dard split, 5,285 images are used for training, and the remaining 5,050 images are used for testing.  
+
+> •
+
+MFNet [24] dataset consists of paired RGB–Thermal images captured under both daytime (820 images) and nighttime (749 images) conditions, all with a spatial resolution of 640 × 480 . It covers eight object categories commonly encountered in road and driving scenes.  
+
+> •
+
+PST900 [39] dataset contains 894 paired RGB–Thermal images collected in complex underground scenes. It offers pixel-level semantic annotations for four object categories. Both the RGB and thermal modalities are available at a resolution of 1280 × 720 . The dataset is split into training and testing subsets using a 2:1 ratio. 
+
+B. Training Settings 
+
+To ensure a fair and consistent comparison with existing approaches, we adopt the same data pre-processing pipeline and augmentation protocols as those employed in previous works. For optimization, we adopt the AdamW optimizer [40] with a weight decay of 0.01. The initial learning rate is set to 6 × 10 −5, and the model is trained for 500 epochs with a batch size of 8. A polynomial learning rate decay schedule is employed, along with a warm-up phase during the first 10 epochs to stabilize training. The network is optimized using the standard cross-entropy loss. All experiments are conducted on four NVIDIA H100 GPUs. 
+
+C. State-of-the-art Comparisons 
+
+RGB-D Segmentation Table I presents comprehensive comparisons between our method and existing state-of-the-art RGB-D semantic segmentation approaches on the NYUDepth V2 and SUN-RGBD benchmarks. RSGMamba-S (SegMAN-S) achieves 56.4% mIoU on NYUDepth V2 and 52.9% on SUN-RGBD, performing on par with DiffPixelFormer [15] (56.3% / 52.8%). However, this comparable performance is obtained with only 28.10M parameters and 58.45G FLOPs, JOURNAL OF L ATEX CLASS FILES, VOL. 18, NO. 9, SEPTEMBER 2020 7
+
+TABLE I QUALITATIVE COMPARISONS ON NYUD EPTH V2 AND SUN-RGBD DATASETS . A LL THE BACKBONES ARE PRE -TRAINED ON IMAGE NET -1K. T HE BEST AND SECOND BEST RESULTS FOR EACH METRIC ARE COLOR -CODED .
+
+Model Publication Backbone Params. ↓ NYUDepthv2 SUN-RGBD Input size Flops ↓ mIoU ↑ Input size Flops ↓ mIoU ↑
+
+TokenFusion [33] CVPR’22 MiT-B3 45.9M 480 × 640 94.4G 54.2 530 × 730 122.1G 51.0 CMX [21] TITS’23 MiT-B4 139.9M 480 × 640 134.3G 56.3 530 × 730 173.8G 52.1 DFNet [34] TII’24 MiT-B2 41.2M 480 × 640 35.1G 56.1 530 × 730 - 51.6 DCANet [22] PR’25 VMamba 123.8M 480 × 640 138.5G 53.3 530 × 730 - 49.6 ECMRN [35] KBS’25 DFormer 68.6M 480 × 640 135.3G 54.6 530 × 730 178.5G 50.5 Sigma [19] WACV’25 VMamba-T 48.3M 480 × 640 90.4G 53.9 480 × 640 90.4G 50.0 ADBNet [18] KBS’25 ConvNext-tiny 45.9M 480 × 640 52.7G 56.0 530 × 730 - 49.6 DiffPixelFormer [15] TMM’25 MiT-B3 85.4M 480 × 640 154.8G 56.3 530 × 730 205.7G 52.8 
+
+RSGMamba-S UR’26 SegMAN-S 28.1M 480 × 640 58.5G 56.4 530 × 730 75.8G 52.9 
+
+CMX [21] TITS’23 MiT-B5 181.1M 480 × 640 167.8G 56.9 530 × 730 217.6G 52.4 CMNext [14] CVPR’23 MiT-B4 119.6M 480 × 640 131.9G 56.9 530 × 730 170.3G 51.9 GeminiFusion [9] ICML’24 MiT-B3 75.8M 480 × 640 174.0G 56.8 530 × 730 - 52.7 PrimKD [36] MM’24 MiT-B4 139.9M 480 × 640 134.3G 57.8 530 × 730 173.8G 52.5 DFNet [34] TII’24 MiT-B4 108.8M 480 × 640 101.0G 57.9 530 × 730 - 52.4 Sigma [19] WACV’25 VMamba-S 69.8M 480 × 640 139.8G 57.0 480 × 640 139.8G 52.4 ADBNet [18] KBS’25 ConvNext-base 299.1M 480 × 640 361.7G 57.6 530 × 730 - 52.7 DFormerV2 [12] CVPR’25 DFormerV2-L 95.5M 480 × 640 124.1G 58.4 530 × 730 160.5G 53.3 RSGMamba-B UR’26 SegMAN-B 48.6M 480 × 640 130.2G 58.8 530 × 730 168.4G 54.0                     
+
+> RGB img Depth img Sigma [19] (53.9%) ECMRN [35] (54.6%) DFNet [15] (56.1%) RSGMamba-S (56.4%)
+> RGB img Depth img CMNext [14] (56.9%) PrimKD [36] (57.8%) DFormerV2 [12] (58.4%) RSGMamba-B (58.8%)
+> RGB img Depth img ECMRN [35] (50.5%) TokenFusion [11] (51.0%) CMX [21] (52.1%) RSGMamba-S (52.9%)
+> RGB img Depth img DFNet [34] (52.4%) GeminiFusion [9] (52.7%) DFormerV2 [12] (53.3%) RSGMamba-B (54.0%)
+
+Fig. 5. Qualitative comparisons on the NYUDepth V2 [37] (first two rows) and SUN-RGBD [38] (last two rows) datasets. The highlighted regions (orange circles) emphasize the key differences among the methods. Compared with previous approaches, our RSGMamba produces more accurate predictions with clearer boundaries and better preservation of fine structures, especially in challenging regions with ambiguous depth or small objects. The mIoU (%) for each method is reported below the corresponding result. 
+
+whereas DiffPixelFormer [15] requires 85.4M parameters and 154.8G FLOPs under the same input resolution. In other words, RSGMamba-S reduces the parameter count by more than 2.6 × and the computational cost by nearly 3 ×, while maintaining equivalent segmentation accuracy. Compared with DFormerV2-L [12], our RSGMamba-B (SegMAN-B) con-sistently achieves superior performance under comparable computational budgets. As reported in Table I, both methods operate at similar FLOPs levels on NYUDepth V2 (130.2G vs. 124.1G) and SUN-RGBD (168.4G vs. 160.5G). Despite JOURNAL OF L ATEX CLASS FILES, VOL. 18, NO. 9, SEPTEMBER 2020 8
+
+TABLE II QUANTITATIVE COMPARISONS ON THE MFN ET DATASET . T HE BEST AND SECOND BEST RESULTS FOR EACH METRIC ARE COLOR -CODED .
+
+Method Publication Backbone Unlabeled Car Person Bike Curve Stop Guardrail Cone Bump mIoU 
+
+ABMDRNet [41] CVPR’21 ResNet-50 98.6 84.8 69.6 60.3 45.1 33.1 5.1 47.4 50.0 54.8 GMNet [26] TIP’21 ResNet-50 97.5 86.5 73.1 61.7 44.0 42.3 14.5 48.7 47.4 57.3 LASNet [42] TCSVT’23 RGB-T 97.4 84.2 67.1 56.9 41.1 39.6 18.9 48.8 40.1 54.9 CMX [21] TITS’23 MiT-B4 98.3 90.1 75.2 64.5 50.2 35.3 8.5 54.2 60.6 59.7 EAEFNet [43] RAL’23 ResNet-152 97.6 87.6 72.6 63.8 48.6 35.0 14.2 52.4 58.3 58.9 CACFNet [44] TIV’23 ConvNeXt-B 98.1 89.2 69.5 63.3 46.6 32.4 7.9 54.9 58.3 57.8 SegMiF [45] ICCV’23 MiT-B3 98.1 87.8 71.4 63.2 47.5 31.1 6.6 48.9 50.3 56.1 CMNeXt [14] CVPR’23 MiT-B4 98.4 91.5 75.3 67.6 50.5 40.1 9.3 53.4 52.8 59.9 CRM [46] ICRA’24 Swin-T 98.2 90.0 73.1 63.7 47.9 40.7 9.9 54.4 54.2 59.1 MDBFNet [47] TIV’24 ResNet-152 97.8 89.1 73.5 62.6 48.8 34.6 8.0 54.5 51.3 57.8 Sigma [19] WACV’25 VMamba-T 98.4 90.8 75.2 66.6 48.2 38.0 8.7 55.9 60.4 60.2 HKDNet [48] TCSVT’25 MiT-B3 98.0 87.1 71.7 63.1 42.9 38.1 0.3 55.5 51.8 56.5 OmniFuse [49] TPAMI’25 - 98.6 87.3 69.7 63.9 37.7 33.7 13.5 53.8 48.5 56.3 AGFNet [50] TITS’25 ResNet-50 98.2 88.0 73.7 64.6 45.3 34.3 13.8 57.0 52.5 58.6 MixPrompt [51] NIPS’25 MiT-B5 98.3 90.2 74.5 65.2 50.1 48.3 10.5 51.7 52.0 60.1 MiLNet [52] TIP’25 MiT-B3 98.2 87.9 72.3 64.5 46.2 45.8 10.1 55.8 60.1 60.1 
+
+RSGMamba-S UR’26 SegMAN-S 98.4 90.1 73.8 66.3 49.3 39.8 4.5 55.0 57.2 59.4 RSGMamba-B UR’26 SegMAN-B 98.6 91.0 75.5 67.9 50.6 41.3 8.6 57.2 59.4 61.1 
+
+this, RSGMamba-B employs only 48.55M parameters, which is nearly half that of DFormerV2-L [12] (95.5M parameters), while delivering higher segmentation accuracy on both bench-marks (58.8% vs. 58.4% on NYUDepth V2 and 54.0% vs. 53.3% on SUN-RGBD). As illustrated in Fig. 5, our method produces more accurate predictions with clearer boundaries and better preservation of fine structures. 
+
+RGB-T Segmentation Table II presents quantitative com-parisons on the MFNet [24] RGB-T semantic segmentation benchmark. As shown, RSGMamba achieves the best overall performance across both model scales, demonstrating strong robustness under diverse illumination conditions. In partic-ular, RSGMamba-B (SegMAN-B) attains the highest mIoU of 61.1%, surpassing recent state-of-the-art methods such as Sigma [19] and CMX [21] by a clear margin. These results validate the effectiveness of the proposed reliability-aware self-gated fusion mechanism in mitigating unreliable thermal cues and selectively enhancing complementary information, thereby leading to more accurate and stable segmentation in real-world RGB-T scenarios. In addition, as shown in Table III, our method outperforms competing methods by more than 0.3% (88.9% vs. 88.6%) on the PST900 dataset, further demonstrating the superiority of our proposed method. As shown in Fig. 6, the highlighted regions further demonstrate that our method achieves more accurate and consistent predic-tions under challenging conditions such as low illumination and thermal ambiguity, with improved perception of small or hard-to-distinguish objects. 
+
+D. Ablation Studies 
+
+Effectiveness of Key Components: RSGMB and LCGM. 
+
+Table IV investigates the individual and combined effects of RSGMB and LCGM on segmentation performance. As a baseline, the model without either module (ID 1) achieves an mIoU of 53.6% with 24.31M parameters and 53.97G FLOPs. Introducing RSGMB alone (ID 2) yields a noticeable 
+
+TABLE III QUANTITATIVE COMPARISONS ON PST900 DATASET . B G: B ACKGROUND ,HD: H AND -D RILL , B P: B ACKPACK , FE: F IRE -E XTINGUISHER , AND SV:SURVIVOR . T HE BEST AND SECOND BEST RESULTS ARE COLOR -CODED .                                                                                                                       
+
+> Method Publication Bg HD Bp FE Sv mIoU
+> DSGBINet [53] TCSVT’22 99.4 75.0 85.1 79.3 75.6 82.9 LASNet [42] TCSVT’23 99.5 82.8 86.5 77.8 75.5 84.4 FDCNet [54] TCSVT’23 99.2 70.4 72.2 71.5 72.4 77.1 SGFNet [55] TCSVT’23 99.4 76.7 85.4 75.6 76.7 82.8 EAEFNet [43] RAL’23 99.5 83.9 87.7 80.4 75.6 85.4 DPLNet [56] IROS’24 -----86.7 GoPT [57] AAAI’24 -----81.5 CAINet [58] TMM’24 99.5 80.3 88.0 77.2 78.7 84.7 CRM [46] ICRA’24 99.5 79.1 86.0 86.2 78.7 85.9 MDBFNet [47] TIV’24 99.6 76.1 88.7 84.4 80.7 85.9 CPAL [59] TCSVT’25 99.6 84.9 87.9 81.2 80.4 86.8 AGFNet [50] TITS’25 99.5 80.3 85.3 90.2 78.7 84.8 Sigma [19] WACV’25 99.6 81.9 89.8 88.7 82.7 88.6 MiLNet [52] TIP’25 99.5 76.3 89.6 82.2 78.0 85.1
+> RSGMamba-S UR’26 99.5 82.2 86.9 87.3 80.4 87.3 RSGMamba-B UR’26 99.6 84.2 89.0 90.5 81.3 88.9
+
+improvement of +1.3% mIoU while incurring only a moderate increase in model complexity, indicating that reliability-aware state-space modeling effectively enhances cross-modal feature representation. Similarly, enabling LEM alone (ID 3) leads to a +1.7% mIoU gain over the baseline, suggesting that explicit local enhancement plays a crucial role in refining spatial details and boundary-aware semantics. Although RS-GMB introduces slightly higher computational overhead than LCGM, the resulting accuracy gain justifies its inclusion. When both RSGMB and LEM are jointly applied (ID 4), the model achieves the best performance, reaching 56.4% mIoU and corresponding to a total improvement of +2.8% mIoU over the baseline. This gain is notably larger than that obtained by either module alone, demonstrating their strong complementarity. Specifically, RSGMB focuses on reliable global cross-modal interaction, while LEM emphasizes local JOURNAL OF L ATEX CLASS FILES, VOL. 18, NO. 9, SEPTEMBER 2020 9                    
+
+> RGB img Thermal img HKDNet [48] (56.5%) AGFNet [50] (58.6%) CRM [46] (59.1%) RSGMamba-S (59.4%)
+> RGB img Thermal img OmniFuse [49] (56.3%) CMNeXt [14] (59.9%) Mixprompt [51] (60.1%) RSGMamba-B (61.1%)
+> RGB img Thermal img SGFNet [55] (82.8%) AGFNet [50] (84.8%) CPAL [59] (86.8%) RSGMamba-S (87.3%)
+> RGB img Thermal img MiLNet [52] (85.1%) DPLNet [56] (86.7%) Sigma [19] (88.6%) RSGMamba-B (88.9%)
+
+Fig. 6. Qualitative comparisons on the MFNet [24] (first two rows) and PST900 [39] (last two rows) datasets. The highlighted regions (orange circles) emphasize the key differences among methods under challenging conditions, such as low illumination and thermal ambiguity. Compared with previous approaches, our RSGMamba produces more accurate and consistent predictions, with clearer boundaries and better detection of small or hard-to-distinguish objects. The mIoU (%) for each method is reported below the corresponding result. TABLE IV EFFECTIVENESS OF RSGMB AND LCGM. 
+
+ID RSGMB LCGM Params. ↓ GFLOPs ↓ mIoU ↑ ∆
+
+1 % % 24.31 53.97 53.6 –2 % ! 25.57 55.19 54.9 +1.3 3 ! % 26.83 57.22 55.3 +1.7 4 ! ! 28.10 58.45 56.4 +2.8 
+
+structural enhancement, together enabling more discriminative and robust feature learning. Overall, the results validate that the proposed design achieves a favorable trade-off between segmentation accuracy and computational cost. To investigate whether the projection layer in the fusion block should be parameterized as a full linear mapping or a lightweight low-rank adaptation, we replace the standard linear projection with a LoRA-based projection while keeping all other settings unchanged. Table V shows that LoRA not only slightly improves segmentation accuracy from 56.2% to 56.4% mIoU (+0.2%), but also reduces the model complexity, decreasing the number of parameters from 29.41M to 28.10M and FLOPs from 59.13G to 58.45G. These results suggest that the projection used in cross-modal fusion is highly redundant and can be effectively approximated by low-rank updates. 
+
+Effectiveness of reliability modeling in RSGMB. To further verify the effectiveness of the proposed reliability modeling in RSGMB, we conduct a controlled ablation by progressively enabling two key components: uncertainty-aware reliability estimation ( gu) and cross-modal consistency mod-
+
+TABLE V EFFECTIVENESS OF LORA PROJECTION .
+
+ID Projection Params. ↓ GFLOPs ↓ mIoU ↑ ∆
+
+1 Linear 29.41 59.13 56.2 -2 LORA 28.10 58.45 56.4 +0.2 TABLE VI EFFECTIVENESS OF THE RELIABILITY MODELING IN RSGMB. gu
+
+> DENOTES THE UNCERTAINTY
+
+-AWARE RELIABILITY ESTIMATION , AND gc
+
+> DENOTES THE CROSS
+
+-MODAL CONSISTENCY MODELING .
+
+ID Unc gu Con gc Params. ↓ GFLOPs ↓ mIoU ↑ ∆
+
+1 % % 28.10 56.53 54.9 -2 ! % 28.10 57.30 55.4 +0.5 3 % ! 28.10 57.68 55.6 +0.7 4 ! ! 28.10 58.45 56.4 +1.5 
+
+eling ( gc). As shown in Table VI, starting from the vari-ant without either component, introducing Unc leads to a clear improvement of +0.5% mIoU, indicating that explic-itly estimating modality reliability helps suppress noisy or ambiguous cross-modal cues. Enabling Con yields an even larger gain of +0.7% mIoU, suggesting that enforcing cross-modal consistency provides a stronger supervisory signal for stabilizing fusion and reducing semantic ambiguity. When both components are jointly applied, the model achieves the best performance of 56.4% mIoU, corresponding to a total gain of +1.5% mIoU. As further illustrated by the JOURNAL OF L ATEX CLASS FILES, VOL. 18, NO. 9, SEPTEMBER 2020 10                                               
+
+> TABLE VII COMPARISONS OF DIFFERENT FUSION METHODS UNDER THE SAME BACKBONE AND DECODER .
+> ID Fusion Params. ↓GFLOPs ↓mIoU ↑∆
+> 1Concat 30.96 60.83 54.7 -2Add 24.31 53.97 55.3 +0.6 3Cross-Attention 35.42 135.06 54.0 -0.5 4Cross-Mamba 26.83 55.31 55.1 +0.4 5RSGMB 26.83 57.22 56.4 +1.7
+> RGB img Depth img baseline
+> with guwith gu&gcwith RSGMB &LCGM
+> Fig. 7. Qualitative comparisons of reliability modeling in our framework. The highlighted regions show that the uncertainty-aware module ( gu) suppresses noisy depth-induced artifacts, while the consistency module ( gc) enhances cross-modal semantic consistency. Their combination ( gu&gc=RSGMB )produces more reliable and consistent predictions. Furthermore, with the integration of LCGM , our final model achieves sharper boundaries and better preservation of fine structures.
+
+qualitative results in Fig. 7, the baseline model suffers from noticeable misclassification in the sofa region, largely due to unreliable depth responses and weak cross-modal alignment. After incorporating Unc, the erroneous sofa predictions are visibly reduced, while Con further refines the segmentation by producing cleaner boundaries and more consistent semantic regions. These results demonstrate that uncertainty modeling and consistency modeling are complementary: the former improves the reliability of feature selection, while the latter strengthens cross-modal alignment, together enabling more robust and accurate RGB-X segmentation. 
+
+Comparisons of different fusion methods. We conduct a comprehensive comparison of different fusion strategies on NYUDepth V2, using the same backbone (SegMAN-Small) for fair evaluation. The quantitative results are reported in Table VII. We observe that simple Add achieves 55.3% mIoU (+0.6%) while reducing parameters and FLOPs compared to Concat, indicating that lightweight fusion can be sufficient without introducing severe cross-modal noise. In contrast, the standard Cross-Attention baseline ( Q from RGB, K/V from depth) incurs the highest computational cost (135.06G FLOPs) but degrades performance (54.0% mIoU, −0.5%), suggesting that dense attention-based interaction is sensitive to depth noise, missing values, and misalignment in NYUDepth V2. As a result, unreliable cues may be propagated into RGB features, leading to feature contamination. Cross-Mamba provides a better accuracy–efficiency trade-off (55.1% mIoU, +0.4%) with much lower complexity, imply-       
+
+> Addition Cross-Attention Cross-Mamba RSGMB (ours)
+> Fig. 8. Visualization of feature responses under different fusion mechanisms: Addition, Cross-Attention, Cross-Mamba, and our proposed RSGMB. The zoomed-in regions indicate that our RSGMB produces clearer structural patterns and stronger activations in semantically meaningful regions while effectively suppressing noise, demonstrating its superior ability to model cross-modal interactions.
+> Addition Cross-Attention Cross-Mamba RSGMB (ours)
+> Fig. 9. Visual comparisons of RGB-X semantic segmentation results. From left to right: RGB image, auxiliary modality, and segmentation predictions obtained by Addition, Cross-Attention, Cross-Mamba, and RSGMB (ours). The highlighted regions demonstrate that RSGMB better preserves structural details and thin objects while reducing noisy predictions.
+
+ing that SSM-based fusion is more stable than quadratic atten-tion. Finally, RSGMB achieves the best performance (56.4% mIoU, +1.7%) with the same parameter budget as Cross-Mamba, demonstrating that the gain mainly comes from our reliability-aware design. By explicitly modeling uncertainty (Unc) and cross-modal consistency (Con), RSGMB selectively leverages informative depth cues while suppressing unreliable regions, leading to more robust fusion. As shown in Fig. 8, existing fusion strategies such as Add and Cross-Attention tend to produce diffused or noisy activations, especially in regions where the auxiliary modality is unreliable. Although Cross-Mamba alleviates this issue to some extent, it still lacks the ability to explicitly distinguish reliable and unreli-able cross-modal cues. In contrast, RSGMB generates more structured and concentrated feature responses, focusing on semantically meaningful regions while effectively suppressing noise, demonstrating the effectiveness of our reliability-aware gating mechanism in regulating cross-modal interactions. This advantage further translates into improved segmenta-tion quality. As illustrated in Fig. 9, our method produces cleaner and more consistent predictions than other fusion strategies. In particular, RSGMB better preserves structural details and thin objects, while significantly reducing noisy and spurious predictions in challenging regions with depth ambi-guity or missing values. These results confirm that explicitly modeling modality uncertainty and cross-modal consistency is critical for achieving robust and reliable RGB-X segmentation. JOURNAL OF L ATEX CLASS FILES, VOL. 18, NO. 9, SEPTEMBER 2020 11 
+
+V. C ONCLUSION 
+
+In this paper, we presented RSGMamba, a reliability-aware fusion framework for multimodal semantic segmenta-tion. Unlike prior methods that indiscriminately fuse hetero-geneous modalities, RSGMamba explicitly models modality reliability and introduces a self-gated interaction mechanism to selectively exploit complementary cues while suppress-ing unreliable or noisy information. Built upon the linear-complexity formulation of state space models, RSGMamba achieves efficient global receptive field modeling and further enhances feature representations through a unified global–local enhancement strategy. Extensive experiments on both RGB-D and RGB-T benchmarks demonstrate consistent improvements over strong baselines, confirming the effectiveness, robustness, and efficiency of the proposed approach. More importantly, our results suggest that explicitly regulating cross-modal in-teraction according to modality reliability is crucial for robust multimodal segmentation. REFERENCES [1] C. Yuan, S. Joshi, S. Zhu, H. Su, H. Zhao, and Y. Gao, “Roboengine: Plug-and-play robot data augmentation with semantic robot segmen-tation and background generation,” in Proceedings of the IEEE/RSJ International Conference on Intelligent Robots and Systems (IROS) .IEEE, 2025, pp. 7622–7629. [2] Y. Zhang, M. Yin, W. Bi, H. Yan, S. Bian, C.-H. Zhang, and C. Hua, “Zisvfm: Zero-shot object instance segmentation in indoor robotic environments with vision foundation models,” IEEE Transactions on Robotics , vol. 41, pp. 1568–1580, 2025. [3] Z. Xing, L. Wan, H. Fu, G. Yang, Y. Yang, L. Yu, B. Lei, and L. Zhu, “Diff-unet: A diffusion embedded network for robust 3d medical image segmentation,” Medical Image Analysis , vol. 105, p. 103654, 2025. [4] C. Li, X. Liu, W. Li, C. Wang, H. Liu, Y. Liu, Z. Chen, and Y. Yuan, “U-kan makes strong backbone for medical image segmentation and generation,” in Proceedings of the AAAI Conference on Artificial Intel-ligence , vol. 39, no. 5, 2025, pp. 4652–4660. [5] G. Gao, G. Xu, J. Li, Y. Yu, H. Lu, and J. Yang, “Fbsnet: A fast bilateral symmetrical network for real-time semantic segmentation,” 
+
+IEEE Transactions on Multimedia , vol. 25, pp. 3273–3283, 2023. [6] G. Yang, Y. Wang, D. Shi, and Y. Wang, “Golden cudgel network for real-time semantic segmentation,” in Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , 2025, pp. 25 367–25 376. [7] G. Xu, W. Jia, T. Wu, L. Chen, and G. Gao, “Haformer: Unleashing the power of hierarchy-aware features for lightweight semantic segmenta-tion,” IEEE Transactions on Image Processing , vol. 33, pp. 4202–4214, 2024. [8] Y. Fu, M. Lou, and Y. Yu, “Segman: Omni-scale context modeling with state space models and local attention for semantic segmentation,” in Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , 2025, pp. 19 077–19 087. [9] D. Jia, J. Guo, K. Han, H. Wu, C. Zhang, C. Xu, and X. Chen, “Gemi-nifusion: Efficient pixel-wise multimodal fusion for vision transformer,” 
+
+arXiv preprint arXiv:2406.01210 , 2024. [10] B. Li, D. Zhang, Z. Zhao, J. Gao, and X. Li, “Stitchfusion: Weaving any visual modalities to enhance multimodal semantic segmentation,” in 
+
+Proceedings of the ACM International Conference on Multimedia , 2025, pp. 1308–1317. [11] M. Kim, S. Gao, Y.-C. Hsu, Y. Shen, and H. Jin, “Token fusion: Bridging the gap between token pruning and token merging,” in Proceedings of the IEEE/CVF Winter Conference on Applications of Computer Vision ,2024, pp. 1383–1392. [12] B.-W. Yin, J.-L. Cao, M.-M. Cheng, and Q. Hou, “Dformerv2: Geometry self-attention for rgbd semantic segmentation,” in Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition ,2025, pp. 19 345–19 355. [13] B.-W. Yin, J.-L. Cao, X. Zhang, Y. Chen, M.-M. Cheng, and Q. Hou, “Omnisegmentor: A flexible multi-modal learning framework for seman-tic segmentation,” arXiv preprint arXiv:2509.15096 , 2025. [14] J. Zhang, R. Liu, H. Shi, K. Yang, S. Reiß, K. Peng, H. Fu, K. Wang, and R. Stiefelhagen, “Delivering arbitrary-modal semantic segmentation,” in Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , 2023, pp. 1136–1147. [15] Y. Gong, J. Lu, Y. Gao, J. Zhao, X. Zhang, and S. Rahardja, “Diff-pixelformer: Differential pixel-aware transformer for rgb-d indoor scene segmentation,” arXiv preprint arXiv:2511.13047 , 2025. [16] X. Guo, T. Liu, Y. Li, Z. Lin, and Z. Deng, “Tuni: Real-time rgb-t semantic segmentation with unified multi-modal feature extraction and cross-modal feature fusion,” arXiv preprint arXiv:2509.10005 , 2025. [17] B. Yin, X. Zhang, Z.-Y. Li, L. Liu, M.-M. Cheng, and Q. Hou, “Dformer: Rethinking rgbd representation learning for semantic segmentation,” in 
+
+ICLR , 2024. [18] C. Xu, G. Ma, F. Gao, B. Wang, and J. Liu, “Adbnet: Asymmetric dual-branch network for indoor real-time rgb-d semantic segmentation,” 
+
+Knowledge-Based Systems , vol. 326, p. 113885, 2025. [19] Z. Wan, P. Zhang, Y. Wang, S. Yong, S. Stepputtis, K. Sycara, and Y. Xie, “Sigma: Siamese mamba network for multi-modal semantic segmentation,” in Proceedings of the IEEE/CVF Winter Conference on Applications of Computer Vision (WACV) . IEEE, 2025, pp. 1734–1744. [20] X. Guo, Z. Lin, L. Hu, Z. Deng, T. Liu, and W. Zhou, “Cross-modal state space modeling for real-time rgb-thermal wild scene semantic segmentation,” in Proceedings of the IEEE/RSJ International Conference on Intelligent Robots and Systems (IROS) . IEEE, 2025, pp. 5938–5945. [21] J. Zhang, H. Liu, K. Yang, X. Hu, R. Liu, and R. Stiefelhagen, “Cmx: Cross-modal fusion for rgb-x semantic segmentation with transformers,” 
+
+IEEE Transactions on Intelligent Transportation Systems , vol. 24, no. 12, pp. 14 679–14 694, 2023. [22] L. Bai, J. Yang, C. Tian, Y. Sun, M. Mao, Y. Xu, and W. Xu, “Dcanet: Differential convolution attention network for rgb-d semantic segmentation,” Pattern Recognition , vol. 162, p. 111379, 2025. [23] B.-W. Yin, J.-L. Cao, D. Xu, M.-M. Cheng, and Q. Hou, “Dformer++: Improving rgbd representation learning for semantic segmentation,” 
+
+IEEE Transactions on Pattern Analysis and Machine Intelligence , 2026. [24] Q. Ha, K. Watanabe, T. Karasawa, Y. Ushiku, and T. Harada, “Mfnet: Towards real-time semantic segmentation for autonomous vehicles with multi-spectral scenes,” in Proceedings of the IEEE/RSJ International Conference on Intelligent Robots and Systems (IROS) . IEEE, 2017, pp. 5108–5115. [25] Y. Sun, W. Zuo, and M. Liu, “Rtfnet: Rgb-thermal fusion network for semantic segmentation of urban scenes,” IEEE Robotics and Automation Letters , vol. 4, no. 3, pp. 2576–2583, 2019. [26] W. Zhou, J. Liu, J. Lei, L. Yu, and J.-N. Hwang, “Gmnet: Graded-feature multilabel-learning network for rgb-thermal urban scene seman-tic segmentation,” IEEE Transactions on Image Processing , vol. 30, pp. 7790–7802, 2021. [27] H. Zhou, C. Tian, Z. Zhang, Q. Huo, Y. Xie, and Z. Li, “Multispectral fusion transformer network for rgb-thermal urban scene semantic seg-mentation,” IEEE Geoscience and Remote Sensing Letters , vol. 19, pp. 1–5, 2022. [28] X. Jiang, Y. Hou, H. Tian, and L. Zhu, “Mirror complementary trans-former network for rgb-thermal salient object detection,” IET Computer Vision , vol. 18, no. 1, pp. 15–32, 2024. [29] A. Gu, K. Goel, and C. R´ e, “Efficiently modeling long sequences with structured state spaces,” arXiv preprint arXiv:2111.00396 , 2021. [30] A. Gu and T. Dao, “Mamba: Linear-time sequence modeling with selective state spaces,” in First Conference on Language Modeling , 2024. [31] Y. Liu, Y. Tian, Y. Zhao, H. Yu, L. Xie, Y. Wang, Q. Ye, J. Jiao, and Y. Liu, “Vmamba: Visual state space model,” Advances in Neural Information Processing Systems , vol. 37, pp. 103 031–103 063, 2024. [32] L. Zhu, B. Liao, Q. Zhang, X. Wang, W. Liu, and X. Wang, “Vision mamba: Efficient visual representation learning with bidirectional state space model,” arXiv preprint arXiv:2401.09417 , 2024. [33] Y. Wang, X. Chen, L. Cao, W. Huang, F. Sun, and Y. Wang, “Multimodal token fusion for vision transformers,” in Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , 2022, pp. 12 186–12 195. [34] Y. Yang, Y. Hong, Y. Yuan, H. Pan, and W. Sun, “Difference-aware fusion network for efficient rgb-d semantic segmentation in indoor robots,” IEEE Transactions on Industrial Informatics , vol. 21, no. 10, pp. 7424–7434, 2025. [35] D. Jia, C. Zhao, H. Song, H. Zhang, and W. Li, “Ecmrn: Efficient cross-modal reparameterization network for rgb-d tasks via prompt tuning,” 
+
+Knowledge-Based Systems , p. 114321, 2025. [36] Z. Hao, Z. Xiao, Y. Luo, J. Guo, J. Wang, L. Shen, and H. Hu, “Primkd: Primary modality guided multimodal fusion for rgb-d semantic JOURNAL OF L ATEX CLASS FILES, VOL. 18, NO. 9, SEPTEMBER 2020 12 
+
+segmentation,” in Proceedings of the ACM International Conference on Multimedia , 2024, pp. 1943–1951. [37] D. Wofk, F. Ma, T.-J. Yang, S. Karaman, and V. Sze, “Fastdepth: Fast monocular depth estimation on embedded systems,” in Proceedings of the IEEE International Conference on Robotics and Automation (ICRA ,2019, pp. 6101–6108. [38] S. Song, S. P. Lichtenberg, and J. Xiao, “Sun rgb-d: A rgb-d scene understanding benchmark suite,” in Proceedings of the IEEE Conference on Computer Vision and Pattern Recognition , 2015, pp. 567–576. [39] S. S. Shivakumar, N. Rodrigues, A. Zhou, I. D. Miller, V. Kumar, and C. J. Taylor, “Pst900: Rgb-thermal calibration, dataset and segmentation network,” in Proceedings of the IEEE international conference on robotics and automation (ICRA) . IEEE, 2020, pp. 9441–9447. [40] I. Loshchilov and F. Hutter, “Decoupled weight decay regularization,” 
+
+arXiv preprint arXiv:1711.05101 , 2017. [41] Q. Zhang, S. Zhao, Y. Luo, D. Zhang, N. Huang, and J. Han, “Abmdrnet: Adaptive-weighted bi-directional modality difference reduction network for rgb-t semantic segmentation,” in Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , 2021, pp. 2633–2642. [42] G. Li, Y. Wang, Z. Liu, X. Zhang, and D. Zeng, “Rgb-t semantic seg-mentation with location, activation, and sharpening,” IEEE Transactions on Circuits and Systems for Video Technology , vol. 33, no. 3, pp. 1223– 1235, 2022. [43] M. Liang, J. Hu, C. Bao, H. Feng, F. Deng, and T. L. Lam, “Ex-plicit attention-enhanced fusion for rgb-thermal perception tasks,” IEEE Robotics and Automation Letters , vol. 8, no. 7, pp. 4060–4067, 2023. [44] W. Zhou, S. Dong, M. Fang, and L. Yu, “Cacfnet: Cross-modal attention cascaded fusion network for rgb-t urban scene parsing,” IEEE Transac-tions on Intelligent Vehicles , vol. 9, no. 1, pp. 1919–1929, 2023. [45] J. Liu, Z. Liu, G. Wu, L. Ma, R. Liu, W. Zhong, Z. Luo, and X. Fan, “Multi-interactive feature learning and a full-time multi-modality benchmark for image fusion and segmentation,” in Proceedings of the IEEE/CVF International Conference on Computer Vision , 2023, pp. 8115–8124. [46] U. Shin, K. Lee, I. S. Kweon, and J. Oh, “Complementary random masking for rgb-thermal semantic segmentation,” in Proceedings of the IEEE International Conference on Robotics and Automation (ICRA) .IEEE, 2024, pp. 11 110–11 117. [47] W. Liang, C. Shan, Y. Yang, and J. Han, “Multi-branch differential bidirectional fusion network for rgb-t semantic segmentation,” IEEE Transactions on Intelligent Vehicles , vol. 10, no. 4, pp. 2362–2372, 2024. [48] Z. Tu, W. Zhou, X. Qian, and W. Yan, “Hybrid knowledge distillation network for rgb-d co-salient object detection,” IEEE Transactions on Systems, Man, and Cybernetics: Systems , vol. 55, no. 4, pp. 2695–2706, 2025. [49] H. Zhang, L. Cao, X. Zuo, Z. Shao, and J. Ma, “Omnifuse: Composite degradation-robust image fusion with language-driven semantics,” IEEE Transactions on Pattern Analysis and Machine Intelligence , vol. 47, no. 9, pp. 7577–7595, 2025. [50] X. Zhou, X. Wu, L. Bao, H. Yin, Q. Jiang, and J. Zhang, “Agfnet: Adaptive gated fusion network for rgb-t semantic segmentation,” IEEE Transactions on Intelligent Transportation Systems , vol. 26, no. 5, pp. 6477–6492, 2025. [51] Z. Hao, Z. Xiao, J. Guo, L. Shen, Y. Luo, H. Hu, and D. Zeng, “Mixprompt: Efficient mixed prompting for multimodal semantic seg-mentation,” in Proceedings of the The Thirty-ninth Annual Conference on Neural Information Processing Systems , 2025. [52] J. Liu, H. Liu, X. Li, J. Ren, and X. Xu, “Milnet: Multiplex interactive learning network for rgb-t semantic segmentation,” IEEE Transactions on Image Processing , vol. 4, pp. 1686–1699, 2025. [53] C. Xu, Q. Li, X. Jiang, D. Yu, and Y. Zhou, “Dual-space graph-based interaction network for rgb-thermal semantic segmentation in electric power scene,” IEEE Transactions on Circuits and Systems for Video Technology , vol. 33, no. 4, pp. 1577–1592, 2022. [54] S. Zhao and Q. Zhang, “A feature divide-and-conquer network for rgb-t semantic segmentation,” IEEE Transactions on Circuits and Systems for Video Technology , vol. 33, no. 6, pp. 2892–2905, 2022. [55] Y. Wang, G. Li, and Z. Liu, “Sgfnet: Semantic-guided fusion network for rgb-thermal semantic segmentation,” IEEE Transactions on Circuits and Systems for Video Technology , vol. 33, no. 12, pp. 7737–7748, 2023. [56] S. Dong, Y. Feng, Q. Yang, Y. Huang, D. Liu, and H. Fan, “Efficient multimodal semantic segmentation via dual-prompt learning,” in Pro-ceedings of the IEEE/RSJ International Conference on Intelligent Robots and Systems (IROS) . IEEE, 2024, pp. 14 196–14 203. [57] H. Xiong, C. Guo, J. Peng, K. Ding, W. Chen, X. Qiu, L. Bai, and J. Xu, “Gopt: Generalizable online 3d bin packing via transformer-based deep reinforcement learning,” IEEE Robotics and Automation Letters , vol. 9, no. 11, pp. 10 335–10 342, 2024. [58] Y. Lv, Z. Liu, and G. Li, “Context-aware interaction network for rgb-t semantic segmentation,” IEEE Transactions on Multimedia , vol. 26, pp. 6348–6360, 2024. [59] Y. Liu, P. Wu, M. Wang, and J. Liu, “Cpal: Cross-prompting adapter with loras for rgb+ x semantic segmentation,” IEEE Transactions on Circuits and Systems for Video Technology , vol. 35, no. 6, pp. 5858–5871, 2025.

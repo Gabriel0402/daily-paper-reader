@@ -1,0 +1,682 @@
+Title: Seg2Change: Adapting Open-Vocabulary Semantic Segmentation Model for Remote Sensing Change Detection
+
+URL Source: https://arxiv.org/pdf/2604.11231v1
+
+Published Time: Tue, 14 Apr 2026 02:33:10 GMT
+
+Number of Pages: 21
+
+Markdown Content:
+# Seg2Change: Adapting Open-Vocabulary Semantic Segmentation Model for Remote Sensing Change Detection 
+
+# You Su 
+
+Xi’an Jiaotong University Xi’an, Shaanxi, China yousu@stu.xjtu.edu.cn 
+
+# Yonghong Song 
+
+Xi’an Jiaotong University Xi’an, Shaanxi, China songyh@xjtu.edu.cn 
+
+# Jingqi Chen 
+
+Xi’an Jiaotong University Xi’an, Shaanxi, China chenjingqi@stu.xjtu.edu.cn 
+
+# Zehan Wen 
+
+Xi’an Jiaotong University Xi’an, Shaanxi, China wenzehan@stu.xjtu.edu.cn 
+
+Figure 1: Previous paradigms vs. our paradigm. Previous paradigms rely on change proposals and are constrained by the segmentation performance of the proposal generator. Meanwhile, both paradigms (a–b) distinguish changed instances using a predefined threshold, which makes it difficult to accurately delineate change boundaries. In contrast, our paradigm, based on category-agnostic change maps, can effectively leverage more powerful open-vocabulary segmentation models. 
+
+## Abstract 
+
+Change detection is a fundamental task in remote sensing, aim-ing to quantify the impacts of human activities and ecological dynamics on land-cover changes. Existing change detection meth-ods are limited to predefined classes in training datasets, which constrains their scalability in real-world scenarios. In recent years, numerous advanced open-vocabulary semantic segmentation mod-els have emerged for remote sensing imagery. However, there is still a lack of an effective framework for directly applying these models to open-vocabulary change detection (OVCD), a novel task that integrates vision and language to detect changes across ar-bitrary categories. To address these challenges, we first construct a category-agnostic change detection dataset, termed CA-CDD. Further, we design a category-agnostic change head to detect the transitions of arbitrary categories and index them to specific classes. Based on them, we propose Seg2Change, an adapter designed to adapt open-vocabulary semantic segmentation models to change detection task. Without bells and whistles, this simple yet effec-tive framework achieves state-of-the-art OVCD performance (+9.52 IoU 𝑐 on WHU-CD and +5.50 mIoU 𝑐 on SECOND). Our code is released at https://github.com/yogurts-sy/Seg2Change. 
+
+## Keywords 
+
+Open-vocabulary change detection, remote sensing 
+
+## 1 Introduction 
+
+The Earth, our shared home, is increasingly shaped by human ac-tivities and climate change. Observing land-cover changes can help us better understand the Earth. Monitoring land-cover dynamics plays a critical role in advancing urban planning [ 7, 50 ] and natural resource management [ 20 , 22 , 62 , 69 ]. Within this context, change detection is an essential task that leverages bi-temporal or multi-temporal remote sensing images (RSIs) to detect both the spatial locations and semantic categories of land-cover transitions. Within the supervised learning framework [ 25 , 34 , 58 ], accu-rate change detection generally relies on large-scale annotated datasets for training. In addition, these datasets usually cover only a small number of predefined categories, making them incompat-ible with open-vocabulary settings. Recently, the emergence of vision–language models (VLMs) has inspired efforts to transfer these models to the change detection task [ 38 , 39 , 63 , 79 ], leading to the concept of OVCD [ 38 ]. OVCD aims to localize and identify changes between bi-temporal images, where change categories are not predefined but can instead be described using arbitrary textual or semantic labels [ 38 ]. By introducing the ability to gen-eralize beyond a fixed set of predefined change classes, OVCD extends traditional unsupervised change detection [ 3 , 6 , 9 ] to more flexible and open-world scenarios. As illustrated in Fig. 1(a–b), existing OVCD methods generally follow two paradigms: Mask proposal– Comparator– Identifier ( M–C–I) and Identifier– Mask proposal– Comparator ( I–M–C). (1) M–C–I [ 38 , 63 , 79 ]: A mask generator ( e.g. , SAM [ 33 ] or Mask2Former [ 16 ]) first generates all candidate proposals from bi-temporal remote sensing images. A comparator ( e.g. , CVA [ 6] or AnyChange [ 79 ]) then evaluates change occurrence within these regions, and an identifier ( e.g. ,CLIP [ 55 ] or SegEarth-OV [ 40 ]) finally assigns semantic labels to the detected changes. (2) I–M–C [ 38 , 39 ]: This paradigm first iden-tifies all proposals of interest, converts them into instance masks 
+
+> arXiv:2604.11231v1 [cs.CV] 13 Apr 2026 Su et al.
+
+through the mask proposal generator, and then compares the masks to determine whether a change has occurred. While encouraging results have been observed, these paradigms have the following issues: (1) Both the M–C–I and I–M–C
+
+paradigms rely on a mask generator ( e.g. , SAM) to produce change proposals. As a result, subsequent change determination is in-evitably affected by the accumulation of segmentation errors from SAM. (2) UCD-SCM employs OTSU [ 53 ] to estimate a global thresh-old based on feature distances. However, a linear threshold is often insufficient to clearly distinguish changed pixels. Although the subsequent DynamicEarth framework upgrades the comparator to DINOv2 [ 52 ], it still determines whether a proposal has changed based on a predefined threshold. (3) According to the results re-ported by DynamicEarth, the M–C–I performs well in land-cover change detection, whereas I–M–C achieves better performance in building change detection. However, the applicability of these two paradigms is limited, requiring frequent switching to accommodate different tasks. We advocate a simple yet effective paradigm that can guide VLMs to achieve optimal performance across multiple tasks, including building, land-cover, and semantic change detection. To this end, we propose Seg2Change , which serves as a compet-itive alternative for adapting open-vocabulary semantic segmenta-tion (OVSS) models to change detection. The core idea is to elimi-nate error propagation inherent in mask proposal and avoid reliance on predefined thresholds for change decisions. As illustrated in Fig. 1(c), we instead identify a category-agnostic change map, enabling changes to be extracted directly from the segmentation masks of bi-temporal images. First, we construct a category-agnostic change detection dataset, CA-CDD , which expands the scope of change categories by extending category-constrained datasets ( e.g. , WHU-CD [ 28 ] focuses on buildings, and DSIFN [ 77 ] focuses on land-cover changes) to arbitrary categories. In particular, we design a category-agnostic change head ( CACH ) with feature difference enhance-ment and calibration. By fusing bi-temporal feature differences and performing efficient difference retrieval with a sliding-window strategy, the influence of pseudo-changes on real changes is effec-tively suppressed. CACH generates high-quality category-agnostic change maps without relying on any predefined thresholds. Finally, the images and target categories of interest are fed into an OVSS model to obtain the corresponding semantic segmentation maps, from which the change detection results for specific categories are indexed using the category-agnostic change maps. Extensive experiments on three change detection tasks in open-vocabulary settings ( i.e. , building, land-cover, and semantic change detection) and six widely recognized datasets ( i.e. , WHU-CD [ 28 ], LEVIR-CD [ 12 ], DSIFN [ 77 ], CLCD [ 46 ], SC-SCD [ 64 ], and SECOND [ 70 ]) show that Seg2Change achieves state-of-the-art performance across the board. Notably, despite being simpler than the more complex M–C–I and I–M–C paradigms, the proposed method achieves an optimal trade-off between open-vocabulary change detection performance and inference efficiency. In summary, the contributions of this work are as follows: 
+
+• We revisit previous open-vocabulary change detection ap-proaches from the perspective of instance change thresh-olds and introduce a new paradigm termed Seg2Change, (b) Our Category-Agnostic Dataset (a) Predefined Change Category Datasets 
+
+> DSIFN (Factory)
+> WHU-CD (Building) LEVIR-CD (Building)
+> Category-Agnostic Change Detection Dataset
+> CLCD (Bareland)
+
+Figure 2: Visual comparison between predefined change cate-gory datasets (a) and our category-agnostic change detection dataset (b). The former focuses only on limited categories. Bareland     
+
+> Image T2 Image T1 T1 Changes T2 Changes Image T1 T1 Changes Image T2 T2 Changes
+> Bareland
+> Bareland
+> Bareland
+> Vegetation
+> Vegetation
+> Building
+> Building
+> Playground
+> Vegetation
+> Water
+> Bareland
+> Building
+> Vegetation
+> Tree
+> Water
+> Category-Agnostic Change Map Category-Agnostic Change Map
+
+Figure 3: Annotation process of the category-agnostic change detection dataset. Regions where the category changes be-tween the bi-temporal images are annotated as change maps. The actual recorded categories are not limited to those shown in the figure. 
+
+which provides a simple yet effective approach for bi-temporal open-vocabulary change detection. 
+
+• By constructing a category-agnostic change detection dataset, CA-CDD, and introducing a category-agnostic change head with feature differences fusion and calibration, Seg2Change can be adapted to any OVSS model. 
+
+• Seg2Change achieves state-of-the-art performance with an efficient OVSS model ( i.e. , SegEarth-OV3) across multiple benchmarks. Moreover, both quantitative and qualitative analyses validate the efficacy of the proposed paradigm, further solidifying the effectiveness of our approach. 
+
+## 2 Related Work 2.1 Vision-Language Models 
+
+Vision–Language Models (VLMs) are multimodal models capable of jointly understanding visual and semantic information. Pioneering works, such as CLIP [ 55 ] and ALIGN [ 29 ], employ web-scale im-age–text pairs for contrastive learning, laying the groundwork for VLM pre-training. Subsequently, BLIP [ 37 ] and Flamingo [ 1] fur-ther explore applications, including image captioning, visual ques-tion answering, and dialogue generation. Grounding DINO [ 47 ]combines object detection with natural language understanding to Seg2Change: Adapting Open-Vocabulary Semantic Segmentation Model for Remote Sensing Change Detection 
+
+achieve text-driven object grounding and recognition. Further, APE [ 59 ] and SegEarth-OV [ 40 ] enhance pixel-level semantic segmen-tation by leveraging vision-aware models capable of performing multiple tasks, including object detection, segmentation, and local-ization. In the remote sensing community, RemoteCLIP [ 45 ] is the first vision–language model tailored for remote sensing imagery, built upon large-scale datasets to support a wide range of down-stream applications. Recently, RSKT-Seg [ 35 ] integrates features from DINOv2 [ 52 ] and RemoteCLIP [ 45 ], effectively transferring remote sensing knowledge to open-vocabulary segmentation and improving the performance of remote sensing image segmentation tasks. SegEarth-OV3 [ 41 ] obtains high-quality segmentation maps by combining the semantic segmentation head and instance head of SAM3 [ 8], and further filters out low-confidence categories in the scene using presence scores, achieving new advances in open-vocabulary segmentation for remote sensing. 
+
+## 2.2 Unsupervised & Open-Vocabulary CD 
+
+Unsupervised change detection operates without annotated data and can generally be divided into four categories: image algebra methods [ 3 , 4, 6, 18 ], image transformation methods [ 10 , 13 , 14 , 17 ,51 , 67 ], post-classification comparison methods [ 5, 21 , 26 , 27 , 32 , 68 ], and foundation-model-based methods [ 38 , 39 , 63 , 79 ]. A represen-tative image algebra method is change vector analysis (CVA) [ 6], which measures changes through direct comparison of spectral bands across bi-temporal images. Later, DCVA [ 3] incorporates con-volutional neural network (CNN) representations to enhance the discrimination of change-related features. Within image transfor-mation approaches, I3PE [ 13 ] serves as a representative method that generates pseudo bi-temporal image pairs and associated change labels through patch exchange from single-temporal images, en-abling effective utilization of large-scale unlabeled and unregistered remote sensing data. Recently, open-vocabulary change detection has enabled category-specific change identification through the integration of VLMs. AnyChange [ 79 ] utilizes latent matching of bi-temporal SAM image features, combined with manually anno-tated points, to cluster change categories of interest. UCD-SCM [ 63 ] proposes a novel piecewise semantic attention (PSA) mecha-nism that leverages semantic representations from FastSAM [ 78 ]to reduce pseudo-changes. Inst-CEG [ 39 ] extracts proposals whose categories change between bi-temporal images through a change event generation (CEG) to generate change maps. DynamicEarth [ 38 ] proposes two open-vocabulary change detection paradigms, namely M–C–I and I–M–C. The M–C–I paradigm first identifies all potential changes and then classifies them, whereas the I–M–C
+
+paradigm first detects all objects of interest and subsequently de-termines whether their categories have changed. Through in-depth analysis and experimentation on existing ap-proaches, we observe that current OVCD paradigms still rely on instance-level change estimation, making it difficult to determine reliable thresholds for identifying changed instances. Meanwhile, existing paradigms remain dependent on mask generators to pro-vide change proposals. Subsequent segmentation and identification of change areas are susceptible to error propagation originating from the mask generator. Motivated by the rapid progress of open-vocabulary semantic segmentation models in remote sensing, we design a change detection adapter for such models. By explicitly decoupling segmentation from change reasoning, this design al-lows us to fully leverage the continually improving capabilities of open-vocabulary semantic segmentation models. 
+
+## 3 Methodology 3.1 Analysis of Previous OVCD Paradigms 
+
+Previous studies [ 38 , 39 , 63 , 79 ] have constructed OVCD frame-works based on existing foundation models, achieving open-vocabulary capability to some extent. However, they still rely on instance-level change decision. Specifically, a mask generator ( e.g. ,the SAM family [ 33 , 57 ]) is first applied to generate change pro-posals, followed by a comparator ( e.g. , CVA [ 6] or OTSU [ 53 ]) to perform change judgment. Change judgment is performed by com-paring the cosine similarity 𝐷 of bi-temporal features within each proposal against a predefined threshold, as follows: 
+
+𝐷 (p) = − z1 [p]∥z1 [p] ∥ 2
+
+· z2 [p]∥z2 [p] ∥ 2
+
+, 𝛽 = cos (𝜃 · 𝜋 
+
+180 ), (1) where z𝑡 [p] represents the average feature embedding of the bi-temporal images 𝐼 𝑡 , 𝑡 ∈ { 1, 2}, obtained from an image encoder ( e.g. ,ResNet [ 25 ], SAM [ 33 ], or DINO [ 52 ]) at the location corresponding to proposal p. The angle 𝜃 is a predefined hyperparameter. After conversion to radians, its cosine value serves as the threshold 𝛽 
+
+[79 ]. Proposals with similarity scores exceeding the threshold 𝛽 are classified as change masks and the rest are dropped. These paradigms rely on mask generators to produce change pro-posals. Although they offer strong generalization and fine-grained segmentation, they often perform uncontrolled segmentation, split-ting large objects into multiple fragments. Moreover, the predefined change threshold 𝛽 does not generalize well across instances and typically requires careful manual tuning. From an efficiency stand-point, these paradigms must traverse all proposals to determine changes, and such traversal cannot be parallelized. 
+
+## 3.2 A Category-Agnostic CD Dataset 
+
+Observing geological changes helps improve the Earth’s observa-tion and environmental monitoring [ 56 ]. In this context, change detection is a core task that analyzes bi-temporal remote sensing images to determine where and what types of changes occur. How-ever, existing change detection datasets typically focus on a limited set of change categories. For example, WHU-CD [ 28 ] and LEVIR-CD [ 12 ] concentrate on building changes on the Earth’s surface, whereas DSIFN [ 77 ] and CLCD [ 46 ] focus on land-cover changes. SYSU-CD [ 60 ] extends the change categories to some extent, in-cluding newly built urban buildings, vegetation changes, and road expansion. Despite this extension, the considered categories are still largely constrained to changes related to urbanization. The closest concept to a category-agnostic change map is the binary change map in semantic change detection datasets [ 49 , 64 , 70 , 80 ]. Nevertheless, these change maps are restricted to a limited set of predefined categories. For instance, SECOND [ 70 ] focuses on bare-land, buildings, trees, vegetation, playgrounds, and water, while changes like roads or building renovations are not included. In this study, we collect bi-temporal images and coarse change maps with limited categories from the training sets of semantic Su et al. BDFM 
+
+> Modulated Features
+> BDFM
+> Modulated Features
+> BDFM
+> Modulated Features
+> BDFM
+> Modulated Features
+
+Difference Reinforcement EDQA 
+
+> Feature Guidance
+> EDQA
+> Feature Guidance
+> EDQA
+> Feature Guidance
+> EDQA
+> Feature Guidance
+
+Difference Query Encoder 
+
+> Encoder
+
+Share Weight FMM-1 FMM-2 Feature Extraction  
+
+> Classifer
+> Multi-scale Sup. Multi-scale Sup. Multi-scale Sup. Multi-scale Sup. Similarity
+> Invert
+> Category-Agnostic Change Map GroundTruth
+
+Feature Upsampler Supervision OutA OutB Image at T1( )
+
+Image at T2 ( )        
+
+> OutA OutB FMM-t Feature Modulation Module BDFM Bi-temporal Difference Fusion Module EDQA Effective Difference Query Attention ResUp Residual Upsampler Matrix Addition
+> ResUp ResUp ResUp
+
+Figure 4: Category-Agnostic Change Head (CACH). Bi-temporal image features are extracted and processed through feature differences fusion and difference query modules to obtain calibrated discrepancies, which are then concatenated across multiple dimensions via our residual upsampler to produce the final category-agnostic change map. Activated Difference Bi-temporal Difference Fusion Module (BDFM) 3×3Conv ReLu ConCat ConCat LNorm LNorm LNorm Mul. Mul. MoE-MLP 
+
+> Softmax Softmax Mul.
+> Partition Linear Concat Guide1 Guide2 Effective Difference Query Attention (EDQA) Activated Difference 1×1Conv 1×1Conv Reshape Reshape Reverse Reverse 3×3Conv LNorm ReLu
+> Linear Partition Linear Partition 3×3Conv Sigmoid 3×3Conv ReLu ReLu 3×3Conv ConCat 3×3Conv ReLu
+
+Figure 5: Bi-temporal Difference Fusion Module (BDFM) and Effective Difference Query Attention (EDQA) Module. 
+
+change detection datasets, including SECOND [ 70 ], JL1-CD [ 49 ], and CNAM-CD [ 80 ]. We further re-annotate these coarse change maps to extend them to category-agnostic changes. As shown in Fig. 2, our CA-CDD dataset broadens the scope of existing datasets to an open and unconstrained range. Fig. 3 illustrates the annotation process for category-agnostic change maps. Notably, we evaluate our method on the test set of the SECOND dataset. No images from the SECOND test set are included in CA-CDD. 
+
+## 3.3 Semantic Segmentation to Change Detection 
+
+Architecture Overview. The extraction process of the category-agnostic change map is illustrated in Fig. 4. Given a pair of bi-temporal images 𝐼 1, 𝐼 2 ∈ R𝐻 ×𝑊 ×3, we first employ DINOv2 [ 52 ] to extract multi-scale features. Specifically, features from selected encoder layers are denoted as 𝐹 𝑡 𝑖 ∈ R 𝐻 𝑝𝑠 × 𝑊 𝑝𝑠 ×𝐶 dim , where 𝑖 ∈{2, 5, 8, 11 } and timestamp 𝑡 ∈ { 1, 2}. Here, 𝐶 dim and 𝑝 𝑠 denote the feature dimension and patch size, respectively. The FMM trans-forms 𝐹 𝑡 𝑖 into pyramid modulated features ˜𝐹 𝑡 𝑖 ∈ R 2𝑘 −1𝐻 𝑝𝑠 × 2𝑘 −1𝑊 𝑝𝑠 ×𝐶 𝑖 ,where 𝑘 indexes the feature scale. Subsequently, the bi-temporal difference features are extracted and refined by BDFM and EDQA. These calibrated features are then fed into a residual upsampling module (ResUp) to produce the category-agnostic change map 𝑀 ca .In parallel, 𝐼 1 and 𝐼 2, together with the textual prompt xtext , are input into an OVSS model to obtain semantic maps 𝑀 1 and 𝑀 2.The final change map is derived by combining semantic predictions with the category-agnostic change map as: 
+
+𝑀 ch = 𝑀 ca · 𝑀 1 + 𝑀 ca · 𝑀 2. (2) 
+
+Bi-temporal Difference Fusion Module (BDFM). A careful review of previous change detection methods [ 15 , 19 , 23 , 30 , 43 , 72 ,75 ] reveals that difference enhancement based solely on arithmetic operations [ 11 , 15 , 66 ] and cascade convolutional blocks [ 2 , 74 ]neglects the guidance of bi-temporal features on difference features. To address this, we propose BDFM, as illustrated in Fig. 5. BDFM generates feature difference activations to emphasize regions in the bi-temporal images that correspond to these differences as: 
+
+𝐴𝑡𝑡 𝑖 = 𝜎 (Conv 3×3 ∗ | ˜𝐹 1
+
+𝑖 − ˜𝐹 2
+
+𝑖 |) , (3) where Conv 3×3 is a 2D convolution with a kernel size of 3 × 3, ∗
+
+represents the convolution operation, and 𝜎 denotes the Sigmoid 
+
+function. To inject richer spatial discrepancy representations and facilitate precise localization of change regions, we incorporate the modulated features into the activated features. Specifically, we fuse the activated feature differences from the bi-temporal images. By employing difference attention 𝐴𝑡𝑡 𝑖 , the discrepancy regions are further enhanced: 
+
+𝑋 𝑡 𝑖 = 𝛾 Conv 3×3 ∗ ( ˜𝐹 𝑡 𝑖 + 𝐴𝑡𝑡 𝑖 · ˜𝐹 𝑡 𝑖 ), (4) 
+
+𝐷 𝑖 = 𝛾 Conv 3×3 ∗ ( 𝛾 Conv 3×3 ∗ ( 𝑋 1
+
+𝑖 || 𝑋 2
+
+𝑖 ) · 𝐴𝑡𝑡 𝑖 ), (5) Seg2Change: Adapting Open-Vocabulary Semantic Segmentation Model for Remote Sensing Change Detection 
+
+where 𝑋 𝑡 𝑖 are bi-temporal feature differences, and 𝐷 𝑖 denotes the fused feature differences at the 𝑖 -th layer. 𝛾 and || are, respectively, the ReLu activation function and the concatenation operation. Nev-ertheless, the fused feature differences still contain non-negligible noise. Since these noisy responses are not consistently reflected in the original modulated features, a subsequent calibration step is necessary to suppress noise and improve robustness. 
+
+Effective Difference Query Attention (EDQA). Owing to dif-ferences in acquisition time and imaging sensors of bi-temporal im-ages, the captured imagery is strongly influenced by task-irrelevant factors, including seasonal shifts, illumination variations, and struc-tural modifications [ 42 , 54 , 61 ]. Moreover, changed regions typi-cally occupy only a small portion of the scene, leading to severe foreground–background imbalance. Although BDFM enhances dis-crepancy representations, it inevitably introduces pseudo-change artifacts due to feature amplification. As depicted in Fig. 5, we pro-pose EDQA, which explicitly calibrates noisy difference features via cross-temporal guidance and adaptive expert modeling. First, the feature differences 𝐷 𝑖 are concatenated with the modu-lated features ˜𝐹 𝑡 𝑖 , respectively, and mapped through a 1 × 1 convo-lution to feature guidance ˜𝐺 𝑡 𝑖 . To efficiently model cross-temporal dependencies, we adopt a sliding-window attention strategy [ 48 ]. Specifically, ˜𝐺 𝑡 𝑖 is partitioned into 𝑁 𝑤 windows of size 𝑆 𝑤 × 𝑆 𝑤 and reshaped into R𝑁 𝑤 ×𝑆 𝑤 ×𝑆 𝑤 ×𝐶 𝑖 . Linear projections 𝜙 𝑡 𝑣 𝑖 are applied to obtain value embeddings 𝑉 𝑡 𝑖 . Meanwhile, the difference features 
+
+𝐷 𝑖 are partitioned in the same manner and projected into query and key embeddings ( 𝑄 𝑖 and 𝐾 𝑖 ) via 𝜙 𝑞 𝑖 and 𝜙 𝑘 𝑖 , respectively. The calibrated difference features are computed as: 
+
+˜𝐷 𝑡 𝑖 = 𝜙 proj (Softmax (( 𝜙 𝑞 𝑖 (𝐷 𝑖 ) · 𝜙 𝑘 𝑖 (𝐷 𝑖 )⊤)/ √︁ 𝑑 𝑖 + 𝑏 𝑖 ) · 𝜙 𝑡 𝑣 𝑖 ( ˜𝐺 𝑡 𝑖 )) ,
+
+(6) where 𝑑 𝑖 denotes the attention head dimension, and 𝑏 𝑖 represents the relative positional bias. This operation leverages discrepancy-aware queries to selectively aggregate reliable information from modulated features. The calibrated bi-temporal features are then reconstructed by reversing the window partition and fused as: 
+
+˜𝐷 𝑖 = 𝛾 Conv 3×3 ∗ ( 𝛾 Conv 3×3 ∗ ( ˜𝐷 1 
+
+> 𝑖
+
+|| ˜𝐷 2 
+
+> 𝑖
+
+)) , (7) Owing to differences in dataset sources, variations in imaging conditions and seasonal characteristics inevitably arise. To accom-modate bi-temporal images from heterogeneous sources, we aug-ment the MLP with a Mixture-of-Experts (MoE) [ 31 ]. The calibrated bi-temporal feature differences ˜𝐷 𝑖 are utilized to estimate expert weights and to compute the outputs of each expert: weight 𝐺 = Softmax (𝑊 𝑔 · ˜𝐷 𝑖 + b𝑔 ), (8) expert 𝑗 ( ˜𝐷 𝑖 ) = 𝑊 𝑜,𝑗 · GELU (𝑊 ℎ,𝑗 · ˜𝐷 𝑖 + bℎ,𝑗 ) + b𝑜,𝑗 , (9) where weight 𝐺 denotes the weight assigned to each expert, and expert 𝑗 ( ˜𝐷 𝑖 ) represents the output of expert-𝑗 given the feature dif-ference ˜𝐷 𝑖 . 𝑊 𝑔 and b𝑔 are the learnable parameters used to compute the expert weights. 𝑊 ℎ,𝑗 , bℎ,𝑗 , and 𝑊 𝑜,𝑗 , b𝑜,𝑗 are the parameters of the two linear mapping layers for the output of expert-𝑗 .Finally, the weighted outputs of the 𝑁 𝑒 experts are aggregated to produce the refined difference feature 𝑋 𝑑 𝑖 , as described in Eq. (35): 
+
+𝑋 𝑑 𝑖 = Í𝑁 𝑒  
+
+> 𝑗 =1
+
+weight 𝑗 · expert 𝑗 ( ˜𝐷 𝑖 ). (10) 
+
+## 3.4 Model Detail 
+
+Loss Function. First, we aggregate the refined feature differences 
+
+{𝑋 𝑑 𝑖 } across all layers and upsample them using the proposed ResUp (details in the Appendix) to obtain a category-agnostic change map. We compute the binary cross-entropy loss between the predicted change map and the ground-truth change labels: 
+
+Lcd = Lbce (𝛿 ↑ (𝑋 𝑑  
+
+> 2
+
+, 𝑋 𝑑  
+
+> 5
+
+, 𝑋 𝑑  
+
+> 8
+
+, 𝑋 𝑑 
+
+> 11
+
+), 𝑦 𝑙 ), (11) where 𝑦 𝑙 denotes the change detection labels in CA-CDD, and 𝛿 ↑
+
+represents our upsampler ResUp. Then, we upsample the refined feature difference outputs 𝑋 𝑑 𝑖 from each layer to obtain 𝑁 𝐿 layer-wise predictions (at layers 2, 5, 8, and 11), and compute the feature upsampling loss between the upsampled multi-dimensional feature differences and the change detection labels: 
+
+Lups = Í𝑖 ∈𝑁 𝐿 Lbce (𝛿 ↑ (𝑋 𝑑 𝑖 ), 𝑦 𝑙 ), (12) To suppress pseudo-change responses, we introduce a similar-ity constraint for unchanged regions. Specifically, we first obtain semantic representations by aggregating and upsampling the modu-lated features ˜𝐹 1 and ˜𝐹 2. The cosine similarity between the semantic representation outputs of the bi-temporal images is then calculated, followed by the computation of its complementary probability. By inverting the change detection labels, we obtain the labels for the unchanged regions. The loss for these unchanged (similar) regions is subsequently computed to penalize inconsistent predictions: 
+
+Lsim = [1 − cos (𝛿 ↑ ( ˜𝐹 1), 𝛿 ↑ ( ˜𝐹 2))] · ˜𝑦 𝑙 , (13) where ˜𝐹 1 and ˜𝐹 2 denote the modulated multi-level pyramid features at time 𝑡 and time 𝑡 + 1, respectively. ˜𝑦 𝑙 represents the unchanged-region labels obtained by inverting the change detection labels. Finally, the overall loss function is formulated as a weighted sum of the individual loss terms: 
+
+Ltotal = 𝛼 Lcd + 𝛽 Lups + 𝜐 Lsim , (14) where 𝛼 , 𝛽 , and 𝜐 denote the weights for the category-agnostic change map loss, the feature upsampling loss, and the unchanged-region loss, respectively. 
+
+## 4 Experiments 4.1 Datasets & Benchmarks 
+
+To assess the performance of Seg2Change, we conduct comprehen-sive experimental evaluations on two representative datasets for each of three OVCD tasks: building change detection (WHU-CD [ 28 ], LEVIR-CD [ 12 ]), land-cover change detection (DSIFN [ 77 ], CLCD [ 46 ]), and semantic change detection (SC-SCD [ 65 ], SEC-OND [ 70 ]). We select classical algebra-based unsupervised change detection methods as well as VLM-based unsupervised change detection methods for comparison, including PCA_KMeans [ 9], CVA [ 6], DCVA [ 3 ], UCD-SCM [ 63 ], and AnyChange [ 79 ]. We fur-ther compare our method with the current state-of-the-art OVCD approaches, including Inst-CEG [ 39 ] and DynamicEarth [ 38 ]. We reproduce the results by either reimplementing these methods or utilizing their publicly available code. For a fair comparison, we replace the original identifiers ( e.g. , SegEarth-OV [ 40 ] and APE [ 59 ]) in these methods with the current state-of-the-art OVSS model ( i.e. ,SegEarth-OV3 [41]) for remote sensing community. Su et al. (a) Image T1 (b) Image T2 (c) Labels (d) DynamicEarth (e) Seg2Change (a) Image T1 (b) Image T2 (c) Labels (d) DynamicEarth (e) Seg2Change 
+
+Figure 6: Open-vocabulary building and land-cover change detection examples. In each group: images at T1 ( 𝐼 1), T2 ( 𝐼 2), labels, the results of DynamicEarth and our Seg2Change. Color rendering: "Building/Land-cover" .Table 1: Performance comparison on binary OVCD datasets. † and ‡ denote the M–C–I and I–M–C configurations of Dynam-icEarth. * denotes the variants implemented with SegEarth-OV3 (SegE-OV3 for short). The best and the second-best results are, respectively, marked in BOLD and in underline. Except for Kappa, all results are expressed in percentage (%). 
+
+Method Identifier Comparator WHU-CD LEVIR-CD DSIFN CLCD F1 𝑐 IoU 𝑐 Kappa F1 𝑐 IoU 𝑐 Kappa F1 𝑐 IoU 𝑐 Kappa F1 𝑐 IoU 𝑐 Kappa PCA_KMeans [9] / KMeans [9] 14.33 7.72 0.0846 9.96 5.24 0.0116 35.48 21.57 0.1865 18.42 10.14 0.0780 CVA [6] / CVA Match [6] 7.17 3.72 0.0023 9.27 4.86 0.0017 27.88 16.20 0.0142 13.39 7.17 0.0017 DCVA [3] / CVA Match [6] 20.55 11.45 0.1537 13.85 7.44 0.0507 38.52 23.85 0.1758 20.81 11.62 0.0918 UCD-SCM [63] SAM OTSU [53] 32.13 19.14 0.2792 32.36 19.30 0.2734 40.13 25.10 0.2443 23.31 13.19 0.1522 AnyChange [79] SAM Latent Match [79] 28.13 16.37 0.2330 32.68 19.53 0.2672 39.19 24.37 0.2280 31.96 19.02 0.2342 AnyChange* [79] SegE-OV3 Latent Match [79] 69.25 52.96 0.6790 72.27 56.58 0.7043 54.69 37.64 0.4798 27.55 15.98 0.2276 Inst-CEG [39] APE CEG [39] 62.54 45.49 0.6074 63.29 46.30 0.6084 31.81 18.91 0.2430 6.76 3.50 0.0020 Inst-CEG* [39] SegE-OV3 CEG [39] 71.35 55.46 0.7016 70.62 54.58 0.6912 47.21 30.90 0.3985 10.09 5.32 0.0648 DynamicEarth † [38] SAM2 DINOv2 [52] 57.35 40.20 0.5541 46.43 30.23 0.4242 54.35 37.32 0.4741 23.83 13.52 0.1916 DynamicEarth ‡ [38] APE DINOv2 [52] 75.85 61.09 0.7488 69.70 53.50 0.6789 26.42 15.22 0.2260 14.97 8.09 0.1382 DynamicEarth* [38] SegE-OV3 DINOv2 [52] 79.66 66.20 0.7879 71.97 56.21 0.7031 39.30 24.45 0.3423 38.16 23.58 0.3535 
+
+Seg2Change SegE-OV3 CACH (ours) 86.18 75.72 0.8562 78.72 64.91 0.7742 58.56 41.40 0.5075 47.89 31.48 0.4239 
+
+## 4.2 Implementation Details 
+
+Codebase. We implement Seg2Change in PyTorch and decouple the pre-training of CACH from its inference pipeline to ensure code clarity and modularity. The visual encoder in CACH is built upon the ViT-Base variant of DINOv2 [ 52 ], where features from layers 
+
+{2, 5, 8, 11 } are selected as inputs, with 𝐶 𝑑𝑖𝑚 = 768 and 𝑝 𝑠 = 14 . For the BDFM and EDQA modules, the channel dimensions are set to 
+
+𝐶 2 = 48 , 𝐶 5 = 64 , 𝐶 8 = 80 , and 𝐶 11 = 96 . The sliding window size 𝑆 𝑤 
+
+is set to 9. The number of experts 𝑁 𝑒 is set to 4. Following [ 39 , 63 ], we leverage multiple sub-classes to enhance prediction confidence, 
+
+e.g. , rename "building" to {"building", "house", "roof"}. Detailed class names for all datasets are listed in the Appendix. 
+
+Setup. For a fair comparison, we follow the OVCD experimen-tal settings adopted in DynamicEarth [ 38 ]. All experiments are conducted on a single NVIDIA RTX 4090 GPU. We crop both the pre-training and testing datasets to 512 × 512. Accordingly, in the Seg2Change framework, the height ( 𝐻 ) and width ( 𝑊 ) are set to 512 for both pre-training and inference. CACH is trained with an initial learning rate of 1 × 10 −3, a batch size of 4, and 20 epochs. The loss weights 𝛼 , 𝛽 , and 𝜐 are set to 0.8, 0.1, and 0.1, respectively. 
+
+## 4.3 Comparison to State-of-the-art 
+
+To guarantee experimental fairness and emphasize the effective-ness of CACH in capturing category-agnostic changes, we replace the identifiers in three representative methods (AnyChange [ 79 ], Inst-CEG [ 39 ], and DynamicEarth [ 38 ]) with the recently released SegEarth-OV3 [ 41 ]. The modified versions are denoted with an asterisk (*), while their comparators are retained. 
+
+Evaluations of Building Change Detection. As shown in the left panel of Table 1, we evaluate Seg2Change on two widely adopted benchmark datasets for building CD: WHU-CD [ 28 ] and LEVIR-CD [ 12 ]. Conventional algebra-based unsupervised CD methods exhibit limited practical utility, while VLM-based methods drive unsupervised CD toward supporting specified-class open-vocabulary settings. Notably, replacing the SAM-based identifier Seg2Change: Adapting Open-Vocabulary Semantic Segmentation Model for Remote Sensing Change Detection (b) Image T2 (c) Labels (d) DynamicEarth (e) Seg2Change (a) Image T1 (b) Image T2 (c) Labels (d) DynamicEarth (e) Seg2Change (a) Image T1 
+
+Figure 7: Open-vocabulary semantic change detection examples. In each group: images at T1 ( 𝐼 1), T2 ( 𝐼 2), labels, the results of DynamicEarth and our Seg2Change. Color rendering: "Building" , "Vegetation" , "Tree" , "Playground" , "Water" , "Bareland" .Table 2: Performance, computational resource usage, and inference time cost comparison on semantic OVCD datasets. GPU memory usage and inference time are evaluated on a pair of bi-temporal remote sensing images ( [2, 3, 512 , 512 ]). 
+
+Method GPU Memory Inference SC-SCD SECOND Usage (GB) ↓ (ms/sample) ↓ mF1 𝑐 mIoU 𝑐 mOA mKappa mF1 𝑐 mIoU 𝑐 mOA mKappa UCD-SCM [63] 9.46 (100%) 3225 (100%) 12.06 6.51 85.95 0.0619 14.63 8.40 78.61 0.0795 AnyChange [79] 6.59 (69%) 3988 (124%) 16.51 9.32 78.27 0.1056 19.54 11.84 76.07 0.1252 AnyChange* [79] 10.15 (107%) 2683 (83%) 16.64 9.48 88.06 0.1192 21.30 13.81 77.97 0.1492 Inst-CEG [39] 14.95 (158%) 5672 (176%) 6.90 3.68 94.40 0.0551 17.82 10.46 92.80 0.1604 Inst-CEG* [39] 7.08 (75%) 2928 (91%) 23.57 14.35 94.49 0.2139 29.35 18.40 93.62 0.2670 DynamicEarth † [38] 7.33 (77%) 5035 (156%) 29.11 17.97 91.37 0.2532 37.51 23.58 91.88 0.3297 DynamicEarth ‡ [38] 15.33 (162%) 6784 (210%) 9.19 5.16 95.25 0.0877 22.17 13.72 93.76 0.2109 DynamicEarth* [38] 11.19 (118%) 2892 (89%) 19.87 11.47 95.03 0.1804 25.43 15.24 93.83 0.2286 
+
+Seg2Change 6.08 (64%) 1521 (47%) 35.68 23.22 95.82 0.3385 42.89 29.08 95.17 0.4045 
+
+with SegEarth-OV3 (SAM3-based) yields consistent performance gains across building CD benchmarks. Semantic segmentation is a critical component of CD, and its quality directly influences the accurate delineation of changed objects. Under the same identifier setting, our category-agnostic change map strategy improves the average IoU 𝑐 across the two datasets by nearly 9%. From the per-spective of Kappa, which jointly reflects change and invariant pixel accuracy, Seg2Change more effectively suppresses pseudo-changes. 
+
+Evaluations of Land-Cover Change Detection. In practical applications, user interests are not limited to building categories alone but extend to multi-category scenarios. Land-cover CD fo-cuses on land-use transitions, e.g. , "vegetation" converted to "tilled land", "bareland" transformed into "roads", "lakes", or "buildings". Instance-level approaches built upon SAM suffer from coarse bound-ary delineation, limiting their ability to detect intact object contours. Through a pixel-level change modeling strategy, we alleviate the cascading error propagation in VLM-based approaches. Further, the category-agnostic change representation generated by CACH naturally aligns with land-cover CD scenarios. With the integration of tailored language prompts, our method attains notable gains, improving F1 𝑐 by 3.87% on DSIFN and 9.73% on CLCD. 
+
+Evaluations of Semantic Change Detection. As shown in Table 2, our method achieves improvements of 5.25% and 5.50% in class-wise mIoU 𝑐 across all categories on the SC-SCD and SECOND datasets, respectively. Meanwhile, benefiting from our pixel-level inference paradigm, GPU memory consumption and inference la-tency are reduced by 36% and 53%, respectively. Notably, replacing the identifier in DynamicEarth with SegEarth-OV3 does not lead to performance improvement. DynamicEarth extracts visual features of change proposals using DINOv2 and determines changes by computing cosine similarity. Due to its suboptimal fixed-threshold change judgment strategy, a stronger segmentation model intro-duces more false-positive change instances. By leveraging CACH to identify category-agnostic change maps, we effectively harness the advantages of stronger semantic segmentation models. 
+
+Visualization Results. We qualitatively compare Seg2Change with the best-performing configuration of DynamicEarth. As shown in Fig. 6–7, Seg2Change consistently delivers accurate change detec-tion across all categories, whereas DynamicEarth requires switch-ing configurations to achieve optimal performance for building or land-cover change detection. In addition, we alleviate the difficulty in determining change boundaries caused by fixed thresholds. Su et al. (a) Image T1 (b) Image T2 (c) w/ BDFM (d) w/ EDQA (e) All comp. (f) Labels 
+
+Figure 8: Visualization of feature outputs across our modules. Panel (e) presents the output features after all components, illustrating the progressive refinement of difference features. Table 3: Investigation on the impact of the proposed CACH components on the WHU-CD and DSIFN datasets. 
+
+Components in CACH WHU-CD DSIFN The Effectiveness of Difference Modules in CACH FMM BDFM EDQA ResUp F1 𝑐 IoU 𝑐 Kappa F1 𝑐 IoU 𝑐 Kappa 
+
+✓ ✗ ✗ ✗ 69.68 53.47 0.6870 49.65 33.02 0.3581 
+
+✓ ✓ ✗ ✗ 78.10 64.06 0.7732 53.22 36.26 0.4758 
+
+✓ ✓ ✓ ✗ 84.18 72.68 0.8354 55.57 38.47 0.4966 
+
+✓ ✓ ✓ ✓ 86.18 75.72 0.8562 58.56 41.40 0.5075 
+
+The Effectiveness of Backbone Features in CACH Shallow: {𝐹 0, 𝐹 2, 𝐹 3, 𝐹 5 } 78.13 64.12 0.7736 49.78 33.14 0.4780 Deep: {𝐹 6, 𝐹 8, 𝐹 9, 𝐹 11 } 81.41 68.64 0.8069 54.35 37.32 0.5318 Comb1: {𝐹 1, 𝐹 4, 𝐹 6, 𝐹 10 } 82.92 70.82 0.8224 55.93 38.82 0.5390 Comb2: {𝐹 2, 𝐹 5, 𝐹 8, 𝐹 11 } 86.18 75.72 0.8562 58.56 41.40 0.5075 
+
+The Effectiveness of Loss Functions in CACH Change Map Loss ( Lcd ) 84.31 72.88 0.8371 52.69 35.77 0.7593 + Upsample Loss ( Lups ) 85.58 74.79 0.8500 55.32 38.24 0.4942 + Unchanged Loss ( Lsim ) 86.18 75.72 0.8562 58.56 41.40 0.5075 
+
+## 4.4 Ablation Study 
+
+Impact of Components in CACH. Table 3 and Fig. 8 present a quantitative and qualitative analysis of the contributions of each component in CACH. The results show that progressively adding BDFM, EDQA, and ResUp consistently improves performance, demonstrating their effectiveness and complementarity. Among different backbone features, the "Comb2" configuration achieves the best results, highlighting the importance of proper multi-level feature selection. Furthermore, incorporating the upsample loss and unchanged-region loss yields additional performance gains, with the latter effectively mitigating pseudo-changes. 
+
+Impact of Different CACH Pre-train Dataset. We investi-gate the impact of the CACH pre-train dataset on the semantic change detection performance in Table 4. The original bi-temporal images and coarse annotations of CA-CDD are derived from the SECOND [ 70 ], JL1-CD [ 49 ], and CNAM-CD [ 80 ] datasets. We fur-ther expand and re-annotate the original coarse labels. Benefiting 
+
+Table 4: Ablation experimental results ( mF1 𝑐 ) of the different CACH pre-train datasets on the SECOND dataset. 
+
+Pre-train SECOND (Semantic Change Detection Categories)   
+
+> Building Tree Water Vegetation Bareland Playground mF1 𝑐
+
+SECOND [70] 75.50 21.58 28.32 25.36 49.88 27.15 37.96 JL1-CD [49] 70.46 16.96 24.90 23.54 48.02 28.78 35.44 CNAM-CD [80] 66.46 22.94 28.09 26.85 46.33 24.49 35.86 CA-CDD (ours) 76.36 27.73 37.23 31.49 54.29 30.23 42.89 Table 5: Investigation on the impact of different implemen-tation of OVSS model and the effectiveness of our CACH. 
+
+OVSS Model SC-SCD SECOND mF1 𝑐 mIoU 𝑐 mOA mKappa mF1 𝑐 mIoU 𝑐 mOA mKappa SegE-OV [40] 20.74 12.28 95.03 0.1866 34.24 22.25 94.49 0.3175 RSKT-Seg [36] 24.90 14.22 91.34 0.2192 34.98 23.27 94.44 0.3219 SAM3 [8] 26.07 15.49 94.92 0.2379 35.73 23.81 94.37 0.3303 SegE-OV3 [41] 35.68 23.22 95.82 0.3385 42.89 29.08 95.17 0.4045 
+
+Method Replace Comparator with our Proposed CACH UCD-SCM 12.06 6.51 85.95 0.0619 14.63 8.40 78.61 0.0795 + CACH (ours) 19.45 10.78 97.67 0.1877 20.73 11.56 97.58 0.1990 Inst-CEG 6.90 3.68 94.40 0.0551 17.82 10.46 92.80 0.1604 + CACH (ours) 11.77 6.25 94.77 0.0943 22.63 12.76 97.53 0.2169 DynamicEarth † 29.11 17.97 91.37 0.2532 37.51 23.58 91.88 0.3297 + CACH (ours) 33.46 20.09 99.52 0.3326 40.54 25.42 83.38 0.3094 DynamicEarth ‡ 9.19 5.16 95.25 0.0877 22.17 13.72 93.76 0.2109 + CACH (ours) 13.72 7.37 91.09 0.1184 24.33 13.85 99.17 0.2393 
+
+from enriched category-agnostic change annotations, Seg2Change achieves superior performance across all OVCD tasks. 
+
+Impact on Different Implementations of OVSS Model and the Effectiveness of the Proposed CACH. Table 5 investigates the impact of different implementations of the OVSS model in Seg2Change and replaces the comparators of other OVCD meth-ods with our CACH. Our CACH fully unleashes the potential of the OVSS model for further performance enhancement. Existing approaches range from OTSU [ 53 ] in UCD-SCM to change event generation in Inst-CEG [ 39 ], and further to DynamicEarth [ 38 ], which utilizes the DINOv2 image encoder to extract feature discrep-ancies. Despite their differences, these approaches rely on a prede-fined threshold, whose optimal value varies substantially among instances and is therefore challenging to generalize. 
+
+## 5 Conclusion 
+
+In this paper, we present Seg2Change, a novel approach for adapting open-vocabulary semantic segmentation models for remote sensing bi-temporal change detection. We first analyze the limitations of existing OVCD methods, which mainly rely on mask generators and fixed thresholds. By constructing a category-agnostic change detection dataset and designing a change estimation head that enhances and calibrates feature discrepancies, our method can gen-erate change maps for arbitrary category transitions. Furthermore, we build a bridge to directly leverage powerful OVSS models for open-vocabulary change detection. Finally, we develop a simple yet efficient adaptation architecture ( i.e. , Seg2Change) that achieves state-of-the-art performance across various OVCD tasks. Seg2Change: Adapting Open-Vocabulary Semantic Segmentation Model for Remote Sensing Change Detection 
+
+# Seg2Change: Adapting Open-Vocabulary Semantic Segmentation Model for Remote Sensing Change Detection 
+
+# Supplementary Material 
+
+## Supplementary Material Contents 
+
+• Section A - More Experimental Details .
+
+• Section B - More Diagnostic Experiments .
+
+• Section C - More Detailed Experiment Results .
+
+• Section D - Detailed Architecture of Seg2Change .
+
+• Section E - A Category-Agnostic CD Dataset .
+
+• Section F - More Qualitative Results .
+
+## A More Experimental Details A.1 Dataset Description 
+
+Below is a detailed description of all the datasets used to validate our Seg2Change. Unless otherwise specified, we use the test sets of the following datasets for validation. 
+
+Building Change Detection: (1) The WHU-CD [ 28 ] is a large-scale, very high-resolution remote sensing building change detec-tion dataset provided by Wuhan University. It comprises two aerial datasets from Christchurch, New Zealand, captured in April 2012 and 2016, with a spatial resolution of 0.3 m/pixel. The WHU-CD dataset consists of more than 220, 000 independent buildings. We applied a sliding window with a uniform stride to the testing image pairs with a resolution of 11265 × 15354, respectively, generating 660 testing samples of size 512 × 512. (2) The LEVIR-CD [ 12 ] is a large-scale very high-resolution remote sensing building change de-tection dataset provided by Beihang University. These bi-temporal images with time span of 5 to 14 years have significant construction changes, with a spatial resolution of 0.5 m/pixel. This dataset covers various types of buildings and contains a total of 31,333 individual building change instances, each with dimensions of 1024 × 1024. We applied a sliding-window with uniform stride to the testing image pairs, generating 512 testing samples of size 512 × 512. 
+
+Land-cover Change Detection: (1) DSIFN [ 77 ] is a dataset for land-cover change detection. It comprises 3,988 pairs of remote sensing images from six major cities in China. The dataset contains the change of multiple kinds of land cover objects, such as roads, buildings, croplands, and water bodies. Each image has a resolution of 512 × 512. Following the default splits, we divided the dataset into training, validation, and testing sets, consisting of 3,000, 340, and 48 image pairs, respectively. (2) The CLCD [ 46 ] dataset consists of 600 pairs of cropland change images, including 360 pairs for training, 120 for validation, and 120 for testing. The bi-temporal images in CLCD were collected by Gaofen-2 in Guangdong Province, China, in 2017 and 2019, respectively, with spatial resolutions ranging from 0.5 to 2 m. Each sample pair consists of two 512 × 512 images and an associated binary label indicating cropland change. 
+
+Semantic Change Detection: (1) The SC-SCD [ 64 ] consists of a pair of bi-temporal satellite images acquired from the Pléi-ades platform in 2014 and the Beijing-2 platform in 2016, with a spatial resolution of 0.5 m and a full size of 19,613 × 19,990 pixels 
+
+Table 6: The prompt class names for the evaluation datasets. {} indicates multiple prompt vocabularies for a single class. Foreground classes are highlighted in BOLD.                    
+
+> Dataset Category Class Name WHU-CD [28] (Single-Category) Building {bareland,barren},grass,car, {tree,forest},{water,river}, cropland, {building,roof,house}
+> LEVIR-CD [12] (Single-Category) Building {bareland,barren},grass,car, {tree,forest},{water,river}, cropland, {building,roof,house}
+> DSIFN [77] (Multi-Category) Land-Cover
+> {building,roof,house},garden,playground, {construction,apartment,residential}, materials ,{tree,forest}, {water,river} CLCD [46] (Multi-Category) Land-Cover
+> {bareland,barren, grass} , car,
+> {tree,forest},{water,river} cropland,{building,roof,house}
+> SC-SCD [64] (Multi-Category) Bareland bareland,barren,ground,floor,soil
+> Water water,river,pond
+> Building building,roof,house
+> Structure structure,construction,greenhouse
+> Farmland farmland,cropland,terrace
+> Vegetation grass,vegetation,tree,forest
+> Road road
+> SECOND [70] (Multi-Category) Building building,roof,house
+> Tree tree,forest
+> Water water,river
+> Low vegetation grass,cropland
+> N.v.g surface bareland,barren,ground
+> Playground sports field
+
+Table 7: Investigation on the impact of the CACH backbone on the WHU-CD and DSIFN datasets. 
+
+CACH Backbone WHU-CD DSIFN F1 𝑐 IoU 𝑐 Kappa F1 𝑐 IoU 𝑐 Kappa ResNet-18 [24] 81.28 68.47 0.8062 46.38 30.19 0.4519 ResNet-50 [24] 84.16 72.66 0.8355 55.84 38.74 0.5238 DINOv2-Small [52] 84.44 73.07 0.8384 54.99 37.93 0.5148 DINOv2-Base [52] 86.18 75.72 0.8562 58.56 41.40 0.5075 DINOv2-Large [52] 86.58 76.33 0.8603 58.87 41.71 0.5693 
+
+(about 98.02 km 2), depicting urban and rural transitions in south-ern China region. The SC-SCD dataset includes seven land-cover categories: bareland, water, building, structure, farmland, vegeta-tion, and road. Full coverage of landcover pixels are first annotated from bi-temporal RSIs, followed by difference analysis between the pair of land-cover maps to obtain pixels with different categories. The bi-temporal RSIs, land-cover maps and the corresponding BCD map are cropped into squares of 512 × 512 pixels. The training dataset consists of 1400 samples and the test dataset consists of 322 samples. (2) SECOND [ 70 ] is a semantic change detection dataset comprising 4,662 pairs of aerial images (2,968 for training and 1,694 for testing) collected from multiple sensors. Each image has a size Su et al. 
+
+Table 8: Investigation on the impact of different implemen-tation of OVSS model on WHU-CD and LEVIR-CD datasets. 
+
+OVSS Model WHU-CD LEVIR-CD F1 𝑐 IoU 𝑐 Kappa F1 𝑐 IoU 𝑐 Kappa SegEarth-OV [40] 74.53 59.40 0.7367 65.97 49.22 0.6438 RSKT-Seg [36] 79.13 65.47 0.7840 72.40 56.75 0.7103 SAM3 [8] 83.17 71.19 0.8255 77.82 63.69 0.7658 SegEarth-OV3 [41] 86.18 75.72 0.8562 78.72 64.91 0.7742 Table 9: Investigation on the impact of different implemen-tation of OVSS model on DSIFN and CLCD datasets. 
+
+OVSS Model DSIFN CLCD F1 𝑐 IoU 𝑐 Kappa F1 𝑐 IoU 𝑐 Kappa SegEarth-OV [40] 42.47 26.96 0.4051 33.81 20.35 0.3209 RSKT-Seg [36] 50.97 34.20 0.4900 43.31 27.64 0.4210 SAM3 [8] 52.00 35.13 0.5004 43.42 27.73 0.4228 SegEarth-OV3 [41] 58.56 41.40 0.5075 47.89 31.48 0.4239 
+
+of 512 × 512 pixels with a spatial resolution of 0.5–3 m/pixel and in-cludes pixel-level annotations. The SECOND dataset focuses on six major land cover categories—building, tree, water, low vegetation, non-vegetated ground (N.v.g) surface, and playground—which fre-quently undergo natural or human-induced anthropogenic changes. 
+
+## A.2 Evaluation metrics. 
+
+To compare the proposed method’s performance with SOTA meth-ods, we selected the most widely used evaluation metrics for change detection in remote sensing images: intersection over the union (IoU 𝑐 ), F1-score (F1 𝑐 ), Precision (Pre 𝑐 ), Recall (Rec 𝑐 ), Overall Accu-racy (OA), and the Kappa coefficient (Kappa). These metrics are formulated as follows: F1 𝑐 = (2 × Pre 𝑐 × Rec 𝑐 )/( Pre 𝑐 + Rec 𝑐 ) (15) IoU 𝑐 = TP /( TP + FN + FP ) (16) Pre 𝑐 = TP /( TP + FP ) (17) Rec 𝑐 = TP /( TP + FN ) (18) OA = (TP + TN )/( TP + TN + FP + FN ) (19) Kappa = (OA − PRE 𝑐 )/( 1 − PRE 𝑐 ) (20) PRE 𝑐 = (TP + FN ) × ( TP + FP )/( TP + TN + FP + FN )2
+
++ ( TN + FP ) × ( TN + FN )/( TP + TN + FP + FN )2 (21) 
+
+## A.3 Textual Description 
+
+In Table 6, we present category definitions and corresponding class name mappings across multiple change detection datasets. We ex-plicitly organize each semantic category into a set of fine-grained subclasses to capture richer semantic variations. Following [ 39 , 63 ], we represent the building category as a collection of related sub-classes, i.e. , building: {building, roof, house}, and similarly group other categories, such as tree: {tree, forest} and water: {water, river}. This hierarchical formulation enables the unification of heteroge-neous annotations across datasets while preserving semantic diver-sity. By leveraging such subclass-level representations, we enhance the flexibility of open-vocabulary change detection and improve the 
+
+Table 10: Investigation on the impact of different input chan-nel at BDFM and EDQA on SC-SCD and SECOND datasets.                                     
+
+> Feature Channel SC-SCD SECOND (𝐶 2, 𝐶 5, 𝐶 8, 𝐶 11 )mF1 𝑐 mIoU 𝑐 mOA mKappa mF1 𝑐 mIoU 𝑐 mOA mKappa (16, 32, 48, 64) 27.18 15.72 80.85 0.2224 32.29 19.25 90.47 0.2764 (32, 48, 54, 80) 27.64 16.04 80.83 0.2273 42.49 26.98 87.59 0.3670 (48, 64, 80, 96) 35.68 23.22 95.82 0.3385 42.89 29.08 95.17 0.4045 (32, 64, 128, 256) 30.89 18.27 97.44 0.2970 47.30 30.98 87.65 0.4092
+
+Table 11: Investigation on the impact of different implemen-tations of the feature difference module.                                           
+
+> Feature SC-SCD SECOND Difference mF1 𝑐 mIoU 𝑐 mOA mKappa mF1 𝑐 mIoU 𝑐 mOA mKappa feature abs 28.93 16.91 99.52 0.2875 33.21 19.91 99.52 0.3301 TFIM [44] 28.10 16.35 99.53 0.2793 33.17 19.88 99.52 0.3296 CDEM [76] 29.68 17.42 99.52 0.2949 35.44 21.54 54.41 0.1545 MDFM [73] 33.58 20.18 99.52 0.3338 44.10 28.29 87.70 0.3821 BDFM (ours) 35.68 23.22 95.82 0.3385 42.89 29.08 95.17 0.4045
+
+Table 12: Computational resource usage, and inference time cost comparison on semantic OVCD datasets. GPU mem-ory usage and inference time are evaluated on a pair of bi-temporal remote sensing images ( [2, 3, 512 , 512 ]).                   
+
+> Method SC-SCD (mF1 𝑐 )↑
+> GPU Memory Usage (GB) ↓
+> Inference Time (ms/sample) ↓
+> Learnable Parameters (M) DynamicEarth †[38] 29.11 7.33 5035 /DynamicEarth ‡[38] 9.19 15.33 6784 /Seg2Change 35.68 6.08 1521 3.9
+
+generalization capability of the model. Notably, we do not perform extensive prompt engineering to optimize performance. 
+
+## B More Diagnostic Experiments 
+
+The main contributions of this study include a Category-Agnostic Change Detection Dataset ( CA-CDD ) and a Category-Agnostic Change Head ( CACH ), which comprises the Feature Modulation Module ( FMM ), the Bi-temporal Difference Fusion Module ( BDFM ), and the Effective Difference Query Attention ( EDQA ). We therefore adapted the open-vocabulary semantic Seg mentation model to 
+
+the open-vocabulary change detection task ( Seg2Change ). We conducted a series of ablation studies to validate the effectiveness of each component proposed in this paper. 
+
+Investigation on the impact of the CACH backbone. We experiment with different backbones, where CACH can be regarded as a lightweight change detection network. As shown in Table 7, CACH consistently benefits from stronger backbone performance. To achieve a balance between performance and efficiency, we finally adopt DINOv2-Base [ 52 ] as the feature extraction backbone. In this work, we do not focus on selecting increasingly powerful backbones to boost category-agnostic change detection performance. Instead, following previous work [71], we choose the DINOv2. 
+
+Impact on Different Implementation of OVSS Model. Tables 8-9 examine the impact of different OVSS model implementations on the performance of Seg2Change in the context of building and land-cover change detection. Through our class-agnostic change Seg2Change: Adapting Open-Vocabulary Semantic Segmentation Model for Remote Sensing Change Detection 
+
+Table 13: Performance comparison on building change detection datasets. † and ‡ denote the M–C–I and I–M–C configurations of DynamicEarth. * denotes the variants implemented with SegEarth-OV3. The best and the second-best results are, respectively, marked in BOLD and in underline. Except for Kappa, all results are expressed in percentage (%). 
+
+Method WHU-CD LEVIR-CD F1 𝑐 IoU 𝑐 Pre 𝑐 Rec 𝑐 OA Kappa F1 𝑐 IoU 𝑐 Pre 𝑐 Rec 𝑐 OA Kappa PCA_KMeans [9] 14.33 7.72 8.24 55.05 75.71 0.0846 9.96 5.24 5.70 39.50 63.60 0.0116 CVA [6] 7.17 3.72 3.81 62.03 40.74 0.0023 9.27 4.86 5.01 61.27 38.88 0.0017 DCVA [3] 20.55 11.45 12.40 59.96 82.88 0.1537 13.85 7.44 7.63 75.50 52.17 0.0507 UCD-SCM [63] 32.13 19.14 20.31 76.81 88.02 0.2792 32.36 19.30 23.87 50.21 89.30 0.2734 AnyChange [79] 28.13 16.37 16.48 96.16 81.86 0.2330 32.68 19.53 20.46 81.06 82.98 0.2672 AnyChange* [79] 69.25 52.96 60.83 80.38 97.36 0.6790 72.27 56.58 59.28 92.54 96.38 0.7043 Inst-CEG [39] 62.54 45.49 54.35 73.62 96.50 0.6074 63.29 46.30 51.55 81.96 95.16 0.6084 Inst-CEG* [39] 71.35 55.46 66.52 76.93 97.72 0.7016 70.62 54.58 74.25 67.33 97.15 0.6912 DynamicEarth † [38] 57.35 40.20 52.33 63.43 96.26 0.5541 46.43 30.23 33.97 73.33 91.38 0.4242 DynamicEarth ‡ [38] 75.85 61.09 77.84 73.96 98.13 0.7488 69.70 53.50 62.94 78.09 96.54 0.6789 DynamicEarth* [38] 79.66 66.20 71.91 89.28 98.32 0.7879 71.97 56.21 65.71 79.55 96.84 0.7031 Seg2Change (Ours) 86.18 75.72 80.86 92.25 98.91 0.8562 78.72 64.91 69.73 90.38 97.51 0.7742 Table 14: Performance comparison on land-cover change detection datasets. † and ‡ denote the M–C–I and I–M–C configurations of DynamicEarth. * denotes the variants implemented with SegEarth-OV3. The best and the second-best results are, respectively, marked in BOLD and in underline. Except for Kappa, all results are expressed in percentage (%). 
+
+Method DSIFN CLCD F1 𝑐 IoU 𝑐 Pre 𝑐 Rec 𝑐 OA Kappa F1 𝑐 IoU 𝑐 Pre 𝑐 Rec 𝑐 OA Kappa PCA_KMeans [9] 35.48 21.57 29.14 45.35 71.98 0.1865 18.42 10.14 11.90 40.76 73.13 0.0780 CVA [6] 27.88 16.20 17.65 66.29 41.72 0.0142 13.39 7.17 7.53 60.42 41.82 0.0017 DCVA [3] 38.52 23.85 25.76 76.31 58.60 0.1758 20.81 11.62 12.09 74.77 57.67 0.0918 UCD-SCM [63] 40.13 25.10 32.82 51.61 73.83 0.2443 23.31 13.19 18.18 32.49 84.09 0.1522 AnyChange [79] 39.19 24.37 31.36 52.25 72.45 0.2280 31.96 19.02 21.33 63.63 79.84 0.2342 AnyChange* [79] 54.69 37.64 72.04 44.07 87.59 0.4798 27.55 15.98 33.05 23.62 90.76 0.2276 Inst-CEG [39] 31.81 18.91 54.50 22.46 83.64 0.2430 6.76 3.50 9.73 5.18 89.37 0.0020 Inst-CEG* [39] 47.21 30.90 65.56 36.88 85.98 0.3985 10.09 5.32 19.41 6.82 90.96 0.0648 DynamicEarth † [38] 54.35 37.32 69.96 44.44 87.32 0.4741 23.83 13.52 30.70 19.47 90.74 0.1916 DynamicEarth ‡ [38] 26.42 15.22 90.96 15.45 85.37 0.2260 14.97 8.09 83.52 8.22 93.05 0.1382 DynamicEarth* [38] 39.30 24.45 86.75 25.40 86.66 0.3423 38.16 23.58 65.39 26.94 93.50 0.3535 Seg2Change (Ours) 58.56 41.40 62.76 54.88 86.80 0.5075 47.89 31.48 37.32 66.79 89.18 0.4239 
+
+detection paradigm, Seg2Change is able to fully leverage the in-creasingly powerful OVSS models. Our approach does not require threshold fine-tuning to adapt to different OVSS models. A single architecture can be applied to all change detection tasks without the need to fine-tune the combination of OVSS models. Our CACH can be regarded as a post-processing module that is compatible with any OVSS model. 
+
+Investigation on the impact of (𝐶 2, 𝐶 5, 𝐶 8, 𝐶 11 ). We analyze how the input channel dimensions at different processing layers of BDFM and EDQA affect change detection performance, by em-ploying layers ranging from low to high dimensionality. Table 10 indicates that higher-dimensional settings of (𝐶 2, 𝐶 5, 𝐶 8, 𝐶 11 ) yield better performance, but also result in increased parameter counts and GPU memory consumption. To balance efficiency and perfor-mance, we adopt the configuration (48, 64, 80, 96). 
+
+Investigation on the impact of different implementations of the feature difference module. We evaluate the effect of various difference feature extraction modules on the final change detection performance, including absolute feature subtraction, the temporal feature interaction module (TFIM) [ 44 ], the cross-domain difference enhancement module (CDEM) [ 76 ], and the multiscale difference fusion module (MDFM) [73]. As shown in Table 11, our BDFM achieves superior performance and enhances the guidance of feature differences. 
+
+Investigation on the performance, computational re-source usage, and inference time cost. As shown in Table 12, Seg2Change exhibits notable superiority over existing methods with respect to both performance and computational efficiency. On the SC-SCD dataset, Seg2Change attains the highest accu-racy, markedly surpassing DynamicEarth, while also reducing GPU memory consumption and inference latency. In contrast, prior ap-proaches either suffer from inferior accuracy or require substan-tially greater computational resources. Seg2Change introduces only a lightweight set of learnable parameters (3.9M), underscoring its Su et al. 
+
+Table 15: Performance comparison on the SC-SCD dataset. The best and the second-best results are, respectively, marked in BOLD and in underline. Except for Kappa, all results are expressed in percentage (%).                                                                                                                                                                                   
+
+> Method Bareland Water Building Structure Farmland Vegetation Road Average F1 𝑐 IoU 𝑐 F1 𝑐 IoU 𝑐 F1 𝑐 IoU 𝑐 F1 𝑐 IoU 𝑐 F1 𝑐 IoU 𝑐 F1 𝑐 IoU 𝑐 F1 𝑐 IoU 𝑐 mF1 𝑐 mIoU 𝑐 mOA mKappa UCD-SCM [63] 16.13 8.77 3.32 1.69 15.00 8.11 18.33 10.09 9.18 4.81 16.52 9.01 5.95 3.06 12.06 6.51 85.95 0.0619 AnyChange [79] 28.01 16.29 4.22 2.16 19.88 11.03 18.30 10.07 11.19 5.93 30.29 17.85 3.71 1.89 16.51 9.32 78.27 0.1056 AnyChange* [79] 24.38 13.88 3.42 1.74 35.91 21.88 17.94 9.85 9.27 4.86 21.92 12.31 3.63 1.85 16.64 9.48 88.06 0.1192 Inst-CEG [39] 0.00 0.00 14.68 7.92 10.34 5.45 0.00 0.00 0.00 0.00 12.71 6.79 10.58 5.58 6.90 3.68 94.40 0.0551 Inst-CEG* [39] 18.41 10.14 38.14 23.57 53.88 36.87 2.48 1.25 16.53 9.01 21.88 12.28 13.70 7.36 23.57 14.35 94.49 0.2139 DynamicEarth †[38] 36.85 22.59 49.78 33.14 44.42 28.55 23.33 13.21 10.39 5.48 33.01 19.76 5.97 3.08 29.11 17.97 91.37 0.2532 DynamicEarth ‡[38] 0.00 0.00 21.97 12.34 23.87 13.55 0.00 0.00 0.00 0.00 0.00 0.00 18.54 10.22 9.19 5.16 95.25 0.0877 DynamicEarth* [38] 16.90 9.23 19.43 10.76 44.17 28.35 12.16 6.47 6.98 3.62 19.00 10.50 20.43 11.38 19.87 11.47 95.03 0.1804 Seg2Change (Ours) 43.15 27.51 35.92 21.89 64.13 47.20 1.53 0.77 20.47 11.40 45.97 29.84 38.60 23.91 35.68 23.22 95.82 0.3385
+
+Table 16: Performance comparison on the SECOND dataset. The best and the second-best results are, respectively, marked in BOLD and in underline. Except for Kappa, all results are expressed in percentage (%).                                                                                                                                                                   
+
+> Method Building Tree Water Vegetation N.v.g Surface Playground Average F1 𝑐 IoU 𝑐 F1 𝑐 IoU 𝑐 F1 𝑐 IoU 𝑐 F1 𝑐 IoU 𝑐 F1 𝑐 IoU 𝑐 F1 𝑐 IoU 𝑐 mF1 𝑐 mIoU 𝑐 mOA mKappa UCD-SCM [63] 36.15 22.06 6.50 3.36 2.20 1.11 18.77 10.35 22.83 12.88 1.31 0.66 14.63 8.40 78.61 0.0795 AnyChange [79] 42.79 27.22 7.49 3.89 2.19 1.11 24.82 14.17 38.90 24.15 1.03 0.52 19.54 11.84 76.07 0.1252 AnyChange* [79] 58.58 41.42 3.93 2.01 0.97 0.49 21.46 12.02 41.69 26.33 1.17 0.59 21.30 13.81 77.97 0.1492 Inst-CEG [39] 38.27 23.66 17.59 9.64 18.24 10.03 1.14 0.57 0.00 0.00 31.70 18.84 17.82 10.46 92.79 0.1604 Inst-CEG* [39] 63.61 46.63 28.01 16.28 22.67 12.78 25.61 14.69 14.12 7.60 22.08 12.41 29.35 18.40 93.62 0.2670 DynamicEarth †[38] 55.70 38.60 26.89 15.54 26.64 15.37 35.06 21.25 43.80 28.04 36.97 22.67 37.51 23.58 91.88 0.3297 DynamicEarth ‡[38] 48.19 31.74 19.64 10.89 21.97 12.34 0.79 0.40 0.00 0.00 42.43 26.93 22.17 13.72 93.76 0.2109 DynamicEarth* [38] 51.96 35.10 13.74 7.38 22.02 12.37 23.21 13.13 26.27 15.12 15.37 8.32 25.43 15.24 93.83 0.2286 Seg2Change (Ours) 76.36 61.76 27.73 16.10 37.23 22.88 31.49 18.69 54.29 37.26 30.23 17.81 42.89 29.08 95.17 0.4045
+
+efficiency. These results indicate that Seg2Change achieves a supe-rior balance between effectiveness and efficiency, making it a more practical and scalable solution for real-world OVCD tasks. 
+
+## C More Detailed Experiment Results 
+
+Building Change Detection. As shown in Table 13, Seg2Change consistently achieves the best performance on both the WHU-CD and LEVIR-CD datasets, demonstrating strong effectiveness and robustness in building change detection. Specifically, on the WHU-CD dataset, our method surpasses all competitors, achieving an F1 𝑐 of 86.18% and an IoU 𝑐 of 75.72%, and outperforming the previ-ous best method, DynamicEarth*, by a clear margin. Meanwhile, Seg2Change achieves the highest OA of 98.91% and Kappa of 0.8562, indicating more reliable and consistent predictions. On the LEVIR-CD dataset, our method similarly attains the best F1 𝑐 of 78.72% and IoU 𝑐 of 64.91%, while maintaining competitive precision and achieving notably high recall of 90.38%. Compared with existing OVCD methods, the superior recall suggests that Seg2Change is more effective at capturing complete change regions. 
+
+Land-Cover Change Detection. As demonstrated in Table 14, Seg2Change consistently outperforms the second-best methods across both datasets, demonstrating clear quantitative advantages. On the DSIFN dataset, compared with the second-best method AnyChange*, Seg2Change improves F1 𝑐 from 54.69% to 58.56%, achieving an absolute gain of 3.87%, and increases IoU 𝑐 from 37.64% to 41.40%, yielding a gain of 3.76%. Although AnyChange* attains the highest OA, its relatively low recall limits its ability to capture complete change regions, whereas Seg2Change improves recall by 10.81%, leading to more comprehensive detection results. On the more challenging CLCD dataset, Seg2Change surpasses the second-best DynamicEarth* by a larger margin. Specifically, F1 𝑐 
+
+increases from 38.16% to 47.89%, corresponding to an improvement of 9.73%, and IoU 𝑐 rises from 23.58% to 31.48%, with a gain of 7.90%. Notably, Seg2Change improves recall by 39.85%, indicating a signif-icantly stronger ability to capture diverse and complex change pat-terns. These improvements demonstrate that Seg2Change achieves a better balance between precision and recall, resulting in more reliable and complete change detection performance. 
+
+Semantic Change Detection. As shown in Tables 15 and 16, Seg2Change demonstrates clear and consistent advantages over the second-best methods on both the SC-SCD and the SECOND datasets, highlighting its strong capability for semantic change detection across diverse categories. On the SC-SCD dataset, compared with the second-best method DynamicEarth †, Seg2Change improves the average F1 𝑐 from 29.11% to 35.68%, achieving a gain of 6.57%, and increases mIoU 𝑐 from 17.97% to 23.22%, yielding an improvement of 5.25%. Meanwhile, Kappa is improved by 0.0853. At the category level, Seg2Change achieves substantial gains, particularly on building, where F1 𝑐 
+
+improves by 19.71%, and on vegetation and road, with gains of 12.96% and 18.17%, respectively. Although DynamicEarth † per-forms strongly on certain categories such as water and structure, Seg2Change provides more balanced performance across categories, leading to superior overall results. Seg2Change: Adapting Open-Vocabulary Semantic Segmentation Model for Remote Sensing Change Detection 
+
+Figure 9: Overall of Seg2Change. The bi-temporal remote sensing images are first fed into the category-agnostic change head (CACH) to generate a category-agnostic change map. In parallel, the same images, along with textual descriptions, are fed into an OVSS model to generate semantic segmentation maps. The final change map is derived by combining them. 
+
+On the SECOND dataset, Seg2Change further enlarges its ad-vantage over the second-best DynamicEarth †. Specifically, mF1 𝑐 
+
+increases from 37.51% to 42.89%, corresponding to an improvement of 5.38%, and mIoU 𝑐 rises from 23.58% to 29.08%, with a gain of 5.50%. Notably, Seg2Change achieves significant improvements on key categories such as building and non-vegetated ground surface, with F1 𝑐 gains of 20.66% and 10.49%, respectively. These results in-dicate that Seg2Change is more effective at capturing complex and large-scale changes. Overall, the consistent improvements across both datasets demonstrate that Seg2Change achieves a better trade-off between category-wise discrimination and overall consistency, resulting in more robust and reliable open-vocabulary semantic change detection performance. 
+
+## D Detailed Architecture 
+
+As illustrated in Fig. 9, we present the detailed architecture of Seg2Change. This framework aims to adapt open-vocabulary se-mantic segmentation models for remote sensing to the task of open-vocabulary change detection. Our category-agnostic change head is employed to extract changes of arbitrary categories from bi-temporal images. Semantic segmentation maps are generated using bi-temporal images, textual descriptions, and an open-vocabulary semantic segmentation model. Finally, by integrating the category-agnostic change map, the corresponding semantic changes for each temporal image are derived. We extend conventional change detection to support open-vocabulary capability. Traditional change detection methods are generally restricted to specific or single-category scenarios. De-spite the advancement of open-vocabulary semantic segmentation models, there remains a lack of a simple and effective paradigm to directly apply these models to change detection. 
+
+## D.1 Overall of Seg2Change 
+
+The input of open-vocabulary change detection consists of a pair of bi-temporal images 𝐼 1, 𝐼 2 and a text description of interest x𝑡𝑒𝑥𝑡 .We feed the bi-temporal images 𝐼 1, 𝐼 2 into CACH to obtain the category-agnostic change map 𝑀 ca . Meanwhile, the bi-temporal images 𝐼 1, 𝐼 2, together with the text description x𝑡𝑒𝑥𝑡 , are input into the OVSS model ( i.e. , SegEarth-OV3 [ 41 ]) to generate the semantic segmentation maps 𝑀 1, 𝑀 2. For open-vocabulary semantic change detection tasks ( e.g. , SC-SCD [ 64 ] and SECOND [ 70 ]), semantic change maps for bi-temporal images are modeled as follows: 
+
+𝑀 𝑡  
+
+> ch
+
+= 𝑀 ca · 𝑀 𝑡 , (22) where 𝑡 ∈ { 1, 2} denotes the temporal index. For open-vocabulary binary change detection tasks ( e.g. , WHU-CD [ 28 ], LEVIR-CD [ 12 ], DSIFN [ 77 ], and CLCD [ 46 ]), the binary change maps for bi-temporal images need to be integrated: 
+
+𝑀 ch = 𝑀 ca · 𝑀 1 + 𝑀 ca · 𝑀 2. (23) 
+
+## D.2 Category-Agnostic Change Map 
+
+In the following, we present the procedure for extracting the category-agnostic change map. As the DINOv2 [ 52 ] encoder adopts a patch size of 14, the input image dimensions are required to be Su et al. 
+
+divisible by 14. We thus preprocess the data into a tensor of size 
+
+(2 × 3 × 504 × 504 ), where the leading dimension of 2 corresponds to the bi-temporal inputs. Subsequently, pyramid features are obtained using the DINOv2-Base image encoder ΦDINO :
+
+{𝐹 𝑡  
+
+> 2
+
+, 𝐹 𝑡  
+
+> 5
+
+, 𝐹 𝑡  
+
+> 8
+
+, 𝐹 𝑡  
+
+> 11
+
+} = ΦDINO (𝐼 𝑡 ). (24) We adopt the feature representations from the 2nd, 5th, 7th, and 11th layers of DINOv2 image encoder, as previously analyzed in Sec. B and thus omitted here for brevity. Rather than heavily fine-tuning 
+
+ΦDINO with additional parameters, we introduce a simple Feature Modulation Module ( FMM ) to better align the features with remote sensing characteristics, as formulated in Eq. (25): 
+
+˜𝐹 𝑡 𝑖 = Resize 𝑖 (Conv 1×1 ∗ ( 𝐹 𝑡 𝑖 )) , (25) where Conv 1×1 denotes a 2D convolution with a kernel size of 1 × 1, and ∗ represents the convolution operation. Resize 𝑖 represents the scaling operation for the 𝑖 -th layer, de-fined as Deconv 4×4 (·) , Deconv 2×2 (·) , Identity (·) , Conv 3×3 (·) , corre-sponding to upsampling by a factor of 4, upsampling by a factor of 2, keeping the scale unchanged, and downsampling by a factor of 2 (with stride 2), respectively. Deconv d×d denotes a 2D transposed convolution with a kernel size of d × d, while Identity (·) indicates no change in scale. The modulated features ˜𝐹 𝑡 𝑖 are then subjected to difference feature enhancement and calibration. We utilize the proposed Bi-temporal Difference Fusion Module ( BDFM ) to extract and enhance difference features from bi-temporal images. First, we employ convolutional activations to extract spatial variations from the modulated features ˜𝐹 1 
+
+> 𝑖
+
+and ˜𝐹 2 
+
+> 𝑖
+
+, generating the 
+
+𝑖 -th layer difference attention: 
+
+𝐴𝑡𝑡 𝑖 = 𝜎 (Conv 3×3 ∗ | ˜𝐹 1 
+
+> 𝑖
+
+− ˜𝐹 2 
+
+> 𝑖
+
+|) , (26) where 𝜎 denotes the Sigmoid function. Subsequently, the difference attention 𝐴𝑡𝑡 𝑖 is used to enhance the discrepant regions of the bi-temporal images, respectively: 
+
+𝑋 𝑡 𝑖 = 𝛾 Conv 3×3 ∗ ( ˜𝐹 𝑡 𝑖 + 𝐴𝑡𝑡 𝑖 · ˜𝐹 𝑡 𝑖 ), (27) 
+
+𝐷 𝑖 = 𝛾 Conv 3×3 ∗ ( 𝛾 Conv 3×3 ∗ ( 𝑋 1 
+
+> 𝑖
+
+|| 𝑋 2 
+
+> 𝑖
+
+) · 𝐴𝑡𝑡 𝑖 ), (28) where 𝑋 𝑡 𝑖 are bi-temporal feature differences, 𝐷 𝑖 denotes the fused feature differences at the 𝑖 -th layer. 𝛾 and || are, respectively, the 
+
+ReLu activation function and the concatenation operation. The en-hancement of feature differences inevitably introduces noise and pseudo changes. To mitigate this issue, we further employ the pro-posed Effective Difference Query Attention ( EDQA ) module to calibrate the feature differences. Here, we transform the modu-lated features ˜𝐹 𝑡 𝑖 into the guidance features ˜𝐺 𝑡 𝑖 , as they can provide effective guidance for refining the difference features: 
+
+˜𝐺 𝑡 𝑖 = Conv 1×1 ∗ ( 𝐷 𝑖 || ˜𝐹 𝑡 𝑖 ). (29) A sliding-window attention mechanism [ 48 ] is adopted to model the attention between the difference features 𝐷 𝑖 and the guidance features ˜𝐺 𝑡 𝑖 . For simplicity, the sliding-window processing is omit-ted, and the formulation is expressed in Eq. (31): 
+
+𝑄 𝑖 , 𝐾 𝑖 = 𝜙 𝑞𝑘 𝑖 (𝐷 𝑖 ), 𝑉 𝑡 𝑖 = 𝜙 𝑡 𝑣 𝑖 ( ˜𝐺 𝑡 𝑖 ), (30) 
+
+˜𝐷 𝑡 𝑖 = 𝜙 𝑡  
+
+> proj
+
+(Softmax (( 𝑄 𝑖 · 𝐾 𝑖 )/ √︁ 𝑑 𝑖 ) · 𝑉 𝑡 𝑖 ), (31) where 𝜙 𝑞𝑘 𝑖 are linear projections for 𝐷 𝑖 , while 𝜙 𝑡 𝑣 𝑖 and 𝜙 𝑡  
+
+> proj
+
+are linear projections for ˜𝐺 𝑡 𝑖 and ˜𝐷 𝑡 𝑖 at time 𝑡 . ˜𝐷 𝑡 𝑖 denotes the query calibrated difference at the 𝑖 -th layer of the image at time 𝑡 . The calibrated bi-temporal differences obtained from the query are then reconstructed by reversing the window partition and fused as: 
+
+˜𝐷 𝑖 = 𝛾 Conv3 × 3 ∗ ( 𝛾 Conv 3×3 ∗ ( ˜𝐷 1 
+
+> 𝑖
+
+|| ˜𝐷 2 
+
+> 𝑖
+
+)) , (32) where ˜𝐷 𝑖 denotes the calibrated bi-temporal feature difference at the 𝑖 -th layer. Owing to differences in dataset sources, variations in imaging conditions and seasonal characteristics inevitably arise. To accommodate bi-temporal images from heterogeneous sources, we augment the MLP with a Mixture-of-Experts (MoE) module [ 31 ]. The calibrated bi-temporal feature difference ˜𝐷 𝑖 are utilized to estimate expert weights and to compute the outputs of experts: weight 𝐺 = Softmax (𝑊 𝑔 · ˜𝐷 𝑖 + b𝑔 ), (33) expert 𝑗 ( ˜𝐷 𝑖 ) = 𝑊 𝑜,𝑗 · GELU (𝑊 ℎ,𝑗 · ˜𝐷 𝑖 + bℎ,𝑗 ) + b𝑜,𝑗 , (34) where weight 𝐺 denotes the weight assigned to each expert, and expert 𝑗 ( ˜𝐷 𝑖 ) represents the output of expert-𝑗 given the feature dif-ference ˜𝐷 𝑖 . 𝑊 𝑔 and b𝑔 are the learnable parameters used to compute expert weights. 𝑊 ℎ,𝑗 , bℎ,𝑗 and 𝑊 𝑜,𝑗 , b𝑜,𝑗 are the parameters of the two linear mapping layers for the output of expert-𝑗 . Finally, the weighted outputs of the 𝑁 𝑒 experts are aggregated to produce the feature difference 𝑋 𝑑 𝑖 , which is formulated as Eq. (35): 
+
+𝑋 𝑑 𝑖 = Í𝑁 𝑒  
+
+> 𝑗 =1
+
+weight 𝑗 · expert 𝑗 ( ˜𝐷 𝑖 ). (35) Finally, we upsample the feature differences 𝑋 𝑑 𝑖 from each layer to obtain the final category-agnostic change map. To ensure com-patibility between the inputs and outputs of different modules, the difference features are further modulated: 
+
+˜𝑋 𝑑 𝑖 = Conv 1×1 ∗ ( 𝑋 𝑑 𝑖 ). (36) Then, we apply the proposed Residual Upsampler ( ResUp ) to upsample the features at each layer: 
+
+˜𝑋 𝐷 𝑖 = 𝜙 2× (ResConv 2 (ResConv 1 ( ˜𝑋 𝑑 𝑖 ) + ˜𝑋 𝐷 𝑖 −1)) , (37) where ˜𝑋 𝐷 𝑖 denotes the upsampled feature at the 𝑖 -th layer, and 
+
+𝜙 2× represents a bilinear interpolation function that doubles the spatial resolution. During the upsampling process, two residual convolutional units are applied to the modulated difference features, and each residual convolutional unit is defined as follows: 
+
+ResConv 𝑘 = Conv 1×1 ∗ ( 𝛾 Conv 1×1 ∗ ( 𝛾 ( ˜𝑋 𝑑 𝑘 ))) + ˜𝑋 𝑑 𝑘 , (38) where ˜𝑋 𝑑 𝑘 denotes the input tensor to ResConv 𝑘 . After progressive upsampling across layers, the aggregated feature ˜𝑋 𝐷 is obtained, integrating differences from all levels. Finally, the category-agnostic change prediction 𝑃 ca is generated via an output convolutional unit and resized to the original image resolution: 
+
+𝑃 ca = 𝜙 𝐻 ×𝑊 (Conv 1×1 ∗ ( 𝛾 Conv 3×3 ∗ ( ˜𝑋 𝐷 ))) . (39) An arg max operation is then applied to the prediction to obtain the category-agnostic change map. 
+
+𝑀 ca = arg max (𝑃 ca ), (40) where the category-agnostic change prediction 𝑃 ca has a dimen-sion of R2×𝐻 ×𝑊 , and the category-agnostic change map 𝑀 ca has a dimension of R1×𝐻 ×𝑊 .Seg2Change: Adapting Open-Vocabulary Semantic Segmentation Model for Remote Sensing Change Detection 
+
+Table 17: Information on the evaluation benchmark datasets and the CA-CDD coarse label source datasets. * denotes that the initially coarse, category-restricted change annotations are refined to produce category-agnostic change maps. ** indicates that all images have been preprocessed and cropped to a resolution of 512 ×512. 
+
+Dataset Study Site Number of Image Pairs Image Size** Resolution Evaluation Task WHU-CD [28] Christchurch, New Zealand 660 (Test) 512 × 512 0.3 m Building CD LEVIR-CD [12] Texas, U.S. 512 (Test) 512 × 512 0.5 m Building CD DSIFN [77] Xi’an, China 48 (Test) 512 × 512 0.03–1 m Land-cover CD CLCD [46] Guangdong, China 120 (Test) 512 × 512 0.5–2 m Land-cover CD SECOND [70] Hangzhou, Chengdu, Shanghai, China 1694 (Test) 512 × 512 0.5–3 m Semantic CD SC-SCD [64] Longwen, Zhangzhou, China 322 (Test) 512 × 512 0.5 m Semantic CD SECOND [70] Hangzhou, Chengdu, Shanghai, China 2968* (Train) 512 × 512 0.5–3 m Semantic CD JL1-CD [49] Multiple regions in China 1000* (Train) 512 × 512 0.5–0.75 m Land-cover CD CNAM-CD [80] 23 SLNAs [80] 1000* (Train) 512 × 512 0.5 m Land-cover CD WHU-CD (Building) 
+
+> CLCD (Land-Cover)
+> LEVIR-CD (Building)
+> DSIFN (Land-Cover)
+> SECOND (Semantic)
+> SC-SCD (Semantic)
+
+Figure 10: Example images from binary change detection datasets (WHU-CD, LEVIR-CD, DSIFN, and CLCD) and semantic change detection datasets (SC-SCD and SECOND). The binary change detection datasets contain only binary change maps for specific categories. In contrast, the semantic change detection datasets include both binary change maps indicating changed regions between bi-temporal images and multi-class change maps that capture category transitions across time. Su et al. SECOND (Category-Agnostic)  
+
+> JL1-CD (Category-Agnostic)
+> CNAM-CD (Category-Agnostic) Coarse Label Coarse Label Coarse Label Coarse Label Coarse Label Coarse Label Coarse Label Coarse Label Coarse Label CA-CDD Label (Refined) CA-CDD Label (Refined) CA-CDD Label (Refined) CA-CDD Label (Refined) CA-CDD Label (Refined) CA-CDD Label (Refined) CA-CDD Label (Refined) CA-CDD Label (Refined) CA-CDD Label (Refined)
+> Manual Check
+> Manual Check
+> Manual Check
+> Manual Check
+> Manual Check
+> Manual Check
+> Manual Check
+> Manual Check
+> Manual Check
+
+Figure 11: Visual comparison between CA-CDD category-agnostic change labels and the original coarse labels. We have improved the limited category range of the original labels. At the same time, we have refined the coarse-grained range annotations in the labels to fine-grained annotations. The gray markings in the figure represent the refinements we made to the original labels. 
+
+## E A Category-Agnostic CD Dataset 
+
+Change detection is a fundamental task in remote sensing that aims to analyze bi-temporal imagery to identify both the locations and types of changes. However, existing datasets are typically con-strained to a limited set of predefined change categories. For exam-ple, WHU-CD [ 28 ] and LEVIR-CD [ 12 ] primarily target building changes, while DSIFN [ 77 ] and CLCD [ 46 ] concentrate on land-cover variations. SYSU-CD [ 60 ] extends the scope to some extent by including categories such as newly constructed urban structures, vegetation changes, and road expansion. However, it still primarily focuses on urbanization-related changes. Semantic change detec-tion datasets are the closest to category-agnostic ones, yet they differ in several key aspects. Specifically, they usually provide three forms of annotations: semantic segmentation maps at T1 and T2, along with a category-restricted binary change map. These annota-tions are confined to predefined classes ( e.g. , SECOND [ 70 ] includes building, tree, water, low vegetation, bareland, playground), and any categories beyond this scope are not labeled ( e.g. , road or build-ing renovation). Our CA-CDD dataset is constructed using initial bi-temporal images and coarse change maps from the SECOND training set (2968 pairs), JL1-CD [ 49 ] training set (1000 pairs), and CNAM-CD [ 80 ] training set (1000 pairs). We further refine these coarse annotations through re-labeling to achieve category-agnostic change representations. Importantly, the SECOND test set is ex-clusively used for evaluation, and no test images from SECOND are included in CA-CDD. Fig. 10 presents a visualization of the evaluation datasets, while Fig. 11 illustrates the annotation process of our CA-CDD dataset. As summarized in Table 17, we report the collection sites, number of test image pairs, image sizes, resolutions, and task types for all datasets. 
+
+## F More Qualitative Results 
+
+To qualitatively compare our method with previous UCD and OVCD approaches [ 3, 6, 9 , 38 , 63 , 79 ], we present representative samples selected from six datasets, as illustrated in Fig. 12–15. (1) Fig. 12–13 show that, in the open-vocabulary binary change detection task, our proposed Seg2Change outperforms all competing methods across various scenarios, including small, large, dense, and sparse changes. Meanwhile, our method directly processes 512 ×512 im-ages, thereby avoiding the adverse effects introduced by image crop-ping. (2) Fig. 14 demonstrates that mask proposal based methods, such as DynamicEarth (M-C-I or I-M-C) [ 38 ], suffer from accumu-lated segmentation errors originating from the mask generator. As illustrated in the example on the right side of the second row in Fig. 14, the change detection map produced by DynamicEarth appears fragmented. (3) Fig. 15 indicates that Seg2Change enables more precise change identification. This improvement is attributed to our category-agnostic change map decision strategy, which replaces conventional fixed-threshold change determination. Seg2Change: Adapting Open-Vocabulary Semantic Segmentation Model for Remote Sensing Change Detection T1 T2 Labels PCA_KM CVA DCVA UCD-SCM AnyChange DynamicEarth Seg2Change 
+
+> WHU-CD LEVIR-CD DSIFN
+
+Figure 12: Qualitative comparison of several representative UCD and OVCD methods on three binary change detection datasets, 
+
+i.e. , WHU-CD, LEVIR-CD, and DSIFN. White represents a true positive, black is a true negative, green indicates a false positive, and red is a false negative. Fewer green and red pixels represent better performance. Su et al. T1 T2 Labels PCA_KM CVA DCVA UCD-SCM AnyChange DynamicEarth Seg2Change 
+
+> CLCD
+
+Figure 13: Qualitative comparison of several representative UCD and OVCD methods on CLCD. T1 T2 Labels DynamicEarth Seg2Change T1 T2 Labels DynamicEarth Seg2Change SC-SCD 
+
+Figure 14: Qualitative comparison of the state-of-the-art OVCD method DynamicEarth on a semantic change detection dataset, 
+
+i.e. , SC-SCD. Black represents non-change. Color rendering: "Bareland" , "Building" , "Farmland" , "Road" , "Structure" , "Vegetation" ,
+
+"Water" .Seg2Change: Adapting Open-Vocabulary Semantic Segmentation Model for Remote Sensing Change Detection SECOND        
+
+> T1 T2 Labels DynamicEarth Seg2Change T1 T2 Labels DynamicEarth Seg2Change
+
+Figure 15: Qualitative comparison of the state-of-the-art OVCD method DynamicEarth on a semantic change detection dataset, 
+
+i.e. , SECOND. Black represents non-change. Color rendering: "Building" , "Vegetation" , "Bareland" , "Playground" , "Tree" , "Water" .Su et al. 
+
+## References 
+
+[1] Jean-Baptiste Alayrac, Jeff Donahue, Pauline Luc, Antoine Miech, Iain Barr, Yana Hasson, Karel Lenc, Arthur Mensch, Katherine Millican, Malcolm Reynolds, Roman Ring, Eliza Rutherford, Serkan Cabi, Tengda Han, Zhitao Gong, Sina Samangooei, Marianne Monteiro, Jacob L Menick, Sebastian Borgeaud, Andy Brock, Aida Nematzadeh, Sahand Sharifzadeh, Mikoł aj Bińkowski, Ricardo Bar-reira, Oriol Vinyals, Andrew Zisserman, and Karén Simonyan. 2022. Flamingo: a Visual Language Model for Few-Shot Learning. In Advances in Neural Information Processing Systems , S. Koyejo, S. Mohamed, A. Agarwal, D. Belgrave, K. Cho, and A. Oh (Eds.), Vol. 35. Curran Associates, Inc., 23716–23736. [2] Wele Gedara Chaminda Bandara and Vishal M. Patel. 2022. A Transformer-Based Siamese Network for Change Detection. In IGARSS 2022 - 2022 IEEE International Geoscience and Remote Sensing Symposium . 207–210. doi:10.1109/IGARSS46834. 2022.9883686 [3] Luca Bergamasco, Sudipan Saha, Francesca Bovolo, and Lorenzo Bruzzone. 2022. Unsupervised change detection using convolutional-autoencoder multiresolution features. IEEE Transactions on Geoscience and Remote Sensing 60 (2022), 1–19. [4] Francesca Bovolo and Lorenzo Bruzzone. 2007. A Theoretical Framework for Unsupervised Change Detection Based on Change Vector Analysis in the Polar Domain. IEEE Transactions on Geoscience and Remote Sensing 45, 1 (2007), 218–236. doi:10.1109/TGRS.2006.885408 [5] Francesca Bovolo, Lorenzo Bruzzone, and Mattia Marconcini. 2008. A Novel Approach to Unsupervised Change Detection Based on a Semisupervised SVM and a Similarity Measure. IEEE Transactions on Geoscience and Remote Sensing 
+
+46, 7 (2008), 2070–2082. doi:10.1109/TGRS.2008.916643 [6] Lorenzo Bruzzone and Diego F Prieto. 2002. Automatic analysis of the difference image for unsupervised change detection. IEEE Transactions on Geoscience and Remote sensing 38, 3 (2002), 1171–1182. [7] F. P. Kressler C. A. Mucher, K. T. Steinnocher and C. Heunks. 2000. Land cover characterization and change detection for environmental monitoring of pan-Europe. International Journal of Remote Sensing 21, 6-7 (2000), 1159–1181. doi:10. 1080/014311600210128 [8] Nicolas Carion, Laura Gustafson, Yuan-Ting Hu, Shoubhik Debnath, Ronghang Hu, Didac Suris, Chaitanya Ryali, Kalyan Vasudev Alwala, Haitham Khedr, An-drew Huang, Jie Lei, Tengyu Ma, Baishan Guo, Arpit Kalla, Markus Marks, Joseph Greer, Meng Wang, Peize Sun, Roman Rädle, Triantafyllos Afouras, Effrosyni Mavroudi, Katherine Xu, Tsung-Han Wu, Yu Zhou, Liliane Momeni, Rishi Hazra, Shuangrui Ding, Sagar Vaze, Francois Porcher, Feng Li, Siyuan Li, Aishwarya Kamath, Ho Kei Cheng, Piotr Dollár, Nikhila Ravi, Kate Saenko, Pengchuan Zhang, and Christoph Feichtenhofer. 2025. SAM 3: Segment Anything with Concepts. arXiv:2511.16719 [cs.CV] [9] Turgay Celik. 2009. Unsupervised Change Detection in Satellite Images Using Principal Component Analysis and 𝑘 -Means Clustering. IEEE Geoscience and Remote Sensing Letters 6, 4 (2009), 772–776. doi:10.1109/LGRS.2009.2025059 [10] Turgay Celik. 2009. Unsupervised Change Detection in Satellite Images Using Principal Component Analysis and 𝑘 -Means Clustering. IEEE Geoscience and Remote Sensing Letters 6, 4 (2009), 772–776. doi:10.1109/LGRS.2009.2025059 [11] Hao Chen, Zipeng Qi, and Zhenwei Shi. 2022. Remote Sensing Image Change Detection With Transformers. IEEE Transactions on Geoscience and Remote Sensing 60 (2022), 1–14. doi:10.1109/TGRS.2021.3095166 [12] Hao Chen and Zhenwei Shi. 2020. A Spatial-Temporal Attention-Based Method and a New Dataset for Remote Sensing Image Change Detection. Remote Sensing 
+
+12, 10 (2020). [13] Hongruixuan Chen, Jian Song, Chen Wu, Bo Du, and Naoto Yokoya. 2023. Ex-change means change: An unsupervised single-temporal change detection frame-work based on intra- and inter-image patch exchange. ISPRS Journal of Pho-togrammetry and Remote Sensing 206 (2023), 87–105. doi:10.1016/j.isprsjprs.2023. 11.004 [14] Hongruixuan Chen, Naoto Yokoya, and Marco Chini. 2023. Fourier domain structural relationship analysis for unsupervised multimodal change detection. 
+
+ISPRS Journal of Photogrammetry and Remote Sensing 198 (2023), 99–114. doi:10. 1016/j.isprsjprs.2023.03.004 [15] ZiJian Chen, YongHong Song, Yue Ma, GuoFu Li, Rui Wang, and Hao Hu. 2023. Interaction in Transformer for Change Detection in VHR Remote Sensing Images. 
+
+IEEE Transactions on Geoscience and Remote Sensing 61 (2023), 1–12. doi:10.1109/ TGRS.2023.3324025 [16] Bowen Cheng, Ishan Misra, Alexander G. Schwing, Alexander Kirillov, and Rohit Girdhar. 2022. Masked-attention Mask Transformer for Universal Image Segmentation. CVPR .[17] J. S. Deng, K. Wang, Y. H. Deng, and G. J. Qi. 2008. PCA-based land-use change detection and analysis using multitemporal and multisensor satel-lite data. International Journal of Remote Sensing 29, 16 (2008), 4823–4838. doi:10.1080/01431160801950162 [18] Peijun Du, Xin Wang, Dongmei Chen, Sicong Liu, Cong Lin, and Yaping Meng. 2020. An improved change detection approach using tri-temporal logic-verified change vector analysis. ISPRS Journal of Photogrammetry and Remote Sensing 
+
+161 (2020), 278–293. doi:10.1016/j.isprsjprs.2020.01.026 [19] Yuchao Feng, Jiawei Jiang, Honghui Xu, and Jianwei Zheng. 2023. Change De-tection on Remote Sensing Images using Dual-branch Multi-level Inter-temporal Network. IEEE Transactions on Geoscience and Remote Sensing (2023), 1–1. doi:10.1109/TGRS.2023.3241257 [20] Feng Gao, Xiao Wang, Yunhao Gao, Junyu Dong, and Shengke Wang. 2019. Sea Ice Change Detection in SAR Images Based on Convolutional-Wavelet Neural Networks. IEEE Geoscience and Remote Sensing Letters 16, 8 (2019), 1240–1244. [21] Jose L. Gil-Yepes, Luis A. Ruiz, Jorge A. Recio, Ángel Balaguer-Beser, and Tx-omin Hermosilla. 2016. Description and validation of a new set of object-based temporal geostatistical features for land-use/land-cover change detec-tion. ISPRS Journal of Photogrammetry and Remote Sensing 121 (2016), 77–91. doi:10.1016/j.isprsjprs.2016.08.010 [22] Laura Giustarini, Renaud Hostache, Patrick Matgen, Guy J.-P. Schumann, Paul D. Bates, and David C. Mason. 2013. A Change Detection Approach to Flood Mapping in Urban Areas Using TerraSAR-X. IEEE Transactions on Geoscience and Remote Sensing 51, 4 (2013), 2417–2430. [23] Chengxi Han, Chen Wu, Haonan Guo, Meiqi Hu, Jiepan Li, and Hongruixuan Chen. 2023. Change Guiding Network: Incorporating Change Prior to Guide Change Detection in Remote Sensing Imagery. IEEE Journal of Selected Topics in Applied Earth Observations and Remote Sensing 16 (2023), 8395–8407. doi:10. 1109/JSTARS.2023.3310208 [24] Kaiming He, Xiangyu Zhang, Shaoqing Ren, and Jian Sun. 2015. Deep Residual Learning for Image Recognition. arXiv:1512.03385 [cs.CV] https://arxiv.org/abs/ 1512.03385 [25] Kaiming He, Xiangyu Zhang, Shaoqing Ren, and Jian Sun. 2016. Deep Residual Learning for Image Recognition. In Proc. IEEE/CVF Conf. Comput. Vis. Pattern Recognit. (CVPR) . 770–778. [26] Thorsten Hoberg, Franz Rottensteiner, Raul Queiroz Feitosa, and Christian Heipke. 2015. Conditional Random Fields for Multitemporal and Multiscale Classification of Optical Satellite Imagery. IEEE Transactions on Geoscience and Remote Sensing 53, 2 (2015), 659–673. doi:10.1109/TGRS.2014.2326886 [27] Masroor Hussain, Dongmei Chen, Angela Cheng, Hui Wei, and David Stanley. 2013. Change detection from remotely sensed images: From pixel-based to object-based approaches. ISPRS Journal of Photogrammetry and Remote Sensing 
+
+80 (2013), 91–106. doi:10.1016/j.isprsjprs.2013.03.006 [28] Shunping Ji, Shiqing Wei, and Meng Lu. 2019. Fully Convolutional Networks for Multisource Building Extraction From an Open Aerial and Satellite Imagery Data Set. IEEE Transactions on Geoscience and Remote Sensing 57, 1 (2019), 574–586. [29] Chao Jia, Yinfei Yang, Ye Xia, Yi-Ting Chen, Zarana Parekh, Hieu Pham, Quoc Le, Yun-Hsuan Sung, Zhen Li, and Tom Duerig. 2021. Scaling Up Visual and Vision-Language Representation Learning With Noisy Text Supervision. In Proc. Int. Conf. Machine Learning. (ICML) , Vol. 139. 4904–4916. [30] Kaixuan Jiang and Chen Wu. 2025. LGCANet: Local–Global and Change-Aware Network via Segment Anything Model for Remote Sensing Images Change Detection. IEEE Transactions on Geoscience and Remote Sensing 63 (2025), 1–13. doi:10.1109/TGRS.2025.3582784 [31] Yufeng Jiang and Yiqing Shen. 2024. M4oE: A Foundation Model for Medical Multimodal Image Segmentation with Mixture of Experts . In proceedings of Medical Image Computing and Computer Assisted Intervention – MICCAI 2024 ,Vol. LNCS 15012. Springer Nature Switzerland. [32] T. Kasetkasem and P.K. Varshney. 2002. An image change detection algorithm based on Markov random field models. IEEE Transactions on Geoscience and Remote Sensing 40, 8 (2002), 1815–1823. doi:10.1109/TGRS.2002.802498 [33] Alexander Kirillov, Eric Mintun, Nikhila Ravi, Hanzi Mao, Chloe Rolland, Laura Gustafson, Tete Xiao, Spencer Whitehead, Alexander C. Berg, Wan-Yen Lo, Piotr Dollár, and Ross Girshick. 2023. Segment Anything. arXiv:2304.02643 (2023). [34] Alex Krizhevsky, Ilya Sutskever, and Geoffrey E Hinton. 2012. ImageNet Clas-sification with Deep Convolutional Neural Networks. In Proc. Adv. Neural Inf. Process. Syst. (NIPS) , Vol. 25. [35] Bingyu Li, Haocheng Dong, Da Zhang, Zhiyuan Zhao, Junyu Gao, and Xuelong Li. 2025. Exploring Efficient Open-Vocabulary Segmentation in the Remote Sensing. arXiv preprint arXiv:2509.12040 (2025). [36] Bingyu Li, Haocheng Dong, Da Zhang, Zhiyuan Zhao, Junyu Gao, and Xuelong Li. 2025. Exploring Efficient Open-Vocabulary Segmentation in the Remote Sensing. arXiv preprint arXiv:2509.12040 (2025). [37] Junnan Li, Dongxu Li, Caiming Xiong, and Steven Hoi. 2022. BLIP: Bootstrapping Language-Image Pre-training for Unified Vision-Language Understanding and Generation. In ICML .[38] Kaiyu Li, Xiangyong Cao, Yupeng Deng, Chao Pang, Zepeng Xin, Deyu Meng, and Zhi Wang. 2025. DynamicEarth: How Far are We from Open-Vocabulary Change Detection? ArXiv abs/2501.12931 (2025). [39] Kaiyu Li, Xiangyong Cao, Yupeng Deng, Jiayi Song, Junmin Liu, Deyu Meng, and Zhi Wang. 2024. SemiCD-VL: Visual-language model guidance makes better semi-supervised change detector. IEEE Transactions on Geoscience and Remote Sensing (2024). [40] Kaiyu Li, Ruixun Liu, Xiangyong Cao, Xueru Bai, Feng Zhou, Deyu Meng, and Zhi Wang. 2025. Segearth-ov: Towards training-free open-vocabulary segmentation Seg2Change: Adapting Open-Vocabulary Semantic Segmentation Model for Remote Sensing Change Detection 
+
+for remote sensing images. In Proceedings of the Computer Vision and Pattern Recognition Conference . 10545–10556. [41] Kaiyu Li, Shengqi Zhang, Yupeng Deng, Zhi Wang, Deyu Meng, and Xiangyong Cao. 2025. SegEarth-OV3: Exploring SAM 3 for Open-Vocabulary Semantic Segmentation in Remote Sensing Images. arXiv preprint arXiv:2512.08730 (2025). [42] Zhiwei Li, Huanfeng Shen, Qing Cheng, Yuhao Liu, Shucheng You, and Zongyi He. 2019. Deep learning based cloud detection for medium and high resolution remote sensing images of different sensors. ISPRS Journal of Photogrammetry and Remote Sensing 150 (2019), 197–212. [43] Zhenglai Li, Chang Tang, Lizhe Wang, and Albert Y. Zomaya. 2022. Remote Sensing Change Detection via Temporal Feature Interaction and Guided Re-finement. IEEE Transactions on Geoscience and Remote Sensing 60 (2022), 1–11. doi:10.1109/TGRS.2022.3199502 [44] Zhenglai Li, Chang Tang, Lizhe Wang, and Albert Y. Zomaya. 2022. Remote Sensing Change Detection via Temporal Feature Interaction and Guided Re-finement. IEEE Transactions on Geoscience and Remote Sensing 60 (2022), 1–11. doi:10.1109/TGRS.2022.3199502 [45] Fan Liu, Delong Chen, Zhangqingyun Guan, Xiaocong Zhou, Jiale Zhu, Qiaolin Ye, Liyong Fu, and Jun Zhou. 2024. Remoteclip: A vision language foundation model for remote sensing. IEEE Transactions on Geoscience and Remote Sensing 
+
+62 (2024), 1–16. [46] Mengxi Liu, Zhuoqun Chai, Haojun Deng, and Rong Liu. 2022. A CNN-Transformer Network With Multiscale Context Aggregation for Fine-Grained Cropland Change Detection. IEEE J. Sel. Topics Appl. Earth Observ. Remote Sens. 
+
+15 (2022), 4297–4306. doi:10.1109/JSTARS.2022.3177235 [47] Shilong Liu, Zhaoyang Zeng, Tianhe Ren, Feng Li, Hao Zhang, Jie Yang, Chun-yuan Li, Jianwei Yang, Hang Su, Jun Zhu, et al . 2023. Grounding dino: Marrying dino with grounded pre-training for open-set object detection. arXiv preprint arXiv:2303.05499 (2023). [48] Ze Liu, Yutong Lin, Yue Cao, Han Hu, Yixuan Wei, Zheng Zhang, Stephen Lin, and Baining Guo. 2021. Swin Transformer: Hierarchical Vision Transformer using Shifted Windows . In 2021 IEEE/CVF International Conference on Computer Vision (ICCV) . IEEE Computer Society, Los Alamitos, CA, USA, 9992–10002. doi:10.1109/ICCV48922.2021.00986 [49] Ziyuan Liu, Ruifei Zhu, Long Gao, Yuanxiu Zhou, Jingyu Ma, and Yuantao Gu. 2025. JL1-CD: A New Benchmark for Remote Sensing Change Detection and a Robust Multi-Teacher Knowledge Distillation Framework. arXiv preprint arXiv:2502.13407 (2025). [50] Prabuddh Kumar Mishra, Aman Rai, and Suresh Chand Rai. 2020. Land use and land cover change detection using geospatial techniques in the Sikkim Himalaya, India. The Egyptian Journal of Remote Sensing and Space Science 23, 2 (2020), 133–143. [51] Allan A. Nielsen, Knut Conradsen, and James J. Simpson. 1998. Multivariate Al-teration Detection (MAD) and MAF Postprocessing in Multispectral, Bitemporal Image Data: New Approaches to Change Detection Studies. Remote Sensing of Environment 64, 1 (1998), 1–19. doi:10.1016/S0034-4257(97)00162-4 [52] Maxime Oquab, Timothée Darcet, Théo Moutakanni, Huy Vo, Marc Szafraniec, Vasil Khalidov, Pierre Fernandez, Daniel Haziza, Francisco Massa, Alaaeldin El-Nouby, et al . 2023. Dinov2: Learning robust visual features without supervision. 
+
+ArXiv abs/2304.07193 (2023). [53] Nobuyuki Otsu. 1979. A Threshold Selection Method from Gray-Level His-tograms. IEEE Transactions on Systems, Man, and Cybernetics 9, 1 (1979), 62–66. [54] Eleonora Jonasova Parelius. 2023. A Review of Deep-Learning Methods for Change Detection in Multispectral Remote Sensing Images. Remote Sensing 15, 8 (2023). doi:10.3390/rs15082092 [55] Alec Radford, Jong Wook Kim, Chris Hallacy, Aditya Ramesh, Gabriel Goh, Sand-hini Agarwal, Girish Sastry, Amanda Askell, Pamela Mishkin, Jack Clark, et al .2021. Learning transferable visual models from natural language supervision. In 
+
+Proc. Int. Conf. Machine Learning. (ICML) . 8748–8763. [56] R.J. Radke, S. Andra, O. Al-Kofahi, and B. Roysam. 2005. Image change detection algorithms: a systematic survey. IEEE Transactions on Image Processing 14, 3 (2005), 294–307. doi:10.1109/TIP.2004.838698 [57] Nikhila Ravi, Valentin Gabeur, Yuan-Ting Hu, Ronghang Hu, Chaitanya Ryali, Tengyu Ma, Haitham Khedr, Roman Rädle, Chloe Rolland, Laura Gustafson, Eric Mintun, Junting Pan, Kalyan Vasudev Alwala, Nicolas Carion, Chao-Yuan Wu, Ross Girshick, Piotr Dollár, and Christoph Feichtenhofer. 2024. SAM 2: Segment Anything in Images and Videos. arXiv preprint arXiv:2408.00714 (2024). https://arxiv.org/abs/2408.00714 [58] Evan Shelhamer, Jonathan Long, and Trevor Darrell. 2017. Fully Convolutional Networks for Semantic Segmentation. IEEE Transactions on Pattern Analysis and Machine Intelligence 39, 4 (2017), 640–651. [59] Yunhang Shen, Chaoyou Fu, Peixian Chen, Mengdan Zhang, Ke Li, Xing Sun, Yunsheng Wu, Shaohui Lin, and Rongrong Ji. 2024. Aligning and Prompting Everything All at Once for Universal Visual Perception. CVPR .[60] Qian Shi, Mengxi Liu, Shengchen Li, Xiaoping Liu, Fei Wang, and Liangpei Zhang. 2021. A Deeply Supervised Attention Metric-Based Network and an Open Aerial Image Dataset for Remote Sensing Change Detection. IEEE Transactions on Geoscience and Remote Sensing (2021), 1–16. doi:10.1109/TGRS.2021.3085870 [61] Wenzhong Shi, Min Zhang, Rui Zhang, Shanxiong Chen, and Zhao Zhan. 2020. Change Detection Based on Artificial Intelligence: State-of-the-Art and Chal-lenges. Remote Sensing 12, 10 (2020). doi:10.3390/rs12101688 [62] Chunqiao Song, Bo Huang, Linghong Ke, and Keith S. Richards. 2014. Remote sensing of alpine lake water environment changes on the Tibetan Plateau and surroundings: A review. ISPRS Journal of Photogrammetry and Remote Sensing 
+
+92 (2014), 26–37. [63] Xiaoliang Tan, Guanzhou Chen, Tong Wang, Jiaqi Wang, and Xiaodong Zhang. 2024. Segment change model (scm) for unsupervised change detection in vhr remote sensing images: a case study of buildings. In Proc. IEEE Int. Geoscience And Remote Sensing Sym. (IGARSS) . 8577–8580. [64] Xiaoliang Tan, Guanzhou Chen, Xiaodong Zhang, Tong Wang, Jiaqi Wang, Kui Wang, and Tingxuan Miao. 2025. TripleS: Mitigating multi-task learning conflicts for semantic change detection in high-resolution remote sensing imagery. ISPRS Journal of Photogrammetry and Remote Sensing 230 (2025), 374–401. doi:10.1016/ j.isprsjprs.2025.09.019 [65] Xiaoliang Tan, Guanzhou Chen, Xiaodong Zhang, Tong Wang, Jiaqi Wang, Kui Wang, and Tingxuan Miao. 2025. TripleS: Mitigating multi-task learning conflicts for semantic change detection in high-resolution remote sensing imagery. ISPRS Journal of Photogrammetry and Remote Sensing 230 (2025), 374–401. [66] Xu Tang, Tianxiang Zhang, Jingjing Ma, Xiangrong Zhang, Fang Liu, and Licheng Jiao. 2023. WNet: W-Shaped Hierarchical Network for Remote-Sensing Image Change Detection. IEEE Transactions on Geoscience and Remote Sensing 61 (2023), 1–14. doi:10.1109/TGRS.2023.3296383 [67] Chen Wu, Bo Du, and Liangpei Zhang. 2014. Slow Feature Analysis for Change Detection in Multispectral Imagery. IEEE Transactions on Geoscience and Remote Sensing 52, 5 (2014), 2858–2874. doi:10.1109/TGRS.2013.2266673 [68] George Xian, Collin Homer, and Joyce Fry. 2009. Updating the 2001 National Land Cover Database land cover classification to 2006 by using Landsat imagery change detection methods. Remote Sensing of Environment 113, 6 (2009), 1133– 1147. doi:10.1016/j.rse.2009.02.004 [69] Joseph Z. Xu, Wenhan Lu, Zebo Li, Pranav Khaitan, and Valeriya Zaytseva. 2019. Building Damage Detection in Satellite Imagery Using Convolutional Neural Networks. ArXiv abs/1910.06444 (2019). [70] Kunping Yang, Gui-Song Xia, Zicheng Liu, Bo Du, Wen Yang, and Marcello Pelillo. 2020. Asymmetric Siamese Networks for Semantic Change Detection. 
+
+CoRR abs/2010.05687 (2020). arXiv:2010.05687 [71] Lihe Yang, Zhen Zhao, and Hengshuang Zhao. 2025. UniMatch V2: Pushing the Limit of Semi-Supervised Semantic Segmentation. TPAMI (2025). [72] Zilu Ying, Zijun Tan, Yikui Zhai, Xudong Jia, Wenba Li, Junying Zeng, Angelo Genovese, Vincenzo Piuri, and Fabio Scotti. 2024. DGMA2-Net: A Difference-Guided Multiscale Aggregation Attention Network for Remote Sensing Change Detection. IEEE Transactions on Geoscience and Remote Sensing 62 (2024), 1–16. doi:10.1109/TGRS.2024.3390206 [73] Zilu Ying, Zijun Tan, Yikui Zhai, Xudong Jia, Wenba Li, Junying Zeng, Angelo Genovese, Vincenzo Piuri, and Fabio Scotti. 2024. DGMA2-Net: A Difference-Guided Multiscale Aggregation Attention Network for Remote Sensing Change Detection. IEEE Transactions on Geoscience and Remote Sensing 62 (2024), 1–16. doi:10.1109/TGRS.2024.3390206 [74] Panli Yuan, Qingzhan Zhao, Xingbiao Zhao, Xuewen Wang, Xuefeng Long, and Yuchen Zheng. 2022. A transformer-based Siamese network and an open optical dataset for semantic change detection of remote sensing images. International Journal of Digital Earth 15, 1 (2022), 1506–1525. doi:10.1080/17538947.2022. 2111470 [75] Tao Zhan, Qiushi Tian, Yuanyuan Zhu, Jie Lan, Qianlong Dang, and Maoguo Gong. 2025. Difference-Aware Multiscale Feature Aggregation Network for Building Change Detection. IEEE Transactions on Geoscience and Remote Sensing 
+
+63 (2025), 1–15. doi:10.1109/TGRS.2025.3560977 [76] Tao Zhan, Qiushi Tian, Yuanyuan Zhu, Jie Lan, Qianlong Dang, and Maoguo Gong. 2025. Difference-Aware Multiscale Feature Aggregation Network for Building Change Detection. IEEE Transactions on Geoscience and Remote Sensing 
+
+63 (2025), 1–15. doi:10.1109/TGRS.2025.3560977 [77] Chenxiao Zhang, Peng Yue, Deodato Tapete, Liangcun Jiang, Boyi Shangguan, Li Huang, and Guangchao Liu. 2020. A deeply supervised image fusion network for change detection in high resolution bi-temporal remote sensing images. ISPRS Journal of Photogrammetry and Remote Sensing 166 (2020), 183–200. [78] Xu Zhao, Wenchao Ding, Yongqi An, Yinglong Du, Tao Yu, Min Li, Ming Tang, and Jinqiao Wang. 2023. Fast Segment Anything. ArXiv 2306.12156 (2023). [79] Zhuo Zheng, Yanfei Zhong, Liangpei Zhang, and Stefano Ermon. 2024. Segment any change. Proc. Adv. Neural Inf. Process. Syst. (NIPS) 37 (2024), 81204–81224. [80] Yanpeng Zhou, Jinjie Wang, Jianli Ding, Bohua Liu, Nan Weng, and Hongzhi Xiao. 2023. SIGNet: A Siamese Graph Convolutional Network for Multi-Class Urban Change Detection. Remote Sensing 15, 9 (2023).

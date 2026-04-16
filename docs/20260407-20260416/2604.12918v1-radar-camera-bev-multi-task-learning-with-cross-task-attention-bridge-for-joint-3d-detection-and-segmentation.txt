@@ -1,0 +1,321 @@
+Title: Radar-Camera BEV Multi-Task Learning with Cross-Task Attention Bridge for Joint 3D Detection and Segmentation
+
+URL Source: https://arxiv.org/pdf/2604.12918v1
+
+Published Time: Wed, 15 Apr 2026 01:25:15 GMT
+
+Number of Pages: 8
+
+Markdown Content:
+# Radar-Camera BEV Multi-Task Learning with Cross-Task Attention Bridge for Joint 3D Detection and Segmentation 
+
+Ahmet ˙Inan¸ c
+
+Hacettepe University Email: ahmetinanc@hacettepe.edu.tr 
+
+¨Ozg¨ ur Erkent 
+
+Hacettepe University Email: ozgurerkent@hacettepe.edu.tr 
+
+Abstract —Bird’s-eye-view (BEV) representations are the dominant paradigm for 3D perception in au-tonomous driving, providing a unified spatial canvas where detection and segmentation features are geo-metrically registered to the same physical coordinate system. However, existing radar-camera fusion meth-ods treat these tasks in isolation, missing the oppor-tunity to share complementary information between them: detection features encode object-level geome-try that can sharpen segmentation boundaries, while segmentation features provide dense semantic context that can anchor detection. We propose CTAB (Cross-Task Attention Bridge), a bidirectional module that exchanges features between detection and segmenta-tion branches via multi-scale deformable attention in shared BEV space. CTAB is integrated into a multi-task framework with an Instance Normalization-based segmentation decoder and learnable BEV upsampling to provide a more detailed BEV representation. On nuScenes, CTAB improves segmentation on 7 classes over the joint multi-task baseline at essentially neutral detection. On a 4-class subset (drivable area, pedestrian crossing, walkway, vehicle), our joint multi-task model reaches comparable mIoU on 4 classes while simultane-ously providing 3D detection. 
+
+Index Terms —3D Object Detection, BEV Segmen-tation, Multi-Task Learning, Radar-Camera Fusion, Cross-Task Attention, Deformable Attention 
+
+I. Introduction 
+
+Autonomous driving perception requires both 3D object detection and BEV map segmentation for safe planning. While camera-only BEV methods [4]–[6] have achieved strong results, radar sensors provide complementary depth and velocity information that is robust to adverse weather and lighting conditions [1], [3]. Radar-camera fusion in BEV space has emerged as an active research direction, with methods such as RCBEVDet [1] and BEVCar [2] achieving strong results for detection and segmentation, respectively. However, all existing radar-camera methods address these tasks in isolation, missing the opportunity to share complementary information: detection features en-code object-level geometry (centroids, sizes, orientations) that can sharpen segmentation boundaries, while seg-mentation features provide dense semantic context (road layout, drivable area) that can anchor detection. Multi-task learning is essential for real-world deploy-ment, where detection, segmentation, and planning must run simultaneously under strict latency budgets [44]. Running separate single-task models is prohibitively ex-pensive: two independent radar-camera pipelines would double the backbone computation. A shared BEV back-bone amortizes feature extraction across tasks, and cross-task feature exchange can recover the performance gap that typically arises from multi-task optimization. While multi-task BEV methods exist in camera-only [6], [7] and LiDAR-camera settings [8], [21], they typically treat task heads as independent consumers of shared features with-out explicit inter-task communication. Cross-task interac-tion has proven effective in 2D dense prediction [23]–[25]; however, it remains unexplored in BEV 3D radar-camera perception, where detection and segmentation features are geometrically registered in the same physical coordinate system, making spatial cross-attention particularly natu-ral. We propose CTAB (Cross-Task Attention Bridge), a lightweight bidirectional module that enables explicit feature exchange between detection and segmentation in BEV space. CTAB employs multi-scale deformable atten-tion [10] to let each task branch query spatially relevant features from the other. Our contributions are: 1) We present the first radar-camera BEV multi-task framework that jointly performs 3D object detection and BEV map segmentation using a shared radar-camera fused BEV representation. 2) We introduce CTAB, a bidirectional cross-task at-tention module based on multi-scale deformable at-tention that enables explicit feature exchange be-tween detection and segmentation branches. 3) We demonstrate that CTAB improves both tasks over a strong multi-task baseline on nuScenes, with minimal computational overhead. 
+
+II. Related Work 
+
+A. Radar-Camera BEV Fusion 
+
+Radar-camera fusion combines dense visual information with radar’s direct depth and velocity measurements, 
+
+> arXiv:2604.12918v1 [cs.CV] 14 Apr 2026 Multi-view Images
+> 6 cameras, 900 ×1600
+> Radar Points
+> 5 radars, multi-sweep
+> Image Backbone
+> ResNet-50 + BEVDepth4D
+> BEV Fusion
+> Cross-Attention (CAMF)
+> Radar Backbone
+> RadarBEVNet
+> Radar-Camera BEV Fusion
+> Fbev
+> 256 ×128 ×128
+> Fdet
+> Seg Decoder
+> IN + 3 ResBlocks
+> Fseg
+
+CTAB          
+
+> Cross-Task Attention Bridge
+> MSDA Seg →Det
+> MSDA Det →Seg
+> σ(g)·confidence gating
+> h= 8 ,K= 4 ,L= 1 +0.58M params
+> CenterHead
+> Heatmap + Regression
+> BEV Upsample
+> 128 2→200 2
+> 3D Detection
+> BEV Segmentation
+> MTL Loss
+> HUW
+> Ldet
+> Lseg
+> Our contributions
+> ⋆⋆
+
+Fig. 1. Overall architecture. Multi-view camera images and radar point clouds are processed by a backbone that combines an image backbone with a radar backbone to create a BEV fusion similar to RCBEVDet, yielding a shared BEV feature Fbev ∈ R256 ×128 ×128 . The detection path operates directly on Fbev in BEV coordinates; the segmentation decoder ( ⋆) extracts Fseg with Instance Normalization. 
+
+CTAB (⋆) exchanges features bidirectionally via gated multi-scale deformable attention. CenterHead predicts 3D boxes from BEV features; BEV Upsampling ( ⋆) refines segmentation to 200 × 200. HUW balances both objectives with learned task uncertainty weights. 
+
+offering a cost-effective alternative to LiDAR. BEV-based fusion has become dominant, projecting both modali-ties into a shared spatial representation. For detection, CRN [3] introduced radar-assisted depth estimation with a performance measurement of 56.0 NDS over the nuScenes dataset, and RCBEVDet [1] proposed dual-stream radar encoding with cross-attention fusion (56.8 NDS). Sub-sequent methods have pushed performance further: Hy-DRa [36] combines image-level and BEV-level fusion (58.5 NDS), CRT-Fusion [37] adds temporal aggregation (59.7 NDS), RCBEVDet++ [20] enhances radar encoding with separate task heads (60.4 NDS), and RaCFormer [38] uses query-based fusion achieving 61.3 NDS—the current state of the art with R50. For segmentation, Simple-BEV [41] showed that adding radar improves vehicle IoU by +8.3; its extended Simple-BEV++ variant achieves 67.9 mIoU (4-class) with ViT-B. BEVGuide [42] uses radar features to guide segmentation via spatial attention (68.0 mIoU, 3-class). BEVCar [2] achieves the state-of-the-art at 70.9 mIoU (4-class: vehicle, drivable, ped. crossing, walkway) with ViT-B. RESAR-BEV [43] introduces a progressive residual autoregressive approach with geometry-guided radar feature querying, achieving 54.0 mIoU on 7 classes with R101. Note that mIoU definitions vary across different studies; we evaluate 7 classes and also report a 4-class mIoU matching BEV-Car’s subset. Critically, all these methods address either detection or segmentation in isolation. RCBEVDet++ [20] pro-duces both outputs but with independent heads and no cross-task interaction. No prior radar-camera method jointly optimizes detection and segmentation with explicit inter-task feature exchange. 
+
+B. Multi-Task BEV Perception 
+
+BEV representations naturally support multi-task learn-ing by providing a unified spatial canvas. Camera-only methods include M 2BEV [28] (45.4 NDS; joint training degrades both tasks), BEVerse [6] (49.5 NDS, 51.7 mIoU with Swin-S), PETRv2 [29] (49.5 NDS, 57.6 mIoU), and HENet [39] which uses per-task BEV encoders (59.9 NDS, 58.0 mIoU with V2-99). End-to-end planners such as UniAD [7] and SparseDrive [30] chain perception with planning but do not optimize inter-task feature exchange. In the LiDAR-camera domain, BEVFusion [21] uses inde-pendent task heads (69.8 NDS, 58.5 mIoU), FULLER [40] addresses negative transfer via gradient calibration, while M3Net [31] and MaskBEV [8] introduce cross-task mecha-nisms in a LiDAR-centric setting, achieving 72.4/72.9 NDS and 70.4/73.9 mIoU, respectively. Cross-task interaction in 2D dense prediction has been explored by PAD-Net [23] (mutual distillation), MTI-Net [24] (multi-scale interactions), MTFormer [25] (trans-former cross-attention), InvPT [26] (inverted pyramid), and TaskPrompter [27] (task-specific prompting). A com-mon thread across these approaches is that features pro-duced by one task branch carry complementary cues that another branch can exploit, and that explicit bidirectional exchange tends to outperform naive parameter sharing. These methods demonstrate the value of explicit cross-task attention for semantic segmentation and depth estimation; however, such mechanisms remain unexplored in BEV 3D perception with radar -camera fusion, where detection and segmentation features are both geometrically aligned and share a complementary radar-camera signal. CTAB bridges this gap by adapting deformable cross-attention to the BEV coordinate system of a radar-camera frame-work. Multi-task loss balancing is a fundamental challenge. Kendall et al. [13] proposed homoscedastic uncertainty weighting, learning per-task noise parameters to automati-cally balance loss magnitudes. GradNorm [14] dynamically normalizes gradient magnitudes across tasks, while PC-Grad [15] projects conflicting gradients to reduce negative transfer. We adopt homoscedastic uncertainty weighting (HUW) for its simplicity and proven effectiveness in BEV multi-task settings [6], [8]. III. Method 
+
+A. Overview 
+
+Our framework (Fig. 1) extends the RCBEVDet [1] de-tector with a BEV segmentation branch and the proposed CTAB module. The overall pipeline proceeds as follows. 
+
+Shared BEV backbone. The camera branch uses a pipeline similar to BEVDepth4D [5]: a ResNet-50 backbone extracts multi-view image features, which are projected to BEV via explicit depth estimation and voxel pooling, with temporal stereo from adjacent frames. The radar branch processes multi-sweep radar points through RadarBEVNet with dual-stream encoding and cross-modality Injection-and-Extraction modules. Camera and radar BEV features are fused via cross-attention into a shared feature map Fbev ∈ RB×256 ×128 ×128 , covering 102 .4 m × 102 .4 m at 0 .8 m resolution. 
+
+Task branches. The detection branch consumes Fbev 
+
+directly at 128 × 128 via CenterHead [12]. The seg-mentation branch first extracts intermediate features through a dedicated decoder, then upsamples to 200 ×
+
+200 (0 .5 m/cell) via the BEV Upsampling module (Sec-tion III-C). When enabled, CTAB facilitates bidirectional feature exchange between the two branches before upsam-pling and final predictions. 
+
+B. BEV Segmentation Decoder 
+
+The segmentation decoder transforms Fbev into per-pixel class predictions for C BEV map classes. The design is class-agnostic and supports any BEV label set; the specific classes we evaluate, together with how vehicle masks are generated from 3D bounding box annotations, are described in Section IV. The decoder architecture consists of an input projection (Conv 3 × 3, 256 → 128, IN, ReLU) followed by three residual blocks (each with two Conv 3 ×3 layers, Instance Normalization, and a skip connection) and a prediction head (Conv 3 ×3, IN, ReLU, then Conv 1 ×1, 128 → C). 
+
+Normalization choice. We use Instance Normaliza-tion (IN) instead of Batch Normalization (BN) throughout all modules trained from scratch (decoder, CTAB, upsam-pling). Since these modules initialize with random weights alongside a pretrained detection backbone, BN’s running statistics are unreliable in early epochs and diverge be-tween training and evaluation modes—particularly prob-lematic in multi-view BEV settings where effective batch diversity is limited by the multi-camera structure within each sample. IN normalizes each sample independently, eliminating this train-eval discrepancy. For CTAB’s pro-jection layers, we use Group Normalization (GN) [35] for the same reason; GN is preferred over IN in attention modules as it allows channel grouping. The intermediate feature after the third residual block, 
+
+Fseg ∈ RB×128 ×H×W , serves as the segmentation input to CTAB, providing rich semantic features before the final classification layer. 
+
+C. BEV Upsampling 
+
+The pretrained fusion backbone produces BEV features at 128 × 128 resolution (0 .8 m/cell), which is insufficient for thin map structures such as lane dividers ( ∼15 cm width) and stop lines (∼30 cm). At 0.8 m resolution, these structures occupy sub-pixel widths, making their segmentation inherently noisy. We introduce a lightweight, task-specific BEV Upsampling module that operates only on the segmentation branch. This would allow it to be used with other fusion backbones that are pretrained on lower resolution grids, without retraining them at higher resolution. The module upsamples the intermediate segmentation feature Fseg ∈ RB×128 ×128 ×128 to 200 × 200 (0 .5 m/cell) using bilinear interpolation followed by a learnable resid-ual refinement block: 
+
+F↑ 
+
+> seg
+
+= U + IN(Conv 3×3(ReLU(IN(Conv 3×3(U))))) where U = Upsample( Fseg ) (1) The residual path refines the bilinearly upsampled fea-tures, recovering high-frequency spatial detail that in-terpolation alone cannot provide. This adds only 0.30M parameters while enabling the segmentation branch to predict at 200 × 200 resolution, matching the evaluation grid used by other methods such as BEVCar [2]. The de-tection branch continues to operate at the native 128 ×128 resolution, preserving the pretrained CenterHead’s spatial assumptions. 
+
+D. Cross-Task Attention Bridge (CTAB) 
+
+CTAB enables bidirectional feature exchange between detection and segmentation branches using multi-scale deformable attention [10] (Fig. 2). 
+
+Design motivation. In our BEV setting, detection and segmentation features are geometrically registered to the same physical coordinate system, making spatial cross-attention particularly well-suited: a query at BEV position (x, y ) can directly sample task-complementary information from relevant locations. We choose deformable attention over standard cross-attention for its linear scaling ( O(N K )vs. O(N 2)), critical for BEV grids where N = 128 2 =16 ,384. Learned sampling offsets allow each query to adaptively attend to non-local regions, capturing spatial relationships between objects and their road context. 
+
+1) Input Projection: The detection feature 
+
+Fdet ∈ RB×256 ×H×W and segmentation feature 
+
+Fseg ∈ RB×128 ×H×W are projected to a shared dimension 
+
+d = 128: ˆFdet = ReLU(GN(Conv 1×1(Fdet ))) (2) ˆFseg = ReLU(GN(Conv 1×1(Fseg ))) (3) Note that the detection projection reduces from 256 to 128 channels, while the segmentation projection retains 128 channels; the shared hidden dimension enables direct cross-attention between the two branches. Both features are then flattened to sequences ˆF ∈ RB×N ×d, where N =
+
+H × W .
+
+2) Bidirectional Deformable Cross-Attention: The core of CTAB is Multi-Scale Deformable Attention (MSDA) [10]: each query learns K spatial offsets and samples values at those positions via bilinear interpolation (instead of attending to all N locations), across h parallel heads operating on d/h -dim sub-channels, with L
+
+denoting the number of feature scales aggregated per query. We use h = 8 heads (16 channels each at d = 128, following DETR-style defaults), K = 4 sampling points (sufficient to cover typical object footprints in BEV at low cost), and L = 1 since the shared fused BEV is a single-resolution feature map. CTAB applies two parallel MSDA operations: 
+
+Ad2s = MSDA( Q = ˆFseg , V = ˆFdet , pref ) (4) 
+
+As2d = MSDA( Q = ˆFdet , V = ˆFseg , pref ) (5) In Det →Seg, segmentation queries attend to detection features to incorporate object-level geometric information (centroids, sizes, orientations). In Seg →Det, detection queries attend to segmentation features to incorporate dense road layout and drivable area context. Both op-erations run in parallel, sharing reference points pref ∈
+
+[0 , 1] N ×2 generated as a uniform grid over the BEV spatial dimensions. We explicitly disable MSDA’s internal resid-ual connection by passing a zero identity tensor, ensuring that only the learned cross-attention signal passes through to the output projection. 
+
+3) Gated Output Projection: The attended features are projected back to original channel dimensions via confidence-gated residual connections: 
+
+F′ 
+
+> det
+
+= σ(gdet ) · GN(Conv 3×3(As2d )) + Fdet (6) 
+
+F′ 
+
+> seg
+
+= σ(gseg ) · GN(Conv 3×3(Ad2s )) + Fseg (7) where σ(·) denotes the logistic sigmoid function that maps each scalar gate to the range (0 , 1). The scalar gates gdet , g seg are learnable parameters initialized to −2.0, yielding σ(−2.0) ≈ 0.12 at the start of training. This initialization prevents the untrained cross-attention signal from destabilizing the pretrained detection features and the newly initialized segmentation features. As the atten-tion weights converge during training, the network learns to open the gates, with the rate of increase reflecting how beneficial each cross-task direction is. No activation func-tion is applied before the gated residual addition, allowing the cross-attention output to both amplify and suppress features through positive and negative corrections. The enhanced F′ 
+
+> det
+
+proceeds to CenterHead for 3D detection, while F′ 
+
+> seg
+
+proceeds to the BEV Upsampling module and segmentation prediction head.                                                  
+
+> Fdet 256 ×H×W
+> Fseg 128 ×H×W
+> Conv1 ×1 + GN + ReLU
+> 256 →128
+> Conv1 ×1 + GN + ReLU
+> 128 →128
+> Flatten to B×N×128 Flatten to B×N×128
+> Parallel Bidirectional Cross-Attention
+> MSDA
+> Seg →Det
+> h= 8 , K = 4
+> MSDA
+> Det →Seg
+> h= 8 , K = 4
+> QQV
+> V
+> Conv3 ×3 + GN
+> 128 →256
+> Conv3 ×3 + GN
+> 128 →128
+> ×σ(gdet )×σ(gseg )
+> ++
+> skip connection
+> skip connection
+> F′
+> det 256 ×H×W
+> F′
+> seg 128 ×H×W
+> →CenterHead →BEV Upsample
+> Detection Branch Segmentation Branch
+> Fig. 2. Detailed architecture of the CTAB module. Detection and segmentation features are projected to a shared d= 128 space and flattened. Two parallel MSDA blocks perform bidirectional cross-attention: in Seg →Det, detection features serve as queries attending to segmentation values; in Det →Seg, the roles are reversed. Output convolutions project back to original dimensions. Confidence gates
+> σ(g), initialized at ≈0.12, scale the cross-attention output before residual addition, preventing destabilization of pretrained features.
+
+E. Multi-Task Loss 
+
+We balance tasks via homoscedastic uncertainty weight-ing (HUW) [13]: 
+
+Ltotal = 12σ2det 
+
+Ldet + log σdet + 12σ2seg 
+
+Lseg + log σseg (8) where σdet , σ seg are learnable parameters (log σ clamped at 1.5). Ldet uses CenterHead [12] losses (heatmap focal, regression L1, depth). Lseg combines sigmoid focal loss (α = 0 .25, γ = 3) and dice loss, each weighted by 20, following BEVCar [2]. GT masks are generated at 200 ×200 to match the upsampled output. 
+
+IV. Experiments 
+
+A. Dataset and Metrics 
+
+We evaluate on the nuScenes dataset [16], which pro-vides 1000 driving scenes captured with 6 cameras and 5 radar sensors in Boston and Singapore. We use the standard train/val split (28,130 / 6,019 samples). For 3D detection, we report nuScenes Detection Score (NDS) and mean Average Precision (mAP). For BEV segmentation, we report mean Intersection-over-Union (mIoU) across 7 map classes (mIoU-7): drivable area, carpark area, pedes-trian crossing, walkway, stop line, divider, and vehicle. We also report a 4-class mIoU (mIoU-4: drivable area, TABLE I 
+
+Radar-camera (R+C) methods on nuScenes val. ∗:single-task model. ‡: cross-task interaction. mIoU-7: our 7-class evaluation. mIoU-4: 4-class subset (drivable, ped. crossing, walkway, vehicle) for comparison with BEVCar. 
+
+> a
+
+4-class, b3-class, cunknown class definition.                                                                                                               
+
+> Method Mod. Task NDS ↑mAP ↑mIoU-7 ↑mIoU-4 ↑
+> Single-task detection
+> CenterFusion ∗[18] R+C Det 45.3 33.2 ––CRAFT ∗[19] R+C Det 51.7 41.1 ––CRN ∗[3] (R50) R+C Det 56.0 49.0 ––RCBEVDet ∗[1] (R50) R+C Det 56.8 45.3 ––HyDRa ∗[36] (R50) R+C Det 58.5 49.4 ––CRT-Fusion ∗[37] (R50) R+C Det 59.7 50.8 ––RCBEVDet++ ∗[20] (R50) R+C Det 60.4 51.9 ––RaCFormer ∗[38] (R50) R+C Det 61.3 54.1 ––
+> Single-task segmentation
+> RCBEVDet++ ∗[20] (R101) R+C Seg –––62.8 c
+> Simple-BEV++ ∗[41] (ViT-B) R+C Seg –––67.9 a
+> BEVGuide ∗[42] (EffNet) R+C Seg –––68.0 b
+> BEVCar ∗[2] (ViT-B) R+C Seg –––70.9 a
+> RESAR-BEV ∗[43] (R101) R+C Seg ––54.0 –
+> R+C joint det+seg
+> (A) MTL baseline (R50) R+C Det+Seg 55.7 44.4 42.9 50.4 (B) MTL + CTAB ‡(R50) R+C Det+Seg 55.6 44.4 43.5 51.0
+
+pedestrian crossing, walkway, vehicle) for direct compar-ison with BEVCar [2] and other segmentation methods that evaluate this subset. 
+
+B. Implementation Details 
+
+Our framework is implemented in PyTorch with mmde-tection3d [17]. We use ResNet-50 as the image back-bone, initialized with ImageNet pretrained weights; the detection backbone is further initialized from a pretrained RCBEVDet checkpoint trained on the same BEV grid. The shared BEV grid covers [−51 .2, 51 .2] m at 128 ×
+
+128 (0 .8 m/cell); the segmentation branch upsamples to 200 × 200 (0 .5 m/cell). Training uses AdamW with cosine annealing (peak lr 4 × 10 −4, linear warmup over 500 iterations) for 12 epochs, batch size 16, class-balanced group sampling (CBGS) [32], and exponential moving average (EMA) on an NVIDIA A6000 GPU. Data augmentation follows RCBEVDet: random flip, rotation ( ±22 .5◦), and scaling (0 .95–1 .05 ×) in BEV space. These BEV data augmentation (BDA) transforms are ap-plied to both 3D frustum points and detection GT boxes. We additionally apply the same affine transform to pre-computed segmentation GT masks via nearest-neighbor interpolation, ensuring pixel-level alignment between aug-mented BEV features and segmentation targets. The segmentation decoder has 1.33M parameters (3 residual blocks with IN). The BEV Upsampling module adds 0.30M parameters. The CTAB module ( d = 128, 
+
+h = 8, K = 4) adds 0.58M parameters. Total over-head: +2.21M for the full MTL+CTAB framework over detection-only. HUW balances the multi-task loss with log σ clamped at 1.5 to ensure numerical stability while permitting sufficient dynamic range. 
+
+C. Main Results 
+
+Table I positions our work against existing radar-camera methods. All prior R+C methods address detection or segmentation independently; ours is the first to jointly optimize both with explicit cross-task interaction. Our MTL+CTAB model achieves 55.6 NDS and 43.5 mIoU-7 simultaneously, reaching 51.0 mIoU-4 on the BEVCar-comparable 4-class subset. While camera-only multi-task methods (BEVerse: 49.5 NDS, HENet: 59.9 NDS) and LiDAR-camera methods (MaskBEV: 72.9 NDS) exist, none operate in the radar-camera setting. Our work brings cross-task attention to radar-camera fusion at a fraction of the sensor cost. Table II isolates the CTAB contribution. Compared to the MTL baseline without cross-task interaction, CTAB improves mIoU-7 by +0 .6 points and mIoU-4 by +0 .6 points at essentially neutral detection ( −0.1 NDS, 0.0 mAP), while orientation error improves noticeably (mAOE: 0 .408 → 0.400). This indicates that bidirec-tional feature exchange benefits segmentation substan-tially without interfering with detection: segmentation gains object-level geometric cues from detection, and the detector retains its full accuracy with a small heading-regression improvement. Notably, CTAB achieves this with only 0.58M additional parameters—less than half the decoder (1.33M)—demonstrating that the cross-task signal is highly parameter-efficient. Per-class results (Table III) reveal that CTAB’s gains are not uniform: they concentrate on the thin classes where the baseline is weakest—pedestrian crossing (+1 .8), stop line (+1 .8), and divider (+0 .7)—whose small spatial footprint ( ∼15–30 cm) and sparse radar returns benefit from the object-level cues injected by the detection branch. Dense classes (carpark, walkway, vehicle) move by at most 0.2 pp, consistent with the baseline already capturing most of their structure, confirming that cross-task attention helps most where one task’s signal is intrinsically weak. Camera-only multi-task methods such as BEVerse [6] (49.5 NDS, 51.7 mIoU with Swin-S) and HENet [39] (59.9 NDS, 58.0 mIoU with V2-99) demonstrate joint perception but lack radar’s depth and velocity robustness. In the LiDAR-camera domain, MaskBEV [8] (72.9 NDS, 73.9 mIoU) and M 3Net [31] (72.4 NDS, 70.4 mIoU) achieve stronger absolute numbers, but rely on dense LiDAR point clouds unavailable in cost-sensitive deployments. Our work brings cross-task attention to the radar-camera setting for the first time, bridging this modality gap. 
+
+Efficiency. The multi-task extension adds 2.21M pa-rameters (decoder 1.33M + upsampling 0.30M + CTAB 0.58M) over the 38.4M detection backbone, a 5.8% in-crease. CTAB itself represents only 1.4% additional pa-rameters. The multi-task model processes both tasks in a single forward pass, avoiding the ∼2× backbone cost of running separate detection and segmentation pipelines. 
+
+D. Gate Analysis 
+
+Fig. 3 visualizes the evolution of CTAB’s confidence gates during training. Both gates remain well below unity, indicating that CTAB acts as a gentle residual refinement TABLE II                                  
+
+> Multi-task ablation on nuScenes val. All models use our RCBEVDet-based MTL framework with ResNet-50, SegDecoderV2 (IN, 3 blocks), and BEV Upsampling to
+> 200 ×200 .
+> Configuration NDS ↑mAP ↑mIoU-7 ↑mIoU-4 ↑+Params
+> RCBEVDet ∗(det only) 56.8 45.3 –––(A) MTL baseline 55.7 44.4 42.9 50.4 +1.63M (B) MTL + CTAB 55.6 44.4 43.5 51.0 +2.21M
+> CTAB improvement
+> ∆ (B −A) −0.10.0+0.6 +0.6 +0.58M
+> Fig. 3. Confidence gate evolution during training (Exp B).
+> Both gates are initialized at σ(−2.0) ≈0.12. The segmentation gate
+> σ(gseg ) (purple) rises faster than the detection gate σ(gdet ) (blue), indicating that the segmentation branch benefits more from cross-task features. This asymmetry emerges entirely from learning—both gates share identical architecture and initialization.
+
+rather than a dominant signal—consistent with the small, steady improvement over the baseline. The segmentation gate rises more markedly ( ≈0.17 → 0.26) than the detec-tion gate ( ≈0.13 → 0.18), yielding a ≈1.5× asymmetry that emerges from learning: detection features supply object-level priors that sharpen segmentation boundaries, while the pretrained detector—already anchored to the full BEV—needs less help from segmentation context. This consistent asymmetry validates using learnable per-branch gates over a fixed weighting. 
+
+E. Segmentation Per-Class Results 
+
+The 200 × 200 resolution (0 .5 m/cell) enables finer de-lineation of thin structures such as dividers and stop lines compared to the 128 ×128 backbone grid (0 .8 m/cell). The addition of the vehicle class, derived from 3D bounding box annotations projected to BEV, allows direct compar-ison with single-task segmentation methods on the 4-class subset used by BEVCar [2]. 
+
+F. Qualitative Results 
+
+Fig. 4 visualizes the full multi-task output across three diverse scenes, combining BEV segmentation, 3D detec-                           
+
+> TABLE III
+> Per-class BEV segmentation IoU (%) on nuScenes val at
+> 200 ×200 resolution. IoU@max reported. v2 classes: divider = road + lane dividers merged.
+> Method
+> Drivable
+> Carpark
+> Ped. Cross.
+> Walkway
+> Stop Line
+> Divider
+> Vehicle
+> mIoU-7
+> (A) Baseline 72.7 38.6 34.7 44.5 26.1 33.7 49.8 42.9 (B) + CTAB 73.3 38.4 36.5 44.4 27.9 34.4 49.8 43.5
+> ∆+0.5 −0.1+1.8 −0.2+1.8 +0.7 0.0+0.6
+
+tion boxes, and radar point cloud overlay. CTAB produces tighter vehicle segmentation masks that better align with detected 3D bounding boxes, while radar points (orange) cluster on detected vehicles, confirming the spatial co-herence of our radar-camera framework. Lane and road dividers appear more continuous in CTAB predictions, and transitions between drivable area and walkway are sharper. Fig. 5 further isolates per-class segmentation quality, showing that CTAB improves boundary accuracy for both large-area classes (drivable area) and thin structures (lane dividers). 
+
+G. Discussion 
+
+Our results demonstrate that cross-task attention is a viable and effective mechanism for radar-camera BEV multi-task learning. Several observations merit discussion. 
+
+Multi-task optimization. A common concern in multi-task learning is negative transfer, where jointly training tasks degrades individual task performance compared to single-task training. Our baseline model (A) achieves 55.7 NDS compared to the single-task RCBEVDet’s 56.8 NDS, indicating a modest detection degradation from shared training. CTAB largely preserves this level (55 .6 NDS) while improving orientation error (0 .408 → 0.400), suggesting that cross-task interaction can at least neutralize the negative transfer typically observed in multi-task BEV perception. 
+
+Normalization and training stability. The choice of Instance Normalization for the decoder and Group Nor-malization for CTAB proved essential for stable training. In early experiments with Batch Normalization, we ob-served significant train-eval gaps: the segmentation branch performed well during training but degraded substantially at evaluation time, when BN switches from batch statistics to running statistics. This effect was amplified by the multi-view BEV setting, where each image contributes a distinct viewpoint, reducing the effective batch diversity for BN statistics. IN and GN eliminate this issue by normalizing within each sample. 
+
+Resolution asymmetry. Operating detection at 128 ×
+
+128 and segmentation at 200 × 200 reflects the different spatial requirements of each task. Detection regression targets (centroids, sizes) are relatively robust to discretiza-Fig. 4. Qualitative comparison on three nuScenes validation scenes. Each row shows a different scene. Column 1 : Front camera with projected radar points and 3D detection boxes. Columns 2–4 : BEV segmentation maps for Ground Truth, Baseline, and CTAB with detected 3D boxes (colored by class) and radar point cloud (orange dots). Per-scene mIoU and the CTAB improvement (∆) are shown.  
+
+> Fig. 5. Per-class BEV segmentation IoU on nuScenes val.
+> Grouped bars compare Baseline (blue) and CTAB (purple) across the seven v2 classes; dotted lines mark the overall mIoU-7. CTAB’s gains concentrate on thin and sparse classes—pedestrian crossing (+1 .8), stop line (+1 .8), and divider (+0 .7)—while dense classes move by at most 0 .2 pp in either direction.
+
+tion, while segmentation of thin structures requires finer spatial resolution. The BEV Upsampling module enables this asymmetry without modifying the shared backbone, preserving the pretrained detection head while improving segmentation. 
+
+V. Conclusion 
+
+We presented CTAB, a lightweight bidirectional cross-task attention module for joint radar-camera BEV de-tection and segmentation. By leveraging multi-scale de-formable attention with confidence gating and group nor-malization, CTAB enables stable and effective feature exchange between detection and segmentation branches, adding only 0.58M parameters. Our framework incorpo-rates an enhanced segmentation decoder with Instance Normalization and learnable BEV Upsampling from 128 ×
+
+128 to 200 × 200 resolution, enabling higher-resolution map prediction and direct comparison with state-of-the-art segmentation methods on a 4-class evaluation in-cluding vehicles. Integrated into a radar-camera BEV multi-task framework with HUW-based loss balancing, CTAB improves segmentation over the multi-task baseline while maintaining competitive detection performance. The learned confidence gates reveal meaningful asymmetry be-tween task branches: detection geometry strongly benefits segmentation, while the pretrained detector selectively incorporates segmentation context—validating the com-plementary nature of cross-task information flow. 
+
+Limitations. While BEV Upsampling improves seg-mentation resolution, the underlying backbone features remain at 0 .8 m/cell; the upsampling module refines spa-tial detail but cannot recover information lost during the initial BEV projection. Our ResNet-50 backbone is smaller than the ViT-B backbones used by top segmenta-tion methods [2], limiting direct mIoU comparison; how-ever, the within-framework ablation between baseline and CTAB remains valid. 
+
+Future directions. Replacing ResNet-50 with self-supervised vision transformers (e.g., DINOv2) should nar-row the gap to ViT-based segmentation, particularly for thin structures. CTAB’s scalar confidence gates could be replaced by per-location uncertainty maps U (x, y ), modulating the cross-task signal selectively—strong near objects, suppressed in empty regions—potentially bene-fiting dense classes. A task-adaptive radar fusion rout-ing radar features through detection- and segmentation-specific weights, rather than a single shared BEV, is also promising given each task’s different sensitivity to radar. 
+
+References 
+
+[1] L. Lin, Z. Kong, et al., “RCBEVDet: Radar-camera fusion in bird’s eye view for 3D object detection,” arXiv preprint arXiv:2407.12622 , 2024. [2] S. Ge, et al., “BEVCar: Camera-Radar Fusion for BEV Map and Object Segmentation,” arXiv preprint arXiv:2403.11761 , 2024. [3] S. Kim, et al., “CRN: Camera Radar Net for Accurate, Robust, Efficient 3D Perception,” in ICCV , 2023. [4] J. Huang, et al., “BEVDet: High-Performance Multi-Camera 3D Object Detection in Bird-Eye-View,” arXiv preprint arXiv:2112.11790 , 2021. [5] Y. Li, et al., “BEVDepth: Acquisition of Reliable Depth for Multi-view 3D Object Detection,” in AAAI , 2023. [6] Z. Zhang, et al., “BEVerse: Unified Perception and Prediction in Birds-Eye-View for Vision-Centric Autonomous Driving,” arXiv preprint arXiv:2205.09743 , 2022. [7] Y. Hu, et al., “Planning-oriented Autonomous Driving,” in 
+
+CVPR , 2023. [8] Y. Gao, et al., “MaskBEV: Towards A Unified Framework for BEV Detection and Map Segmentation,” in ACM MM , 2024. [9] S. Jia, et al., “DriveTransformer: Unified Transformer for Scalable End-to-End Autonomous Driving,” arXiv preprint arXiv:2312.02156 , 2023. [10] X. Zhu, et al., “Deformable DETR: Deformable Transformers for End-to-End Object Detection,” in ICLR , 2021. [11] S. Liu, et al., “DAB-DETR: Dynamic Anchor Boxes are Better Queries for DETR,” in ICLR , 2022. [12] T. Yin, X. Zhou, P. Kr¨ ahenb¨ uhl, “Center-based 3D Object Detection and Tracking,” in CVPR , 2021. [13] A. Kendall, Y. Gal, R. Cipolla, “Multi-task learning using uncertainty to weigh losses for scene geometry and semantics,” in CVPR , 2018. [14] Z. Chen, et al., “GradNorm: Gradient Normalization for Adap-tive Loss Balancing in Deep Multitask Networks,” in ICML ,2018. [15] T. Yu, et al., “Gradient Surgery for Multi-Task Learning,” in 
+
+NeurIPS , 2020. [16] H. Caesar, et al., “nuScenes: A Multimodal Dataset for Au-tonomous Driving,” in CVPR , 2020. [17] MMDetection3D Contributors, “MMDetection3D: OpenMM-Lab next-generation platform for general 3D object detection,” https://github.com/open-mmlab/mmdetection3d, 2020. [18] N. Nabati, H. Qi, “CenterFusion: Center-based Radar and Cam-era Fusion for 3D Object Detection,” in WACV , 2021. [19] Y. Kim, et al., “CRAFT: Camera-Radar 3D Object Detection with Spatio-Contextual Fusion Transformer,” in AAAI , 2023. [20] L. Lin, et al., “RCBEVDet++: Toward High-Performance Radar-Camera Fusion 3D Perception,” arXiv preprint arXiv:2409.04979 , 2024. [21] Z. Liu, et al., “BEVFusion: Multi-Task Multi-Sensor Fusion with Unified Bird’s-Eye View Representation,” in ICRA , 2023. [22] C. Ge, et al., “MetaBEV: Solving Sensor Failures for BEV Detection and Map Segmentation,” in ICCV , 2023. [23] D. Xu, W. Ouyang, X. Wang, N. Sebe, “PAD-Net: Multi-Tasks Guided Prediction-and-Distillation Network for Simultaneous Depth Estimation and Scene Parsing,” in CVPR , 2018. [24] S. Vandenhende, S. Georgoulis, L. Van Gool, “MTI-Net: Multi-Scale Task Interaction Networks,” in ECCV , 2020. [25] K. Xu, et al., “MTFormer: Multi-Task Learning via Transformer and Cross-Task Reasoning,” in ECCV , 2022. [26] H. Ye, D. Xu, “Inverted Pyramid Multi-task Transformer for Dense Scene Understanding,” in ECCV , 2022. [27] H. Ye, D. Xu, “TaskPrompter: Spatial-Channel Multi-Task Prompting for Dense Scene Understanding,” in ICLR , 2023. [28] Z. Xie, et al., “M 2BEV: Multi-Camera Joint 3D Detection and Segmentation with Unified Bird’s-Eye View Representation,” 
+
+arXiv preprint arXiv:2204.05088 , 2022. [29] Y. Liu, et al., “PETRv2: A Unified Framework for 3D Percep-tion from Multi-Camera Images,” in ICCV , 2023. [30] W. Sun, et al., “SparseDrive: End-to-End Autonomous Driving via Sparse Scene Representation,” arXiv preprint arXiv:2405.19620 , 2024. [31] Y. Chen, et al., “M 3Net: Multi-Task Multi-Sensor Fusion with Multi-Query Initialization for Autonomous Driving,” in AAAI ,2025. [32] C. Zhu, et al., “Class-balanced Grouping and Sampling for Point Cloud 3D Object Detection,” arXiv preprint arXiv:1908.09492 ,2019. [33] T.-Y. Lin, et al., “Feature Pyramid Networks for Object Detec-tion,” in CVPR , 2017. [34] L.-C. Chen, et al., “DeepLab: Semantic Image Segmentation with Deep Convolutional Nets, Atrous Convolution, and Fully Connected CRFs,” IEEE TPAMI , vol. 40, no. 4, pp. 834–848, 2018. [35] Y. Wu, K. He, “Group Normalization,” in ECCV , 2018. [36] L. Li, et al., “HyDRa: End-to-End Multimodal 3D Object Detection with Hybrid Fusion,” in CVPR , 2024. [37] J. Jeon, et al., “CRT-Fusion: Camera, Radar, Temporal Fu-sion Using Motion Information for 3D Object Detection,” in 
+
+NeurIPS , 2024. [38] Z. Chu, et al., “RaCFormer: Towards High-Quality 3D Object Detection via Query-based Radar-Camera Fusion,” in CVPR ,2025. [39] Y. Li, et al., “HENet: Hybrid Encoding for End-to-end Multi-task 3D Perception from Multi-Camera Images,” in ECCV ,2024. [40] S. Borse, et al., “FULLER: Unified Multi-Task Bird’s Eye View Representation Learning,” arXiv preprint arXiv:2308.13961 ,2023. [41] A. W. Harley, et al., “Simple-BEV: What Really Matters for Multi-Sensor BEV Perception?,” in ICRA , 2023. [42] Y. Man, et al., “BEVGuide: Radar-Camera Fusion for BEV Map Segmentation,” arXiv preprint arXiv:2308.10280 , 2023. [43] RESAR-BEV, “An Explainable Progressive Residual Autore-gressive Approach for Camera-Radar Fusion in BEV Segmenta-tion,” arXiv preprint arXiv:2505.06515 , 2025. [44] E. Milli, ¨O. Erkent, A. E. Yılmaz, “Multi-modal multi-task (3MT) road segmentation,” IEEE Robotics and Automation Letters , vol. 8, no. 9, pp. 5408–5415, 2023.
