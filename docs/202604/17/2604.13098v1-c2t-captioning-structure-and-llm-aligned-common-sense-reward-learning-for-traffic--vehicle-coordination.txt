@@ -1,0 +1,669 @@
+Title: C$^2$T: Captioning-Structure and LLM-Aligned Common-Sense Reward Learning for Traffic--Vehicle Coordination
+
+URL Source: https://arxiv.org/pdf/2604.13098v1
+
+Published Time: Thu, 16 Apr 2026 00:02:11 GMT
+
+Number of Pages: 10
+
+Markdown Content:
+# C2T: Captioning-Structure and LLM-Aligned Common-Sense Reward Learning for Traffic–Vehicle Coordination 
+
+## Yuyang Chen 1, Kaiyan Zhao 2, Yiming Wang 4, Ming Yang 3, Bin Rao 1, Zhenning Li 1∗
+
+> 1
+
+## The State Key Laboratory of Internet of Things for Smart City, University of Macau 
+
+> 2
+
+## Wuhan University 3Hong Kong Polytechnic University 
+
+> 4
+
+## Computer and Information Science, University of Macau 
+
+> zhenningli@um.edu.mo
+
+## Abstract 
+
+State-of-the-art (SOTA) urban traffic control increasingly employs Multi-Agent Reinforcement Learning (MARL) to coordinate Traffic Light Controllers (TLCs) and Connected Autonomous Vehicles (CAVs). However, the performance of these systems is fundamentally capped by their hand-crafted, myopic rewards (e.g., intersection pressure), which fail to capture high-level, human-centric goals like safety, flow stability, and comfort. To overcome this limitation, we introduce C2T, a novel framework that learns a common-sense coordination model from traffic–vehicle dynamics. C2T distills “common-sense” knowledge from a Large Lan-guage Model (LLM) into a learned intrinsic reward func-tion. This new reward is then used to guide the coor-dination policy of a cooperative multi-intersection TLC MARL system on CityFlow-based multi-intersection bench-marks. Our framework significantly outperforms strong MARL baselines in traffic efficiency, safety, and an energy-related proxy. We further highlight C2T’s flexibility in prin-ciple, allowing distinct “efficiency-focused” versus “safety-focused” policies by modifying the LLM prompt. 
+
+## 1. Introduction 
+
+Urban traffic control has long been a central topic in intel-ligent transportation. Reinforcement-learning (RL)–based traffic light controllers typically optimize local efficiency by minimizing queue length, intersection pressure, or aver-age delay [18, 19]. While such handcrafted objectives can deliver short-term gains, they often overlook network-level dynamics. When each intersection pursues its own local op-timum, coordination across the city breaks down, producing congestion waves, unstable flows, and frequent braking. In practice, controllers that aggressively clear volume may un-derweight smoothness, safety, and comfort, yielding traf-fic that looks efficient on paper but feels brittle and unpre-dictable in deployment. Coordinated control aims to overcome these limitations by letting signals and vehicles shape one another’s behav-ior: signals create openings and platoons, while vehicles ad-just approach speeds and lane usage to match those plans. CoTV-style systems [4] and related work on coordinated signal control [19] show that such coordination can improve travel time and energy in simulation, even when vehicles themselves are not explicitly modeled as learning agents. Yet the underlying reward recipe is usually unchanged: sig-nals are scored by pressure or queue imbalance, and vehi-cles by speed tracking and acceleration penalties. These proxies favor aggressive clearing but say little about stabil-ity, safety, or comfort, leading to oscillatory phase changes, abrupt braking, and unsafe spacing even when average ef-ficiency improves. What is missing is a notion of traffic quality that reflects human judgment and anticipates longer-horizon effects (e.g., platoon formation), and that can be learned offline while remaining compatible with standard multi-intersection RL training. We take traffic quality itself as supervision and gather it before training. Evidence from other domains shows that large language models (LLMs) and related systems can make consistent pairwise judgments when asked to com-pare well-structured state descriptions [2, 9]. Building on this observation, we propose C2T, a framework that ren-ders each observation into a deterministic, unit-aware cap-tion; samples caption pairs across time and approaches; and queries an LLM under a fixed prompt to decide which state better reflects good traffic. We retain only decisive labels and fit a lightweight preference scorer that outputs an in-trinsic reward, with optional heads emphasizing safety, ef-ficiency, or energy. All supervision is produced offline and cached. At training time, the intrinsic signal is added to a standard multi-intersection PPO pipeline as an additional reward stream—no simulator changes and no online LLM calls. In this paper, we instantiate C2T on CityFlow-based 
+
+> arXiv:2604.13098v1 [cs.MA] 10 Apr 2026
+
+benchmarks [24] where each intersection-level traffic-light controller (TLC) is a learning agent and vehicles follow the built-in microscopic dynamics, but the same design extends naturally to settings with explicitly modeled connected au-tonomous vehicles (CAVs). A key design choice is to mix the intrinsic reward asym-metrically : TLCs receive a blend of environment reward and the learned score, whereas vehicles remain environment driven in our instantiation. This places the human-aligned guidance where phase selection most strongly shapes pla-toons and network rhythm, and avoids extra non-stationarity that would arise if both sides were driven by a chang-ing intrinsic signal. Safety and stability are enforced by a lightweight risk mask that suppresses the intrinsic sig-nal under low time-to-collision (TTC) percentiles, clus-ters of harsh deceleration, or red-light risk flags parsed from the caption. For optimization, each reward stream is normalized and softly clipped before advantage esti-mation, and the mixing weight is scheduled so the pol-icy first satisfies environment constraints and then grad-ually absorbs common-sense preferences. Because the scorer is trained offline, switching prompts or enabling safety/efficiency/energy heads only changes the cached scores, leaving the RL loop unchanged. Finally, we evaluate C2T on CityFlow-based bench-marks following the LLMLight protocol. We consider three real-city networks (Jinan, Hangzhou, and New York) and two stress-test scenarios (extreme demand surges and 24-hour diurnal cycles), and we reuse the same train-ing pipeline and random seed protocol for fair compari-son. Across demand levels and seeds, C2T reduces aver-age travel time and increases throughput while improving safety, as indicated by higher TTC percentiles and fewer harsh-braking events; an energy-related proxy also im-proves. Ablations show that the intrinsic signal, the safety mask, and the combination of per-stream normalization with a simple schedule are all necessary for stable gains. Captions alone already help, and adding matched numeric slots yields further (smaller) improvements—underscoring the value of structured descriptions for learning traffic qual-ity offline and integrating it into existing multi-intersection RL training without altering the simulator or incurring on-line LLM calls. In summary, this work delivers: • Structured captioning for traffic RL: a deterministic, unit-aware schema that makes state quality comparable by LLMs and reproducible across runs. • Offline preference learning for an intrinsic reward: alightweight scorer trained from decisive LLM preferences on caption pairs, with optional heads for safety, efficiency, and energy, and no online LLM calls. • Safe, asymmetric integration in multi-intersection RL: intrinsic reward mixed only into the TLC objective, combined with a risk mask, per-stream normalization, soft clipping, and a simple schedule—fully compatible with standard PPO. • Evidence across benchmarks: gains on CityFlow-based Jinan, Hangzhou, and New York networks, plus stress scenarios and ablations that clarify the role of the intrinsic signal, safety mask, and optimization choices. 
+
+## 2. Related Work 
+
+2.1. Multi-Agent Reinforcement Learning for Traf-fic Signal Control 
+
+RL-based traffic signal control started from single-intersection agents with handcrafted efficiency rewards such as delay or queue length, e.g., IntelliLight and the max-pressure-based PressLight [18, 19]. Later work fo-cuses on coordination and scalability: CoLight propagates information via graph attention, FRAP models phase com-petition, and MPLight scales pressure-based control to city networks [1, 20, 27], with further refinements through at-tention architectures, meta-learning, and improved pressure features in AttendLight, MetaLight, Efficient-CoLight, and Advanced-CoLight [8, 21, 23, 25]. CoTV additionally cou-ples TLC and CAV control under a composite reward over travel time, fuel, and emissions [4], but all these meth-ods ultimately optimize fixed metric-based scalar rewards, whereas C 2T learns a commonsense intrinsic reward from LLM preferences over structured TLC–CAV descriptions. More broadly, recent RL work has improved learning via better experience replay [26], latent exploration [14, 15, 17], and goal-conditioned generalization [16]. These meth-ods, however, focus on generic sample efficiency, explo-ration, or transfer rather than human-aligned traffic-quality reward design. 
+
+2.2. Reward Modeling and Preference Learning in Reinforcement Learning 
+
+Handcrafted rewards are fragile proxies for designer intent and often induce reward hacking in complex domains such as urban traffic. IRL methods like GAIL and AIRL infer re-wards from expert demonstrations [3, 5], while preference-based RL learns a reward model from pairwise human com-parisons [2], but both are hard to scale to large multi-agent traffic systems due to data demands, ambiguity, and compu-tational cost. C 2T instead adopts an AI-assisted preference-learning view: it queries an LLM on deterministic, unit-aware captions and distills its judgments into an intrinsic reward tailored to TLC–CAV coordination. 
+
+2.3. Large Language Models for Decision Making and Reward Alignment 
+
+Recent work uses LLMs as high-level decision makers by mapping states to text and decoding actions, e.g., LLM-Light for traffic signals and holistic vision–language driv-ing with counterfactual reasoning in OmniDrive [7, 13], but directly placing LLMs in the control loop raises la-tency, reliability, and scalability issues in multi-agent set-tings. A complementary line treats LLMs as judges: Driv-eLM evaluates driving decisions via graph-based QA [12], and RLHF/RLAIF-style approaches train policies against reward models learned from human or AI feedback [9, 22], with Poutine-style systems showing that vision–language models plus light preference tuning can yield strong driving performance [22]. Existing LLM-as-judge work, however, typically operates on free-form descriptions or QA pairs for single agents, whereas C 2T uses deterministic schema-based captions to obtain stable pairwise preferences that can be distilled into a reusable intrinsic reward for MARL. 
+
+2.4. Structured Scene Representation and Driving Captions 
+
+Graph-based and object-centric representations factor traf-fic scenes into entities and relations, and are widely used in RL for phases, lanes, and movements, as in FRAP and CoLight [20, 27], but these formats are designed for neural nets rather than LLMs. Vision-based driving cap-tioning and VQA datasets, such as nuScenes caption/QA benchmarks and DriveLM, provide natural language de-scriptions of driving scenes, and OmniDrive extends them to counterfactual reasoning [6, 12, 13]; yet free-form cap-tions are often stylistic and under-specified, lacking precise quantitative details needed for consistent reward evaluation. C2T bridges this gap by constructing deterministic, unit-aware, schema-constrained traffic captions that enumerate key variables (e.g., queues, delays, TTC, violations) with explicit semantics, making them both faithful to the under-lying state and well-suited for stable LLM-based preference learning. 
+
+## 3. Preliminaries 
+
+We briefly review the reinforcement learning formulation for traffic signal control, from the standard single-agent MDP view to a cooperative multi-agent setting with traffic lights (TLCs) and connected autonomous vehicles (CAVs). This section only fixes notation and highlights the limita-tions of handcrafted rewards that motivate C 2T. 
+
+3.1. Traffic Signal Control as an MDP 
+
+We model a single intersection as a Markov Decision Pro-cess M = ( S, A, P, r ext , γ ). At time step t, the TLC ob-serves a local traffic state st ∈ S containing the current phase, its elapsed time, and lane-level statistics such as queue length and flow. It then chooses an action at ∈ A 
+
+(e.g., keep or switch phase), and the microscopic simu-lator applies P(st+1 | st, a t).The external reward rext (st, a t) is a handcrafted conges-tion proxy. A common choice is negative intersection pres-sure: 
+
+rext (st) = −
+
+> K
+
+X
+
+> i=1
+
+ nin i − nout i
+
+, (1) where nin i and nout i are the inflow and outflow vehi-cle counts on approach i. The TLC learns a pol-icy π(at | st) that maximizes the discounted return 
+
+Eπ [P∞ 
+
+> t=0
+
+γtrext (st, a t)] .This formulation has been widely used in RL-based traf-fic signal control, but it implicitly treats vehicles as passive entities and only optimizes short-term efficiency metrics de-fined by rext .
+
+3.2. Multi-Agent Traffic Control and Its Limitations 
+
+Modern intelligent transportation systems increasingly co-ordinate both infrastructure and vehicles. We there-fore consider a multi-agent setting with TLC agents 
+
+M = {1, . . . , |M |} and (potential) CAV agents N =
+
+{1, . . . , |N |} . At time t, each agent i ∈ M ∪ N receives a local observation oit, selects an action ait, and the shared traffic state evolves as 
+
+st+1 = f  st, {ait}i∈M ∪N
+
+ .
+
+TLC agents aim to reduce local congestion via external rewards such as 
+
+rTL ext (st) = −
+
+> K
+
+X
+
+> i=1
+
+ nin i − nout i
+
+ − λ · delay t,
+
+while CAV agents, when explicitly controlled, are typically encouraged to track a desired speed with smooth accelera-tions, e.g., 
+
+rCAV ext (st) = − vt − v∗ − β ∥at∥.
+
+The cooperative objective is to optimize all agents jointly: 
+
+max  
+
+> πM, π N
+
+E
+
+" TX
+
+> t=0
+
+X 
+
+> i∈M∪N
+
+γt rit
+
+#
+
+, (2) where πM and πN are the (shared) policies for TLCs and CAVs. However, both the single-agent and multi-agent formula-tions above are still driven by simple, handcrafted rewards 
+
+rTL ext and rCAV ext that focus on local pressure, delay, or speed tracking. They provide limited guidance about broader no-tions of safety, comfort, and flow stability, and may there-fore produce policies that are numerically optimal yet mis-aligned with human common sense. This motivates our central goal: to learn a human-aligned intrinsic reward rϕ from preferences expressed by large language models, and to integrate it with the exter-nal rewards in multi-agent traffic control. The next section introduces the C 2T framework that realizes this idea. 4. Method 
+
+4.1. Overview 
+
+We propose C2T (Captioning-Structure and LLM-Aligned Common-Sense Reward Learning ). C2T has three stages: (Stage 1 ) render simulator observations into structured cap-tions and build preference pairs; ( Stage 2 ) learn a common-sense intrinsic reward rϕ from LLM preferences; ( Stage 3 )inject rϕ into the RL loop via asymmetric reward mix-ing with explicit safety masks. We instantiate C 2T on CityFlow-based multi-intersection benchmarks where each traffic-light controller (TLC) is a learning agent while vehi-cles follow the built-in microscopic dynamics. In this work we focus on TLC-only learning and discuss extensions to explicitly modeled connected autonomous vehicles (CAVs) in the appendix. Figure 1 summarizes the end-to-end pipeline. We next detail each stage. 
+
+4.2. Stage 1: Structured Captioning and Preference Pairs 
+
+Let o ∈ O be an observation at time t for a given intersec-tion. We define a deterministic captioner 
+
+c = C(o; Ξ) , (3) where Ξ is a fixed schema (fields and units). The schema concatenates structured slots (no free-form prose): 
+
+c =  phase , elapsed 
+
+| {z }
+
+> signal
+
+, {qi, p i}Ki=1 
+
+| {z }
+
+> queues/pressure
+
+, ¯d, ¯τ
+
+|{z} 
+
+> delay/throughput
+
+,
+
+TTC p10 , TTC p50 , h brake , ρ red 
+
+| {z }
+
+> safety
+
+, v near , a near , d stop 
+
+| {z }
+
+> nearest vehicle
+
+.
+
+(4) Here qi and pi denote queue and pressure on approach i, ¯d
+
+average delay, ¯τ throughput, TTC pα the α-percentile time-to-collision, hbrake harsh braking count, ρred a red-light risk flag, and (vnear , a near , d stop ) the kinematics of the nearest ve-hicle to the stop line. From a pool Dobs = {o}, we construct caption pairs 
+
+P = {(c1, c 2)} via a distribution prioritizing conges-tion/phase contrast, safety contrast, and short time shifts at the same junction: 
+
+ppair 
+
+ (oa, o b) ∝ α ∆cong (oa, o b) + β ∆safety (oa, o b)+ γ Ij(oa)= j(ob), |ta−tb| ∈ [δ1, δ 2] ,
+
+(5) where j(·) maps an observation to its intersection index and ∆cong , ∆safety are standardized contrasts (e.g., pres-sure gap, TTC-percentile gap). In our experiments, ∆cong 
+
+aggregates gaps in average queue length and delay, while 
+
+∆safety aggregates gaps in TTC percentiles and harsh brak-ing counts. We set (c1, c 2) =  C(oa), C(ob).
+
+Algorithm 1 Stage 1: Captioning and Pair Sampling 
+
+Require: Simulator E, captioner C, pairing distribution 
+
+ppair , episodes K
+
+Ensure: Observation buffer Dobs , pair set P 
+
+> 1:
+
+Dobs ← ∅ , P ← ∅  
+
+> 2:
+
+for k = 1 to K do  
+
+> 3:
+
+Roll out episode k in E to obtain {ot}Tt=1  
+
+> 4:
+
+for t = 1 to T do  
+
+> 5:
+
+Append (ot, C(ot; Ξ)) to Dobs  
+
+> 6:
+
+end for  
+
+> 7:
+
+end for  
+
+> 8:
+
+for each sampled pair (oa, o b) ∼ ppair (Dobs ) do  
+
+> 9:
+
+Append (C(oa), C(ob)) to P 
+
+> 10:
+
+end for  
+
+> 11:
+
+return Dobs , P
+
+With a fixed prompt template P, the LLM outputs y ∈{1, 2, ∅} for (c1, c 2). We keep decisive labels: 
+
+Dpref = (c1, c 2, y ) : y ∈ { 1, 2} . (6) To reduce template-frequency bias, we assign importance 
+
+w(c1, c 2) ∝ 1/ν  tpl( c1, c 2), where ν counts occurrences of the rendering template. 
+
+4.3. Stage 2: Learning a Common-Sense Intrinsic Reward 
+
+We learn a scalar quality score rϕ : O → R via an encoder 
+
+fϕ over caption tokens and auxiliary numerics: 
+
+rϕ(o) = fϕ
+
+ tok (c), x (o),x(o) ⊆ { pi, ¯d, TTC p10 , TTC p50 , h brake }. (7) While our architecture supports multiple prompt-specific heads combined linearly, in our experiments we use a single scalar head for rϕ.
+
+Bradley–Terry likelihood and loss. Let ∆rϕ = rϕ(o1)−
+
+rϕ(o2) for (c1, c 2, y ) ∈ Dpref with source observations 
+
+o1, o 2. With sigmoid σ(z) = 1 /(1 + e−z ) and temperature 
+
+τBT > 0, we define 
+
+pϕ(y=1 | c1, c 2) = σ
+
+ ∆rϕ
+
+τBT 
+
+
+
+,pϕ(y=2 | c1, c 2) = 1 − pϕ(y=1 | c1, c 2).
+
+(8) The weighted negative log-likelihood with ℓ2 regulariza-tion and score centering is 
+
+L(ϕ) = − X
+
+> (c1,c 2,y )∈D pref
+
+w(c1, c 2) log pϕ(y | c1, c 2)+ η ∥ϕ∥22 + ζ  E[rϕ(o)] 2,
+
+(9) Figure 1. C 2T pipeline. Stage 1 converts raw observations into schema-constrained captions and samples high-contrast/safety-contrast pairs. Stage 2 queries an LLM to label pairwise preferences and trains a scalar scorer rϕ with a Bradley–Terry loss (with frequency reweighting and score centering). Stage 3 freezes rϕ and injects it as an intrinsic component for TLC steps under a safety mask, mixing with external rewards; all streams are normalized before GAE+PPO. In our CityFlow instantiation, only TLCs are learning agents and vehicles remain part of the environment dynamics. 
+
+Algorithm 2 Stage 2: Offline Reward Model Training 
+
+Require: LLM L, prompt P, observation buffer Dobs , pair budget M , epochs N
+
+Ensure: Reward model rϕ 
+
+> 1:
+
+Dpref ← ∅  
+
+> 2:
+
+for j = 1 to M do  
+
+> 3:
+
+Sample (o1, o 2) ∼ ppair (Dobs ) 
+
+> 4:
+
+y ← L (P, C(o1), C(o2))  
+
+> 5:
+
+if y ∈ { 1, 2} then  
+
+> 6:
+
+Append (o1, o 2, y ) to Dpref  
+
+> 7:
+
+end if  
+
+> 8:
+
+end for  
+
+> 9:
+
+Initialize rϕ 
+
+> 10:
+
+for epoch = 1 to N do  
+
+> 11:
+
+Sample minibatch from Dpref and update ϕ via (9)  
+
+> 12:
+
+end for  
+
+> 13:
+
+return rϕ
+
+where pϕ(y | c1, c 2) is given by (8). The centering term dis-courages degenerate shifts where rϕ drifts uniformly with-out improving pairwise discrimination. 
+
+4.4. Stage 3: Reward Shaping and RL Integration 
+
+After Stage 2, we freeze the learned scorer rϕ and integrate it into a multi-intersection TLC RL system on CityFlow, where each intersection-level TLC is modeled as an agent and vehicles follow the built-in microscopic simulator. 
+
+Safety mask and intrinsic shaping. Define a mask m :
+
+O → { 0, 1} that disables intrinsic rewards in unsafe re-gions: 
+
+m(o′) = I TTC p10 (o′) ≥ τttc , |anear (o′)| ≤ amax ,ρred (o′) = 0 . (10) Given a transition (o, a, o ′) for a TLC, the intrinsic compo-nent is 
+
+rint (o, o ′) = m(o′) rϕ(o′). (11) The mixed reward for a TLC agent is 
+
+rTL mix = rTL ext + λ(t) m(o′) rϕ(o′)
+
+− κunsafe (1 − m(o′)) , (12) where λ(t) ∈ [0 , λ max ] is a slowly varying schedule (warm-up/decay or performance-gated) that gradually increases the weight of the intrinsic shaping signal. 
+
+Per-stream normalization and clipping. We treat the external reward, the intrinsic component, and the safety penalty as three separate streams for TLCs: 
+
+r(1)  
+
+> t
+
+= rTL ext ,t , r(2)  
+
+> t
+
+= λ(t) rint ,t , r(3)  
+
+> t
+
+= −κunsafe (1 −mt).
+
+For each stream k ∈ { 1, 2, 3} we maintain running mean 
+
+μ(k) and standard deviation σ(k), and apply z-score normal-Algorithm 3 Stage 3: Online Training with C 2T Intrinsic Reward (TLC-only) 
+
+Require: Simulator E, trained scorer rϕ, initial TLC policy 
+
+πTL , iterations I, episodes E, horizon H
+
+Ensure: Updated TLC policy πTL  
+
+> 1:
+
+for iter = 1 to I do  
+
+> 2:
+
+B ← ∅  
+
+> 3:
+
+for episode = 1 to E do  
+
+> 4:
+
+Reset E and observe initial states for all TLCs  
+
+> 5:
+
+for h = 0 to H − 1 do  
+
+> 6:
+
+for each TLC agent i do  
+
+> 7:
+
+Sample action ah,i ∼ πTL (· | oh,i ) 
+
+> 8:
+
+end for  
+
+> 9:
+
+Step E with joint TLC actions, obtain oh+1 ,i 
+
+and external rewards rTL ext ,h,i  
+
+> 10:
+
+for each TLC agent i do  
+
+> 11:
+
+Compute mask mh+1 ,i ← m(oh+1 ,i )
+
+using (10)  
+
+> 12:
+
+rint  
+
+> h,i
+
+← mh+1 ,i rϕ(oh+1 ,i ) 
+
+> 13:
+
+rh,i ← rTL mix via (12)  
+
+> 14:
+
+Store (oh,i , a h,i , r h,i , o h+1 ,i ) into B 
+
+> 15:
+
+end for  
+
+> 16:
+
+end for  
+
+> 17:
+
+end for  
+
+> 18:
+
+Normalize and clip streams from B using (13) to obtain shaped rewards ˆrTL  
+
+> t
+> 19:
+
+Compute advantages At from B with GAE  
+
+> 20:
+
+Update πTL and Vψ with PPO  
+
+> 21:
+
+end for  
+
+> 22:
+
+return πTL 
+
+ization with soft clipping: 
+
+ˆr(k) 
+
+> t
+
+= clip r(k) 
+
+> t
+
+− μ(k)
+
+σ(k) + ϵ , −c, c 
+
+!
+
+. (13) We then form a single step-wise shaped reward for TLCs by summing the normalized streams: 
+
+ˆrTL  
+
+> t
+
+=
+
+> 3
+
+X
+
+> k=1
+
+ˆr(k) 
+
+> t
+
+.
+
+Advantage estimation and policy optimization. Let 
+
+Vψ (o) be the value function for TLCs and πθ the shared TLC policy. We estimate advantages from ˆrTL  
+
+> t
+
+using gen-eralized advantage estimation (GAE) and optimize (θ, ψ )
+
+with the standard clipped-surrogate PPO objective [10, 11]. For completeness, we summarize one training iteration in Algorithm 3; implementation details and hyper-parameters follow the underlying CityFlow PPO setup and are deferred to the appendix. 
+
+4.5. Compatibility and Reproducibility 
+
+Unless otherwise noted, we keep the base RL setup (agent sets, shared TLC policy design, observation/action spaces, and PPO schedules) from the underlying CityFlow configu-ration. C 2T adds: (i) the captioner C with schema Ξ, (ii) the learned scorer rϕ via (8)–(9), and (iii) the mixed reward (12) with normalization (13) and safety mask (10). While our ex-periments only train TLC policies, the same shaping mech-anism can be applied to cooperative TLC–CAV settings by applying the intrinsic component to TLC rewards and keep-ing vehicle agents either environment-driven or separately optimized; we discuss this extension in the appendix. 
+
+## 5. Experiments 
+
+5.1. Benchmarks and Simulation Settings 
+
+Datasets. Following the LLMLight protocol [7], we eval-uate on CityFlow [24] using three real-city networks and two synthetic stress scenarios: Jinan (12 intersections; three time periods), Hangzhou (16 intersections; two peri-ods), New York (196 intersections; two periods), Extreme High-traffic (arrival rate ×4 within 5 minutes), and a 24-hour Cycle (full diurnal fluctuation). Unless specified oth-erwise, each scenario runs for 1 hour. 
+
+Environment. Each intersection has four phases (E/W straight, E/W left-turn, N/S straight, N/S left-turn). Sig-nal timing follows: 30s green → 3s yellow → 2s all-red . Agents act only at phase-switches for fair compar-ison. Right-turns are permissive; lane-changing and car-following follow CityFlow defaults. 
+
+Metrics. We follow standard traffic-engineering met-rics: ATT (Average Travel Time, ↓), AQL (Average Queue Length, ↓), AWT (Average Waiting Time, ↓). Safety/comfort metrics include rear-end TTC percentiles 
+
+(P10/P25, ↑) and Harsh-brake/km (↓). Energy-related proxies (stops, speed variance) are reported in the appendix. 
+
+5.2. Compared Methods 
+
+Transportation baselines: Random, FixedTime, MaxPres-sure. 
+
+RL baselines: MPLight [1], AttendLight [8], PressLight [19], CoLight [20], Efficient-CoLight [21], Advanced-CoLight [25] and its no-communication variant. 
+
+LLM agents: GPT-, Qwen-, and Llama-family variants reported by LLMLight [7]. All RL baselines share LLMLight’s training budget and hyperparameters. 
+
+Our method (C 2T). We transform simulator states into structured, unit-aware captions, collect offline pairwise Table 1. Jinan/Hangzhou overall performance. Lower is better. 
+
+Dataset/Method ATT ↓ AQL ↓ AWT ↓
+
+Jinan-1 (Baseline) 62.30 14.80 21.50 
+
+Jinan-1 (C 2T) 56.10 13.10 19.40 
+
+Jinan-2 (Baseline) 58.90 13.10 19.70 
+
+Jinan-2 (C 2T) 53.00 11.80 17.90 
+
+Hangzhou-1 (Baseline) 71.40 16.30 24.20 
+
+Hangzhou-1 (C 2T) 65.10 14.90 22.00 
+
+Hangzhou-2 (Baseline) 68.10 15.40 23.10 
+
+Hangzhou-2 (C 2T) 62.40 13.90 21.10  
+
+> Table 2. Large-scale New York (196 intersections).
+
+Method ATT ↓ AQL ↓ AWT ↓
+
+Adv-CoLight (baseline) 95.0 22.6 38.4 
+
+C2T (ours) 87.9 20.3 34.5 
+
+preferences, and train an intrinsic scorer rϕ. The intrinsic reward is mixed asymmetrically into TL controllers (TLCs) only; CAVs (if present) remain environment-driven. Arisk mask suppresses rϕ when TTC percentiles drop below thresholds or harsh deceleration clusters appear. Reward streams are normalized and softly clipped prior to PPO ad-vantage computation. 
+
+5.3. Implementation Details 
+
+RL. We adopt LLMLight’s PPO settings [7]: learning rate 
+
+1×10 −3, replay buffer 12 ,000 , sample size 3,000 , hidden size 20 , PPO clip 0.2, batch size 128 , 16 mini-batches, en-tropy coefficient 10 −3, GAE( λ = 0 .95 ), γ = 0 .99 . Results are averaged over 5 random seeds. 
+
+Preference labeling. We use temperature 0 for propri-etary LLMs and 0.1 for open-source models, with top-
+
+p=1 .0. When fine-tuning open-source judges, we apply LoRA with rank 8 and α = 16 ; all preference labels are collected offline, and RL training/inference require no LLM calls. 
+
+Safety proxies. TTC uses per-vehicle rear-end time-to-collision; harsh braking is a < −3 m /s2. For stress tests we also track an oscillation index measuring normalized phase-switch frequency (higher means more frequent switching). 
+
+5.4. Main Results (RQ1: Effectiveness) 
+
+Safety side metrics. Across Jinan/Hangzhou, C 2T con-sistently improves TTC P10/P25 and reduces harsh braking, indicating smoother approaches and fewer stop–go cycles (see Appendix for full numbers).    
+
+> Figure 2. Learning curves on CityFlow. C2T steadily improves ATT ( ↓) while also increasing TTC P10 ( ↑), showing that effi-ciency does not come at the cost of safety. Table 3. City transfer: train on Jinan, evaluate on Hangzhou.
+
+Method ATT ↓ AQL ↓ AWT ↓ Steps ↓
+
+External-only 72.5 17.2 25.8 100k C2T zero-shot 68.9 16.4 24.6 80k C2T (1% prefs) 67.3 16.0 23.9 70k Fusion (50/50) 66.1 15.6 23.5 65k   
+
+> Table 4. Stress test results. Lower is better unless noted.
+
+Setting / Method ATT ↓ AWT ↓ Oscillation ↓
+
+Extreme (baseline) 105.0 44.2 1.00 
+
+C2T 96.8 40.1 0.86 
+
+24h (baseline) 78.5 29.4 0.76 
+
+C2T 72.2 26.9 0.65 
+
+5.5. Generalization and Scalability (RQ2) 
+
+City transfer. We train a source-city scorer rsϕ on Ji-nan and evaluate zero-shot on Hangzhou. Few-shot pref-erence relabeling (1–5%) further improves ATT/AWT. We also study a simple fusion of source- and target-city scorers, 
+
+rϕ = λr sϕ + (1 − λ)rtϕ, which accelerates convergence. 
+
+Scalability. Training on small networks (Ji-nan/Hangzhou) generalizes to New York (196 inter-sections), while several RL baselines degrade sharply; see the appendix for the full comparison. 
+
+5.6. Stress Tests (RQ3) 
+
+Extreme High-traffic. Arrival rates increase by ×4 over 5 minutes. We evaluate saturation robustness and the oscil-lation index (normalized phase-switch frequency). 
+
+24-hour Cycle. We replay a full-day traffic profile, track-ing stability and frequency of risk-mask activation. 5.7. Ablation Studies (RQ4) 
+
+We conduct two groups of ablations to understand which components of C 2T are responsible for the gains; see Fig. 3 and Tab. 5 for a summary, and the appendix for full results and additional plots. 
+
+Component-wise ablations. Figure 3 removes, one at a time, the intrinsic reward rϕ, the safety mask, per-stream normalization, and the intrinsic-reward schedule. Drop-ping rϕ almost collapses performance back to the external-only PPO baseline, confirming that the learned reward signal, rather than extra computation, is the main source of improvement. Removing the safety mask slightly re-duces ATT/AWT but noticeably worsens rear-end TTC per-centiles and harsh-brake frequency, indicating that the mask is crucial for turning the intrinsic reward into safe guid-ance. Without per-stream normalization the mixed reward becomes highly skewed and training becomes less stable, leading to higher variance and degraded ATT. Finally, using a constant intrinsic weight in place of the curriculum sched-ule slows down convergence and yields weaker final perfor-mance, suggesting that gradually introducing rϕ is benefi-cial for optimization. 
+
+Caption-structure ablations. Table 5 studies the effect of our structured caption design. Using only raw nu-merics (“Numeric-only”) or only text (“Caption-only”) gives weaker offline agreement with LLM preferences (AUC/Spearman) and worse downstream ATT/AWT than the full fusion model. Shuffling slots or removing explicit units (“Shuffled / No-units”) hurts both ranking metrics and RL performance, showing that schema consistency and unit-awareness matter. The full C 2T model, which com-bines numerics with ordered, unit-aware captions, achieves the best trade-off between preference prediction and con-trol. 
+
+Interaction and robustness. We also explore how these components interact. For example, combining “no mask” with “no normalization” leads to occasional training insta-bility and oscillatory phase-switch behaviour, even when ATT is comparable, whereas removing either component alone is less harmful. Conversely, keeping the mask and schedule but training a weaker reward model (Numeric-only head) still improves safety but yields smaller efficiency gains. Across all settings we observe a consistent trend: better offline preference alignment (higher AUC/Spearman) correlates with better RL performance, supporting our de-sign choice of evaluating reward models with both offline metrics and online control. Extended sensitivity curves and cross-city ablations are provided in the appendix.            
+
+> Figure 3. Ablation on Jinan-1. Removing mask/norm/schedule harms performance, while the full C2Tachieves the best ATT/AWT. Table 5. Caption-structure ablation . Higher AUC/Spearman is better; lower ATT/AWT is better.
+
+Model AUC ↑ Spearman ↑ ATT ↓ AWT ↓
+
+Numeric-only 0.67 0.41 64.8 22.4 Caption-only 0.73 0.49 63.1 22.1 Fusion 0.78 0.56 61.9 21.6 Shuffled / No-units 0.60 0.30 66.1 23.9 
+
+C2T (full) 0.78 0.56 59.3 20.8 
+
+## 6. Conclusion 
+
+We introduced C 2T, a framework that leverages structured traffic captions and LLM-based preference learning to build a human-aligned intrinsic reward for multi-intersection traf-fic signal control. By rendering simulator states into de-terministic, unit-aware captions and training a lightweight scorer from offline LLM preferences, C 2T decouples re-ward design from online interaction and avoids any runtime dependence on LLM calls. The learned intrinsic signal is integrated into a standard PPO pipeline via asymmetric re-ward mixing, a simple safety mask, and per-stream normal-ization, making it drop-in compatible with existing RL con-trollers. On CityFlow-based benchmarks built from real-world Ji-nan, Hangzhou, and New York networks, C 2T consistently improves traffic efficiency, safety proxies, and an energy-related metric over strong RL baselines. Ablation studies highlight the importance of the intrinsic reward, the safety mask, and the normalization schedule for stable gains, and show that the structured caption design itself already pro-vides measurable benefits. Looking forward, we plan to extend C 2T to explicit TLC–CAV coordination, explore richer prompt designs and multi-objective heads for finer-grained trade-offs between efficiency, safety, and energy, and investigate deployment in real-world sensing and control loops where human feed-back and LLM judgment can be iteratively refined. References 
+
+[1] Chacha Chen, Hua Wei, Nan Xu, Guanjie Zheng, Ming Yang, Yuanhao Xiong, Kai Xu, and Zhenhui Li. Toward a thousand lights: Decentralized deep reinforcement learning for large-scale traffic signal control. In Proceedings of the AAAI Conference on Artificial Intelligence , 2020. 2, 6 [2] Paul F. Christiano, Jan Leike, Tom B. Brown, Miljan Mar-tic, Shane Legg, and Dario Amodei. Deep reinforcement learning from human preferences. In Advances in Neural Information Processing Systems , 2017. 1, 2 [3] Justin Fu, Katie Luo, and Sergey Levine. Learning robust rewards with adversarial inverse reinforcement learning. In 
+
+Proceedings of the International Conference on Learning Representations , 2018. 2 [4] Jiaying Guo, Long Cheng, and Shen Wang. CoTV: Co-operative control for traffic light signals and connected au-tonomous vehicles using deep reinforcement learning. arXiv preprint arXiv:2201.13143 , 2023. 1, 2 [5] Jonathan Ho and Stefano Ermon. Generative adversarial im-itation learning. In Advances in Neural Information Process-ing Systems , 2016. 2 [6] Yuichi Inoue, Yuki Yada, Kotaro Tanahashi, and Yu Yam-aguchi. NuScenes-MQA: Integrated evaluation of captions and QA for autonomous driving datasets using markup anno-tations. In Proceedings of the IEEE/CVF Winter Conference on Applications of Computer Vision Workshops (WACVW) ,pages 586–595, 2024. 3 [7] Siqi Lai, Zheyuan Xu, Wenjun Zhang, Haoran Liu, and Hui Xiong. LLMLight: Large language models as traffic signal control agents. arXiv preprint arXiv:2312.16044 , 2023. 3, 6, 7[8] Mehdi Oroojlooy, Lawrence V. Snyder, Reza Samadi, and Bo Zeng. Attendlight: Universal attention-based reinforce-ment learning for traffic signal control. In Proceedings of the International Conference on Autonomous Agents and Multi-agent Systems (AAMAS) , 2020. 2, 6 [9] Long Ouyang, Jeff Wu, Xu Jiang, Diogo Almeida, Car-roll L. Wainwright, Pamela Mishkin, et al. Training language models to follow instructions with human feedback. arXiv preprint arXiv:2203.02155 , 2022. 1, 3 [10] John Schulman, Philipp Moritz, Sergey Levine, Michael I. Jordan, and Pieter Abbeel. High-dimensional continuous control using generalized advantage estimation. In Inter-national Conference on Learning Representations (ICLR) ,2016. 6 [11] John Schulman, Filip Wolski, Prafulla Dhariwal, Alec Rad-ford, and Oleg Klimov. Proximal policy optimization algo-rithms. arXiv preprint arXiv:1707.06347 , 2017. 6 [12] Chonghao Sima, Katrin Renz, Kashyap Chitta, Li Chen, Hanxue Zhang, Chengen Xie, Jens Beisswenger, Ping Luo, Andreas Geiger, and Hongyang Li. DriveLM: Driving with graph visual question answering. In Proceedings of the Eu-ropean Conference on Computer Vision (ECCV) , 2024. 3 [13] Shihao Wang, Zhiding Yu, Xiaohui Jiang, Shiyi Lan, Min Shi, Nadine Chang, Jan Kautz, Ying Li, and Jose M. Al-varez. OmniDrive: A holistic vision–language dataset for autonomous driving with counterfactual reasoning. In Pro-ceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) , 2025. 3 [14] Yiming Wang, Kaiyan Zhao, Yan Li, and Leong Hou U. BILE: An effective behavior-based latent exploration scheme for deep reinforcement learning. In Proceedings of the Thirty-Fourth International Joint Conference on Artificial Intelligence (IJCAI) , pages 6497–6505, 2025. 2 [15] Yiming Wang, Kaiyan Zhao, Xu Li, Yan Li, Jiayu Chen, Steven Morad, and Leong Hou U. Explore to learn: Latent exploration through disentangled synergy patterns for rein-forcement learning in overactuated control. In Proceedings of the AAAI Conference on Artificial Intelligence (AAAI) ,pages 26670–26678, 2026. 2 [16] Yiming Wang, Kaiyan Zhao, Ming Yang, Yan Li, Furui Liu, Jiayu Chen, and Leong Hou U. DSAP: Enhancing general-ization in goal-conditioned reinforcement learning. In Pro-ceedings of the AAAI Conference on Artificial Intelligence (AAAI) , pages 26679–26687, 2026. 2 [17] Yiming Wang, Kaiyan Zhao, Borong Zhang, Yan Li, and Leong Hou U. Latent state-predictive exploration for deep reinforcement learning. In Proceedings of the AAAI Confer-ence on Artificial Intelligence (AAAI) , pages 26661–26669, 2026. 2 [18] Hua Wei, Guanjie Zheng, Huaxiu Yao, and Zhenhui Li. In-telliLight: A reinforcement learning approach for intelli-gent traffic light control. In Proceedings of the 24th ACM SIGKDD International Conference on Knowledge Discovery and Data Mining , 2018. 1, 2 [19] Hua Wei, Chacha Chen, Guanjie Zheng, Kan Wu, Vikash Gayah, Kai Xu, and Zhenhui Li. Presslight: Learning max pressure control to coordinate traffic signals in arterial net-work. In Proceedings of the 25th ACM SIGKDD Interna-tional Conference on Knowledge Discovery and Data Min-ing , 2019. 1, 2, 6 [20] Hua Wei, Nan Xu, Huichu Zhang, Guanjie Zheng, Xinshi Zang, Chacha Chen, Weinan Zhang, Yanmin Zhu, Kai Xu, and Zhenhui Li. CoLight: Learning network-level cooper-ation for traffic signal control. In Proceedings of the 28th ACM International Conference on Information and Knowl-edge Management , pages 1913–1922, 2019. 2, 3, 6 [21] Kan Wu, Hua Wei, Chacha Chen, Guanjie Zheng, and Zhen-hui Li. Efficient-CoLight: Learning efficient pressure rep-resentation for network-level traffic signal control. In Pro-ceedings of the ACM International Conference on Informa-tion and Knowledge Management , pages 2060–2069, 2021. 2, 6 [22] Zhenghao Xu, Qin Lu, Qingru Zhang, Liang Qiu, Ilgee Hong, Changlong Yu, Wenlin Yao, Yao Liu, Haoming Jiang, Lihong Li, Hyokun Yun, and Tuo Zhao. Ask a strong LLM judge when your reward model is uncertain. In Advances in Neural Information Processing Systems (NeurIPS) , 2025. 3 [23] Xinshi Zang, Huaxiu Yao, Guanjie Zheng, Nan Xu, Kai Xu, and Zhenhui Li. MetaLight: Value-based meta-reinforcement learning for traffic signal control. In Proceed-ings of the AAAI Conference on Artificial Intelligence , 2020. 2[24] Huichu Zhang, Siyuan Feng, Chang Liu, Yaoyao Ding, Yichen Zhu, Zihan Zhou, Weinan Zhang, Yong Yu, Haim-ing Jin, and Zhenhui Li. Cityflow: A multi-agent reinforce-ment learning environment for large scale city traffic sce-nario. In Proceedings of the World Wide Web Conference ,pages 3620–3624. ACM, 2019. 2, 6 [25] Liang Zhang, Qiang Wu, Jun Shen, Linyuan L¨ u, Bo Du, and Jianqing Wu. Expression might be enough: Representing pressure and demand for reinforcement learning-based traffic signal control. In Proceedings of the 39th International Con-ference on Machine Learning (ICML) , pages 26645–26654. PMLR, 2022. 2, 6 [26] Kaiyan Zhao, Yiming Wang, Yuyang Chen, Yan Li, Leong Hou U, and Xiaoguang Niu. Efficient diversity-based experience replay for deep reinforcement learning. In Pro-ceedings of the Thirty-Fourth International Joint Conference on Artificial Intelligence (IJCAI) , pages 7083–7091, 2025. 2 [27] Guanjie Zheng, Yuanhao Xiong, Xinshi Zang, Jie Feng, Hua Wei, Huichu Zhang, Yong Li, Kai Xu, and Zhenhui Li. Learning phase competition for traffic signal control with FRAP. In Proceedings of the 28th ACM International Con-ference on Information and Knowledge Management , 2019. 2, 3 
+
+## Acknowledgments 
+
+This work was supported by the Science and Tech-nology Development Fund of Macau [0007/2025/RIC, 0122/2024/RIB2, 0215/2024/AGJ, 0074/2025/AMJ, 001/2024/SKL], the Research Services and Knowl-edge Transfer Office, University of Macau [SRG2023-00037-IOTSC, MYRG-GRG2024-00284-IOTSC], the Shenzhen-Hong Kong-Macau Science and Technology Program Category C [SGDX20230821095159012], the Science and Technology Planning Project of Guang-dong [2025A0505010016], the National Natural Science Foundation of China [52572354], the State Key Lab of Intelligent Transportation System [2024-B001], and the Jiangsu Provincial Science and Technology Program [BZ2024055].
