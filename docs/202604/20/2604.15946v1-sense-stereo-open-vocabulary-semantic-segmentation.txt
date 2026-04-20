@@ -1,0 +1,442 @@
+Title: 2604.15946v1.pdf
+
+URL Source: https://arxiv.org/pdf/2604.15946v1
+
+Published Time: Mon, 20 Apr 2026 00:47:26 GMT
+
+Number of Pages: 17
+
+Markdown Content:
+# SENSE: Stereo OpEN Vocabulary SEmantic Segmentation 
+
+## Thomas Campagnolo 1,2 Ezio Malis 1 Philippe Martinet 1 Gaetan Bahl 21Centre Inria d’Universite Cote d’Azur, France 2NXP Semiconductors, France 
+
+{thomas.campagnolo, ezio.malis, philippe.martinet }@inria.fr 
+
+{thomas.campagnolo, gaetan.bahl }@nxp.com 
+
+## Abstract 
+
+Open-vocabulary semantic segmentation enables models to segment objects or image regions beyond fixed class sets, offering flexibility in dynamic environments. However, ex-isting methods often rely on single-view images and strug-gle with spatial precision, especially under occlusions and near object boundaries. We propose SENSE, the first work on Stereo OpEN Vocabulary SEmantic Segmentation, which leverages stereo vision and vision-language models to en-hance open-vocabulary semantic segmentation. By incor-porating stereo image pairs, we introduce geometric cues that improve spatial reasoning and segmentation accuracy. Trained on the PhraseStereo dataset, our approach achieves strong performance in phrase-grounded tasks and demon-strates generalization in zero-shot settings. On PhraseS-tereo, we show a +2.9% improvement in Average Precision over the baseline method and +0.76% over the best compet-ing method. SENSE also provides a relative improvement of +3.5% mIoU on Cityscapes and +18% on KITTI compared to the baseline work. By jointly reasoning over semantics and geometry, SENSE supports accurate scene understand-ing from natural language, essential for autonomous robots and Intelligent Transportation Systems. 
+
+## 1. Introduction 
+
+Scene understanding is a fundamental task in autonomous navigation and computer vision, with semantic segmenta-tion assigning class labels to every pixel. Traditional seg-mentation models [6, 8, 30] rely on dense annotations and operate on a fixed, closed set of categories. While effec-tive in constrained settings, they struggle to generalize be-yond predefined labels [29]. To overcome these limita-tions, in the last years, open-vocabulary semantic segmen-tation has emerged as a promising alternative [1]. This paradigm enables models to segment images based on ar-bitrary class names or natural language expressions pro-vided at inference time. Most existing approaches rely on Vision-Language Models (VLMs) such as CLIP [27], which Left Image  Right Image  
+
+> SENSE-512 Zero-Shot Predictions - Scene Understanding from stereo image pairs
+> User defined open-vocabulary queries:
+> Road.
+> ...
+> Sidewalk.
+> Person crossing the street.
+> Manhole cover.
+> ...
+> Orange car turning in our direction.
+> A cyclist on the road. SENSE-512
+
+Figure 1. SENSE-512 . Zero-shot open-vocabulary semantic seg-mentation from stereo image pairs (Cityscapes) using natural lan-guage prompts. By combining semantics, geometry, and language, SENSE improves scene understanding in Intelligent Transporta-tion Systems (ITS). 
+
+align textual and visual features to enable matching be-tween language prompts and image content. However, these models are primarily designed for image-level classification and struggle with dense prediction [33], lacking the spatial granularity needed for pixel-wise segmentation. Moreover, current open-vocabulary segmentation approaches operate on single-view images [23, 42, 43], ignoring the geomet-ric cues available in stereo vision. This limits their ability to reason about spatial relationships, which is essential for real-world applications such as autonomous robots and In-telligent Transportation Systems (ITS). In this work, we introduce SENSE, the first Stereo Open-Vocabulary Semantic Segmentation method. SENSE lever-ages stereo image pairs and intermediate CLIP activations to enhance spatial reasoning and boost segmentation accu-1
+
+> arXiv:2604.15946v1 [cs.CV] 17 Apr 2026
+
+racy, especially near boundaries and occlusions. Our ar-chitecture builds upon frozen CLIP features [27] and the CLIPSeg framework [23], adding a stereo fusion module and a lightweight decoder that jointly process intermediate representations from both views. Conditioning is performed in CLIP’s text-image embedding space, enabling natural-language queries without retraining the backbone and pre-serving CLIP’s strong generalization capabilities. For large-scale datasets such as Cityscapes [9], we use a sliding-window strategy to address the resolution limits of CLIP encoders [27], enabling SENSE to produce fine-grained predictions while preserving global context. In the zero-shot setting, per-prompt outputs are converted to multi-label predictions using CRF refinement [18]. Overall, SENSE achieves competitive performance across zero-shot and referring expression segmentation, and generalizes well to unseen categories and natural language queries. Our contributions are summarized as follows: • We introduce SENSE, a novel stereo-based architecture for natural language and open-vocabulary semantic seg-mentation. • We propose a fusion mechanism that integrates stereo CLIP features with prompt-conditioned segmentation de-coding. • We train SENSE on the PhraseStereo dataset [4], demon-strating the ability of our architecture to generalize to free-form natural language text. • We show that SENSE achieves strong generalization and competitive performance across multiple segmentation tasks, including referring expression segmentation and zero-shot multi-class semantic segmentation. 
+
+## 2. Related Work 
+
+VLMs and Semantic Segmentation. Self-supervised vi-sion models have shown strong object localization capa-bilities [5, 10, 24], motivating efforts to enhance Vision-Language Models (VLMs) for open-vocabulary semantic segmentation [19, 36]. VLMs enable segmentation from free-form natural language prompts, moving beyond fixed label sets. In ITS, this allows autonomous vehicles to un-derstand from text queries, e.g., ”a dangerous object in the middle of the road” or ”the crosswalk next to the corner” ,enhancing adaptability in complex environments [44]. Re-cent advances in VLMs and semantic segmentation have made this modality fusion increasingly effective, offering semantic richness and contextual flexibility [41]. VLM-based segmentation pipelines typically consist of a visual encoder (e.g., ResNet [14], ViTs [44]), a language encoder (e.g., BERT [11]), and a multimodal fusion module that aligns features to produce fine-grained masks [21]. Modern open-vocabulary segmentation frameworks also incorporate task-specific heads to generate binary or multi-class masks aligned with the provided language description [1]. 
+
+CLIP-based semantic segmentation. Recent studies have shown that segmentation masks can be derived directly from attention maps or internal representations of models such as CLIP [27], or DINO [5], even though these mod-els were not originally designed for segmentation. CLIP, in particular, was trained on 400 million image-text pairs collected from the internet, learning to align visual and tex-tual modalities in a shared embedding space [27]. This contrastive learning paradigm enables a wide range of vi-sion tasks without task-specific fine-tuning. CLIP’s ar-chitecture and pretrained embeddings laid the foundation for various open-vocabulary semantic segmentation mod-els. For instance, CLIPSeg [23] showed that CLIP features can be adapted for dense prediction with a lightweight de-coder. The model is capable of segmenting images based on any text query or example image. MaskCLIP [42] demon-strated how segmentation knowledge is extracted from CLIP with minimal architectural changes, modifying the at-tention pooling mechanism. MaskCLIP+ [42] was further used for transductive zero-shot segmentation by generat-ing pseudo-labels for unseen classes. SCLIP [32] enhanced CLIP’s segmentation potential by introducing a Correlative Self-Attention (CSA) mechanism, enabling dense predic-tion with minimal changes to the pretrained model. Zeg-CLIP [43] employed parameter-efficient prompt tuning to adapt CLIP for zero-shot segmentation. Subsequent works such as OpenSeg [13] combined CLIP’s open-vocabulary capabilities with traditional segmentation backbones, while SAM [17] introduced promptable segmentation at scale us-ing geometric prompts. Existing vision-language segmenta-tion methods rely solely on monocular inputs. Our proposed method, SENSE, extends CLIPSeg with a transformer de-coder and a stereo-fusion module that integrates intermedi-ate features and disparity, enabling geometry-aware, text-driven open-vocabulary segmentation. To the best of our knowledge, no prior work has addressed this problem. 
+
+Referring Expression and Zero-Shot Segmentation. 
+
+Two related tasks bridging natural language and dense pre-diction are Referring Expression Segmentation and Zero-Shot Segmentation. Referring Expression Segmentation fo-cuses on segmenting regions described by a natural lan-guage phrase. Early approaches combined recurrent lan-guage models with CNNs [17, 20], while later work in-troduced attention mechanisms [39] and modular reason-ing [35]. In our work, we use the PhraseStereo dataset [4], which extends referring expression segmentation to stereo images with rich object, attribute, and spatial queries. Zero-Shot Segmentation aims to segment categories un-seen during training, often suffering from bias toward seen classes. Early methods synthesized pixel-level features for unseen categories, while later approaches incorporated se-mantic class information [37] or explicitly modeled unseen object detection [40]. 2iL CLIP - ViT-B/16                                       
+
+> E1 E7 E12 E9 E3
+> ... ... ... ...
+> Vision Transformer (x2) - shared weights
+> E1 E7 E12 E9 E3
+> ... ... ... ...
+> SIEF 1
+> SIEF 2
+> SIEF 3
+> Text Transformer [n,512]
+> Decoder (Vision Transformer)
+> D1 +D2 +D3 SDAF FiLM #
+> Stereo Matching Model
+> CLIP
+> " people on a sidewalk "
+> "... ... ... "
+> "... ... ... "
+> IL
+> IR(H x W x 3)
+> (h x w x 3)
+> (h x w x 1)
+> disparity feature map: (h x w x 1)
+> iR
+> iLiR
+> [n,P]
+> ISEG
+> (H x W x 1) or
+> (H x W x N CLS )
+> Normalization
+> Permute and Reshape
+> : Post-processed
+> segmentation predictions
+> Image
+> pre-processing
+> Text prompts
+> Transformer
+> Block - N
+> Text
+> embedding
+> +#WLR
+> σ
+> ↓(h', w ')Norm
+> Linear Projection
+> (P = 64)
+> Add
+> + Mul
+> Feature bilinear
+> interpolation
+> ConvTranspose2D
+> (kernel, C-dim)
+> Softmax
+> Fusion weights
+> Sigmoid
+> Conv2D (kernel, C-dim)
+> FiLM Feature-wise Linear
+> Modulation
+> iL , iR
+> IL , IR: Original left/right stereo images (full resolution)
+> : Pre-processed left/right images (cropped during
+> training; sliding window-based during inference) Output post-
+> processing
+> ISEG Inter-level vision
+> Feature (left & right) -
+> [hw + cls token, C-dim]
+> Stereo vision Feature
+> embedding
+> EEDLEGEND
+> Frozen models
+> weights
+
+Figure 2. SENSE architecture . A dual-branch, weight-shared CLIP encoder [27] processes stereo images and outputs three intermediate features per branch. These are fused via the SIEF module (Sec. 3.2) after projection to P = 64 . The decoder comprises three transformer blocks conditioned on the textual prompt through FiLM [12], and incorporates the SDAF module (Sec. 3.4) for disparity-aware refinement. Disparity maps are provided by a frozen stereo estimator such as Selective-IGEV [34]. The decoder, fusion modules, and projections are trained on PhraseStereo [4]. 
+
+## 3. SENSE Method 
+
+In SENSE, we introduce a U-Net-inspired architecture with skip connections from two branches of CLIP vision en-coders [27] to a transformer-based decoder. The stereo in-put pair is processed using the same CLIP ViT-B/16 im-age encoder with shared weights, applied independently to the left and right images. A CLIP text transformer provides the corresponding textual embedding. The de-coder, together with the Stereo Intermediate-level Em-bedding Fusion (SIEF) and Semantic Disparity Attention Fusion (SDAF) modules, is trained on the PhraseStereo dataset [4] for open-vocabulary, natural language-driven segmentation, while all CLIP components remain frozen. An external stereo matching model provides disparity maps, which are fused with semantic features as a final-stage in the decoder. The general architecture of SENSE is shown in Fig. 2. The objective is to retain CLIP’s open-vocabulary flexibility while enhancing segmentation accuracy, without introducing strong task-specific biases. Embedding stereo cues directly into the shared represen-tation lets geometry guide boundaries and resolve occlu-sions before mask prediction, producing sharper and more consistent segmentations. In contrast, monocular and post-hoc multi-view methods treat geometry after prediction, making them brittle to occlusions and depth discontinuities. This motivates integrating stereo features inside the decoder via SIEF rather than relying on post-hoc corrections. 
+
+3.1. Encoder Architecture 
+
+Our encoder relies on the CLIP ViT-B/16 model with a patch size of 16 × 16 . During training, image pre-processing consists of normalization and cropping (from 
+
+RW ×H×3 to Rw×h×3), while inference employs a sliding-window approach for processing large-scale datasets such as Cityscapes [9] and KITTI 2015 [2] (see Sec. 10.2 in Supplementary Material). The original CLIP model is con-strained to a fixed input size of 224 × 224 pixels due to its learned positional embeddings. Following the analysis in [23], different input sizes were enabled for CLIP. We adopt two resolutions (w × h): 352 × 352 and 512 × 512 .Given a stereo image pair Rw×h×3, the left and right images are passed through two branches of the shared CLIP vision encoder (see Fig. 2). From each branch, we extract acti-vations from transformer blocks E = {3, 7, 9}, including the CLS token. The extracted features are fused using the Stereo Intermediate-level Embedding Fusion (SIEF) mod-ule (Sec. 3.2), projected to the embedding size P , and in-tegrated into the decoder through U-Net-inspired skip con-nections. Text conditioning is provided by the CLIP text transformer [27], which generates an embedding of the query prompt. CLIP, which comprises the shared vision en-coder and the text transformer, remains frozen during train-ing and serves as a multi-modal feature backbone. 
+
+3.2. Stereo Intermediate-level Embedding Fusion 
+
+To effectively combine information from the left and right image pairs, we introduce a Stereo Intermediate-level Em-beddings Fusion (SIEF) module, illustrated in Fig. 3. This module adaptively learns view-dependent fusion weights to integrate intermediate features from both the left 
+
+IL and right IR images. First, the left Flef t −E and right 
+
+Fright −E intermediate activations are concatenated along the channel dimension to form a joint stereo representation: 
+
+Fconcat = Concat (Flef t −E , F right −E ) (1) 3Conc(C-dim)    
+
+> Fleft
+> Fright
+> 1x1, Cx16
+> ReLU WLR
+> 1x1, C/16
+> WL
+> WR
+> +
+> +
+> +
+> σ[hw + cls token,P] Figure 3. Stereo Intermediate-level Embedding Fusion (SIEF) Module . SIEF learns adaptive weights to combine left and right intermediate stereo activation features from CLIP vision trans-former and projects the fused embedding to a 64-dimensional rep-resentation. For the legend symbols, refer to Fig. 2.
+
+where E denotes the activation maps extracted from the transformer blocks {3, 7, 9}. This concatenated tensor is processed by a network composed of two 1 × 1 convolu-tional layers with an intermediate bottleneck and ReLU ac-tivation. The first 1×1 layer reduces the channel dimension by a factor sf of 16 ( C/sf ), followed by a ReLU nonlinear-ity and a second 1 × 1 layer that expands the representation to C × sf , with sf = 16 . A sigmoid activation generates a fusion coefficient WLR . This process can be expressed as follows: 
+
+WLR = σ(Conv 1×1(ReLU (Conv 1×1(Fconcat )))) (2) After computing WLR , the tensor is split into two components WL and WR using channel-wise partitioning. These are then stacked and normalized with a softmax func-tion over the channel dimension, to ensure complementary weighting between the stereo image pairs: 
+
+[WL, W R] = Softmax (WLR ) (3) The left feature is then fused with the right features, per-forming the following: 
+
+FLR = WL ⊙ Flef t + WR ⊙ Fright ,
+
+with WL + WR = 1 (4) where FLR are the fused features from the left and right images, ⊙ is the Hadamard product, and WL and WR
+
+are fusion weights for the left and right branches, re-spectively. The SENSE architecture includes three Stereo Intermediate-level Embedding (SIEF 1-3) fusion modules for progressive stereo feature integration. In addition, the mechanism allows the SIEF module to dynamically empha-size the informative view at each spatial location, improv-ing robustness to occlusions and view-specific artifacts. Fi-nally, the result of this fusion is projected through a linear layer (represented in green in Fig. 3) to reduce its channel dimension to a fixed embedding size P = 64 . The resulting features form the input to the subsequent decoder. 
+
+3.3. Decoder Architecture 
+
+The decoder is implemented as a transformer-based mod-ule, with the number of blocks matching the stereo-fused activations produced by the SIEF modules (Sec. 3.2). In our case, this corresponds to three vision transformer blocks (D1-D3 in Fig. 2). Each block processes stereo-conditioned features and progressively refines the segmentation output. The decoder predicts binary segmentation by applying a linear projection to its token representations. After the last transformer block D3, the fused stereo features have a token-based shape of [w’h’ + CLS token, P], where w’h’ corresponds to the number of tokens for a given input res-olution. The CLS token is removed, and the remaining to-kens are reshaped into a spatial feature map of size [w, h, P]. For example, an image input resolution of 352 × 352 
+
+with a ViT-B patch size of 16 × 16 , w’ × h’ corresponds to 
+
+22 ×22 spatial tokens, with the CLS token already removed. To inform the decoder about the segmentation target, we apply Feature-wise Linear Modulation (FiLM) [12], where the decoder’s input activations are modulated by a condi-tional vector derived from the CLIP text transformer. This vector is projected to P = 64 channels to match the fused stereo feature dimension. Additionally, a Semantic Dispar-ity Attention Fusion (SDAF) module is integrated as the fi-nal stage of the decoder to refine segmentation using dis-parity maps from an external stereo matching model (e.g., Selective-IGEV [34], or any other stereo depth estimation method [7, 15, 22]). This module is plug-and-play and re-mains frozen during training. In the current design, the refined feature maps are upsampled to the original image resolution within the SDAF module. If SDAF is removed, this upsampling can be implemented as a separate final step with minor modifications (see Sec. 10.1 in the Supplemen-tary Material for details). 
+
+3.4. Semantic Disparity Attention Fusion (SDAF) 
+
+While the decoder progressively refines stereo-conditioned semantic representations, fine spatial details, particularly around objects and depth can still be lost. To address this limitation, we introduce a Semantic Disparity Attention Fu-sion (SDAF) fusion module that leverages disparity cues as spatial attention priors to guide the final segmentation re-finement. As shown in Fig. 2, SDAF is positioned at the end of the decoder, and directly produces the final segmen-tation prediction at the input resolution h × w. Represented in Fig. 4, the inputs to SDAF Module are: 1. The decoder’s spatial feature map R h’ ×w’ ×P , obtained after the reshape of the last transformer block, and 2. A disparity map D ∈ R352 ×352 computed by an external stereo matching method, such as Selective-IGEV [34]. Since the maximum disparity parameter in Selective-IGEV is set to 192.0 [34], we standardize the disparity val-ues by normalizing as Dnorm = D/ 192 .0. The normal-ized disparity is then downsampled via bicubic interpolation to match the spatial resolution (w’, h’) of the decoder fea-ture map. This normalization and resizing process ensures 4↓(h ', w ')Norm  
+
+> 3x3, C=P
+> σ
+> +
+> 3x3, C
+> ReLU
+> +
+> 3x3, C
+> ReLU
+> 1x1, C=1
+> σ
+> [h',w',P]
+> [h',w',P]
+> [h,w,P]
+> 16x16, C
+> [h, w, 1]
+> Disparity feature
+> map D
+> Decoder's spatial
+> feature map
+> Refined binary segmentation
+
+Figure 4. Architecture of the Semantic Disparity Attention Fu-sion (SDAF) Module . SDAF combines disparity-normalized geo-metric cues with semantic decoder features to refine the final seg-mentation output. For the legend symbols, refer to Fig. 2. 
+
+that geometric cues are aligned and numerically consistent with the decoder’s feature scale. Next, Dnorm is processed through a sequence of convolutional layers and nonlinear-ities to generate attention-like modulation weights. These weights are applied via Hadamard product to the decoder’s spatial feature map. The modulated features are then passed through a 16 ×16 transposed 2D convolution, shown in pur-ple in Fig. 4, which upsamples the features to the original input resolution (h × w). Finally, a 1 × 1 convolution re-duces the channel dimension to one, producing the refined binary segmentation mask. By explicitly introducing dis-parity attention-like feature maps, SDAF improves spatial coherence near depth discontinuities and object boundaries, areas that are often challenging for purely semantic de-coders. The stereo matching network is used as a plug-and-play, frozen component that requires no additional training, allowing different stereo matching architectures to be seam-lessly integrated. 
+
+## 4. Experimental setup 
+
+Datasets and Evaluation Metrics. We evaluate SENSE on PhraseStereo [4] for referring expression segmentation, and on Cityscapes [9] and KITTI 2015 [2], following common open-vocabulary zero-shot segmentation bench-marks [1]. This setup extends evaluation to ITS-specific datasets, despite the limited availability of stereo datasets with semantic masks, especially for open-vocabulary seg-mentation. Unlike traditional zero-shot methods with fixed label sets (e.g., [3]), SENSE operates with a fully open vo-cabulary and predicts binary masks per query, adapted to a multi-label setting for ITS datasets as detailed in the sup-plementary material. For evaluation, we report standard mean IoU (mIoU). For Referring Expression Segmentation on PhraseStereo, we follow prior work [23] and measure mIoU, foreground IoU ( IoU F G ), and Average Precision (AP). For zero-shot semantic segmentation on Cityscapes and KITTI, we re-port mIoU across all classes. It is important to note that direct comparisons can be challenging due to variations in experimental setups, such as the specific vocabulary used for open-set evaluation or whether the model was fine-tuned on the target dataset. 
+
+Models and Textual Prompts. We train and evaluate two variants of SENSE, differing in stereo input resolution. SENSE-352, which uses an input resolution of 352 × 352 ,and SENSE-512, which uses 512 × 512 . This naming con-vention reflects the input resolution and is used consistently throughout the rest of the paper. Evaluating multiple res-olutions lets us quantify the trade-off between efficiency and accuracy, important for ITS applications. Both model variants are trained on PhraseStereo, using 20% negative samples to improve robustness to irrelevant or ambiguous queries, a common issue in open-vocabulary segmentation. All reported results use a ViT-B/16 backbone, and our en-coder leverages CLIP [27] as the vision-language model. For referring expression segmentation, we follow the ex-perimental setup of CLIPSeg [23]. Text prompts are taken from PhraseStereo dataset, which aligns with PhraseCut an-notations [35]. For ITS-specific datasets [1], which con-tain single-class labels such as road , car , etc., we use the 
+
+CLASS name as the text prompt. This setting corresponds to an evaluation of our method in zero-shot semantic segmen-tation, since our models are trained exclusively on PhraseS-tereo and not on these datasets. 
+
+Comparative Methods. We compare SENSE with meth-ods in Referring Expression Segmentation. Since PhraseS-tereo [4] is derived from PhraseCut [35], this allows us to evaluate SENSE in a stereo setting while maintaining com-parability with existing approaches such as CLIPSeg [23], MDETR [16], and HulaNet [35]. For Zero-Shot Se-mantic Segmentation, we benchmark on Cityscapes and KITTI 2015 with VLM leading methods, including SAM + CLIP [1], CLIPSeg [23], OpenSeg [13], OpenWorld-SAM [38], MaskCLIP [42], and SCLIP [32]. Our base-line selection reflects the goal of improving CLIPSeg with stereo cues, which is thus the primary point of compari-son. OpenSeg is included as the stronger available zero-shot baseline. 
+
+Implementation Details. Our method is implemented in PyTorch [26]. We train the two configurations, SENSE-352 and SENSE-512. In the Ablation Study, Sec. 7 and Sec. 10.1, we investigate the impact of replacing the CLIP vision encoder with a ResNet-50 backbone. Training is per-formed with a batch size of 64 stereo image pairs using the AdamW optimizer, a learning rate of 0.001, and a cosine scheduler. For CLIP feature extraction, we adopt ViT-B/16 and select the intermediate activation layers E = {3, 7, 9}.The fused stereo embeddings and text embeddings are pro-jected to a dimension P = 64 . For disparity computa-tion, we adopt Selective-IGEV with SceneFlow pre-trained weights [34]. Trainings are conducted on the PhraseStereo dataset. All training and experiments are performed on a workstation with AMD Ryzen 9 5950X CPU, NVIDIA GeForce RTX 3090 Ti GPU, 64 GB RAM, and 2 TB NVMe SSD. 5Method mIoU IoU FG AP CLIPSeg ∗(PC+) [23] 43.7 55.1 76.7 CLIPSeg †(PC) [23] 46.1 56.2 78.2 MDETR † [16] 53.7 - -HulaNet † [35] 41.3 50.8 -
+
+SENSE-352 (Ours) 47.2 57.0 78.8 SENSE-512 (Ours) 46.5 56.3 77.7  
+
+> (a) Referring Expression Segmentation.
+
+Method Cityscapes KITTI SAM + CLIP ‡ [1] 38.6 35.2 OpenWorldSAM ∗ [38] 23.1 21.1 CLIPSeg ‡(PC+) [23] 34.9 32.1 OpenSeg ‡ [13] 40.2 37.8 MaskCLIP § [42] 25.0 -SCLIP § [32] 32.2 -
+
+SENSE-352 (Ours) 40.7 37.9 SENSE-512 (Ours) 41.6 -           
+
+> (b) Zero-Shot Semantic Segmentation.
+> Table 1. Tasks performance comparison. (a) Referring Expression Segmentation on PhraseStereo and PhraseCut (PC, PC+). ( b) Zero-Shot Semantic Segmentation, in terms of mIoU, on Cityscapes and KITTI 2015. Best results are in bold , second best are underlined. ∗
+> indicates methods with reproduced performance, †denotes the numbers taken from [23]. ‡and §denotes the numbers taken from [1] and [29], respectively.
+
+## 5. Results 
+
+Referring Expression Segmentation We present refer-ring expression segmentation results in Tab. 1a, evalu-ated using the metrics described in Sec. 4 on PhraseStereo dataset. We compare our approach with transformer-based CLIPSeg [23], HulaNet [35], and MDETR [16]. As shown in the table, we report two configurations of CLIPSeg trained on PhraseCut dataset [35]: (a) CLIPSeg (PC), which uses only text labels; and (b) CLIPSeg (PC+), which in-corporates negative visual samples, similar to our training strategy described in Sec. 4. Our approach, SENSE-352, surpass the two-stage Hu-laNet method [35] and all other baselines in terms of IoU FG 
+
+and Average Precision (AP). However, for the mIoU metric, MDETR [16] achieves the best performance. While SENSE shows a small decrease in mIoU, this does not contradict the improvement in spatial precision provided by stereo cues. mIoU is heavily influenced by large, smooth background classes (e.g., road , building , sky ), where monocular models such as CLIPSeg already attain high IoU. In con-trast, stereo sharpens boundaries and improves geometric localization, which primarily benefits thin structures, oc-cluded regions, and fine object contours, regions that con-tribute little to mIoU but strongly affect spatially sensitive metrics such as IoU FG and AP, where SENSE consistently performs best. For a fair comparison, the most relevant baseline is CLIPSeg (PC+), as it matches our configuration settings (e.g., same projection dimension P = 64 ), and it aligns with our experimental setup. SENSE outperforms CLIPSeg (PC+) across all metrics. Qualitative results of our method, SENSE-352, com-pared over the baseline CLIPSeg (PC+) [23], are illustrated in Fig. 5. In the comparison, SENSE-352 produces higher probability regions that are more precisely aligned with the referred object, whereas CLIPSeg predictions appear dif-fuse, with probability scores spread across unrelated areas. 
+
+Zero-Shot Semantic Segmentation The results in Tab. 1b report zero-shot semantic segmentation perfor-mance on Cityscapes [9] and KITTI 2015 [2], evaluated using the mIoU metric. Our approach achieves the best results on Cityscapes with SENSE-512 and on KITTI 2015 with SENSE-352, outperforming all other open-vocabulary baselines. To enable evaluation on these datasets, we apply pre- and post-processing strategies since our model was trained for binary segmentation prediction and cannot be directly used in a multi-label setting. Specifically, we employ the sliding-window approach for inference and apply Conditional Random Fields (CRF) for multi-class segmentation mask refinement, as detailed in the post-processing section of the supplementary material. Notably, SENSE-512 was not evaluated on KITTI 2015 as images of resolution 1242 × 375 cannot be given to a 512 × 512 
+
+input model without heavy padding or resizing that would distort geometry. SENSE-352 is therefore the appropriate model variant for that dataset. The marginal gain with respect to OpenSeg [13] reflects the architectural differences, as our contribution specifi-cally enhances CLIPSeg [23] using the stereo formulation. Due to the unavailability of executable codebases (e.g., OpenSeg [13] provides only a qualitative Colab demo), we couldn’t reproduce the results for all baselines, and thus rely on the published results from the references of Tab. 1b. We also compare our method against a recent state-of-the-art SAM-based approach for zero-shot open-vocabulary seg-mentation, OpenWorldSAM [38]. To evaluate it fairly on our datasets, we had to adapt its publicly released code. We used the referring inference pipeline with the provided RefCOCOg weights allowing all dataset classes. In con-trast, its semantic inference script could not be used, as it relies on a COCO-specific label taxonomy that is incom-patible with Cityscapes and KITTI benchmarks. Notably, SENSE-352 and SENSE-512 surpasses OpenWorldSAM, 6Figure 5. Qualitative comparison of referring expression semantic segmentation. A comparison of SENSE-352 in PhraseStereo dataset with CLIPSeg (PC+) [23] method. Predictions from SENSE-352 and CLIPSeg are visualized as sigmoid probability maps, highlighting confidence for the queried text prompt (blue box).                  
+
+> OpenSeg [13] OpenWorldSAM [38] CLIPSeg (PC+) [23] MDETR [16] SENSE-352 (Ours) SENSE-512 (Ours) Time (ms) 123.35 343.25 218.96 256.87 194.74 (17.12) 284.54 (43.56)
+> Table 2. Computational time comparison. We report the inference time in milliseconds (ms). Values in parentheses (...) indicate runtime
+> without stereo matching computation. Best result is in bold , second best is underlined.
+
+highlighting that our stereo formulation delivers substan-tial gains over existing SAM-based open-vocabulary ap-proaches. Specialized, closed-set models still outperform open-vocabulary methods in their domains, illustrating a generalization penalty, the performance cost of flexibility over specialization. This trade-off matters for safety-critical ITS tasks like lane or sidewalk detection, where special-ized models remain superior. However, in scenarios re-quiring adaptability to novel concepts and richer interac-tion, accepting this penalty is often justified, as further dis-cussed in Sec. 8. We present qualitative results for SENSE-512 on Cityscapes [9] and SENSE-352 on KITTI 2015 [2] alongside leading zero-shot competitors such as OpenSeg (Fig. 6). Across diverse scenes, both SENSE variants pro-duce outputs more aligned with ground truth than OpenSeg. Our sliding-window strategy combined with CRF-based re-finement further improves segmentation quality and miti-gates CLIP ViT resolution limitations. Additional results are provided in the supplementary material. 
+
+## 6. Computation Time 
+
+We report inference time in Tab. 2. Using an NVIDIA GeForce RTX 3090 Ti GPU, for a single text query, OpenSeg is the fastest baseline at 123.35 ms, while Open-WorldSAM is the slowest at 343.25 ms. CLIPSeg and MDETR run at 218.96 ms and 256.87 ms, respectively. In comparison, our SENSE models with stereo images, achieve competitive performance: SENSE-352 runs in 194.74 ms (and 17.12 ms without stereo matching pro-cessing), while SENSE-512 takes 284.54 ms (and 43.56 ms without disparity computation). This highlights that the disparity module dominates runtime and that, without it, SENSE becomes substantially faster than all compared methods. In particular, using a real-time stereo depth esti-mation method [28] would make SENSE suitable for edge deployment. 
+
+## 7. Ablation Study 
+
+To identify the key components contributing to SENSE, we perform an ablation study on the PhraseStereo Referring Expression Segmentation task (Tab. 3). All experiments use SENSE-352, which processes stereo pairs at 352 × 352 res-olution. Removing one CLIP stream together with the SIEF and SDAF modules yields the CLIPSeg [23] configuration, which serves as our monocular baseline. 7Figure 6. Qualitative comparison of zero-shot semantic segmentation. Comparison of SENSE-512 in Cityscapes and SENSE-352 in KITTI dataset, with the second best performing method, OpenSeg [13]. In GT and SENSE-512, pixels shown in black are pixels that are unlabeled. In OpenSeg, black pixels correspond to unknown label. 
+
+The ablations show that both stereo fusion modules are essential. Removing SDAF lowers performance across all metrics, and using only one fusion scale is insufficient, while adding a third introduces noise, confirming the two-layer design as the best compromise. SIEF also provides consistent gains, as replacing its attention-based fusion with simple concatenation reduces accuracy. SENSE remains ro-bust to different Selective-IGEV initializations [34]. Over-all, SIEF and SDAF provide complementary stereo cues, and their combination is key to SENSE’s effectiveness. For more details, please refer to Sec. 10.1 in the Supplementary Material. 
+
+## 8. Discussion and limitations 
+
+Traditional segmentation models perform well on closed-set labels, but real environments require adapting to novel con-cepts. Vision-Language Models are reshaping perception for autonomous systems, and SENSE leverages this flexi-bility together with stereo cues to better handle such vari-ability. As shown in Fig. 1, SENSE-512 can interpret rich natural-language queries (e.g., ”person crossing the street” ,or ”orange car turning in our direction” ) which are com-plex instructions that go beyond simple class labels. SENSE achieves strong results in referring expression and zero-shot segmentation, but limitations remain. Performance is sen-sitive to prompt phrasing because CLIP’s text embeddings vary with wording, and negative instructions (e.g., “exclude cars” ) remain challenging [25]. This highlights the need for more robust or prompt-free approaches. Additionally, prompts are currently user-defined, which is limited for au-tonomous driving. A promising direction is to automatically generate queries from scene context or navigation goals. Improving robustness to prompt phrasing and automating query generation is key for advancing open-vocabulary seg-mentation in dynamic environments. Another important future direction is improving computational time perfor-mance, essential for deployment in robotics and embedded platforms. 
+
+## 9. Conclusion 
+
+We present SENSE, the first stereo-based framework for open-vocabulary semantic segmentation, a method that ad-dresses an important gap in current single-view approaches. By combining stereo geometry with vision-language mod-els, SENSE delivers improved spatial precision and robust zero-shot generalization across diverse benchmarks. This work underscores the potential of integrating geometry into open vocabulary semantic segmentation, paving the way for scene understanding in dynamic, safety-critical domains like autonomous navigation and ITS. We believe SENSE paves the way for future research on reliable multimodal perception and reasoning in complex real-world environ-ments. 810. Appendix 
+
+10.1. Ablation Study 
+
+In this section, we provide an extended analysis of the abla-tion study reported in Sec. 7 of the main paper. All experi-ments are conducted on the PhraseStereo Referring Expres-sion Segmentation benchmark using the SENSE-352 con-figuration, which processes stereo pairs at a resolution of 
+
+352 × 352 pixels. Recall that removing the right-view CLIP stream together with both stereo fusion modules (SIEF and SDAF) reduces SENSE to the original CLIPSeg [23] archi-tecture. This monocular setup, included in Tab. 3, serves as the baseline against which all stereo-enabled variants are compared. Building upon the ablations presented in the main paper, we now provide a more detailed investigation of: the design choices behind SDAF (Sec. 10.1), the impact of alternative SIEF configurations (Sec. 10.1), and the influence of back-bone selection (CLIP ViT-B/16 vs. ResNet-50) (Sec. 10.1). 
+
+Effect of SDAF design. The Semantic Disparity Atten-tion Fusion (SDAF) module, described in Sec. 3.4 and illus-trated in Fig. 4, is designed to fuse semantic features, calcu-lated by the decoder, and disparity cues at multiple scales. We evaluate different SDAF configurations: • One-layer fusion: we simplify SDAF to a single branch, performing disparity fusion at either 22 ×22 or 352 ×352 resolution. • Two-layers fusion (default): branches at 22 ×22 and 352 ×352. • Three-layers fusion: we extend the default two-layer SDAF design by adding a third branch that performs dis-parity fusion at 88 ×88 resolution. The resulting configu-ration includes branches at 22 ×22, 88 ×88, and 352 ×352, where the disparity map is split into three streams and re-sized to match each scale before fusion. For the three-scale setup, the transposed convolution layer (purple in Fig. 4) is split into two stages to progres-sively upsample features (22 →88 →352). The results show that the default two-layer SDAF configuration (indicated with † in Tab. 3) achieves the best performance. In contrast, one-layer fusion suffers because it lacks sufficient multi-scale context, limiting the model’s ability to capture both global and fine-grained depth information. However, three-layer fusion introduces excessive complexity and propa-gates noise from disparity across scales, reducing accuracy. This highlights the importance of balancing multi-scale fu-sion without overcomplicating the design. We also evaluate the impact of stereo matching initial-ization by computing disparity maps using different pre-trained weights for Selective-IGEV, Middlebury vs Scene-Flow, while keeping the default two-layer SDAF configu-ration. Middlebury weights yield similar results, indicating robustness to stereo initialization. Finally, removing SDAF entirely (replacing it with a simple upsampling head) sig-nificantly reduces performance, confirming SDAF’s role in improving spatial coherence near depth discontinuities and object boundaries. 
+
+Effect of SIEF design. The Stereo Intermediate-level Embedding Fusion (SIEF) module, illustrated in Fig. 3, in-tegrates intermediate features from both the left image ( IL)and right image ( IR). Specifically, the intermediate acti-vations Flef t −E and right Fright −E are first concatenated along the channel dimension to form a joint stereo represen-tation. This representation is then processed by an attention-based fusion mechanism to enhance cross-view consistency and exploit stereo cues. We analyze two aspects of SIEF: • Scale factor (sf): varying sf from 16 (default) to 2, which changes the channel compression ratio and the complex-ity of the fusion. • Fusion strategy: simplifying attention-based fusion with simple concatenation of Flef t −E and right Fright −E and 2D convolution, without any attention mechanism. Even when SDAF is removed, enabling SIEF keeps mIoU at higher than the CLIPSeg baseline, showing that stereo embedding fusion alone improves the performances (Tab. 3). Simplifying SIEF to a concatenation-only design results in 45.8 mIoU, meaning that attention-based fusion provides incremental but consistent gains. Varying the scale factor from 16 to 2 barely affects performance, confirming that the module is robust to channel compression and does not rely heavily on this parameter. 
+
+Impact of Backbone Choice. We compare ViT-B/16 and ResNet-50 as CLIP vision backbones to assess their in-fluence on referring expression segmentation. As shown in Tab. 3, ViT-B/16 consistently delivers superior results across all metrics (mIoU, IoU FG , and AP), confirming that transformer-based features provide richer and more robust representations for this task. Nevertheless, even when using ResNet-50, SENSE-352, with the SIEF and SDAF modules, still outperforms the CLIPSeg baseline. This demonstrates the effectiveness of our stereo fusion design regardless of backbone choice. The choice to keep components such as CLIP and Selective-IGEV (see Sec. 10.1) frozen was delib-erate, allowing us to isolate the contribution of the stereo formulation. Jointly finetuning or replacing these compo-nents represents promising future work. 
+
+10.2. Image Pre- and Post- Processing 
+
+During inference, our method adopts a sliding-window strategy to handle high-resolution stereo images from large-scale datasets such as Cityscapes [9] and KITTI 2015 [2]. This approach, detailed in Sec. 10.2.1, addresses the limi-tations of CLIP-based ViT encoders, which were originally trained on lower-resolution inputs, by ensuring predictions 9Method CLIP Image Backbone SIEF SDAF mIoU IoU FG AP CLIPSeg ∗ (PC+) [23] ViT-B/16 ✗ ✗ 43.7 55.1 76.7 
+
+SENSE-352 (Ours) ViT-B/16 
+
+✓† ✓† 47.2 † 57.0 † 78.8 †
+
+✓ 3 layers 46.7 56.6 78.0 
+
+✓ 1 layer (22 ×22) 46.7 56.4 77.4 
+
+✓ 1 layer (352 ×352) 45.5 55.9 77.2 
+
+✓ Middlebury weights 47.3 56.8 78.1 
+
+✓ ✗ 45.7 56.3 77.6 sf = 2 ✗ 45.7 56.2 77.8 only Concat( Flef t −E , F right −E ) ✗ 45.8 56.1 77.6 CLIPSeg ∗ (PC+) [23] ResNet-50 ✗ ✗ 40.5 53.1 75.0 
+
+SENSE-352 (Ours) ResNet-50 ✓ ✓ 44.1 54.8 76.7 
+
+✓ ✗ 42.6 54.0 75.9        
+
+> Table 3. Ablation study conducted in Referring Expression Segmentation on PhraseStereo [4] , using ViT-B/16 and ResNet-50 back-bones. We report mIoU, foreground IoU FG , and Average Precision (AP). Default setups used and explained in the paper are marked with ✓.
+> †indicates the default configuration method. Best and second-best results within each backbone group are shown in bold and underlined, respectively. ∗indicates reproduced performance.
+
+are computed on semantically meaningful patches. Cru-cially, we adopt this approach to avoid resizing the origi-nal images. Downscaling can introduce severe distortions and significantly degrade fine details, making small or dis-tant objects unrecognizable. By processing the image in patches that match the ViT encoder’s expected input size, we preserve spatial fidelity and maintain the integrity of small-scale structures, which is essential for accurate pre-dictions. In the zero-shot segmentation setting, we extend pre-dicted probabilities to support multi-label segmentation through a dedicated post-processing pipeline and segmen-tation refinement, described in Sec. 10.2.2. This includes cosine blending of overlapping patch predictions, recon-struction of full-resolution probability maps via normalized weighted averaging, and a final refinement step using Con-ditional Random Fields (CRF). The inference pipeline operates on the following inputs and component: 1. Left image IL ∈ RH×W ×3,2. Right image IR ∈ RH×W ×3,3. SENSE-352 or SENSE-512 model, which computes pre-dictions f (iiL, i iR, j ) → P ij , where i ∈ 1, . . . , N in-dexes patches from the sliding-window approach and 
+
+j ∈ 1, . . . , N CLS denotes user-defined open-vocabulary text queries, 4. Text queries corresponding to dataset classes [2, 9]. The overall pipeline is illustrated in Fig. 7. 
+
+10.2.1. Stereo Images Pre-Processing 
+
+Given stereo image pairs (IL, I R) ∈ RH×W ×3, as shown in Fig. 7 (left), we extract overlapping patches of size h × w
+
+with strides sh = h/ 2 and sw = w/ 2. For each patch i:
+
+iiL = IL[y : y + h, ; x : x + w],iiR = IR[y : y + h, ; x : x + w]. (5) This yields a set of overlapping patches 
+
+(iiL, i iR) ∈ Rh×w×3, with i = 1 , ..., N , that capture se-mantic details across the stereo pair. Each patch undergoes image normalization before being processed by SENSE. This strategy ensures full coverage while maintaining com-putational efficiency by operating on smaller, semantically coherent regions. 
+
+10.2.2. Post-Processing and Segmentation Refinement 
+
+Fig. 7 (right) depicts the post-processing and segmentation refinement steps. For each patch i and text query j, the model outputs: 
+
+P ij = f (iiL, i iR, j ), (6) where P ij ∈ Rh×w is a 2D probability map ( 352 × 352 for SENSE-352 or 512 × 512 for SENSE-512). To merge overlapping predictions, we apply a cosine blending mask M that emphasizes central regions and smoothly decays toward borders, reducing seam artifacts. For each text query j, we maintain: 1. Prediction accumulator: 
+
+AP (y : y + h, x : x + w) += P ij ⊙ M, (7) 2. Weight accumulator: 
+
+AW (y : y + h, x : x + w) += M. (8) The full-resolution probability map is then: 
+
+bPj = AP
+
+AW
+
+. (9) 10 Post-Processing & Segmentation Refinement Stereo Images Pre-Processing  
+
+> H
+> W
+> User defined open-vocabulary queries NCLS :
+> Norm
+> " Road "
+> " ... "
+> " Terrain "
+> h
+> sh
+> w
+> sw
+> N
+
+SENSE  
+
+> Left Input Image ( IL)
+> iL
+> iR
+> Right Input Image ( IR)
+> N
+> h
+> wx N
+> Reconstruct
+> Full resolution
+> Predictions
+> H
+> NCLS
+> Patches
+> Predictions
+> NCLS
+> Road
+> W
+> Image Segmentation ( ISEG )
+> . . .
+> Terrain
+> NCLS
+> CRF
+> Softmax
+> Blending Mask
+
+Figure 7. Overview of the inference pipeline for large image resolutions. Left : overlapping patch extraction from stereo input images (IL, I R) using a sliding-window strategy. Middle : patch-wise predictions for user-defined text queries ( NCLS ) computed by SENSE after normalization. Right : post-processing with cosine blending mask, reconstruction of full-resolution probability maps, softmax normaliza-tion, and CRF-based segmentation refinement to produce the final segmentation map ISEG .
+
+Finally, we stack bPj , with j = 1 , ..., N CLS , to form 
+
+bP ∈ RH×W ×NCLS , apply softmax across channels di-mension, and refine using Conditional Random Field (CRF) technique, yielding the final segmentation ISEG ∈
+
+RH×W ×NCLS .
+
+10.3. Additional Qualitative Results 
+
+Referring Expression Segmentation. This section presents additional qualitative results for the referring expression segmentation task, comparing our approach (SENSE-352) with the baseline CLIPSeg [23]. We include diverse examples covering simple and complex expres-sions, such as object-specific conditions (e.g., ”puddle on platform” ), relational cues (e.g., ”trees behind van” ), and attribute-based references (e.g., ”red and white advertise-ment” ). The visualizations show that SENSE-352 produces masks that are more accurate and spatially coherent with the ground truth, particularly in challenging scenarios involving multiple similar objects. In contrast, CLIPSeg often exhibits imprecise boundaries or wrong predictions that fail to fully capture the intended referent, even when the overall prediction appears plausible. Fig. 8 illustrates representative comparisons, highlighting the improved grounding capability and segmentation precision achieved by our method. 
+
+Zero-shot semantic segmentation. This section provides extended qualitative comparisons of zero-shot semantic segmentation on Cityscapes and KITTI. We visualize pre-dictions from our method (SENSE-512 and SENSE-352) along with two strong zero-shot baselines, OpenSeg [13] and CLIPSeg [23]. Representative scenes include diverse semantic concepts such as dynamic traffic participants (e.g., car, person, rider) and static structural elements (e.g., build-ing, road, vegetation), under varying lighting and occlu-sion conditions. As shown in Fig. 9 and Fig. 10, we pro-vide qualitative comparisons on Cityscapes [9] and KITTI 2015 [2], respectively. For both datasets, we follow the standard benchmark protocols. We use the official class names from [9] as text prompts and evaluate on the test splits, ensuring consistent color mappings and fair compar-ison. For Cityscapes, we compare SENSE-512, SENSE-352, OpenSeg [13], and CLIPSeg (PC+) [23]. The re-sults show that SENSE-512 consistently produces sharper boundaries and more coherent regions than SENSE-352, demonstrating the benefit of larger stereo input sizes for capturing richer spatial context. OpenSeg captures high-level semantics, but struggles with fine-grained boundaries and small objects. CLIPSeg exhibits strong semantic seg-mentation recall, but it lacks spatial precision. For example, in the last row of Fig. 9, the person occluded on the left, par-tially hidden behind the traffic sign pole, is not predicted, illustrating its difficulty in handling details of occlusions. In KITTI 2015, we compare SENSE-352 with OpenSeg [13] and CLIPSeg (PC+) [23]. SENSE-352 de-livers more accurate and spatially consistent predictions than both baselines, particularly for small or distant ob-jects. Notably, both SENSE variants, combined with our sliding-window strategy and CRF-based pre- and post-processing (Sec. 10.2), significantly improve segmentation quality compared to CLIPSeg. For completeness, base-line methods do not use our sliding-window strategy or post-processing, as they rely on their own pre- and post-processing steps. CLIPSeg [23] is evaluated with its refine-ment module, while OpenSeg [13] and the other baselines operate as multiclass models. In contrast, SENSE performs binary, text-conditioned inference, requiring a different pro-cessing pipeline. These qualitative results complement the 11 SENSE-352 (Ours)  CLIPSeg (PC+) (Baseline) Left Image  Right Image  GT  
+
+> prompt: "puddle on platform"
+> prompt: " trees behind van "
+> prompt: " red and white advertisement "
+
+Figure 8. Additional qualitative comparison of referring expression semantic segmentation of SENSE-352 in PhraseStereo dataset with CLIPSeg (PC+) [24] method. We show results for diverse expressions, including object-specific ( ”puddle on platform” ), relational (”trees behind van” ), and attribute-based ( ”red and white advertisement” ) prompts. Predictions are visualized as sigmoid probability maps, highlighting confidence for the queried text prompt (blue box). GT  SENSE-512 (Ours)  SENSE-352 (Ours)  OpenSeg (Baseline)  CLIPSeg (PC+) (Baseline) 
+
+Figure 9. Qualitative comparison of zero-shot semantic segmentation on Cityscapes. We show predictions from our models (SENSE-512 and SENSE-352) with baselines OpenSeg [13] and CLIPSeg (PC+) [23]. 
+
+quantitative metrics reported in the main paper and further emphasize the improved results achieved by our approach. 
+
+10.4. Descriptions as text queries 
+
+As shown in Tab. 5, the Cityscapes [9] dataset provides de-tailed descriptions for each semantic class. These descrip-tions demonstrate how natural language can serve as a con-cise and expressive representation of scene semantics. Rather than relying on class labels, in this section we evaluate SENSE using these textual descriptions as prompts for open-vocabulary segmentation. This enables SENSE to interpret and segment scenes through language-based queries that capture richer context than simple labels. For example, instead of the single word ”car” , the correspond-12 GT  SENSE-352 (Ours)  OpenSeg (Baseline)  CLIPSeg (PC+) (Baseline) Figure 10. Qualitative comparison of zero-shot semantic segmentation on KITTI 2015. We show predictions from our method (SENSE-352) and baselines OpenSeg [13] and CLIPSeg (PC+) [23]. 
+
+Method Disparity Estimation Model Time (ms) mIoU IoU FG AP 
+
+SENSE-352 (Ours) Selective-IGEV † [34] 194.74 † 47.2 † 57.0 † 78.8 †
+
+HITNet [31] 104.09 47.1 56.8 78.3 MobileStereoNet [28] 76.91 47.1 57.1 78.9 SENSE-512 (Ours) Selective-IGEV † [34] 284.54 † 46.5 † 56.3 † 77.7 †
+
+HITNet [31] 136.01 46.4 56.4 77.8 
+
+MobileStereoNet [28] 91.68 46.3 56.3 77.8      
+
+> Table 4. SENSE’s computational time with different stereo matching models. We report inference time in milliseconds and performance on the Referring Expression Segmentation task. Best results in bold .†indicates the model and results discussed in Tab. 1a and Tab. 2.
+
+ing description conveys both object identity and contex-tual attributes. In Fig. 11, we see a small effect on per-formance for descriptive prompt forms, while SENSE-512 achieves segmentation performance still comparable to its class-based results, highlighting its ability to generalize to natural language queries. By combining stereo cues with natural language condi-tioning, SENSE provides a flexible pathway for scene un-derstanding. We believe that this capability supports com-plex reasoning and decision-making, allowing perception systems to connect semantic interpretation with planning. 
+
+10.5. Computation requirements 
+
+As observed in Sec. 6 of the main paper, we highlighted that the disparity estimation module dominates runtime and that, without it, SENSE becomes substantially faster than all compared baselines. In particular, in the maain paper, Tab. 2 shows that OpenSeg [13] was the fastest baseline, running at 123.35 ms. In this section, we further analyze our methods, SENSE, with alternative stereo matching models. We re-port inference time using an NVIDIA GeForce RTX 3090 Ti GPU, for a stereo image pair and one text query. As shown in Tab. 4, replacing Selective-IGEV [34] with lighter stereo matchers significantly reduces inference time. For SENSE-352, HITNet [31] reduces runtime to 104.09 ms, while Mo-bileStereoNet [28] achieves the fastest performance at 76.91 ms, substantially outperforming OpenSeg. A similar trend appears at 512 × 512 resolution, where MobileStereoNet again provides the largest speedup (91.68 ms compared to 284.54 ms for Selective-IGEV). Importantly, despite these large runtime improvements, the Referring Expression Seg-mentation metrics remain closely aligned with those ob-tained using Selective-IGEV, with only small variations, confirming that segmentation quality is robust to the choice of stereo matcher. These findings reinforce that the disparity estimator in SENSE is fully plug-and-play (as described in Sec. 3.4). Although the model is trained using Selective-IGEV, different stereo modules can be used at inference without retraining. In particular, replacing Selective-IGEV with a real-time stereo depth estimation method such as Mo-bileStereoNet [28] makes SENSE substantially more suit-able for edge and embedded deployment, while preserving segmentation accuracy. 13 Model Size. Both SENSE-512 and SENSE-352 process the stereo pair using the CLIP ViT-B/16 image encoder with shared weights, applied separately to the left and right im-ages ( ≈ 86.2M parameters in total), together with a CLIP text encoder ( ≈ 37.8M parameters). When stereo disparity is included, the decoder together with the SIEF and SDAF modules adds approximately 3.12 M parameters. In the configuration without stereo matching (SDAF removed), the decoder with SIEF contains ≈ 2.01 M parameters for both variants of SENSE. Regarding FLOPs, we report a direct comparison with OpenSeg, which requires ≈ 170 GFLOPs. In con-trast, SENSE-512 has approximately 190 GFLOPs, aris-ing from applying the shared-weight CLIP ViT-B/16 en-coder twice ( ≈ 92 GFLOPs per forward pass), together with the CLIP text encoder ( ≈ 4 GFLOPs) and our decoder (≈ 3 GFLOPs). These results demonstrate that SENSE maintains competitive computational efficiency, providing faster inference than OpenSeg [13] while supporting open-vocabulary, stereo-aware segmentation. 
+
+Acknowledgements This work was supported by the CIFRE program (Convention Industrielle de Formation par la Recherche) under ANRT (Association Nationale de la Recherche et de la Technologie) grant No. 2024/0356, in collaboration with Centre Inria d’Universite C ˆote d’Azur, France, and NXP Semiconductors. 14 Class Description 
+
+road Part of ground on which cars usually drive, i.e. directions, streets. Including the markings on the road. Areas only delimited by markings from the main road (no texture change) are also road, e.g. bicycle lanes, roundabout lanes, or parking spaces. sidewalk Part of ground designated for pedestrians or cyclists. Delimited from the road by some obstacle, e.g. curbs or poles (might be small), not only by markings. Often located at the sides of a road. building Building, skyscraper, house, bus stop building, garage, car port. If a building has a glass wall that you can see through, the wall is still building. wall Individual standing wall. Not part of a building. fence Fence including any holes. pole Small mainly vertically oriented pole. E.g. sign pole, traffic light poles. If the pole has a horizontal part this part is also considered pole. If there are things mounted at the pole that are neither traffic light nor traffic sign, then these things might also be labeled pole. traffic light The traffic light box without its poles. traffic sign Sign installed from the state/city authority, usually for information in an everyday traffic scene, e.g. traffic signs, parking signs, direction signs without their poles. No ads/commercial signs. vegetation Tree, hedge, all kinds of vertical vegetation. Plants attached to buildings are usually not annotated separately and labeled building as well. terrain Grass, all kinds of horizontal vegetation, soil or sand. These areas are not meant to be driven on. sky Open sky, without leaves of tree. Includes thin electrical wires in front of the sky. person A human that would walk, it’s person. People walking, standing or sitting on the ground, on a bench, on a chair. This also includes toddlers, someone pushing a bicycle or standing next to it with both legs on the same side of the bicycle. rider Riders or drivers as person of bicycle, motorbike, scooter, skateboards, horses, roller-blades, wheel-chairs, road cleaning cars, cars without roof. car Car, jeep, SUV, van with continuous body shape, caravan, no other trailers. truck Truck, box truck, pickup truck. Including their trailers. bus Bus for persons, public transport or long distance transport. train Vehicle on rails, tram, train. motorcycle Motorbike, moped, scooter without the driver. bicycle Bicycle without the driver. Table 5. Cityscapes semantic classes and their descriptions. 
+
+Figure 11. From class labels to class descriptions on Cityscapes. We compare SENSE-512 predictions when prompted with standard 
+
+class names and the corresponding natural language descriptions shown in Tab. 5. Despite using descriptive text instead of fixed labels, SENSE-512 achieves segmentation quality comparable to ground truth, demonstrating its ability to interpret scenes through concise lan-guage prompts while maintaining spatial consistency across stereo views. 
+
+15 References 
+
+[1] Sanjeda Akter, Ibne Farabi Shihab, and Anuj Sharma. Im-age segmentation with large language models: A survey with perspectives for intelligent transportation systems. arXiv preprint arXiv:2506.14096 , 2025. 1, 2, 5, 6 [2] Mescheder Lars Geiger Andreas Alhaija Hassan, Mustikovela Siva and Rother Carsten. Augmented re-ality meets computer vision: Efficient data generation for urban driving scenes. IJCV , 2018. 3, 5, 6, 7, 9, 10, 11 [3] Maxime Bucher, Tuan-Hung Vu, Matthieu Cord, and Patrick P´ erez. Zero-shot semantic segmentation. NeurIPS , 32, 2019. 5[4] Thomas Campagnolo, Ezio Malis, Philippe Martinet, and Gaetan Bahl. Phrasestereo: The first open-vocabulary stereo image segmentation dataset. arXiv preprint arXiv:2510.00818 , 2025. 2, 3, 5, 10 [5] Mathilde Caron, Hugo Touvron, Ishan Misra, Herv´ e J´ egou, Julien Mairal, Piotr Bojanowski, and Armand Joulin. Emerg-ing properties in self-supervised vision transformers. In 
+
+ICCV , pages 9650–9660, 2021. 2 [6] Liang-Chieh Chen, Yukun Zhu, George Papandreou, Florian Schroff, and Hartwig Adam. Encoder-decoder with atrous separable convolution for semantic image segmentation. In 
+
+ECCV , pages 801–818, 2018. 1 [7] Ziyang Chen, Wei Long, He Yao, Yongjun Zhang, Bingshu Wang, Yongbin Qin, and Jia Wu. Mocha-stereo: Motif chan-nel attention network for stereo matching. In CVPR , pages 27768–27777, 2024. 4 [8] Bowen Cheng, Ishan Misra, Alexander G Schwing, Alexan-der Kirillov, and Rohit Girdhar. Masked-attention mask transformer for universal image segmentation. In CVPR ,pages 1290–1299, 2022. 1 [9] Marius Cordts, Mohamed Omran, Sebastian Ramos, Timo Rehfeld, Markus Enzweiler, Rodrigo Benenson, Uwe Franke, Stefan Roth, and Bernt Schiele. The cityscapes dataset for semantic urban scene understanding. In CVPR ,2016. 2, 3, 5, 6, 7, 9, 10, 11, 12 [10] Timoth´ ee Darcet, Maxime Oquab, Julien Mairal, and Piotr Bojanowski. Vision transformers need registers. In ICLR ,2024. 2 [11] Jacob Devlin, Ming-Wei Chang, Kenton Lee, and Kristina Toutanova. Bert: Pre-training of deep bidirectional trans-formers for language understanding. In NAACL , pages 4171– 4186, 2019. 2 [12] Vincent Dumoulin, Ethan Perez, Nathan Schucher, Florian Strub, Harm de Vries, Aaron Courville, and Yoshua Bengio. Feature-wise transformations. Distill , 3(7):e11, 2018. 3, 4 [13] Golnaz Ghiasi, Xiuye Gu, Yin Cui, and Tsung-Yi Lin. Scal-ing open-vocabulary image segmentation with image-level labels. In ECCV , pages 540–557. Springer, 2022. 2, 5, 6, 7, 8, 11, 12, 13, 14 [14] Kaiming He, Xiangyu Zhang, Shaoqing Ren, and Jian Sun. Deep residual learning for image recognition. In CVPR ,pages 770–778, 2016. 2 [15] Hualie Jiang, Zhiqiang Lou, Laiyan Ding, Rui Xu, Minglang Tan, Wenjie Jiang, and Rui Huang. Defom-stereo: Depth foundation model based stereo matching. In CVPR , pages 21857–21867, 2025. 4 [16] Aishwarya Kamath, Mannat Singh, Yann LeCun, Gabriel Synnaeve, Ishan Misra, and Nicolas Carion. Mdetr-modulated detection for end-to-end multi-modal understand-ing. In ICCV , pages 1780–1790, 2021. 5, 6, 7 [17] Alexander Kirillov, Eric Mintun, Nikhila Ravi, Hanzi Mao, Chloe Rolland, Laura Gustafson, Tete Xiao, Spencer White-head, Alexander C Berg, Wan-Yen Lo, et al. Segment any-thing. In ICCV , pages 4015–4026, 2023. 2 [18] John D. Lafferty, Andrew McCallum, and Fernando C. N. Pereira. Conditional random fields: Probabilistic models for segmenting and labeling sequence data. In Proceedings of the Eighteenth International Conference on Machine Learn-ing , page 282–289, San Francisco, CA, USA, 2001. Morgan Kaufmann Publishers Inc. 2 [19] Mengcheng Lan, Chaofeng Chen, Yiping Ke, Xinjiang Wang, Litong Feng, and Wayne Zhang. Proxyclip: Proxy at-tention improves clip for open-vocabulary segmentation. In 
+
+ECCV , pages 70–88. Springer, 2024. 2 [20] Chenxi Liu, Zhe Lin, Xiaohui Shen, Jimei Yang, Xin Lu, and Alan Yuille. Recurrent multimodal interaction for referring image segmentation. In ICCV , pages 1271–1280, 2017. 2 [21] Shilong Liu, Zhaoyang Zeng, Tianhe Ren, Feng Li, Hao Zhang, Jie Yang, Qing Jiang, Chunyuan Li, Jianwei Yang, Hang Su, et al. Grounding dino: Marrying dino with grounded pre-training for open-set object detection. In 
+
+ECCV , pages 38–55. Springer, 2024. 2 [22] Ziming Liu, Ezio Malis, and Philippe Martinet. One-stage deep stereo network. In ICASSP , pages 3050–3054. IEEE, 2024. 4 [23] Timo L¨ uddecke and Alexander Ecker. Image segmentation using text and image prompts. In CVPR , pages 7086–7096, 2022. 1, 2, 3, 5, 6, 7, 9, 10, 11, 12, 13 [24] Maxime Oquab, Timoth´ ee Darcet, Th´ eo Moutakanni, Huy V. Vo, Marc Szafraniec, Vasil Khalidov, Pierre Fernandez, Daniel HAZIZA, Francisco Massa, Alaaeldin El-Nouby, Mido Assran, Nicolas Ballas, Wojciech Galuba, Russell Howes, Po-Yao Huang, Shang-Wen Li, Ishan Misra, Michael Rabbat, Vasu Sharma, Gabriel Synnaeve, Hu Xu, Herve Je-gou, Julien Mairal, Patrick Labatut, Armand Joulin, and Pi-otr Bojanowski. DINOv2: Learning robust visual features without supervision. TMLR , 2024. 2 [25] Junsung Park, Jungbeom Lee, Jongyoon Song, Sangwon Yu, Dahuin Jung, and Sungroh Yoon. Know ”no” better: A data-driven approach for enhancing negation awareness in clip, 2025. 8 [26] Adam Paszke, Sam Gross, Soumith Chintala, Gregory Chanan, Edward Yang, Zachary DeVito, Zeming Lin, Alban Desmaison, Luca Antiga, and Adam Lerer. Automatic dif-ferentiation in pytorch. In NIPS 2017 Workshop on Autodiff ,2017. 5 [27] Alec Radford, Jong Wook Kim, Chris Hallacy, Aditya Ramesh, Gabriel Goh, Sandhini Agarwal, Girish Sastry, Amanda Askell, Pamela Mishkin, Jack Clark, et al. Learn-ing transferable visual models from natural language super-vision. In ICML , pages 8748–8763. PmLR, 2021. 1, 2, 3, 5
+
+16 [28] Faranak Shamsafar, Samuel Woerz, Rafia Rahim, and An-dreas Zell. Mobilestereonet: Towards lightweight deep net-works for stereo matching. In WACV , pages 2417–2426, 2022. 7, 13 [29] Vladan Stojni´ c, Yannis Kalantidis, Jiˇ r´ ı Matas, and Giorgos Tolias. Lposs: Label propagation over patches and pixels for open-vocabulary semantic segmentation. In CVPR , pages 9794–9803, 2025. 1, 6 [30] Robin Strudel, Ricardo Garcia, Ivan Laptev, and Cordelia Schmid. Segmenter: Transformer for semantic segmenta-tion. In ICCV , pages 7262–7272, 2021. 1 [31] Vladimir Tankovich, Christian Hane, Yinda Zhang, Adarsh Kowdle, Sean Fanello, and Sofien Bouaziz. Hitnet: Hierar-chical iterative tile refinement network for real-time stereo matching. In CVPR , pages 14362–14372, 2021. 13 [32] Feng Wang, Jieru Mei, and Alan Yuille. Sclip: Rethinking self-attention for dense vision-language inference. In ECCV ,pages 315–332. Springer, 2024. 2, 5, 6 [33] Junjie Wang, Bin Chen, Yulin Li, Bin Kang, Yichi Chen, and Zhuotao Tian. Declip: Decoupled learning for open-vocabulary dense perception. In CVPR , pages 14824–14834, 2025. 1 [34] Xianqi Wang, Gangwei Xu, Hao Jia, and Xin Yang. Selective-stereo: Adaptive frequency information selection for stereo matching. In CVPR , pages 19701–19710, 2024. 3, 4, 5, 8, 13 [35] Chenyun Wu, Zhe Lin, Scott Cohen, Trung Bui, and Subhransu Maji. Phrasecut: Language-based image segmen-tation in the wild. In CVPR , pages 10216–10225, 2020. 2, 5, 6[36] Monika Wysocza´ nska, Oriane Sim´ eoni, Micha¨ el Ramamon-jisoa, Andrei Bursuc, Tomasz Trzci´ nski, and Patrick P´ erez. Clip-dinoiser: Teaching clip a few dino tricks for open-vocabulary semantic segmentation. In ECCV , pages 320– 337. Springer, 2024. 2 [37] Yongqin Xian, Subhabrata Choudhury, Yang He, Bernt Schiele, and Zeynep Akata. Semantic projection network for zero-and few-label semantic segmentation. In CVPR , pages 8256–8265, 2019. 2 [38] Shiting Xiao, Rishabh Kabra, Yuhang Li, Donghyun Lee, Joao Carreira, and Priyadarshini Panda. Openworldsam: Ex-tending sam2 for universal image segmentation with lan-guage prompts. In NIPS , 2025. 5, 6, 7 [39] Linwei Ye, Mrigank Rochan, Zhi Liu, and Yang Wang. Cross-modal self-attention network for referring image seg-mentation. In CVPR , pages 10502–10511, 2019. 2 [40] Hui Zhang and Henghui Ding. Prototypical matching and open set rejection for zero-shot semantic segmentation. In 
+
+ICCV , pages 6974–6983, 2021. 2 [41] Jingyi Zhang, Jiaxing Huang, Sheng Jin, and Shijian Lu. Vision-language models for vision tasks: A survey. TPAMI ,46(8):5625–5644, 2024. 2 [42] Chong Zhou, Chen Change Loy, and Bo Dai. Extract free dense labels from clip. In ECCV , pages 696–712. Springer, 2022. 1, 2, 5, 6 [43] Ziqin Zhou, Yinjie Lei, Bowen Zhang, Lingqiao Liu, and Yifan Liu. Zegclip: Towards adapting clip for zero-shot se-mantic segmentation. In CVPR , pages 11175–11185, 2023. 1, 2 [44] Xueyan Zou, Jianwei Yang, Hao Zhang, Feng Li, Linjie Li, Jianfeng Wang, Lijuan Wang, Jianfeng Gao, and Yong Jae Lee. Segment everything everywhere all at once. NeurIPS ,36:19769–19782, 2023. 2 
+
+17
