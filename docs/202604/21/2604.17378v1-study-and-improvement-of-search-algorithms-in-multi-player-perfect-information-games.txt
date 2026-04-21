@@ -1,0 +1,496 @@
+Title: Study and Improvement of Search Algorithms in Multi-Player Perfect-Information Games
+
+URL Source: https://arxiv.org/pdf/2604.17378v1
+
+Published Time: Tue, 21 Apr 2026 01:41:00 GMT
+
+Number of Pages: 14
+
+Markdown Content:
+# Study and Improvement of Search Algorithms in Multi-Player Perfect-Information Games 
+
+## Quentin Cohen-Solal 11LAMSADE, Universit´ e Paris-Dauphine, PSL, CNRS, Paris, France quentin.cohen-solal@dauphine.psl.eu 
+
+## Abstract 
+
+In this article, we generalize Unbounded Minimax, the state-of-the-art search algorithm for zero sums two-player games with perfect information to the framework of multiplayer games with perfect information. We experimentally show that this generalized algorithm also achieves better performance than the main multiplayer search algorithms. 
+
+## 1 Introduction 
+
+Adversarial search in perfect-information games is a central area of artificial intelligence, driving significant theoretical and practical advances. For two-player zero-sum games, search algorithms such as Minimax and its numerous extensions have established a robust conceptual framework, enabling effective methods over large combinatorial state spaces. Among these extensions, Unbounded Minimax [20; 5] has recently emerged as a state-of-the-art algorithm [7]. Unbounded Minimax explores the most promising action sequences in a best-first manner, without being constrained by a depth limit as in standard minimax searches. It forms, with its safe decision variant, the core search component of the Ath´ enan architecture [20; 5], the leading software in international game competitions. Over six years, Ath´ enan won 57 gold medals at the Computer Olympiad [8; 9; 11], tripled the record for gold medals in a single year [9], and held the title in 20 games. Its main competitor, AlphaZero [26], relies on Monte Carlo Tree Search [13]. Experimental evaluations demonstrate that Ath´ enan outperforms AlphaZero by up to 30 times, at least in the studied context (reasonable computing power) [10]. Extending these successes to the multi-player setting, however, remains an open challenge. Games with more than two players, even under perfect information, introduce fundamental structural difficulties: the absence of simple duality, the presence of multiple objectives, non-transitive preferences, impact of tie-breaking strategies, explosion of possible equilibria, and several mathematical properties are lossed such as the minimax theorem. These characteristics make most direct generalizations of algorithms designed for two-player zero-sum games inadequate. In particular, in multi-player settings, it appears infeasible to anticipate many turns in advance without introducing simplifications that generate strong biases. In addition, extending an algorithm that relies on scalar minimax values to a vector-valued setting is not straightforward, as dominance relations are only partial and may be incomparable. Furthermore, many multiplayer algorithms have been proposed, but their relative performance is an open problem. It is unknown whether a better multiplayer algorithm exists, at least with regard to average performance, and if not, under what conditions one algorithm outperforms another. In this paper, we propose a novel search algorithm for multi-player perfect-information games that generalizes Unbounded Minimax. Our approach preserves the key principles that make Unbounded Minimax effective: unbounded search, incremental state resolution, and the prioritization of critical action sequences, while adapting them to a multi-objective, non-strictly antagonistic setting. This allows us to mitigate the combinatorial explosion, which is even more severe in multi-player games, and thereby enables longer-term planning in this generalized context. In addition, we perform an experimental evaluation across several benchmark multi-player games, demonstrating that the proposed algorithm surpasses the average performance of other multiplayer algorithms. These results open the way to a unified conceptual treatment of adversarial search in perfect-information games, covering both two-player and multi-player cases while maintaining competitive large-scale performance. The remainder of this paper is organized as follows. In Section 2, we review related work, covering Unbounded Minimax and classical multi-player game algorithms. Section 3.1 formalizes our new search algorithms: Unbounded Max n and Unbounded Max n with safe decision. In Section 3.2, we describe our experimental protocol, including the evaluation setup, technical details, and the set of games considered. We then present its results in Section 3.3. Finally, Section 4 concludes the paper and outlines directions for future work. 
+
+## 2 Related Work 
+
+2.1 Best Action Searching in Game Trees 
+
+The vast majority of game-search algorithms rely on representing a game as a tree, where nodes correspond                                                                           
+
+> arXiv:2604.17378v1 [cs.GT] 19 Apr 2026 Symbols Definition
+> sa game state
+> aan action of the game
+> actions ( s)action set of the state sfor the current player
+> first player ( s)true if the current player of the state sis the first player
+> player ( s)number of the player that must play in s
+> ended ( s)true if sis an end-game state
+> a(s)state obtained after playing the action ain the state s
+> time () current time in seconds
+> Skeys of the transposition table TTtransposition table: T={(cs,a , v s,a , n s,a , r s,a )|s∈S∧a∈actions( s)}
+> tmax search time per action
+> ttime elapsed since the start of the search
+> ns,a number of times the action ais selected in state svs,a partial minimax value obtained after playing action ain state scs,a completion value obtained after playing action ain state srs,a resolution value obtained after playing action ain state sfθ(s)heuristic evaluation function (of non-terminal game tree leaves)
+> ft(s)evaluation of terminal states, e.g. game gain or score
+> bt(s)Two-players gain function: 1if the first player wins, 0in case of a draw, -1 if the first player loses
+> bt(s)Multi-players gain function: bt(s)p= 1 if player pwins, bt(s)p=−1if player ploses, bt(s)p= 0 otherwise. Table 1: Index of symbols
+
+to game states and edges correspond to actions that allow transitions from one state to another. The terminal nodes represent end-game states and are assigned multi-dimensional values according to the final game outcome. Typically v ∈ {− 1, 0, 1}n where n is the number of players and vj = 1 means player j wins, vj = 0 means draw, and 
+
+vj = −1 means player j loses. More generally, v ∈ Rn and 
+
+vj is the score of player j. This valuation can be propagated to the other nodes under the assumption that all players play optimally. However, this theoretical valuation is generally intractable in practice, as game trees represent enormous state spaces. Consequently, algorithms must estimate these multi-dimensional values or the corresponding strategies to make practical multi-player game-playing decisions. 
+
+2.2 Base Multi-player Searches: Max n, Paranoid, 
+
+k-best pruning 
+
+The Max n algorithm [21] is the canonical approach for deterministic multi-player games: it constructs a game tree to a fixed depth, evaluates the leaf nodes with a heuristic evaluation function, and propagates these values back up the tree under the assumption that all players independently maximize their own payoff. Max n remains the simplest and most fundamental framework for reasoning about multi-player adversarial behavior. In Max n, the value of a state where the player j must play is the value v (s) of its child-state s whose component v (s)j is maximum. Unfortunately, this multiplayer generalization of the minimax algorithm causes it to lose many of its properties. In particular, several standard minimax improvements are no longer applicable in this context, such as alpha-beta pruning [18], which significantly reduces combinatorial explosion. An alternative approach, known as Paranoid search [28], reduces the multi-player setting to a two-player zero-sum game by assuming that all opponents form a coalition against the player which must play (the root player). Although this pessimistic assumption often enables deeper searches, particularly through the application of alpha–beta pruning, it introduces strong biases and can lead to overly conservative play. Another technique used to circumvent combinatorial explosion is k-best pruning [2]. This involves keeping only the k best actions a priori, which artificially reduces the branching factor to k and thus allows for longer-term planning. This pruning can remove optimal strategies; it is an inexact pruning, unlike the alpha-beta pruning of the two-player framework. Another drawback of this technique is that it is parameterized by a constant k which needs to be tuned. 
+
+2.3 Best Reply Search: BRS and BRS +
+
+Best-Reply Search (BRS ) was proposed as a novel compromise between Max nand Paranoid search. 
+
+BRS restricts opponents’ behavior by allowing only the opponent with the strongest counter-move to act between two consecutive turns of the root player, while the other players do not play. This significantly reduces the branching factor and enables deeper lookahead for the root player. Empirical evaluations demonstrated that BRS can outperform Max n
+
+and often surpass Paranoid search in games such as Chinese Checkers, Focus, and Rolit. However, the original formulation of BRS may generate invalid game states by violating the proper turn order among opponents. This consequently requires modifying the game implementation so that these invalid states can be played, which is not always technically possible and is costly in terms of human resources. This limitation was addressed by BRS +, which refines the original algorithm to preserve turn consistency during the search. BRS + relies on move ordering to select representative opponent moves that are not explicitly searched, thereby maintaining valid game trajectories while retaining the computational advantages of 
+
+BRS . With BRS +, between two consecutive turns of the root player, one opponent acts normally, while the others play their representative moves. Experimental results in Four-Player Chess show that BRS + significantly improves upon 
+
+BRS , achieving higher win rates against Max n, Paranoid, and BRS itself, at least in some contexts. 
+
+2.4 Monte-Carlo Tree Search: MCTS and MCTS h
+
+Monte Carlo Tree Search (MCTS) [3; 13] reframed game search for domains where hand-crafted evaluation functions are inadequate. Instead of evaluating every leaf node with a heuristic, MCTS performs randomized simulations (playouts) and uses their outcomes to guide a best-first expansion of the search tree through four iterative steps: selection, expansion, simulation, and backpropagation. MCTS has achieved remarkable success across a wide range of board and real-time games. MCTS is parameterized by a constant 
+
+C which needs to be tuned (theoretical value √2). It has been extended to the multiplayer framework, in the same way that minimax has been generalized to Max n [27]. It has also been modified in various ways to incorporate knowledge to improve its performance by biasing its selections and/or simulations [3]. The simplest method is to replace state evaluation by playouts with heuristic evaluation [24]. We denote this variant by MCTS h.
+
+2.5 Unbounded Minimax and Safe Decision 
+
+2.5.1 Unbounded Minimax 
+
+Unbounded (Best-First) Minimax [7; 20; 12; 5; 6] is a variant of the classical Minimax algorithm for two-player, zero-sum, perfect-information games. Standard Minimax explores all possible game evolutions up to a fixed depth d, evaluating states under the assumption that the first player maximizes its payoff while the second player minimizes it. However, for large d, exhaustive exploration becomes impractical, as the number of states grows exponentially with depth. Unbounded Minimax addresses this limitation by replacing uniform depth-limited exploration with a best-first, non-uniform search strategy. Rather than expanding all states, it selectively explores those estimated most promising, enabling very deep local lookahead. More specifically, it determines the best current sequence of explored actions and extends it by one action and iteratively restarts this process. Importantly, Unbounded Minimax is not parameterized by a predefined search depth: it incrementally extends the most relevant action sequences by one action and can be interrupted at any time, yielding a valid current solution. 
+
+2.5.2 Safe Unbounded Minimax 
+
+Unbounded Minimax was subsequently enhanced with the safe decision technique [7; 5]. This approach combines the standard Unbounded Minimax search procedure with the safe decision strategy . The safe decision is a variant for the final action-selection rule. Thus, in this variant, only the criterion used to choose the action after the search is modified. In the base Unbounded Minimax, the selected action is the one that leads to the child state with the best value. Under the safe decision strategy, however, the action played is the safest one, defined as the action most frequently selected during the search. In other words, the chosen action is the one that maximizes the number of times it has been selected from the root. Because the search is conducted in best-first order, the most frequently selected action is also the one that was most often evaluated as best throughout the search. This leads to robustness against evaluation errors. Moreover, it is the action for which the algorithm has the greatest visibility over possible future developments, as its corresponding subtree has been explored most extensively. 
+
+2.5.3 Unbounded Minimax with Completion 
+
+Unbounded Minimax has also been improved by the completion technique [6; 5]. First, it avoids exploring actions that lead to solved states (i.e., states whose exact value is known; in other words, further exploration of their subtrees can never change their value), which prevents the algorithm from getting stuck in suboptimal fixed points. Second, it always selects after the search an action leading to a solved winning state and never selects, when avoidable, an action leading to a solved losing state. Unbounded Minimax with completition (without and with Safe Decision) is described in Algorithm 1 
+
+## 3 Contributions 
+
+3.1 A New Search Algorithm for Multi-Player Games 
+
+In this section, we introduce our generalization of Unbounded Minimax to the multi-player setting. We call this algorithm Unbounded Max n. Like Unbounded Minimax, this algorithm iteratively extends the a priori best action sequence as long as search time remains. The difference is that, state values are now tuples of values corresponding to each player’s values and instead of the first player maximizing the terminal value and the second player minimizing it, each player here independently maximizes their own value at its turn (player p maximizes its completion value c(s, a )p and its partial minimax value v(s, a )p). Thus, in this generalized context, the notion of a “best” action reduces to maximizing the current player’s own utility component, independently of the other players’ outcomes (this is not necessarily optimal, since the actual objective is to achieve a higher payoff than one’s opponents rather than to maximize an absolute score). The Unbounded Max n algorithm with completion and optionally with safe decision is described in Algorithm 2. 
+
+3.2 Experimental Study of Multi-Player Searches 
+
+We now present the experiments conducted to evaluate the contributions of this paper. We will present its results in the following section. We begin by presenting the experimental protocol (Section 3.2.1). Then we explain how the evaluation functions used by the search algorithms were generated (Section 3.2.2). Next, we describe the machines used (Section 3.2.3), and finally present the other details of the experiment (Section 3.2.4). Algorithm 1 Unbounded Best-First Minimax with completion. It computes the best action to play in the generated non-uniform partial game tree starting from the root state s with tmax as research time. See Table 1 for the definitions of symbols. Note: tuples are lexicographically ordered. To obtain the safe decision version: replace best action in the last line of Unbounded Minimax by safe action. 
+
+Algorithm 2 Unbounded Max n (with completion). The Unbounded Minimax method (which should therefore be renamed here as Unbounded Max n) and iteration method are the same as in the two-player case (see Algorithm 1) (except that c(s, a ) is initialized to (0 , . . . , 0) instead of 0). The other methods are overloaded and described here. This algorithm computes the best action to play in the generated non-uniform partial game tree starting from the root state s with tmax as research time. See Table 1 for the definitions of symbols. Note: tuples are lexicographically ordered. To obtain the safe decision version: replace best action in the last line of Unbounded Minimax by safe action. 
+
+3.2.1 Evaluation Protocol 
+
+We experimentally compare the following algorithms: BRS ,
+
+BRS +, MCTS , MCTS h, Paranoid, standard Max n, Max n
+
+with k-best pruning and our new algorithm Unbounded Max n
+
+with classic decision and with safe decision. We use standard Max n as benchmark adversary using a lossless parallelization procedure, called Child Batching [7; 5] (child Batching consists in evaluating the children states of states in parallel by the neural network). We evaluate each algorithm on the following 8 games: 3 classic games: Hey, That’s My Fish!, Blokus, Three-Players Hex as well as 5 multiplayer versions of classic two-player games that we introduce: Quadrothello and Triinversion (generalizing the game of Othello to four and three player respectively), Quadamazons (generalizing the game Amazons to four player), and other generalizations of Hex with a different degree of interaction between players: Separed Teamhex and Threehex. Corresponding rules are in Appendix. Each algorithm faces the benchmark adversary P times where P is the number of players in the game: each evaluated algorithm takes a different player number each time. In other words, it plays once as the first player, once as the second player, etc... These matches are repeated 30 × 30 times: we use 30 different evaluation functions per game. More precisely, each algorithm is evaluated for each evaluation fonction fi (i ∈ { 0, 29 }) that it uses and for each opponents evaluation function group {fj+k}P −2 
+
+> k=0
+
+(j ∈ { 0, 29 }). In other words, for all i, j ∈ { 0, 29 }, the evaluated algorithm using 
+
+fi confronts in a same match the following opponents: the benchmark adversary with the evaluation fj , the benchmark adversary with the evaluation fj+1 , ..., and the benchmark adversary with the evaluation fj+P −2. This corresponds to 2700 (resp. 3600) matches for each evaluated algorithm and for each 3-player (resp. 4-player) game. The performance evaluation of an algorithm for a specific game is therefore based on this number of matches. The performance of a search algorithm is the average of the binary scores obtained at the end of its matches (1 for a victory, 0 for a draw and -1 for a defeat). Each search algorithm uses the same search time: 10 seconds per action (order of magnitude of search time in competition). In this experiment, we evaluated Unbounded Max n with safe decision without Child Batching and the MTCS-based algorithms without Child Batching because Child Batching cannot be used with MCTS . In addition, we evaluated all other algorithms with Child Batching. Note that BRS has not been evaluated on all games because that would have required re-impeding all games to handle invalid states. BRS games are: Separed Teamhex, Quadrothello, 3 Player Hex, Threehex, and Triinversion. Note that, regardless of whether the evaluated algorithms use Child Batching, the benchmark adversary always does. Therefore, all algorithms can be directly compared. 
+
+3.2.2 Evaluation Functions Training 
+
+We now present how the evaluation functions used in the experiments of this paper were learned. The evaluation functions were generated using Ath´ enan [5] ; the reinforcement learning algorithm, by remplacing its core component Descent Minimax, with its generalization for multi-player games [6] (which consists of replacing the minimax paradigm with the Max n paradigm). Ath´ enan involves sequentially performing self-play matches using the learned evaluation function to guide the search process, deciding which actions to take during the matches and how to explore the search tree. The data encountered (the associations states-values) is then learned at the end of each match to update the evaluation function. This thus forms a self-improving loop. The Ath´ enan hyperparameters used to generate each evaluation function are the following: search time per action 
+
+t = 2 , batch size B = 3000 , duplication factor δ = 3 ,memory size M = 75 , the selection action method is still the ordinal law but its parameter is √X with X a unform random variable in [0,1], neural network optimizer: Adam [17] with 
+
+λ = 0 .0001 as learning rate. The neural network architecture used is as follow: a convolutional layer, 4 residual blocks [16] (containing 2 convolutional layers), a convolutional layer with 1 × 1 as kernel size, a Global Sum Polling layer [1], a flatten layer, a dense layer with N neurons (see Table in Appendix for the N value), and a final dense layer with 
+
+P neurons (the output ; P : the number of players). Each convolutional layer has C channels (see Table in Appendix for the C value). The activation function is the ReLU. Each of the evaluation functions is the result of 10 days of training. 
+
+3.2.3 Computer Used 
+
+We provide details of the machines used in the experiments described in this article. For reinforcement learning the experiment evaluation functions, we used the Jean-Zay A100 partition: 8 CPU with 58 Go of RAM and 1 GPU A100 with 80 Go of RAM (per learning process). To perform the evaluation matches, we used the Jean-Zay V100 partition: 10 CPU with 40 Go of RAM and 1 GPU V100 with 16 Go of RAM. 
+
+3.2.4 Other Details of the Experiment 
+
+We give for each algorithm: the average performance over all games, the associated 95% stratified bootstrapping confidence interval (lower and upper bound) and the performance for each game with its 95% confidence radius. The percentages detailing performance for each game have been rounded to the nearest percent to reduce size and improve readability of data tables. Algorithms based on a fixed search depth ( BRS , BRS +,
+
+Max n with and without k-best pruning, and Paranoid) use iterative deepening [19] to be parameterized by a search time. All algorithms use transposition tables [14]. This allows the game tree to be transformed into a directed acyclic graph, which therefore simplifies the state space. Evaluation functions for MCTS h need to by The evaluation functions for MCTS h need to take values in [0 , 1] . We use the following normalization, applied component by component, to obtain such evaluation functions, transforming an evaluation function f with values in R into an evaluation function fn with values in [0 , 1] :
+
+fn(s) = max (min ( f (s) , M ) , m ) − mM − m
+
+with s a game state, f the state evaluation function, M the maximum practical value for f , m the minimum practical value of f . More formally, M = max V and m = min V
+
+with V = {f (s′) | s′ ∈ S} where S is a set of states from matches played using f generated during 24 hours. 
+
+3.3 Results of the Experimental Study 
+
+We now present the results of the experiment. In Section 3.3.1, we present the performance of MCTS and 
+
+MCTS h as well as some algorithms without Child Batching. Section 3.3.2 presents the performance of BRS by comparing it with other algorithms using also Child Batching, restricting our analysis to the games where BRS can be applied. In Section 3.3.3, we present the performance of all the algorithms, except MCTS , MCTS h, and BRS , with Child Batching, on all the games. 
+
+3.3.1 MCTS , MCTS h, and algorithms without Child Batching 
+
+We thus evaluate the following algorithms without Child Batching: MCTS , MCTS h, and Unbounded Max n with Safe Decision without Child Batching, and Max n. The algorithms performances are described in Table 3 (mean over the games) and Table 2 (details). Safe Unbounded Max n achieves the best average performance, followed by Max n, then MCTS h, and finally 
+
+MCTS . This result generalizes across all games except Quadamazons and 3-Player Hex. On these two games, 
+
+MCTS achieves the best performance, after which the average performance ranking is recovered. Notably, MCTS Quadamazons Blokus Hey, That’s My Fish! Separed Teamhex Quadrothello 3 Player Hex Triinversion Threehex Safe Unbounded Max n -45 ±3 -46 ±3 1 ±4 -16 ±3 -16 ±3 -7 ±1 -1 ±4 -33 ±4                                                                         
+
+> Max n-46% ±2% -48% ±2% -27% ±3% -16% ±3% -53% ±2% -7% ±1% -37% ±3% -36% ±3%
+> MCTS C=√2h-54 ±2 -79 ±1 -58 ±3 -38 ±3 -79 ±1 -7 ±1 -70 ±2 -43 ±3
+> MCTS C=
+> √22h-54 ±2 -78 ±2 -55 ±3 -37 ±3 -75 ±2 -8 ±1 -67 ±2 -45 ±3
+> MCTS C=
+> √24h-54 ±2 -76 ±2 -48 ±3 -39 ±3 -68 ±2 -8 ±1 -64 ±2 -44 ±3
+> MCTS C=
+> √28h-56 ±2 -76 ±2 -42 ±3 -36 ±3 -64 ±2 -7 ±1 -57 ±3 -45 ±3
+> MCTS C=√2-28 ±3 -99 ±0 -92 ±1 -92 ±1 -100 ±0 -1 ±0 -85 ±1 -97 ±0
+> MCTS C=
+> √22-20 ±3 -99 ±0 -90 ±1 -91 ±1 -100 ±0 0 ±0 -86 ±1 -96 ±1
+> MCTS C=
+> √24-11 ±3 -99 ±0 -87 ±1 -88 ±1 -100 ±0 1 ±0 -84 ±2 -94 ±1
+> MCTS C=
+> √28-16 ±3 -99 ±0 -88 ±1 -88 ±1 -100 ±0 2 ±0 -86 ±1 -92 ±1
+
+Table 2: Binary scores for all games of the evaluated algorithms without batching against Max n with batching (red > orange > pink). mean lower bound upper bound Safe Unbounded Max n -21.88 -22.83 -20.94 
+
+Max n -35.23 -36.13 -34.34 
+
+MCTS h (best C = √28 ) -49.76 -50.6 -48.96 
+
+MCTS (best C = √24 ) -71.27 -71.79 -70.76 Table 3: Average binary scores over all games of the evaluated algorithms without batching against Max n with batching. 
+
+even outperforms the algorithms using Child Batching on Quadamazons and equalizes them on 3-Player Hex (see Table 5). Since MCTS does not rely on any game-specific knowledge, we infer that the learned evaluation functions for these two games are of low quality. The first conclusion of this paper, which is not surprising, is that when learning fails to provide a high-quality evaluation function, MCTS delivers better performance. This study nevertheless shows that such cases are rather rare (one game out of eight which is problematic). Note that Child Batching increases performance by about 6%. Let us now focus more specifically on MCTS h. Excluding 
+
+MCTS , MCTS h achieves the worst performance on all games. When compared to the other algorithms using Child Batching (see Table 5), MCTS h remains far inferior, even after removing the 6% gain due to Child Batching, and even when considering the best parameters for MCTS and the worst parameters for the other algorithms. We note a single exception: MCTS h performs better than Paranoid on the sole game Quadrothello, which can be interpreted as the fact that assuming all opponents seek to minimize one’s score is a very poor heuristic for this game, despite the computational gains. The second conclusion is thus that MCTS h is the worst-performing algorithm in the context of our experiments, even if it could be used with Child Batching. 
+
+3.3.2 BRS with Child Batching 
+
+We now analyze the performance of BRS by comparing it with the other algorithms while restricting ourselves to the games on which BRS could be applied. Recall that BRS 
+
+creates invalid states that are not allowed by the game rules, and therefore it requires modifying the game implementations in order to be used, which entails a far from negligible human 
+
+mean lower bound upper bound Safe Unbounded Max n -8.25 -9.46 -7.03 Unbounded Max n -24.41 -25.57 -23.27 
+
+BRS -39.15 -40.14 -38.11 
+
+BRS + -32.03 -33.12 -30.95 Paranoid -32.6 -33.67 -31.54 
+
+Max n -26.86 -28.01 -25.71 Table 4: Average binary scores over the games where BRS has been used of the evaluated algorithms with batching against Max n with batching (red > orange > pink). 
+
+cost. Performance of BRS are described in Table 4 (mean over the BRS games) and Table 5 (details). BRS is the algorithm with the worst average performance among the algorithms using child batching. In particular, it achieves the poorest performance on each of the two generalizations of Othello. However, it belongs to the leading group on the three generalizations of Hex. Nevertheless, BRS +
+
+consistently obtains better results than BRS . This study therefore confirms the inferiority of BRS compared to BRS +
+
+and indicates that there is no need to further investigate BRS .
+
+3.3.3 Algorithms with Child Batching 
+
+We now present the performance of the following algorithms with Child Batching: BRS +, Paranoid, Max n, Max n
+
+with k-best pruning, and our new algorithms: Unbounded 
+
+Max n with classic decision and Unbounded Max n with safe decision. The algorithms performances are described in Table 6 (mean over the games) and Table 5 (details). Unbounded Max n with safe decision obtains the best average performance and it is the best algorithm, possibly tied, over 7 of the 8 studied games (Blokus is the exception). It is strictly the best algorithm over 3 of the 8 studied games (Quadrothello, Triinversion, Threehex). Unbounded Max n without Safe Decision obtains the second best average performance. However, it is not the best-performing algorithm on any game and achieves second-best performance on only 3 games. On 4 of the 8 games, it obtains performance that is significantly worse than BRS +, Paranoid, and Max n.In addition, Max n and BRS + achieve the third-best Quadamazons Blokus Hey, That’s My Fish! Separed Teamhex Quadrothello 3 Player Hex Triinversion Threehex Safe Unbounded Max n -40 ±3 -45 ±3 6 ±4 -10 ±3 -12 ±3 1 ±1 5 ±4 -24 ±4                                                                                                                                                                
+
+> Unbounded Max n-45 ±2 -58 ±2 -13 ±3 -18 ±3 -33 ±3 -2 ±1 -19 ±3 -46 ±3
+> BRS -15 ±3 -89 ±1 -1 ±1 -54 ±3 -25 ±3
+> BRS +-37 ±3 -42 ±2 -15 ±3 -12 ±3 -81 ±1 -1 ±1 -29 ±3 -24 ±3
+> Paranoid -39 ±3 -37 ±3 -25 ±3 -9 ±3 -81 ±1 -1 ±1 -36 ±3 -24 ±3
+> Max n-45 ±2 -47 ±2 -28 ±3 -13 ±3 -48 ±2 -4 ±1 -33 ±3 -32 ±3
+> k-best Max n(k= 30 )-44 ±2 -47 ±2 -29 ±3 -14 ±3 -50 ±2 -4 ±1 -35 ±3 -32 ±3
+> k-best Max n(k= 20 )-44 ±2 -47 ±2 -25 ±3 -12 ±3 -50 ±2 -4 ±1 -39 ±3 -35 ±3
+> k-best Max n(k= 14 )-43 ±2 -48 ±2 -21 ±3 -14 ±3 -50 ±2 -3 ±1 -41 ±3 -34 ±3
+> k-best Max n(k= 10 )-45 ±2 -46 ±2 -12 ±3 -13 ±3 -45 ±2 -3 ±1 -34 ±3 -34 ±3
+> k-best Max n(k= 8 )-47 ±2 -50 ±2 -16 ±3 -16 ±3 -46 ±2 -3 ±1 -36 ±3 -34 ±3
+> k-best Max n(k= 7 )-46 ±2 -52 ±2 -13 ±3 -13 ±3 -42 ±2 -3 ±1 -28 ±3 -32 ±3
+> k-best Max n(k= 6 )-46 ±2 -52 ±2 -10 ±3 -14 ±3 -40 ±2 -3 ±1 -33 ±3 -30 ±3
+> k-best Max n(k= 5 )-48 ±2 -56 ±2 -14 ±3 -15 ±3 -34 ±3 -2 ±1 -29 ±3 -32 ±3
+> k-best Max n(k= 4 )-46 ±2 -61 ±2 -8 ±3 -17 ±3 -33 ±3 -2 ±1 -24 ±3 -32 ±3
+> k-best Max n(k= 3 )-44 ±2 -62 ±2 -9 ±3 -21 ±3 -34 ±3 -4 ±1 -20 ±3 -31 ±3
+> k-best Max n(k= 2 )-50 ±2 -69 ±2 -12 ±3 -20 ±3 -39 ±3 -6 ±1 -35 ±3 -33 ±3
+
+Table 5: Binary scores for all games of the evaluated algorithms with batching against Max n with batching (red > orange > pink) mean lower bound upper bound Safe Unbounded Max n -16.48 -17.42 -15.54 Unbounded Max n -31.05 -31.96 -30.13 
+
+BRS + -32.61 -33.5 -31.71 Paranoid -33.46 -34.35 -32.58 
+
+Max n -32.69 -33.6 -31.77 
+
+k-best Max n (best k = 6 ) -30.39 -31.31 -29.48 Table 6: Average binary scores over all games of the evaluated algorithms with batching against Max n with batching. 
+
+average performance. BRS + achieves the best performance on 2 of the 8 games (Quadamazons and Threehex). Max n
+
+is not the best-performing algorithm on any game. In fact, it is never better than BRS +, except on a single game, Quadrothello, where it performs largely better. Moreover, Paranoid is the fifth-best algorithm in terms of average performance. Nevertheless, it reaches the best performance level on 4 of the 8 games (Quadamazons, Blokus, Separed Teamhex, Threehex). Finally, we note that k-best pruning improves performance of Max n on only 3 of the 8 games (Hey, That’s My Fish!, Quadrothello, Triinversion). BRS + when combined with 
+
+k-best pruning could possibly match the performance of Safe Unbounded Max n on one of the 3 games (namely, Hey, That’s My Fish!). For the other two games, using k-best pruning with BRS + or Paranoid should not change the relative performance ranking of the algorithms. 
+
+## 4 Conclusion 
+
+4.1 Summary 
+
+In this paper, we investigated search algorithms for multi-player perfect-information games. We generalized the state-of-the-art algorithm for two-player zero-sum perfect-information games, namely Unbounded Minimax with Safe Decision, and its variant: Unbounded Minimax with classic decision, to this setting. We then compared their performances in an exceptionally large and robust study with the main multi-player search algorithms from the literature. We showed that our generalization with safe decision also achieves the best average performance for a medium search time. More precisely, we have shown that it is the best-performing algorithm for 7 out of the 8 games studied, and significantly superior in 3 games. In addition, we retrieve several findings from the literature, but this time within a robust and large study: Paranoid and BRS + which excel on certain games, k-best pruning which improves performance on some games, BRS + which outperforms BRS , and safe decision which outperforms classic decision. More precisely, we showed that our generalization of Unbounded Minimax with classic decision achieves the second-best average performance but is never the top-performing algorithm on any individual game. We also repeated this study in the context of a short search time (1 second), the results, available in Appendix, are analogous to the medium times (10 seconds). Overall, we have shown that our algorithm, Safe Unbounded Max n, is the search algorithm to be preferred as a first choice for multi-player perfect-information games, when learning an evaluation function is feasible (i.e., when access to a GPU over several days is available). When this is not possible, or in the rare cases where learning fails to provide a sufficiently strong evaluation function, base MCTS is the algorithm of choice. 
+
+4.2 Future work 
+
+On the game where Unbounded Max n is not the best, namely Blokus, Paranoid achieves the best result. A hybridization of Paranoid with Unbounded Max n, that is, modeling Blocus as a two-player game using the Paranoid strategy allowing the application of Safe Unbounded Minimax (the two-player algorithm), should constitute the state of the art for this game. This hypothesis will be verified in a future study. More generally, this modification could represent the state of the art on four other games, since Safe Unbounded Max n matches Paranoid performance on these games. More generally, we plan to study how the degree of interaction between players affects the performance of search algorithms, and if performance is linked, design a search algorithm that automatically and dynamically adapts during the game to the current degree of interaction to optimize its performance. References 
+
+[1] Shubhra Aich and Ian Stavness. Global sum pooling: A generalization trick for object counting with small datasets of large images. arXiv preprint arXiv:1805.11123 , 2018. 3.2.2 [2] Hendrik Baier and Mark HM Winands. Mcts-minimax hybrids with state evaluations. Journal of Artificial Intelligence Research , 62:193–231, 2018. 2.2 [3] Cameron B Browne, Edward Powley, Daniel Whitehouse, Simon M Lucas, Peter I Cowling, Philipp Rohlfshagen, Stephen Tavener, Diego Perez, Spyridon Samothrakis, and Simon Colton. A survey of monte carlo tree search methods. Transactions on Computational Intelligence and AI in games , 4(1):1–43, 2012. 2.4 [4] Chin Chao. Blokus game solver. 2018. 4.4.1 [5] Quentin Cohen-Solal. Learning to play two-player perfect-information games without knowledge. arXiv preprint arXiv:2008.01188 , 2020. 1, 2.5.1, 2.5.2, 2.5.3, 3.2.1, 3.2.2, 4.4.3 [6] Quentin Cohen-Solal. Completeness of unbounded best-first game algorithms. arXiv preprint arXiv:2109.09468 , 2021. 2.5.1, 2.5.3, 3.2.2 [7] Quentin Cohen-Solal. Study and improvement of search algorithms in two-players perfect information games. 
+
+arXiv preprint arXiv:2505.09639 , 2025. 1, 2.5.1, 2.5.2, 3.2.1 [8] Quentin Cohen-Solal and Tristan Cazenave. Descent wins five gold medals at the computer olympiad. ICGA Journal , 43(2):132–134, 2021. 1 [9] Quentin Cohen-Solal and Tristan Cazenave. Athenan wins sixteen gold medals at the computer olympiad. 
+
+ICGA Journal , 45(3), 2023. 1 [10] Quentin Cohen-Solal and Tristan Cazenave. Minimax strikes back. AAMAS , 2023. 1 [11] Quentin Cohen-Solal and Tristan Cazenave. Ath´ enan wins 11 gold medals at the 2024 computer olympiad. 
+
+ICGA Journal , page 13896911251315102, 2025. 1 [12] Quentin Cohen-Solal and Tristan Cazenave. On some improvements to unbounded minimax. arXiv preprint arXiv:2505.04525 , 2025. 2.5.1 [13] R´ emi Coulom. Efficient selectivity and backup operators in monte-carlo tree search. In Computers and Games, 5th International Conference, CG 2006, Turin, Italy, May 29-31, 2006. Revised Papers , pages 72–83, 2007. 1, 2.4 [14] Richard D Greenblatt, Donald E Eastlake, and Stephen D Crocker. The greenblatt chess program. In 
+
+Computer chess compendium , pages 56–66. Springer, 1988. 3.2.4 [15] JO Hartjes. The feasibility of ignoring opponents in multi-player games. Master’s thesis, 2019. 4.4.1 [16] Kaiming He, Xiangyu Zhang, Shaoqing Ren, and Jian Sun. Deep residual learning for image recognition. In Conference on Computer Vision and Pattern Recognition , pages 770–778, 2016. 3.2.2 [17] Diederik P Kingma and Jimmy Ba. Adam: Amethod for stochastic optimization. arXiv preprint arXiv:1412.6980 , 2014. 3.2.2 [18] Donald E Knuth and Ronald W Moore. An analysis of alpha-beta pruning. Artificial Intelligence , 6(4):293– 326, 1975. 2.2 [19] Richard E Korf. Depth-first iterative-deepening: An optimal admissible tree search. Artificial Intelligence ,27(1):97–109, 1985. 3.2.4 [20] Richard E Korf and David Maxwell Chickering. Best-first minimax search. Artificial intelligence , 84(1-2):299–337, 1996. 1, 2.5.1 [21] Carol Luckhart and Keki B Irani. An algorithmic solution of n-person games. In AAAI , volume 86, pages 158–162, 1986. 2.2 [22] JAM Nijssen and Mark HM Winands. Search policies in multi-player games. Icga Journal , 36(1):3–21, 2013. 4.4.1 [23] Joseph Antonius Maria Nijssen. Monte-carlo tree search for multi-player games. 2013. 4.4.1 [24] Raghuram Ramanujan and Bart Selman. Trade-offs in sampling-based adversarial planning. In ICAPS , pages 202–209, 2011. 2.4 [25] Maarten PD Schadd and Mark HM Winands. Best reply search for multiplayer games. IEEE Transactions on Computational Intelligence and AI in Games , 3(1):57– 66, 2011. 4.4.1 [26] David Silver, Thomas Hubert, Julian Schrittwieser, Ioannis Antonoglou, Matthew Lai, Arthur Guez, Marc Lanctot, Laurent Sifre, Dharshan Kumaran, Thore Graepel, et al. A general reinforcement learning algorithm that masters chess, shogi, and go through self-play. Science , 362(6419):1140–1144, 2018. 1 [27] Nathan R Sturtevant. An analysis of uct in multi-player games. In International conference on computers and games , pages 37–49. Springer, 2008. 2.4 [28] Nathan R Sturtevant and Richard E Korf. On pruning techniques for multi-player games. AAAI/IAAI , 49:201– 207, 2000. 2.2 Appendix 
+
+We present in this document the details of the experiments. First, note that the N value and C value of the neural networks for each game are in Table 7. In Section 4.3, we present the results of our repeated experiment, modifying the associated search time to analyze the short-time behavior of the algorithms. In Section 4.4, we present the games used as benchmarks for the experiments in this article. 
+
+4.3 Short time experiment 
+
+We repeated the experiment from our main article. Everything is identical except for the search time of each evaluated algorithm and the reference algorithm, which is set at 1 second (instead of 10 seconds). Performance of algorithms without Child Batching is in Table 8 (average) and in Table 10 (details). Average performance over all BRS games of algorithms with Child Batching is in Table 9. Performance of algorithms with Child Batching is in Table 12 (average) and in Table 11 (details). The results are analogous to the medium-time context, with a few minor differences that we will detail. 
+
+Max n achieves better performance than Paranoid and 
+
+BRS +. This is interpreted by the fact that as the time is shorter, the impact of the branching factor is less strong, there is therefore less need for pruning, and therefore the pruning done by BRS + and Paranoid which are pruning with biases have a stronger negative impact on performance (their bias is not compensated by the ability to plan relatively over a longer term). 
+
+k-best Max n now significantly improves performance in Separated Teamhex, and even achieves the best performance in this game, outclassing Safe Unbounded Max n. Although Unbounded Max n is still the best algorithm on average, it is now only the best algorithm, possibly tied, on 6 of the 8 games. However, in both games, it achieves performance close to that of the best algorithm. In addition, it is now significantly the best algorithm on 4 of the 8 games (the game Hey, That’s My Fish! is added to the same list as for the 10-second time). MCTS is no longer the best algorithm on Quadamazons. Therefore, MCTS remains the worst algorithm in short time. We interpret this as meaning that in short time, MCTS doesn’t have enough time to converge to a correct solution. Approaches based on learned heuristics are thus more efficient because they begin the search already possessing some knowledge. 
+
+MCTS h is now better than Safe Unbounded Max n without Child Batching on two games: Threehex and 3-Player Hex (and is still inferior on the others). And we still have the fact that MCTS h performs worse than all other algorithms with child batching on all games except two, instead of just one with 10 secondes: Quadrothello and Separated Teamhex (Separated Teamhex is added). In these two exceptions, 
+
+MCTS h is still far from the best performance, especially on Quadrothello. 
+
+C N
+
+Quadamazons 166 1343 Blokus 166 1260 Hey, That’s My Fish! 166 1386 Separed Teamhex 166 1260 Quadrothello 166 1343 3-player Hex 166 1354 Triinversion 166 1373 Threehex 166 1354                                                                                                                 
+
+> Table 7: Number of convolutional channels Cand hidden dense neurons Nused by Ath´ enan for each studied game. mean lower bound upper bound Safe Unbounded Max n-37.87 -38.77 -36.96
+> MCTS C=
+> √24
+> h-47.63 -48.46 -46.8
+> MCTS C=
+> √28
+> h-45.62 -46.46 -44.77
+> MCTS C=
+> √24-85.12 -85.51 -84.74
+> MCTS C=
+> √28-84.74 -85.12 -84.37 Table 8: Average binary scores over all games of the evaluated algorithms without batching against Max nwith batching (search time 1s; red >orange >pink). mean lower bound upper bound Safe Unbounded Max n-21.1 -22.06 -20.13 Unbounded Max n-30.69 -31.84 -29.51
+> BRS -40.07 -41.1 -39.06
+> BRS +-36.06 -37.14 -34.98 Paranoid -36.65 -37.71 -35.59
+> Max n-28.24 -29.39 -27.1 Table 9: Average binary scores over the games where BRS has been used of the evaluated algorithms with batching against Max nwith batching (search time 1s; red >orange >pink). Quadamazons Blokus Hey, That’s My Fish! Separed Teamhex Quadrothello 3 Player Hex Triinversion Threehex Safe Unbounded Max n-48 ±3 -49 ±3 -30 ±4 -23 ±3 -33 ±3 -26 ±2 -15 ±4 -77 ±2
+> MCTS C=
+> √24h-55 ±2 -66 ±2 -50 ±3 -26 ±3 -67 ±2 -8 ±1 -48 ±3 -48 ±3
+> MCTS C=
+> √28h-56 ±2 -66 ±2 -46 ±3 -26 ±3 -62 ±2 -9 ±1 -41 ±3 -45 ±3
+> MCTS C=
+> √24-64 ±2 -100 ±0 -97 ±0 -96 ±0 -100 ±0 -26 ±1 -91 ±1 -97 ±0
+> MCTS C=
+> √28-64 ±2 -99 ±0 -97 ±0 -96 ±0 -100 ±0 -19 ±1 -92 ±1 -98 ±0
+
+Table 10: Binary scores for all games of the evaluated algorithms without batching against Max n with batching (search time 1s ; red >
+
+orange > pink).                                                                                                                                    
+
+> Quadamazons Blokus Hey, That’s My Fish! Separed Teamhex Quadrothello 3 Player Hex Triinversion Threehex Safe Unbounded Max n-41 ±3 -45 ±3 0 ±4 -18 ±3 -18 ±3 -2 ±2 -7 ±4 -25 ±4
+> Unbounded Max n-47 ±2 -57 ±2 -17 ±3 -34 ±3 -37 ±3 -8 ±1 -29 ±3 -40 ±3
+> BRS -20 ±3 -83 ±1 -5 ±1 -52 ±3 -31 ±3
+> BRS +-41 ±2 -44 ±2 -30 ±3 -16 ±3 -78 ±2 -5 ±1 -38 ±3 -34 ±3 Paranoid -41 ±2 -42 ±2 -35 ±3 -16 ±3 -79 ±1 -5 ±1 -40 ±3 -33 ±3
+> Max n-43 ±2 -47 ±2 -27 ±3 -16 ±3 -49 ±2 -5 ±1 -32 ±3 -34 ±3
+> k-best Max n(k= 30 )-45 ±2 -45 ±2 -25 ±3 -10 ±3 -49 ±2 -3 ±1 -35 ±3 -27 ±3
+> k-best Max n(k= 16 )-45 ±2 -48 ±2 -25 ±3 -12 ±3 -48 ±2 -3 ±1 -33 ±3 -26 ±3
+> k-best Max n(k= 10 )-42 ±2 -51 ±2 -16 ±3 -10 ±3 -49 ±2 -3 ±1 -33 ±3 -25 ±3
+> k-best Max n(k= 7 )-46 ±2 -45 ±2 -16 ±3 -12 ±3 -51 ±2 -2 ±1 -31 ±3 -27 ±3
+> k-best Max n(k= 4 )-47 ±2 -49 ±2 -14 ±3 -9 ±3 -45 ±2 -4 ±1 -30 ±3 -28 ±3
+> k-best Max n(k= 3 )-46 ±2 -54 ±2 -10 ±3 -12 ±3 -41 ±2 -4 ±1 -28 ±3 -29 ±3
+> k-best Max n(k= 2 )-46 ±2 -65 ±2 -15 ±3 -15 ±3 -40 ±2 -3 ±1 -28 ±3 -27 ±3
+
+Table 11: Binary scores for all games of the evaluated algorithms with batching against Max n with batching (search time 1s ; red > orange 
+
+> pink) mean lower bound upper bound Safe Unbounded Max n -14.46 -15.69 -13.24 Unbounded Max n -35.54 -36.45 -34.63 
+
+BRS + -37.41 -38.29 -36.54 Paranoid -38.02 -38.91 -37.15 
+
+Max n -33.05 -33.98 -32.14 
+
+k-best Max n (best k = 4 ) -29.77 -30.71 -28.85 Table 12: Average binary scores over all games of the evaluated algorithms (except BRS ) with batching against Max n with batching (search time 1s ; red > orange > pink). 
+
+4.4 Games 
+
+We now detail the rules of the games used as benchmarks for our experiments. To avoid any ambiguity, the games we introduce are also provided with their source code in supplementary materials (otherwise we provide a link to the official rules). 
+
+4.4.1 Blokus 
+
+Blokus is a classic abstract game. It is a game of tile placement, enclosure, chaining, and hand management. More precisely, it is an abstract strategy game played on a square grid board. Each player is assigned a distinct color and a fixed set of 21 polyomino pieces of varying shapes and sizes. Players alternately place one piece of their color onto the board, subject to strict spatial constraints. A legal placement requires that the newly placed piece does not share an edge with any previously placed piece of the same color; instead, it must touch at least one corner of an existing piece of that color. Pieces of different colors may touch freely along edges or corners. The objective is to maximize the number of pieces placed on the board. The game ends when no player can make a legal move, and the score is determined by the total number of pieces successfully placed. The standard game is played on a 20×20 grid (400 squares) and includes 84 polyomino pieces, divided into four color sets of 21 pieces each. For each color, the set consists of one monomino, one domino, two trominoes, five tetrominoes, and twelve pentominoes. It is ranked as the 61th best abstract game (on the boardgamegeek website ranking). Blokus has been used on multiple occasions as abenchmark for artificial intelligence algorithms [4; 23; 22; 15; 25]. Complete rules of Blokus are available here. Note that the associated terminal evaluation that we used is the score of the game. 
+
+4.4.2 Hey, That’s My Fish! 
+
+Hey, That’s My Fish! is a game of Grid Movement, Map Reduction with Variable Set-up. More precisely, it is an abstract strategy game in which players control multiple penguin tokens moving on a hexagonal grid of ice tiles. Each tile is labeled with a fixed number of fish (one to three), which determine the scoring potential of that tile. The tiles are initially placed at random. On each turn, a player selects one of their penguins and moves it in a straight line across any number of contiguous ice tiles, following hexagonal directions. After the move, the tile from which the penguin departed is removed from the board, creating an impassable gap that permanently alters the game topology. In addition, the player collects the removed tile (on which their token was located). When a penguin has no legal moves remaining, it is removed from play. The game ends when all penguins have been removed. The winner is the player who has accumulated the largest total number of fish across all collected tiles. It is ranked as the 81th best abstract game and the 391 best family game (on the boardgamegeek website ranking). Complete rules of Hey, That’s My Fish! are available here Note that the associated terminal evaluation that we used is the score of the game. 
+
+4.4.3 3-Player Hex 
+
+Three-Player Hex is played on a board with hexagonal cells and overall hexagonal shape. In this study, boards have 7 cells per side. Players alternate turns by placing a stone of their assigned color on an unoccupied cell. The objective, as in standard Hex, is to form a continuous chain of stones connecting the two opposite sides of the board designated for their color. There are two variations of this game. In the first, which we have implemented, the game ends in a draw when none of the three players can connect their edges. In the other variation, as soon as a player cannot connect their edges, they are eliminated, and as soon as two players are eliminated, the third wins. Complete rules of 3-Player Hex are available on Ludii. Note that the presence of a third player eliminates the connection guarantees of strategics patterns that are the basis of two-player hex strategies Note that the associated terminal evaluation that we used is the additive deep heuristic [5]. 
+
+4.4.4 Threehex 
+
+We introduce an alternative three-player generalization of Hex designed to better preserve the strategic properties of the two-player game, by significantly reducing the joint interaction between the two opponents that arises in the classical three-player variant of Hex. The objective of the game remains unchanged: a player wins by being the first to connect their two designated sides of the board with a chain of pieces of their color. However, it is now allowed to place a piece on a cell that already contains a piece belonging to another player, except when that player is the next player in turn. More precisely, player 0 may place a piece on an empty cell or on a cell containing a single piece belonging to player 2; player 1 may place a piece on an empty cell or on a cell containing a single piece belonging to player 0; and player 2 may place a piece on an empty cell or on a cell containing a single piece belonging to player 1. A player who has no legal move must pass. If all players pass consecutively, the game ends in a draw. Note: if a piece is overlaid by another piece, it still counts toward connecting the corresponding sides of the board. The length of each player’s designated board edges is 7 in these experiments. With this modification, only one of the two opponents can prevent a given player from connecting their two sides, namely the next player in turn. As a result, each player primarily aims to block their predecessor while simultaneously attempting to complete their own connection. Symmetrically, each player is themselves blocked by their successor. This interaction structure partially restores strategic patterns characteristic of the two-player game. In addition, indirect interactions arise when attempting to counter the player who is blocking us. Depending on where a player places pieces to block their predecessor, that predecessor may respond by placing pieces in locations that, in turn, block the third player. Consequently, players must act so as to block their immediate predecessor as effectively as possible, while anticipating that the opponent’s response will hinder the remaining player. This leads to bidirectional blocking interactions among all three players. 
+
+4.4.5 Separed Teamhex 
+
+We introduce the game Separed Teamhex as a 4-player generalization of the game Hex. 
+
+Game Overview Separed Teamhex is a connection game played by four players on a square hexagonal board (same board as in two-player hex). Players are arranged into two fixed teams of two, and victory can be achieved either individually or jointly with an ally. 
+
+Board and Pieces The game is played on an N × N square hexagonal board, with N even (default N = 20 ). Each cell can contain at most one stone. Each player has a distinct stone color. The board is divided into zones A, B, C, and D (see Figure 1). 
+
+Players and Teams There are four players, indexed 
+
+{0, 1, 2, 3}. Teams are fixed: • Team A: players 0 and 2 • Team B: players 1 and 3 Stones of a player and their ally are considered connected for the purpose of path formation for shared wins. 
+
+Turn Order, Color, and Moves Player 0 is Back, player 1 is White, player 2 is Blue, player 3 is Yellow. In turn, a player can only play a piece of their color on any empty cell in a specific zone. In each zone, only two players can play (the rules of two-player Hex are found locally). The turn order and the allowed zones associated with the corresponding action are as follows: black player plays in zone A, then yellow player plays in zone A, then white player plays in zone B, then black plays in zone B, then blue plays in zone C, then white plays in zone C, then yellow plays in zone D, then blue plays in zone D. This cycle repeats until the end of the game. The game ends immediately when a winning condition is met. 
+
+Adjacency and Connectivity Connectivity follows Hex-style adjacency: each cell has up to six neighbors. 
+
+Player-Specific Goal Edges Each player is assigned two disjoint segments of the outer board boundary, i.e. of the board sides (see Figure 1). Team sides are the union of team members sides (we find the double pair of opposite edges from the two-player game). 
+
+Winning Conditions After each move, the game checks whether a connected component (using Hex adjacency) touches two opposite board sides for at least one player or for at least one team. Two types of victory are distinguished. Figure 1: Board for Separed Teamhex 
+
+Strong (Individual) Win: a player achieves a strong win if their own stones alone form a connected path between their two sides. Team (Shared) Win: if no strong win exists, but aconnected path exists between the two sides of the team using stones from both allied players, then both allies win jointly. 
+
+Scoring 
+
+• Strong individual win: 
+
+– Winning player: +2 
+
+– All other players: −2 • Team win: 
+
+– Each winning ally: +1 
+
+– Each opposing player: −1 Note that the associated terminal evaluation that we used is the score of the game. 
+
+Termination 
+
+• The game always terminates immediately upon the first detected winning configuration. • There are no draws. 
+
+4.4.6 Quadamazons 
+
+We introduce the following generalization of the game Amazons for 4 players. 
+
+Board The board is a square grid of size N × N (N even ; default N = 14 ) with a multi-interaction distance parameter 
+
+d (default d = 2 ). The parameter d divides the board into 9 atomic zones: 4 zones of size   N 
+
+> 2
+
+− d ×   N 
+
+> 2
+
+− d where only two players can play; 2 zones   N 
+
+> 2
+
+− d × (2 · d) and 2 zones (2 · d)×  N 
+
+> 2
+
+− d where three players can play and one zone (2 · d) × (2 · d) where all 4 players can play. As in the classic game, cells can be empty, occupied by a player piece called amazon or blocked by an arrow (a neutral permanent obstacle piece). 
+
+Initial Setup Each player starts with 4 amazons pieces. Initial positions are fixed on the board edges (see Figure 2). 
+
+> Figure 2
+
+Actions The game proceeds in turns. Each turn is composed of two steps and each step is composed of two phases. The first phase of each step consists in moving one of their amazon: all amazons move like a chess queen (possible movements: in a straight line in one of the 8 directions, at any distance, to arrive at an empty square, but cannot pass over an obstacle: i.e. an amazon or an arrow). Each amazon can only move within the area associated with their player: the rectangle   N 
+
+> 2
+
++ d × N or N ×   N 
+
+> 2
+
++ d corresponding to the space on the board surrounded by the two lines of the player’s color (see Figure 2). Each player zone is divided into two sub-zones by a dotted line (two sub-zones of size   N 
+
+> 2
+
++ d × N 
+
+> 2
+
+or N 
+
+> 2
+
+×   N 
+
+> 2
+
++ d). If the first amazon moved during the current turn arrives in one of the two sub-zones, the second amazon to move must end up in the other sub-zone. The second phase of each step consists in placing an arrow as if it had been pulled by the amazon that had just moved (as in the classic game). The legal actions for an arrow are any empty case starting from the new position of the amazon by following the legal movement of the chess queen. In addition, the arrow must be placed in the sub-zone where the amazon is newly located or be placed in the exact position where the amazon was before its movement. 
+
+Elimination and Turn Order If a player has no legal move at the first phase of their first step, it is eliminated. Eliminated players are skipped. If a player has no legal move at the first phase of their second step, their step is passed. The game continues until all players are eliminated, or only one player remains with legal moves. 
+
+End of Game and Scoring The game ends in two cases: 1. All players are eliminated: the last player to be eliminated is declared the winner. Scores are assigned by reverse elimination order: last eliminated player scores 1, the second last eliminated player scores 0, third last player scores −1, and the first eliminated player scores −2.2. One player remains: the remaining player is the winner. Their score equals the number of legal moves available at termination: s. The last eliminated player scores 0,the second last eliminated player scores −s, and the first eliminated player scores −2s.Note that the associated terminal evaluation that we used is the score of the game. 
+
+4.4.7 Quadrothello 
+
+We introduce the following generalization of Othello (also known as Reversi) for four players, that we called Quadrothello. A multiplayer version of Othello, called Rolit, already exists. However, this game suffers from two major flaws: unlike the two-player game, an eliminated player can return to the game, and the game is extremely chaotic, making planning impossible in practice. The generalization we propose allows us to significantly increase control in order to be a more interesting benchmark for comparing search algorithms. 
+
+Overview As in the two-player game, players compete to control as many board cells as possible when the game ends. However, players are restricted to specific zones, meaning that only two players can play in any given zone. This allows for a localized version of the two-player Othello rules, thus preserving its control and strategies. However, actions performed in one zone can affect other zones, making it a true multiplayer game. 
+
+Board and Players The game is played on a square board of size N × N (N even, default N = 14 ). The board is partitioned into four overlapping zones of shape N × N 
+
+> 2
+
+or N 
+
+> 2
+
+× N , one per player (see Figure 3): • Player 0 (black): top half • Player 1 (white): right half • Player 2 (green): bottom half • Player 3 (blue): left half. Each player starts with four stones, placed near the center of the board in a local symmetric configuration. 
+
+Turn Order Players take turns in cyclic order: 0 → 1 →
+
+2 → 3 → 0 → . . . . If a player has no legal moves, their turn is automatically skipped. 
+
+Legal Moves A move consists of placing a stone on an empty cell inside the current player’s zone. A move is legal if and only if the cell is empty and there exists at least one direction (among the 8 surrounding directions: horizontal, vertical, diagonal) such that: • One or more consecutive opponent stones are encountered, • Followed by a stone belonging to the current player. After placing a stone, all opponent stones between the two player stones are captured (remplaced by current player stones). 
+
+Game End The game ends when all four players consecutively have no legal moves. 
+
+> Figure 3: Quadrothello board at the start of the game (the semicircles indicate the players’ zones).
+
+Scoring and Winner Each player’s score is the number of stones they own on the board. At game end, the player(s) with the maximum score win. Ties are allowed (multiple winners). Note that the associated terminal evaluation that we used is the score of the game. 
+
+4.4.8 Triinversion 
+
+We propose the following other generalization of Othello, this time for three player, that we called Triinversion. This is no longer exactly a generalization but a variation: the game is played on a hexagonal board, so there are only 6 directions for alignment. Unlike Quadrothello, there are no spatial constraints on placement. However, in order to have more control over the captures of pieces, the capture rules have been modified. 
+
+Board and Players The game is played by three players, indexed as Player 0 (cyan), Player 1 (magenta), and Player 2 (yellow). The board is a hexagonal hex board of side length 
+
+l (default parameter length l = 6 ). Each cell can contain at most one piece, owned by one of the three players. Special adjacency rules apply at the geometric center to preserve hexagonal connectivity: the central position is not a playable position and all pair of positions adjacent to the center, which which are opposite each other with respect to the center, are considered adjacent (and therefore aligned for captures). Each player has a direct opponent and an indirect opponent. Player 0’s direct opponent is player 2, player 1’s direct opponent is player 0, and player 2’s direct opponent is player 1. The other opponent is the indirect opponent. 
+
+Initial Setup At the beginning of the game, six pieces are placed symmetrically around the center: see Figure 4. 
+
+Turn Order Players take turns in cyclic order: Player 0 →
+
+Player 1 → Player 2 → Player 0 → . . . . If a player has no legal moves, they must pass. If all three players consecutively have no legal moves, the game ends. Figure 4: Triinversion board at the start of the game. 
+
+Legal Moves A legal action is to place a piece of their color on an empty cell in such a way that a line of their direct opponent’s pieces is surrounded by that piece and either one of their pieces or one of their indirect opponent’s pieces. By placing such a piece, all of their direct opponent’s pieces are removed and replaced by their pieces. As a reminder, two alignments of pieces of the same player in the same direction separated only by the always empty central cell are considered as a single alignment and can therefore be surrounded and replaced all at once. 
+
+Game Termination The game ends when all three players consecutively have no legal moves. 
+
+Winner Determination and Scoring The winner is the player with the highest final score. In case of a tie, the tied players are jointly considered winners. A player’s score is their number of pieces plus the number of pieces of their indirect opponent. Note that the associated terminal evaluation that we used is the score of the game.
