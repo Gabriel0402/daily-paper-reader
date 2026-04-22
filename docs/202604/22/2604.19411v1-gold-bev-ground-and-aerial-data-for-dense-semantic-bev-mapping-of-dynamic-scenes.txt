@@ -1,0 +1,353 @@
+Title: GOLD-BEV: GrOund and aeriaL Data for Dense Semantic BEV Mapping of Dynamic Scenes
+
+URL Source: https://arxiv.org/pdf/2604.19411v1
+
+Published Time: Wed, 22 Apr 2026 01:13:07 GMT
+
+Number of Pages: 22
+
+Markdown Content:
+# GOLD-BEV: GrOund and aeriaL Data for Dense Semantic BEV Mapping of Dynamic Scenes 
+
+Joshua Niemeijer 1, Alaa Eddine Ben Zekri 1, Reza Bahmanyar 1, Philipp M. Schmälzle 1, Houda Chaabouni-Chouayakh 2, and Franz Kurz 1 
+
+> 1
+
+German Aerospace Center (DLR) 
+
+{joshua.niemeijer, alaa.benzekri, reza.bahmanyar, philipp.schmaelzle, franz.kurz}@dlr.de  
+
+> 2
+
+Digital Research Center of Sfax 
+
+houda.chaabouni@crns.rnrt.tn 
+
+Abstract. Understanding road scenes in a geometrically consistent, scene-centric representation is crucial for planning and mapping. We present 
+
+GOLD-BEV , a framework that learns dense bird’s-eye-view (BEV) se-mantic environment maps—including dynamic agents—from ego-centric sensors, using time-synchronized aerial imagery as supervision only during training . BEV-aligned aerial crops provide an intuitive target space, enabling dense semantic annotation with minimal manual effort and avoiding the ambiguity of ego-only BEV labeling. Crucially, strict aerial–ground synchronization allows overhead observations to supervise moving traffic participants and mitigates the temporal inconsistencies inherent to non-synchronized overhead sources. To obtain scalable dense targets, we generate BEV pseudo-labels using domain-adapted aerial teachers, and jointly train BEV segmentation with optional pseudo-aerial BEV reconstruction for interpretability. Finally, we extend beyond aerial coverage by learning to synthesize pseudo-aerial BEV images from ego sensors, which support lightweight human annotation and uncertainty-aware pseudo-labeling on unlabeled drives. 
+
+Keywords: BEV semantic maps · Dynamic scene understanding 
+
+## 1 Introduction 
+
+Autonomous vehicles must reason about their surroundings in a representation that is both geometrically consistent and actionable for downstream tasks such as motion planning and map building [11,12]. A common target is a scene-centric 
+
+bird’s-eye-view (BEV) raster—often called a dense BEV semantic environment map or semantic occupancy grid —that encodes drivable layout, static structure, and dynamic agents in a single top-down coordinate frame [24,27,32]. Compared to perspective-view perception, BEV maps align naturally with navigation, facil-itate long-horizon reasoning, and are stable under viewpoint changes [17,20,38].   
+
+> arXiv:2604.19411v1 [cs.CV] 21 Apr 2026 2J. Niemeijer, A. E. Ben Zekri, R. Bahmanyar, P. M. Schmälzle et al.
+> Fig. 1: Cross-view aerial supervision for BEV semantic mapping. A helicopter-mounted camera records high-resolution overhead RGB imagery (a), time-synchronized with an instrumented car that captures a forward-facing RGB view and LiDAR sweeps (b). By geo-aligning the aerial imagery to the vehicle frame, we obtain BEV-aligned crops and dense semantic targets that supervise BEV map prediction from ego sensors (c).
+
+Despite major progress in BEV prediction from on-vehicle sensors (cameras and LiDAR) [17,20,24], supervision remains the key bottleneck [28,32,33]. Dense BEV labels are difficult to obtain from the ego platform alone: LiDAR is sparse and incomplete at long range; cameras observe the world in perspective and require non-trivial view transformation; and occlusions make “complete” BEV ground truth ambiguous without additional viewpoints [28,33]. As a result, many BEV pipelines rely on proxy targets such as rasterized HD-map layers, projected 3D boxes, or temporally accumulated occupancy/semantic evidence [15, 18, 22]. These signals can be brittle for dynamic objects and fine boundaries, and they often inherit biases from the ego sensor configuration and sensing range [28,32]. A different line of work pairs ground-level imagery with overhead imagery harvested from large-scale map/imagery sources, but these sources are typically not time-synchronized with a given drive, leading to temporal inconsistencies that are especially problematic for learning dynamic scene elements [31, 34]. In this paper, we revisit dense BEV supervision through a simple premise: 
+
+overhead observation is an excellent teacher , but only if it is temporally aligned with the driving scene. We introduce GOLD-BEV , a framework and dataset that use time-synchronized aerial imagery as training-time supervision for learn-ing dense BEV semantic maps—including dynamic objects—from ego-centric sensors. Concretely, we capture simultaneous helicopter nadir RGB imagery and on-vehicle sensing (camera, multiple LiDARs, GNSS/INS), and convert the over-head view into BEV-aligned crops centered on the ego vehicle. This aerial view-point provides (i) dense and topologically coherent context for static layout, and (ii) direct visibility of many dynamic agents that are hard to infer or label from ego sensors alone— without requiring any overhead data at deployment time. Aerial supervision also changes the human-annotation problem. Rather than asking annotators to infer dense top-down semantics from sparse LiDAR or per-spective images, we present aerial-style BEV imagery directly in the target raster GOLD-BEV 3
+
+space, making semantic labeling intuitive and fast. When time-synchronized aerial observations are available, we exploit them as dense supervision by produc-ing BEV pseudo-labels with domain-adapted aerial teachers. Crucially, we also train our BEV model to reconstruct an aerial-style BEV RGB view from on-vehicle sensors, yielding an interpretable interface for rapid manual correction and systematic validation. This reconstruction further enables scaling beyond aerial coverage: the model can generate pseudo-aerial BEV images on unlabeled drives, which we use for low-budget annotation and uncertainty-aware pseudo-labeling, allowing the aerial teacher to bootstrap learning and then propagate supervision more broadly. 
+
+Contributions. 
+
+1. We propose a framework for directly inferring dense BEV semantic environ-ment maps , including dynamic objects, from on-vehicle sensors, and show that aerial-style BEV imagery enables intuitive semantic annotation with minimal manual effort. 2. We leverage time-synchronized aerial supervision, enabling accurate learning of dynamic scene elements and avoiding the temporal inconsistencies present in overhead sources that are not aligned with the drive. 3. We demonstrate scaling beyond aerial coverage by generating pseudo-aerial 
+
+BEV images, which support both human annotation and uncertainty-aware pseudo-labeling to train on unlabeled data. 
+
+## 2 Related Work 
+
+BEV semantic prediction from on-vehicle sensors. Bird’s-eye-view (BEV) semantic mapping from surround cameras and/or LiDAR has become a standard representation for autonomous driving. Lift-Splat-Shoot (LSS) [24] pioneered end-to-end view transformation by lifting image features into 3D and splatting them onto a rasterized BEV grid. Subsequent work improved depth reliabil-ity and efficiency (e.g., BEVDepth [16]) and introduced stronger spatiotempo-ral aggregation for camera-only BEV representations (e.g., BEVFormer [17]). Multi-modal approaches unify features directly in BEV and support multiple perception tasks efficiently, e.g. BEVFusion [20]. Beyond dense raster maps, sev-eral methods target structured BEV outputs such as online vectorized HD-map elements; representative examples include MapTR [18] and temporal/streaming variants such as StreamMapNet [36]. 
+
+Supervision and ground truth for BEV tasks. A persistent bottle-neck for supervised BEV learning is high-quality ground truth. Many datasets provide proxy BEV supervision from ego-centric sources such as rasterized HD-map layers and 3D annotations (e.g., vehicles from 3D boxes), as commonly used in BEV segmentation and mapping pipelines [15,24]. Other works generate BEV/occupancy supervision through temporal sensor fusion and accumulation, e.g. MonoLayout [22], or build denser 3D/BEV labels via LiDAR-based pipelines 4 J. Niemeijer, A. E. Ben Zekri, R. Bahmanyar, P. M. Schmälzle et al.    
+
+> (a) (b) (c)
+> Fig. 2: Vehicle setup used for the campaign and sensor installations (a). Trajectory of the data and how it is split into a train val test split (b). Examples for the input (camera and LiDAR), the corresponding aerial crops with the centered ego vehicle and the derived labels from the aerial view (c).
+
+with additional cleaning/annotation effort, e.g. OpenOccupancy [32]. While ef-fective, these signals are tied to the ego platform’s sensing range, viewpoint, and/or availability of maps and annotations, and can be particularly brittle for dynamic agents and long-range context. 
+
+Aerial viewpoints and cross-view learning. Aerial imagery has been widely used for semantic understanding and scene parsing, supported by datasets such as SkyScapes [2] and UAVid [21]. Recent work has also explored the use of synthetic data, e.g., generated from simulation environments, as a complemen-tary source for aerial image segmentation [4]. Related cross-view literature often studies ground-to-aerial matching and geo-localization (e.g., CVM-Net [13] and orientation-aware variants [19]), which differs from learning dense BEV seman-tics for driving. More recently, aerial–ground cooperative driving datasets (e.g., AGC-Drive [10]) provide multi-agent sensing and annotations, but typically tar-get cooperative 3D perception (e.g., 3D boxes) rather than using aerial imagery as a training-time supervision signal for dense BEV semantic maps. In this work, we focus on time-synchronized aerial observation as a scalable source of dense BEV labels. 
+
+## 3 Dataset 
+
+Overview. We introduce a large-scale cross-view dataset recorded simultaneously from an airborne helicopter platform and an instrumented measuring car in Germany, over three days in September 2022. The vehicle covers 60 km over roughly 5 h across urban, suburban, and highway routes with varying traffic density. After synchronization and quality filtering, the dataset contains 8199 samples, each comprising: (i) a high-resolution aerial RGB image, (ii) a forward-facing vehicle RGB image, (iii) LiDAR sweeps from two vehicle-mounted sensors, GOLD-BEV 5
+
+(iv) vehicle odometry, and (v) GNSS/INS measurements. See Figure 2 for the platform setup and sensor placement. 
+
+Sensors. On the vehicle, we record with a forward-facing AVT Mako RGB cam-era, a Velodyne VLP-32C LiDAR, multiple IBEO automotive LiDAR sensors, and GNSS/IMU. Aerial imagery is captured by a DSLR camera system mounted on the helicopter, producing RGB images of 3648 × 5472 pixels at ∼1 Hz from an altitude of ∼ 650 m (average GSD ∼ 7 cm /px); the aerial platform also logs GNSS/IMU. The aerial and vehicle systems use independent time bases. 
+
+3.1 Cross-view Alignment and BEV Cropping 
+
+We construct temporally and spatially aligned aerial–ground samples and derive vehicle-centric BEV-aligned aerial crops in a single preprocessing pipeline. 
+
+Temporal alignment. Each aerial image serves as a temporal anchor. For every aerial frame, we select the closest vehicle RGB image with a maximum offset of 100 ms, and then retrieve the closest Velodyne and IBEO LiDAR sweeps as well as GNSS/IMU measurements within 100 ms of the selected vehicle image. If any modality exceeds this threshold, the sample is discarded. For retained samples, mean offsets are 12 ms (vehicle RGB), 23 ms (Velodyne), 10 ms (IBEO), and 5 ms (GNSS/IMU), limiting motion-induced misalignment. 
+
+Spatial alignment. Given the temporally aligned sensor bundle, we localize the ego vehicle in each aerial image. We first project the vehicle position into the aerial image using GNSS from both platforms. To refine this estimate—particularly in GNSS-challenging urban areas—we apply template matching in a window around the projected location; the vehicle roof was marked with an “X” pat-tern to facilitate detection. We retain detections with confidence above 0.65 and discard all remaining samples. 
+
+BEV-aligned aerial crops. To obtain vehicle-centric overhead context in a consis-tent raster space, we rotate each aerial image so that the vehicle heading points upward, using IMU data from both platforms. We then crop a 600 × 600 patch centered on the vehicle, corresponding to roughly 42 × 42 m at the average GSD. These BEV-aligned crops define the coordinate frame used in the paper. 
+
+3.2 Supervision Signals 
+
+The BEV-aligned aerial crops provide (i) a dense overhead RGB target in BEV space and (ii) training-time supervision for BEV semantic mapping. We generate dense BEV pseudo-labels with domain-adapted aerial teachers and conservative fusion; details are given in subsection 4.2. Figure 2 (c) shows examples of such pseudo labels. Additionally, we provide sparse semantic supervision by manually annotating 454 Velodyne LiDAR sweeps (used for the LiDAR holdout evaluation and optional refinement; see subsection 4.3). 6 J. Niemeijer, A. E. Ben Zekri, R. Bahmanyar, P. M. Schmälzle et al. 
+
+Table 1: Comparison with existing datasets. Multi-sensor includes LiDAR/INS. Dataset Overhead Source Simult. Aerial–Ground Multi-Sensor Metric BEV Alignment CVUSA [35]/CVACT [19] Web satellite maps ✗ ✗ ✗                  
+
+> KITTI-CVL [30] Google Maps ✗✓KITTI [8] ✓
+> FordAV-CVL [30] Google Maps ✗✓FordAV [1] logs ✓
+> nuScenes [5] None ✗✓N/A
+> Ours Helicopter aerial capture ✓✓✓
+
+Semantic taxonomy. We use five classes: road , sidewalk , building , vehicle , and 
+
+VRU . Road covers drivable roadway surfaces. Sidewalk denotes other flat, traversable ground surfaces that are not part of the roadway, such as sidewalks, paved shoul-ders, plazas, parking areas, low vegetation and bike/foot paths. Building covers buildings and other permanent vertical structures. Vehicle includes cars, trucks, buses, and motorcycles. VRU (vulnerable road users) includes pedestrians, e-scooter, motorcycle, wagon and cyclists. 
+
+3.3 Dataset Splits 
+
+To prevent spatial leakage, we split data by vehicle trajectory segments (geo-graphic partitioning) rather than random sampling, cf. Figure 2(b). This yields 6510 train, 792 validation, and 897 test samples, each containing a mix of urban and highway scenes. 
+
+3.4 Comparison to Existing Cross-View Datasets 
+
+Table 1 summarizes key differences to prior cross-view benchmarks. In contrast to web-sourced street–satellite pairs and vehicle logs paired with non-synchronized overhead imagery, our data is captured simultaneously from aerial and ground platforms and includes multi-sensor vehicle measurements, enabling temporally consistent supervision of dynamic traffic participants. 
+
+## 4 Methods 
+
+Given time-synchronized on-vehicle sensors (front-view RGB camera and/or Li-DAR) and a temporally aligned aerial observation during training, our goal is to predict a dense semantic bird’s-eye-view (BEV) map centered at the ego ve-hicle. We formulate BEV segmentation as per-cell semantic classification on a fixed raster grid aligned with the vehicle heading. In addition to BEV seman-tics, we optionally predict a pseudo-aerial BEV RGB image in the same raster space, enabling multi-task learning and providing an interpretable interface for lightweight manual annotation. The following sections will describe the architec-tures, creation of aerial pseudo labels and training strategies that were used. GOLD-BEV 7
+
+4.1 Architectures for BEV Segmentation and Reconstruction 
+
+We created two architecutes for BEV segmentation and reconstruction that re-ceive the same paired inputs: a forward-facing RGB image and a LiDAR point cloud rendered into a BEV raster aligned to the target BEV grid. 
+
+LiDAR-to-BEV rasterization. We convert each LiDAR sweep into a fixed-size bird’s-eye-view tensor by discretizing the ground plane into a regular BEV grid (identical resolution and spatial extent as the semantic output). All points are transformed into the ego frame, cropped to the BEV region of interest, and accumulated per cell. For each BEV cell we compute three channels: (i) occupancy 
+
+(binary indicator of at least one return), (ii) height (e.g., maximum z value within the cell, normalized to a fixed range), and (iii) density (log-scaled point count per cell). The resulting 3-channel tensor (similar to e.g. [6, 14]) serves as the LiDAR input to all models. 
+
+Camera preprocessing. The RGB image is resized to the network input resolution of 600 × 600 , and encoded by a dedicated camera backbone. 
+
+The SegFormer architecture: Our BEV student uses two SegFormer encoders (camera and LiDAR-BEV) that output four stage feature maps each. The Li-DAR stream ingests a 3-channel BEV raster (occupancy, height, log-density), while the camera stream uses the forward RGB image. To fuse modalities, we apply cross-attention fusion blocks at the deeper stages (S3/S4): BEV features act as queries, while camera features provide keys/values (similar to [3, 9]). The attention output is projected back to the BEV channel dimension and combined with the input BEV features using a residual connection followed by normal-ization, as in standard transformer blocks [29]. A SegFormer-style lightweight decoder head projects each stage to a shared hidden dimension, upsamples to a common resolution, concatenates, and fuses them with a 1×1 convolution to predict dense BEV logits at full resolution. Optionally, we attach (i) a shallow BEV reconstruction head on the fused decoder feature to output a deterministic pseudo-aerial BEV RGB image. 
+
+Diffusion reconstructor. For higher-fidelity pseudo-aerial BEV imagery, we train a conditional latent diffusion model based on Stable Diffusion v1.5 with Con-trolNet. We freeze the pretrained VAE and UNet [25] and train (i) a ControlNet branch [37] and (ii) a lightweight sensor-to-conditioning network. The condi-tioner mirrors our two-stream SegFormer-XCA encoder/fusion but outputs a compact C-channel conditioning map (typically C=3 ) that is injected into the frozen UNet via ControlNet residuals. Training follows the standard latent noise-prediction objective on VAE latents, using a mask to restrict supervision to valid BEV cells. At inference, we sample with a DDIM scheduler for a fixed number of steps and decode the final latent with the frozen VAE. Auxiliary segmentation head. To encourage semantic consistency, we optionally attach a lightweight seg-mentation head to the final feature map of the (frozen) VAE decoder. The head 8 J. Niemeijer, A. E. Ben Zekri, R. Bahmanyar, P. M. Schmälzle et al. 
+
+consists of two 3×3 Conv-GN-SiLU blocks followed by a 1×1 convolution that maps features to K semantic classes. During training, we decode the current denoised latent estimate (using the same predicted-clean latent used for recon-struction) through the VAE decoder, apply the segmentation head to its last feature map, and supervise with a per-pixel cross-entropy (and/or Dice) loss on valid BEV cells. The segmentation loss is optimized jointly with the diffusion noise-prediction loss; the auxiliary head is trained only during diffusion training and is not required at inference. 
+
+4.2 Domain-Adapted Aerial Teachers and Pseudo-Label Fusion 
+
+Overview. We obtain dense BEV supervision by training two aerial semantic segmentation teachers on BEV-aligned aerial crops and fusing their predictions into a single pseudo-label map per crop. To reduce the appearance gap between public UAV imagery and our helicopter data, we adapt both teachers to our target domain using semi-supervised domain adaptation on a mixture of labeled and unlabeled target crops. 
+
+Teacher supervision sources. We create the teachers from two supervised signals: 1. Labeled target subset (train/val). We manually annotate a subset of our BEV-aligned aerial crops and split it into a small training and validation set. The training split is used for supervised fine-tuning of both teachers on the target domain, while the validation split is used for model selection, calibra-tion (label mapping and fusion thresholds), and early stopping. The target la-bels cover (i) a coarse structural taxonomy (road/sidewalk/building/vehicle) and (ii) a pedestrian-specific mask. 2. External supervised pre-training. We pre-train the structural teacher using the SkyScapes aerial dataset (after mapping its label space to our taxonomy), and pre-train the pedestrian teacher on a proprietary pedestrian segmentation dataset. Both teachers employ a Mask2Former-style [7] segmentation backbone. 
+
+Semi-supervised domain adaptation to helicopter crops. Starting from the ex-ternal supervised initialization, we adapt each teacher to our target helicopter crops using a semi-supervised recipe: we combine (i) standard supervised train-ing on the labeled target training split with (ii) SSL/UDA losses on unlabeled target crops (e.g., consistency regularization under strong augmentation and self-training on high-confidence pseudo-labels). We select checkpoints and tune thresholds using the labeled target validation split, following common practice in semi-supervised segmentation and unsupervised domain adaptation [23, 26]. The resulting adapted checkpoints are then applied to all aerial crops to generate dense pseudo-labels for. GOLD-BEV 9
+
+Producing teacher predictions. Given a BEV crop image x (600 ×600), the struc-tural teacher outputs per-pixel class probabilities pkc (x) over K=4 classes. We extract the argmax label and confidence as 
+
+ˆyc(x) = arg max  
+
+> k
+
+pkc (x), ˆsc(x) = max  
+
+> k
+
+pkc (x). (1) The pedestrian teacher is trained as a binary model and outputs a pedestrian probability pped (x) ∈ [0 , 1] .
+
+Fusion into final pseudo-labels. We fuse both teachers with a conservative tri-state policy that prioritizes reliable dynamic labels and ignores ambiguous pixels. Let τ hi ped and τ lo ped be pedestrian high/low thresholds and τc a structural confi-dence threshold. The fused label map ˆy(x) is defined per pixel as 
+
+ˆy(x) = 
+
+
+
+PED , pped (x) ≥ τ hi ped ,
+
+ˆyc(x), pped (x) ≤ τ lo ped ∧ ˆsc(x) ≥ τc,
+
+IGNORE , otherwise. (2) Thus, confident pedestrian predictions overwrite the structural map, while struc-tural labels are accepted only above τc; all ambiguous regions are ignored. 
+
+Ignoring trees. Pixels predicted as tree/vegetation are always mapped to IGNORE 
+
+and excluded from training. In our helicopter imagery, tree canopies often occlude or overlay regions that are nevertheless visible and semantically relevant from the ground, making aerial tree labels a frequent source of incorrect supervision. 
+
+4.3 Training with Dense Pseudo-Labels and Sparse LiDAR Supervision 
+
+Overview. Given BEV-aligned aerial crops paired with dense BEV pseudo-labels and a corresponding BEV RGB target, we train the architectures from Sec. 4.1 to jointly predict (i) dense BEV semantics and (ii) a pseudo-aerial BEV reconstruc-tion. Training proceeds in two stages: (1) dense supervision from aerial-derived pseudo-labels and (2) an refinement stage using LiDAR semantic annotations. 
+
+Stage 1: Dense pseudo-label training (aerial supervision). For BEV semantic segmentation, we supervise the BEV logits with a per-pixel cross-entropy loss on all non-ignore cells of the pseudo-label map. For deterministic reconstruction (SegFormer decoder), we apply an image-level ℓ1 loss between the predicted BEV RGB and the BEV RGB target. For diffusion-based reconstruction, we train a ControlNet-conditioned denoiser with the standard noise-prediction objective in latent space. 10 J. Niemeijer, A. E. Ben Zekri, R. Bahmanyar, P. M. Schmälzle et al. 
+
+Table 2: Main results on the Gold BEV Test split (dense BEV segmentation). L
+
+indicates an additional fine-tuning stage using sparse LiDAR semantic annotations. LiDAR Holdout mIoU is computed on supervised cells only. For camera-only models, all metrics are computed inside the BEV visibility cone (pixels outside are ignored).                                                                 
+
+> Method Inp. LGold BEV Test (seg.) LiDAR Holdout (seg.)
+> mIoU All mIoU Static IoU Vehic. IoU VRU. mIoU All mIoU Static IoU Vehic. IoU VRU. SegF. L–0.485 0.627 0.506 0.039 0.426 0.549 0.427 0.056 SegF. C–0.290 0.408 0.226 0.000 0.168 0.280 0.003 0.000 SegF. C+L ×0.477 0.616 0.500 0.035 0.442 0.559 0.452 0.084 SegF. (Int.) C+L ✓0.461 0.591 0.494 0.036 0.656 0.709 0.854 0.299 SegF. (EP.) C+L ✓0.461 0.617 0.415 0.039 0.690 0.746 0.880 0.328 Diff. C+L ×0.485 0.663 0.438 0.0003 0.437 0.593 0.404 0.0004
+
+Stage 2 (optional): Sparse LiDAR refinement. Dense aerial pseudo-labels can be noisy, in particular for dynamic agents and at fine boundaries. To inject geometry-grounded semantics and correct residual misalignments, we optionally fine-tune the segmentation head using sparse LiDAR semantic annotations. We rasterize the labeled LiDAR points to the BEV grid and compute the segmen-tation loss only on supervised BEV cells. This stage serves two purposes: (i) it improves dynamic-class accuracy where aerial pseudo-labels are uncertain, and (ii) it mitigates small systematic offsets between projected LiDAR measurements and the BEV raster/imagery. 
+
+## 5 Experiments 
+
+We evaluate along the paper’s three claims: (i) dense BEV semantic mapping from ego sensors, (ii) the impact of time-synchronized aerial supervision on dy-namic classes, and (iii) scaling beyond aerial coverage via pseudo-aerial BEV imagery for annotation and pseudo-labeling. Unless stated otherwise, datasets, label generation, and model architectures follow Sections 3 and 4. 
+
+Splits. We report final numbers on a held-out Gold test split; all model selection uses disjoint validation data. 
+
+Sparse LiDAR holdout. We additionally evaluate on a LiDAR-annotated holdout split (10% of the data c.f. Sec. 3) by rasterizing point-wise labels to BEV and computing mIoU on supervised cells only (c.f. Sec. 4). 
+
+Metrics. BEV segmentation is measured by mIoU over all classes (mIoU All ) and static classes (road, sidewalk, building mIoU Static ); dynamic performance is re-ported via per-class IoU for Vehicle and VRU (and mIoU Dyn. where applicable). Reconstruction quality is reported using PSNR/SSIM, LPIPS, and FID/KID against the BEV reference imagery. 
+
+Low-budget setting. For the no-aerial scenario we assume a 10-frame manual BEV annotation budget on pseudo-aerial frames (Sec. 5.3). GOLD-BEV 11 
+
+5.1 Results on Our Dataset 
+
+Our dataset supports supervised learning of two complementary BEV tasks from on-board sensors (camera and/or LiDAR): (i) reconstructing a pseudo BEV im-age and (ii) predicting dense BEV semantic segmentation. Table 2 reports seg-mentation results on the Gold BEV test split and on the sparse LiDAR holdout. 
+
+Training setup and ablations. All models are trained in a multi-task setting to jointly predict BEV reconstruction and BEV semantic segmentation. We study three input configurations: camera-only (C), LiDAR-only (L), and cam-era+LiDAR (C+L). For camera-only models, supervision and evaluation are restricted to the camera-visible BEV region: we apply a forward BEV visibility-cone mask during training and evaluation, and ignore pixels outside the cone for both losses and metrics. For the sparse LiDAR holdout, point-wise labels are rasterized into the BEV grid using the calibrated projection described in Sec. 4.3, and mIoU is computed on supervised cells only. 
+
+Effect of input modality. LiDAR-only provides a strong estimate of static layout on Gold (mIoU Static = 0 .627 ) and achieves solid overall segmentation (mIoU All =0.485 ), with high Vehicle IoU ( 0.506 ). Camera-only performs markedly worse (mIoU All = 0 .290 within the visible cone), indicating that monocular appearance cues are insufficient to recover BEV semantics under partial observability. Fus-ing camera and LiDAR improves balance across splits: SegFormer C+L achieves comparable Gold performance (mIoU All = 0 .477 ) while improving LiDAR-holdout mIoU All over single-modality baselines ( 0.442 vs. 0.426 for L-only). 
+
+SegFormer vs. diffusion for BEV semantics. The diffusion-based multi-task model attains competitive overall segmentation on Gold (mIoU All = 0 .485 ) and yields the strongest static score among the compared models (mIoU Static = 0 .663 ). However, its dynamic-class performance is weaker (Vehicle IoU 0.438 ) and VRU IoU is near-zero on both Gold and the LiDAR holdout. In contrast, SegFormer variants maintain more reliable dynamic predictions (e.g., SegFormer C+L Ve-hicle IoU 0.500 and LiDAR-holdout VRU IoU 0.084 ), suggesting that diffusion excels at learning scene layout and appearance but is less effective as a semantic decoder for fine-scale dynamic agents without geometry-grounded supervision. 
+
+Sparse LiDAR supervision improves geometry-consistent semantics. Adding sparse LiDAR supervision yields large gains on the LiDAR holdout split, especially for dynamic agents. Importantly, the two evaluations differ: Gold BEV metrics as-sess dense predictions over the full raster (including regions that may be occluded or outside LiDAR visibility), whereas the LiDAR holdout measures agreement only on actually observed cells with rasterized point-wise labels. Compared to SegFormer C+L without sparse supervision (LiDAR holdout mIoU All = 0 .442 ), both refinement strategies substantially improve visible-region performance: in-terleaved sparse supervision reaches 0.656 and epoch-level fine-tuning reaches 
+
+0.690 . The gains are driven by dynamic classes (Vehicle IoU 0.452 → 0.854 /0.880 ;12 J. Niemeijer, A. E. Ben Zekri, R. Bahmanyar, P. M. Schmälzle et al.  
+
+> Fig. 3: Comparison of BEV semantic segmentation predictions. Each row shows a different scenario: a highway scene (top), a complex urban intersection (middle), and a zoomed-in crop highlighting a VRU prediction (bottom). From left to right: ground truth (GT), LiDAR-only prediction (L-only), camera+LiDAR prediction (C+L), and camera+LiDAR with additional sparse LiDAR fine-tuning (C+L + sparse).
+
+VRU IoU 0.084 → 0.299 /0.328 ), showing that a small amount of geometry-grounded supervision quickly injects reliable dynamic semantics that are difficult to learn from aerial-derived dense targets alone. This is particularly pronounced for VRUs: in aerial BEV crops they occupy only a few pixels, making dense pseudo-labels noisy and recall-limited, while sparse LiDAR supervision provides a clean visibility-filtered signal that can be incorporated effectively through a short fine-tuning stage. On the Gold split, sparse supervision does not neces-sarily increase agreement with aerial-derived labels (mIoU All 0.477 → 0.461 ), which is consistent with the supervision mismatch: sparse LiDAR optimizes cor-rectness on visible geometry, while dense aerial targets also score predictions in unobserved regions where the label is inherently less certain. 
+
+Reconstruction quality. Table 3 quantifies pseudo-aerial BEV reconstruction quality. SegFormer achieves higher pixel-level fidelity (PSNR/SSIM: 14 .72 /0.509 
+
+vs. 13 .50 /0.505 ), while diffusion substantially improves perceptual and distri-butional quality (LPIPS: 0.803 → 0.596 , FID: 282 .2 → 140 .1, KID: 0.301 →
+
+0.073 ). Qualitatively (Figure 4), SegFormer reconstructions tend to be smoother, whereas diffusion produces sharper structures and more realistic local texture. This motivates using pseudo-aerial imagery primarily as an annotation inter-face, where perceptual realism and crisp boundaries are beneficial, while keeping semantics grounded via explicit segmentation supervision. GOLD-BEV 13 
+
+Table 3: Reconstruction quality on BEV RGB (test split). Pixel-level (PSNR/SSIM), perceptual (LPIPS), and distributional (FID/KID) metrics between reconstructed BEV and GT BEV. Best re-sults are in bold.                
+
+> Method PSNR ↑SSIM ↑LPIPS ↓FID ↓KID ↓
+> SegF. 14.72 ±
+> 1.28 0.509 ±
+> 0.050
+> 0.803 ±
+> 0.033 282.2 0.301 Diff. 13.50 ±
+> 0.93 0.505 ±
+> 0.048
+> 0.596 ±
+> 0.023 140.1 0.073
+
+Table 4: Sparse supervision efficiency. We vary the fraction of LiDAR-supervised training frames. C+L+sparse (epoch FT).                      
+
+> Variant Sup frac. Gold mIoU All Gold Dyn. LiDAR mIoU All LiDAR Dyn. C+L 0.10 0.467 0.227 0.682 0.603 C+L 0.25 0.457 0.225 0.696 0.628
+> C+L 0.50 0.463 0.227 0.670 0.585 C+L 1.00 0.461 0.227 0.690 0.604
+
+Table 5: Intersection-over-Union (IoU) evaluation of individual annotators and their fusion compared to the ground truth. The column Vehicle vis. reports the IoU computed only on vehicles visible in LiDAR, while Vehicle includes all annotated vehicles. Bold values indicate the best performance per column.                                           
+
+> Annotator mIoU Ignored Road Sidewalk Building Vehicle vis. Vehicle A1 0.747 0.276 0.919 0.879 0.648 0.541 0.560 A2 0.749 0.337 0.874 0.801 0.800 0.523 0.520 A3 0.551 0.268 0.804 0.504 0.395 0.501 0.502 A4 0.748 0.440 0.906 0.802 0.747 0.539 0.561
+> Fusion 0.896 0.642 0.966 0.917 0.990 0.712 0.708
+
+5.2 Influence of Supervised Labels 
+
+We study how much sparse LiDAR semantic supervision is needed to refine dense BEV predictions. Concretely, we vary the fraction of LiDAR-supervised training frames used in the epoch-level fine-tuning stage (C+L+sparse, epoch FT) and report Gold performance and LiDAR-holdout mIoU computed on supervised cells only (Table 4). 
+
+Sparse supervision is label-efficient. A small supervision budget already achieves near-peak performance. Using only 10% of LiDAR-supervised frames yields the best Gold mIoU All (0.467 ) while reaching strong LiDAR-holdout performance (0.682 ). At 25%, LiDAR-holdout peaks (mIoU All = 0 .696 , mIoU Dyn. = 0 .628 ), indicating that limited geometry-anchored supervision suffices to correct sys-tematic failure modes. 
+
+Diminishing returns beyond 25%. Gold performance remains essentially un-changed (mIoU All 0.457 –0.463 ; mIoU Dyn. ≈ 0.225 –0.227 ), and LiDAR-holdout varies mildly with no monotonic trend. Overall, sparse supervision primarily acts as a targeted refinement signal: it improves LiDAR-consistent semantic correct-ness without requiring dense manual BEV labels. 
+
+5.3 What to do Without Aerial Supervision 
+
+Time-synchronized aerial supervision is not always available outside covered re-gions. To scale beyond aerial coverage (Contribution 3), we generate pseudo-14 J. Niemeijer, A. E. Ben Zekri, R. Bahmanyar, P. M. Schmälzle et al.    
+
+> Fig. 4: Views used for BEV annotation and validation. Left: real BEV image used to create the Gold manual GT. Middle/right: pseudo-aerial BEV reconstructions from SegFormer and diffusion. LiDAR returns are overlaid (red) to indicate cells with direct sensor support. Annotators label SegFormer/diffusion views independently; the final mask is a fusion that retains only pixels where both views agree on the class.
+
+aerial BEV imagery and use it (i) to obtain a small amount of direct BEV supervision via lightweight manual labeling and (ii) to exploit additional unla-beled target frames via uncertainty-aware pseudo-labeling. 
+
+10-frame manual BEV supervision (two-view annotation + strict agreement fu-sion). We annotate 10 pseudo-aerial frames in the same BEV raster as our predic-tor. Pseudo-aerial reconstructions are reliable for static layout and vehicles , but 
+
+VRU are not practically annotatable : they occupy only a few pixels in overhead crops and are often indistinguishable from texture/shadows in the reconstruc-tions. We therefore omit VRUs in the manual pseudo-aerial masks and inject VRU semantics via LiDAR-based signals (below). Each frame is labeled twice—once on the SegFormer reconstruction and once on the diffusion reconstruction—with LiDAR returns overlaid (Figure 4). We fuse both masks using strict agreement with void propagation: a pixel is kept only if both annotations are non-void and assign the same class; otherwise it is void. Void pixels are excluded from losses and metrics, yielding high-precision supervision on retained pixels at reduced coverage. Protocol validation on Gold (reliability vs. coverage). We apply the same two-view labeling and fusion on a small set of Gold frames with manual GT (Figure 4, left) and evaluate against GT (Table 5). Static classes achieve consistently high IoU across annotators, while vehicles are harder due to reconstruction artifacts and partial observ-ability. Fusion yields the highest accuracy (mIoU = 0 .896 ) but ignores many pixels (Ignored = 0 .642 ), as disagreements are intentionally converted to void. Vehicle IoU is similar (and for fusion slightly higher) when restricted to LiDAR-visible vehicles, indicating that most failures occur where sensor evidence is weak. 
+
+Adding VRUs beyond pseudo-aerial annotation. VRU semantics can be added efficiently either via sparse LiDAR fine-tuning (Sec. 5.2) or via LiDAR point-cloud pseudo-labels (e.g., from a LiDAR-based detector/segmenter) rasterized to BEV, complementing the low-budget pseudo-aerial supervision. GOLD-BEV 15 
+
+## 6 Conclusion 
+
+We presented GOLD-BEV , a framework for learning dense BEV semantic envi-ronment maps—including dynamic agents—from ego-centric sensors using time-synchronized aerial imagery as supervision during training. By casting supervi-sion into an aerial-style BEV space, we obtain a natural and efficient interface for dense semantic labeling while avoiding many ambiguities of ego-only BEV targets. Crucially, synchronization between aerial and ground platforms enables learning of moving objects without the temporal artifacts that arise when over-head data are not aligned to the drive. To scale beyond limited aerial coverage, we further learn to synthesize pseudo-aerial BEV imagery from the ego sensors, which supports lightweight human annotation and uncertainty-aware pseudo-labeling to exploit additional unlabeled data. 
+
+## Acknowledgment 
+
+The research leading to these results is funded by the German Federal Ministry for Economic Affairs and Energy within the project “NXT GEN AI METHODS – Generative Methoden für Perzeption, Prädiktion und Planung". The authors would like to thank the consortium for the successful cooperation 
+
+## References 
+
+1. Agarwal, S., Vora, A., Pandey, G., Williams, W., Kourous, H., McBride, J.: Ford multi-av seasonal dataset. The International Journal of Robotics Research 39 (12), 1367–1376 (Sep 2020). https://doi.org/10.1177/0278364920961451 , http:// dx.doi.org/10.1177/0278364920961451 
+
+2. Azimi, S.M., Henry, C., Sommer, L., Schumann, A., Vig, E.: Skyscapes fine-grained semantic understanding of aerial scenes. In: Proceedings of the IEEE/CVF Inter-national Conference on Computer Vision (ICCV) (October 2019) 3. Bai, X., Hu, Z., Zhu, X., Huang, Q., Chen, Y., Fu, H., Tai, C.L.: Transfusion: Ro-bust lidar-camera fusion for 3d object detection with transformers. arXiv preprint arXiv:2203.11496 (2022) 4. Ben Zekri, A.E., Latrach, A., Bahmanyar, R., Chaabouni-Chouayakh, H.: Towards using synthetic data in aerial image segmentation. In: 2025 Joint Urban Remote Sensing Event (JURSE). vol. CFP25RSD-ART, pp. 1–4 (2025). https://doi.org/ 10.1109/JURSE60372.2025.11076036 
+
+5. Caesar, H., Bankiti, V., Lang, A.H., Vora, S., Liong, V.E., Xu, Q., Krishnan, A., Pan, Y., Baldan, G., Beijbom, O.: nuscenes: A multimodal dataset for autonomous driving. arXiv preprint arXiv:1903.11027 (2019) 6. Chen, X., Ma, H., Wan, J., Li, B., Xia, T.: Multi-view 3d object detection network for autonomous driving. In: Proceedings of the IEEE Conference on Computer Vision and Pattern Recognition (CVPR) (2017) 7. Cheng, B., Choudhuri, A., Misra, I., Kirillov, A., Girdhar, R., Schwing, A.G.: Mask2former for video instance segmentation (2021), https://arxiv.org/abs/ 2112.10764 16 J. Niemeijer, A. E. Ben Zekri, R. Bahmanyar, P. M. Schmälzle et al. 8. Geiger, A., Lenz, P., Stiller, C., Urtasun, Raquel: Vision meets robotics: The kitti dataset. International journal of robotics research 32 (11), 1231–1237 (2013). 
+
+https://doi.org/10.1177/0278364913491297 
+
+9. Guan, Y., Wang, T., Cheng, Q., et al.: Crfusion: a novel lidar-camera fusion network for bev map construction. Scientific Reports 16 , 5169 (2026). https: //doi.org/10.1038/s41598-026-35551-0 
+
+10. Hou, Y., Zou, B., Zhang, M., Chen, R., Yang, S., Zhang, Y., Zhuo, J., Chen, S., Chen, J., Ma, H.: Agc-drive: A large-scale dataset for real-world aerial-ground collaboration in driving scenarios. arXiv preprint arXiv:2506.16371 (2025) 11. Hu, A., Murez, Z., Mohan, N., Dudas, S., Hawke, J., Badrinarayanan, V., Cipolla, R., Kendall, A.: Fiery: Future instance prediction in bird’s-eye view from surround monocular cameras. In: Proceedings of the IEEE/CVF International Conference on Computer Vision (ICCV). pp. 15273–15282 (October 2021) 12. Hu, S., Chen, L., Wu, P., Li, H., Yan, J., Tao, D.: St-p3: End-to-end vision-based autonomous driving via spatial-temporal feature learning. In: Computer Vision – ECCV 2022. Lecture Notes in Computer Science, vol. 13698, pp. 533–549. Springer (2022). https://doi.org/10.1007/978-3-031-19839-7_31 
+
+13. Hu, S., Feng, M., Nguyen, R.M.H., Lee, G.H.: Cvm-net: Cross-view matching net-work for image-based ground-to-aerial geo-localization. In: Proceedings of the IEEE Conference on Computer Vision and Pattern Recognition (CVPR) (June 2018) 14. Ku, J., Mozifian, M., Lee, J., Harakeh, A., Waslander, S.L.: Joint 3d proposal gener-ation and object detection from view aggregation. arXiv preprint arXiv:1712.02294 (2017) 15. Li, Q., Wang, Y., Wang, Y., Zhao, H.: Hdmapnet: An online hd map construction and evaluation framework. arXiv preprint arXiv:2107.06307 (2021) 16. Li, Y., Ge, Z., Yu, G., Yang, J., Wang, Z., Shi, Y., Sun, J., Li, Z.: Bevdepth: Acquisition of reliable depth for multi-view 3d object detection. arXiv preprint arXiv:2206.10092 (2022) 17. Li, Z., Wang, W., Li, H., Xie, E., Sima, C., Lu, T., Qiao, Y., Dai, J.: BEV-Former: Learning bird’s-eye-view representation from multi-camera images via spatiotemporal transformers. In: Computer Vision – ECCV 2022: 17th European Conference, Tel Aviv, Israel, October 23–27, 2022, Proceedings, Part IX. Lec-ture Notes in Computer Science, vol. 13669, pp. 1–18. Springer (2022). https: //doi.org/10.1007/978-3-031-20077-9_1 
+
+18. Liao, B., Chen, S., Wang, X., Cheng, T., Zhang, Q., Liu, W., Huang, C.: Maptr: Structured modeling and learning for online vectorized HD map construction. In: The Eleventh International Conference on Learning Representations (ICLR). OpenReview.net (2023), https://openreview.net/forum?id=k7p_YAO7yE 
+
+19. Liu, L., Li, H.: Lending orientation to neural networks for cross-view geo-localization. In: Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) (June 2019) 20. Liu, Z., Tang, H., Amini, A., Yang, X., Mao, H., Rus, D.L., Han, S.: Bevfusion: Multi-task multi-sensor fusion with unified bird’s-eye view representation. In: IEEE International Conference on Robotics and Automation (ICRA). pp. 2774–2781. IEEE (2023). https://doi.org/10.1109/ICRA48891.2023.10160968 
+
+21. Lyu, Y., Vosselman, G., Xia, G., Yilmaz, A., Yang, M.Y.: Uavid: A semantic seg-mentation dataset for uav imagery. ISPRS Journal of Photogrammetry and Remote Sensing 165 , 108–119 (2020). https://doi.org/10.1016/j.isprsjprs.2020.05. 009 GOLD-BEV 17 22. Mani, K., Daga, S., Garg, S., Shankar, N.S., Jatavallabhula, K.M., Krishna, K.M.: Monolayout: Amodal scene layout from a single image. arXiv preprint arXiv:2002.08394 (2020) 23. Niemeijer, J., Schäfer, J.P.: Combining semantic self-supervision and self-training for domain adaptation in semantic segmentation. In: 2021 IEEE Intelligent Vehicles Symposium Workshops (IV Workshops). pp. 364–371 (2021). https://doi.org/ 10.1109/IVWorkshops54471.2021.9669255 
+
+24. Philion, J., Fidler, S.: Lift, splat, shoot: Encoding images from arbitrary camera rigs by implicitly unprojecting to 3d. arXiv preprint arXiv:2008.05711 (2020) 25. Rombach, R., Blattmann, A., Lorenz, D., Esser, P., Ommer, B.: High-resolution image synthesis with latent diffusion models. In: Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR). pp. 10674– 10685 (2022). https://doi.org/10.1109/CVPR52688.2022.01042 
+
+26. Schwonberg, M., Niemeijer, J., Termöhlen, J.A., Schäfer, J.P., Schmidt, N.M., Gottschalk, H., Fingscheidt, T.: Survey on Unsupervised Domain Adaptation for Semantic Segmentation for Visual Perception in Automated Driving. IEEE Access 
+
+11 , 54296–54336 (May 2023) 27. Sima, C., Tong, W., Wang, T., Chen, L., Wu, S., Deng, H., Gu, Y., Lu, L., Luo, P., Lin, D., Li, H.: Scene as occupancy (2023) 28. Tian, X., Jiang, T., Yun, L., Wang, Y., Wang, Y., Zhao, H.: Occ3d: A large-scale 3d occupancy prediction benchmark for autonomous driving. arXiv preprint arXiv:2304.14365 (2023) 29. Vaswani, A., Shazeer, N., Parmar, N., Uszkoreit, J., Jones, L., Gomez, A.N., Kaiser, Ł., Polosukhin, I.: Attention is all you need. arXiv preprint arXiv:1706.03762 (2017) 30. Wang, S., Zhang, Y., Vora, A., Perincherry, A., Li, H.: Satellite image based cross-view localization for autonomous vehicle. In: 2023 IEEE International Conference on Robotics and Automation (ICRA). pp. 3592–3599. IEEE (2023) 31. Wang, S., Bai, M., Mattyus, G., Chu, H., Luo, W., Yang, B., Liang, J., Cheverie, J., Fidler, S., Urtasun, R.: Torontocity: Seeing the world with a million eyes. In: Proceedings of the IEEE International Conference on Computer Vision (ICCV). pp. 3009–3017 (Oct 2017) 32. Wang, X., Zhu, Z., Xu, W., Zhang, Y., Wei, Y., Chi, X., Ye, Y., Du, D., Lu, J., Wang, X.: Openoccupancy: A large scale benchmark for surrounding semantic oc-cupancy perception. In: IEEE/CVF International Conference on Computer Vision (ICCV). pp. 17804–17813. IEEE (2023). https://doi.org/10.1109/ICCV51070. 2023.01636 
+
+33. Wei, Y., Zhao, L., Zheng, W., Zhu, Z., Zhou, J., Lu, J.: Surroundocc: Multi-camera 3d occupancy prediction for autonomous driving. arXiv preprint arXiv:2303.09551 (2023) 34. Workman, S., Souvenir, R., Jacobs, N.: Wide-area image geolocalization with aerial reference imagery. In: Proceedings of the IEEE International Conference on Com-puter Vision (ICCV). pp. 3961–3969 (December 2015) 35. Workman, S., Souvenir, R., Jacobs, N.: Wide-area image geolocalization with aerial reference imagery. In: IEEE International Conference on Computer Vision (ICCV). pp. 1–9 (2015). https://doi.org/10.1109/ICCV.2015.451 , acceptance rate: 30.3% 36. Yuan, T., Liu, Y., Wang, Y., Wang, Y., Zhao, H.: Streammapnet: Streaming map-ping network for vectorized online HD map construction. In: IEEE/CVF Winter Conference on Applications of Computer Vision (WACV). pp. 7341–7350. IEEE (2024). https://doi.org/10.1109/WACV57701.2024.00719 18 J. Niemeijer, A. E. Ben Zekri, R. Bahmanyar, P. M. Schmälzle et al. 37. Zhang, L., Rao, A., Agrawala, M.: Adding conditional control to text-to-image diffusion models. arXiv preprint arXiv:2302.05543 (2023) 38. Zhang, Y., Zhu, Z., Zheng, W., Huang, J., Huang, G., Zhou, J., Lu, J.: Beverse: Unified perception and prediction in birds-eye-view for vision-centric autonomous driving. arXiv preprint arXiv:2205.09743 (2022) GOLD-BEV 19 
+
+## A Supplementary Material Model Inputs 
+
+> [Occ, Height, Dens]
+> Ground-View
+> LiDAR Point Cloud
+> SegFormer Encoder
+> SegFormer Encoder
+> [S1,S2,S3,S4]
+> Cross-Attention Fusion
+> Inputs Fusion
+> VAE Decoder
+> Student Model (Diffusion or SegFormer Decoder)
+> Ground-Truth Aerial Crop
+> Segmentation Pseudo-Label
+> LiDAR Annotation
+> T
+> + Noise
+> ControlNet
+> zero-conv residuals
+> + Noise
+
+Fig. 5: Overview of our student model. The input consists of (i) a LiDAR point cloud rasterized into a BEV representation with occupancy, height, and density channels, and (ii) a front-facing ground-view RGB image. Each modality is first encoded by a SegFormer backbone. The resulting multi-scale features are fused by cross-attention, allowing the model to combine complementary information despite the different view-points and coordinate systems of camera and LiDAR. The fused representation is then used as conditioning for a ControlNet-based latent diffusion decoder (or, alternatively, a deterministic SegFormer decoder). During diffusion, the frozen pretrained denoiser is guided by trainable ControlNet residuals conditioned on the fused features. After denoising, the final latent is decoded by the VAE decoder to produce a pseudo-aerial reconstruction, as well as semantic segmentation outputs in parallel which can be com-pared against aerial supervision and LiDAR-based annotations. 
+
+A.1 Network Architectures 
+
+BEV segmentation and reconstruction architecture. The model takes as input a forward-facing RGB image and a LiDAR-derived BEV raster. The RGB image is resized to 600 ×600 , while the LiDAR point cloud is projected into a BEV grid and represented by three channels encoding occupancy, normalized height, and log-density. The two modalities are processed by separate SegFormer en-coders, each producing four hierarchical feature maps {S1, S 2, S 3, S 4}. Because camera and LiDAR features are defined in different coordinate systems, fusion is performed only at the deeper stages S3 and S4, where the features are more semantic and spatially compact. At each fusion stage, the BEV features are projected into a shared latent space and used as queries, while the camera features are projected into the same latent space and used as keys and values. The feature maps are flattened into token sequences, optionally augmented with positional encodings, and processed by stacked cross-attention blocks. The attended representation is then projected back to the BEV feature dimension and added to the original BEV feature map 20 J. Niemeijer, A. E. Ben Zekri, R. Bahmanyar, P. M. Schmälzle et al. 
+
+through a residual connection followed by normalization. Thus, the fused repre-sentation remains aligned to the BEV stream while incorporating complementary cues from the ground-view image. 
+
+SegFormer decoder branch. For the deterministic student, the fused BEV fea-ture hierarchy is decoded by a lightweight SegFormer-style decoder head. Each stage feature is first projected to a shared hidden dimension, upsampled to a common spatial resolution, concatenated, and fused by a 1×1 convolution. A fi-nal classifier predicts dense BEV semantic logits at full output resolution. When BEV reconstruction is enabled, the fused decoder feature is additionally passed through a shallow convolutional reconstruction head to generate a pseudo-aerial BEV RGB image. 
+
+The combined latent space as conditioning:. For higher-fidelity pseudo-aerial BEV imagery, we additionally train a conditional latent diffusion model based on Stable Diffusion v1.5 with ControlNet. As illustrated in Fig. 5, the same fused multi-modal representation produced by the two-stream SegFormer encoder and cross-attention fusion serves as the basis for diffusion conditioning. A lightweight sensor-to-conditioning network converts this fused BEV-aligned representation into a compact control signal, which is provided to the ControlNet branch. Con-trolNet then learns trainable residuals that guide the frozen pretrained denoiser, allowing the model to preserve the strong generative prior of Stable Diffusion while grounding the reconstruction in the observed camera–LiDAR input. Training follows the standard latent diffusion formulation. The target pseudo-aerial BEV image is encoded into the latent space of the frozen VAE, noise is added according to the diffusion schedule, and the model is optimized to predict the injected noise. Supervision is restricted to valid BEV cells, so that invalid or empty regions do not dominate the objective. 
+
+Auxiliary segmentation head. To encourage semantic consistency during dif-fusion training, we optionally attach a lightweight segmentation head to the final feature map of the frozen VAE decoder. This head predicts BEV semantic log-its from the current denoised latent estimate and is supervised jointly with the reconstruction objective on valid BEV cells. 
+
+A.2 Pseudo Labeling 
+
+Figure 6 illustrates the pseudo-label generation process described in Sec. 4.2 of the main paper. A labeled target subset of our aerial crops, the SkyScapes dataset, and an external pedestrian segmentation dataset are used to train two Mask2Former-based aerial teachers: a structural teacher and a pedestrian teacher. After supervised initialization, both teachers are adapted to the remain-ing unlabeled target aerial crops using semi-supervised domain adaptation. For each BEV-aligned aerial crop, the structural teacher produces per-pixel semantic predictions and confidence scores, while the pedestrian teacher outputs a pedes-trian probability map. The final pseudo-label map is obtained by a conservative fusion strategy: confident pedestrian predictions overwrite the structural map, GOLD-BEV 21 Pedestrian Segmentation Data       
+
+> Labelled Target Subset
+> Skyscapes
+> A. Supervision Sources B. Teachers Training
+> Structural Teacher Mask2Former
+> Pedestrian Teacher Mask2Former
+> C. Teachers’ Predictions D. Fusion Rule and Final Pseudo-Label
+> Fusion Policy
+> Tree/vegetation Ignore
+
+Fig. 6: Starting from two supervision sources—a labeled target subset of BEV-aligned helicopter crops and external supervised data—we train two domain-adapted aerial teachers: a structural Mask2Former for coarse scene layout and a pedestrian-specific Mask2Former for dynamic agents. Applied to each BEV crop, the structural teacher predicts per-pixel semantic labels and confidences, while the pedestrian teacher pre-dicts pedestrian probability. The final dense pseudo-label is obtained by conservative fusion: confident pedestrian predictions overwrite the structural map, confident struc-tural labels are retained where pedestrian evidence is low, and ambiguous pixels are mapped to ignore. Pixels predicted as tree/vegetation are always ignored. 
+
+structural labels are retained only when sufficiently confident and not contra-dicted by the pedestrian teacher, and ambiguous pixels are assigned IGNORE .In addition, pixels predicted as tree or vegetation are always ignored to avoid supervision errors caused by aerial occlusions. The resulting fused pseudo-labels provide dense supervision for student training. 
+
+A.3 BEV Image Reconstruction 
+
+Figure 7 on the next page provides additional qualitative examples of BEV image reconstruction and BEV semantic segmentation. A notable observation is the strong consistency between the reconstructed BEV appearance and the predicted semantic layout. In most cases, structures that are clearly represented in the generated BEV image, such as lane topology, road boundaries, intersections, and highway merge areas, are also reflected coherently in the corresponding segmentation output. Moreover, the diffusion-based reconstructor benefits from a strong generative prior, which enables it to recover comparatively complex scene geometries with high fidelity, even in challenging scenarios such as large intersections or highway entrances. 22 J. Niemeijer, A. E. Ben Zekri, R. Bahmanyar, P. M. Schmälzle et al. Front Camera LiDAR BEV GT BEV Pred. BEV GT Seg Pred Seg 
+
+Fig. 7: Qualitative results on the GOLD-BEV dataset. Each row shows one scene. From left to right: front camera, LiDAR BEV raster, ground-truth BEV aerial crop, reconstructed BEV image, pseudo-label BEV segmentation, and predicted segmenta-tion.
