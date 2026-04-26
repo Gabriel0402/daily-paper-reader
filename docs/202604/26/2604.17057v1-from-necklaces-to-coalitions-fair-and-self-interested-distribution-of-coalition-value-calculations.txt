@@ -1,0 +1,2463 @@
+Title: From Necklaces to Coalitions: Fair and Self-Interested Distribution of Coalition Value Calculations
+
+URL Source: https://arxiv.org/pdf/2604.17057v1
+
+Published Time: Tue, 21 Apr 2026 00:50:33 GMT
+
+Number of Pages: 69
+
+Markdown Content:
+# From Necklaces to Coalitions: Fair and Self-Interested Distribution of Coalition Value Calculations 
+
+## Terry R. Payne 1* and Luke Riley 2†
+
+1* School of Computer Science and Informatics, University of Liverpool, Liverpool, UK. 
+
+2Quant, London, UK. *Corresponding author(s). E-mail(s): T.R.Payne@liverpool.ac.uk; Contributing authors: luke.riley@quant.network; 
+
+†These authors contributed equally to this work. 
+
+Abstract 
+
+A key challenge in distributed coalition formation within characteristic func-tion games is determining how to allocate the calculation of coalition values across a set of agents. The number of possible coalitions grows exponentially with the number of agents, and existing distributed approaches may produce uneven or redundant allocations, or assign coalitions to agents that are not themselves members. In this article, we present the Necklace-based Distributed Coalition Algorithm (N-DCA), a communication-free algorithm in which each agent independently determines its own coalition value calculation allocation using only its identifier and the total number of agents. The approach builds on the notion of Increment Arrays (IAs), for which we develop a complete mathe-matical framework: equivalence classes under circular shifts, periodic IAs, and a rotated designation scheme with formal load-balance guarantees (tight bounds). We establish a bijection between canonical representative IAs and two-colour combinatorial necklaces, enabling the use of efficient necklace generation algo-rithms to enumerate allocations in constant amortised time. N-DCA is, to the best of our knowledge, the only distributed coalition value calculation algorithm for unrestricted characteristic function games to provably satisfy five desirable properties: no inter-agent communication, equitable allocation, no redundancy, balanced load, and self-interest. An empirical evaluation against DCVC (Rahwan and Jennings 2007) demonstrates that, although DCVC is faster by a constant factor, this difference becomes negligible under realistic characteristic-function 
+
+1 
+
+> arXiv:2604.17057v1 [cs.GT] 18 Apr 2026 evaluation costs, while N-DCA offers advantages in working memory, scalability, and the self-interest guarantee.
+> Keywords: coalition formation, coalition value calculations distribution, combinatorial necklace, self-interest, distributed algorithms
+
+# 1 Introduction 
+
+One of the many advantages of exploiting the Multi-Agent Systems paradigm for man-aging distributed real-world tasks (Wooldridge and Jennings 1995; Belecheanu et al. 2006) is the ability for agents to form coalitions within which they collaborate, thus exploiting the synergy of their actions when tackling joint tasks. The formation of coalitions occurs through the evaluation of the different utility values (using some 
+
+characteristic function ) for candidate coalitions which are satisfiable , and then deter-mining a mutually acceptable division of utility values forming a stable distribution (Sandholm et al. 1999). Such coalitions are typically transient, goal-directed, and are characterised by a flat (as opposed to hierarchical) organisation, where coordination typically occurs between members of a single coalition, as opposed to between mem-bers of other coalitions (Rahwan et al. 2015). Coalition formation is a well-studied research area and has a wide range of potential applications including: electronic auc-tions/market places (for example, to take advantage of bulk buying); communication networks; the smart grid; grid computing; distributed vehicle routing; distributed sen-sor networks; multi-agent planning; and computational trust (Contreras et al. 1998; Dang et al. 2006; Li et al. 2010; Chalkiadakis et al. 2011). Sandholm et al. (1999) framed the problem of identifying potential coalition struc-tures as a three-stage process: (i) calculating the utility value of each possible coalition; (ii) identifying a feasible set of coalitions; and (iii) dividing the utility among agents in a stable manner (i.e. no agent can object to its assigned payoff). The generation of a coalition structure itself can be exogenous (i.e. determined externally, for exam-ple, by an oracle or system designer) or endogenous (i.e. determined by the agents themselves). By restricting the types of coalition structures to those used in Charac-teristic Function Games (CFGs) (Rahwan et al. 2015), the utility value ascribed to each coalition (i.e. the characteristic function ν) depends only on the agents within that coalition, and thus only needs to be calculated for each of the 2 n − 1 possible coalitions (Sandholm et al. 1999; Rahwan and Jennings 2007). Several approaches have adopted an endogenous approach by distributing the cal-culations of each of the coalition values across each of the agents, with the goal of reducing the per-agent computation cost and possibly reducing the overall computa-tion time (Shehory and Kraus 1995, 1996, 1998; Dang and Jennings 2004; Rahwan and Jennings 2007; Michalak et al. 2010; Vinyals et al. 2012; Voice et al. 2012; Rahwan et al. 2015; Riley et al. 2015). Although this eliminates the need for a trusted central authority responsible for determining the value calculations, there is still the signifi-cant risk of redundancy in the calculation of each coalition (Shehory and Kraus 1995, 1996, 1998). This redundancy is unnecessary, as agents share the same value for each 2coalition within these games; furthermore, the complexity of calculating an individual coalition’s value in a characteristic function game can vary, and is potentially expo-nential (Sandholm and Lesser 1997). Even if agents only calculate the values of those coalitions in which they participate, a significant overlap of calculations can occur (i.e. 2n−1), with this redundancy converging to 100% (as the fraction of distinct coalitions per agent, 2n−1 
+
+> n·2(n−1)
+
+, tends to 0 as n → ∞ ). Furthermore, some approaches distribute the coalition value calculations unevenly across the agents (Vinyals et al. 2012), whereas others allocate coalitions to agents that are not themselves members; an arrangement that is problematic not only in adversarial environments where misreporting may occur, but in any setting where agents are self-interested, since a rational agent has no incentive to compute accurately the value of a coalition it will never join (Rahwan and Jennings 2007; Voice et al. 2012). Therefore, the following desirable properties have been identified which are not always present in the majority of these systems (Rahwan and Jennings 2007; Riley et al. 2015): 1. eliminating the need for communication and explicit coordination between agents when determining coalition shares; 2. ensuring that each agent has an approximately equal number of coalitions to evaluate, thus ensuring that the division is equitable ;3. avoiding redundancy in coalition value calculations, i.e. ensuring that no calcula-tion is allocated to more than one agent; 4. maintaining a balanced load across agents - although two agents may have similar numbers of coalitions to examine, the size of each coalition itself can affect the computational load, and thus it becomes undesirable for one agent to evaluate mainly small coalition sizes, with another evaluating larger ones; 5. maintaining self-interest , i.e. ensuring that an agent evaluating a coalition is itself a member of that coalition. An agent assigned to calculate ν(C) for a coalition C
+
+in which it does not participate has no direct stake in whether C forms, and may be positively incentivised to misreport ν(C) strategically in order to steer the subsequent structure-search or payoff-division stages toward a more personally favourable outcome. Properties 2 and 4 together capture the notion of fairness : each agent receives not only an approximately equal number of coalitions, but also an approximately equal computational burden across coalition sizes, and we use the term fair to refer to algo-rithms that satisfy both of these properties. Properties 1 and 3 concern efficiency :eliminating communication overhead and redundant computation. Property 5 reflects a distinct concern: incentive alignment . In a decentralised system without a trusted enforcement mechanism, agents cannot be compelled to compute assigned values cor-rectly; compliance must be individually rational. The self-interest property ensures that every agent’s assigned set of coalitions is one it has a genuine stake in evaluating correctly, since its own potential payoff depends on those very values. The broader implications, including the relationship to mechanism design and the residual risk of misreporting within assigned coalitions, are examined in Section 7.3. Throughout, we 3Necklaces with the same     
+
+> arrangement under rotation
+> Necklaces with di ff erent
+> arrangements Fig. 1 Examples of two-colour necklaces with six beads (i.e. n= 6 , k = 2), illustrated with the same (left), and different (right) arrangements. In each arrangement, there are three white and three black beads. The necklaces on the left all fall within the same equivalence class as they are the same under rotation. In those on the right, the ordering of the beads in each of the three necklaces is different, and thus they belong to different equivalence classes.
+
+assume an unrestricted characteristic function game in which all agents know the total number of agents n; games with externalities and open or dynamic environments are outside the current scope (see Section 7.3 for discussion of limitations). The notion of Increment Arrays (IAs ) was introduced in earlier studies by Riley et al. (2014, 2015), as a means of addressing all of these issues when generating coalition value calculation allocations (CV s). When combined with an agent identifier, the 
+
+IA s identify a set of unique coalitions that can be allocated to those agents that appear in them, as well as balancing the computational load approximately evenly (with respect to the number of coalition value allocation calculations and number of operations) across the agents. The resulting CVs can also be combined with other approaches to complete the coalition formation process, such as distributed structure-search algorithms (e.g. D-IP (Michalak et al. 2010)). Alternatively, if the agents need to find a core/ ϵ-core stable solution (Osborne and Rubinstein 1994), the resulting coalition value allocation could be used as input to algorithms such as those proposed by Wu (1977) or Cesco (1998). The way in which integer partitions are used to construct the Increment Arrays is similar to the different arrangements of a string of “beads” that exist within a 
+
+two-colour combinatorial necklace . Combinatorial necklaces (Ruskey et al. 1992) are strings of characters such that the string is the smallest lexicographic representative of all the cyclic shifts of that string. They are often described as a set of beads of different colours with different arrangements (see Figure 1), or more formally, given a set of n beads that can each be one of k colours, the number of different arrangements of a string of beads that can be constructed within a circular loop can be determined (Cattell et al. 2000; Fredricksen and J. Kessler 1986; Fredricksen and Maiorana 1978; Ruskey et al. 1992; Ruskey and Sawada 1999). More precisely, it is assumed that two or more arrangements can be considered to be identical if they differ only by a rotation inside the loop; i.e. we can say that a necklace of n beads in k colours is an equivalence class of k-ary n-tuples under rotation. Such necklaces have been used in a variety of settings, including astronomy (Arnas et al. 2017), music theory (Rappaport 2007; Salazar and Zhao 2016; Toussaint 2010), the discovery of wireless transceivers in MANETS (Mobile Ad Hoc Networks) (Tirkko-nen et al. 2017) and within data compression techniques (Dub´ e and Yokoo 2011). Although the investigation of efficient algorithms for generating necklaces is still 4an active area of research (for example, the work by Wang (2017)), efficient algo-rithms exist that can generate two-colour necklaces in constant amortised time (CAT) (Ruskey et al. 1992), i.e. where the total time is O(Nk(n)). In this article, we re-state the notion of IAs (originally introduced in Riley et al. (2014, 2015)), together with the characterisation of equivalence classes that elimi-nate redundancy through the identification of a minimal canonical subset of IAs. An approach for generating CVs is formally defined, and two designation schemes 
+
+(i.e. mechanisms for assigning responsibility for periodic IAs to specific agents) are compared, each yielding coalition allocations for each agent with formal load-balance guarantees: (i) a per-size offset variant that guarantees a maximum per-size imbal-ance of at most one coalition between any two agents (Theorem 9); and (ii) a global offset variant that guarantees an aggregate imbalance of at most one (Theorem 10). The resulting Necklace-based Distributed Coalition Algorithm (N-DCA) is presented, and we show that N-DCA is, to the best of our knowledge, the only distributed coali-tion value calculation algorithm for unrestricted characteristic function games that provably satisfies all five of the above properties simultaneously (Table 11). In partic-ular, the self-interest property is not guaranteed by the current state-of-the-art DCVC approach (Rahwan and Jennings 2007). N-DCA is evaluated empirically against DCVC for 2 ≤ n ≤ 25. Although DCVC is faster by a constant factor (from approximately 2 × for small n to approximately 5.8× for larger values, stabilising beyond n ≈ 20), this difference is due to N-DCA’s per-necklace O(n) increment-array construction, and becomes negligible once realistic characteristic-function evaluation costs are included. N-DCA’s working memory is approximately one third of that of DCVC due to the fact that its implementation is purely iterative (and thus requires no recursion), and its necklace-based encoding avoids the binomial-coefficient index arithmetic that limits DCVC to n < 68 under standard 64-bit integer processor architectures. The load-balance guarantees of both designation schemes are then validated empirically, and the theoretical bounds are shown to be tight. This article significantly extends the original work by Riley et al. (2014, 2015), which introduced the notion of Increment Arrays and a preliminary Distributed Coali-tion Generation (DCG) algorithm, and the preliminary necklace-based approach in Payne et al. (2024). The principal contributions beyond those earlier studies include: 1. A complete mathematical framework for Increment Arrays, including formal def-initions of equivalence classes under circular shifts, periodicity and stride, and the coalition generation function; 2. The necklace–IA bijection, which replaces DCG’s ad hoc partition-enumeration-and-filtering construction with a principled mapping to a well-studied combina-torial concept, yielding constant amortised time enumeration; 3. The formulation of the designation problem for periodic IAs, together with two offset variants and formal load-balance guarantees: a per-size bound and an aggregate bound; 4. Full formal proofs for all of the main results, with the detailed proofs of Lemma 3 and Theorem 6 provided in the Appendix; 55. A comprehensive empirical evaluation against DCVC (Rahwan and Jennings 2007) over 2 ≤ n ≤ 25, including timing, memory, component profiling, load-balance validation and amortised-cost analysis. The article is organised as follows: Section 2 reviews the main decentralised approaches to distributing coalition value calculations across agents. Section 3 pro-vides a brief background on Characteristic Function Games (CFGs) and Combinatorial Necklaces. In Section 4, we develop the mathematical framework: Increment Arrays 
+
+(IAs) and their equivalence classes, periodic IAs, and the designation problem for allo-cating coalitions to agents. The algorithms for implementing this framework (N-DCA) are presented in Section 5, where the constituent procedures for necklace generation, run-length encoding, and coalition construction are described. Section 6 then provides an empirical evaluation of the approach, including a comparative analysis against DCVC. Section 7 discusses the results: comparing N-DCA against existing algorithms with respect to the five desirable properties, examining the source and feasibility of reducing the observed constant-factor overhead, and identifying broader implications and directions for future work, before concluding in Section 8. 
+
+# 2 Related Work 
+
+Coalition formation can be studied in formal coalitional game models. One such class of coalitional games is the Characteristic Function Game (CFG) (von Neumann and Morgenstern 1944) model, where the value of the coalition is dependent solely on the agents within the coalition itself. These games are typically defined by a tuple ⟨Ag, ν ⟩,where Ag is the set of n agents, and ν is the characteristic function that maps the coalition members C ⊆ Ag to some value, such that ν : 2 n −→ R. Thus, for any given task, there may be many coalitions within a CFG that an agent can join, where each coalition comprises agents with potentially different competences and with different payoff expectations, and where the coalitions themselves can have different sizes and different characteristic function values. A second class of coalitional game is the Par-tition Function Game (PFG) (Rahwan et al. 2012), where the value of a coalition not only depends on its constituent agents, but also on the composition of other coalitions that are formed, as the formation of one coalition may not be independent of others, and can positively or negatively affect the value of other potential coalitions. In this article, we focus primarily on CFGs. For both types of game, coalition formation can be divided into a three-stage process (Sandholm et al. 1999): 1. Coalition Structure Generation: This involves calculating the value of each of the possible coalitions, such that for a given set of agents Ag = {1, 2, . . . , n },the number of possible coalitions in a CFG is 2 n − 1, corresponding to the number of subsets of n (not counting the empty set ∅). For example, given three agents Ag = {1, 2, 3}, a total of 2 3 − 1 = 7 possible coalitions exist: 
+
+{1, 2, 3}, {1, 2}, {1, 3}, {2, 3}, {1}, {2}, {3}. The partitioning of all of the agents into coalitions results in the following 5 possible coalition structures : {{ 1, 2, 3}} ,6{{ 1}, {2, 3}} , {{ 2}, {1, 3}} , {{ 3}, {1, 2}} , {{ 1}, {2}, {3}} , typically represented using a Coalition Structure Graph .2. Solving the Optimisation Problem: This stage addresses the problem of how the agents within a coalition collaborate to achieve their shared or joint goal. The objective here is for each agent to work in such a way as to maximise the joint utility obtainable from achieving their goal. This could, for example, be monetary, resulting in a joint payoff whose value corresponds to the characteristic function. 3. Payoff Distribution: This determines how the overall payoff is divided between the participating agents (if the given value of each coalition has the capability to be transferred between the agents). This division should take into consideration a number of criteria, including fairness (i.e. ensuring that the payoff received by each agent is commensurate with their contribution to the task) and maintaining stability (this is pertinent when agents are selfish, and thus may join only those coalitions that can maximise their payoff). Furthermore, coalition structures should preferably be either: (i) those that max-imise the social welfare of the agents in the coalition, and thus are optimal; or (ii) those that form a stable coalition structure (where no agent would be incentivised to defect to another coalition in order to acquire a better payoff). Sometimes, a coalition structure may be found that satisfies both (i) and (ii), yet this is not always the case (Brˆ anzei and Larson 2009; Service 2012). A number of algorithms and approaches have been proposed for the generation of coalition structures (i.e. the first stage of coalition formation). These approaches typ-ically focus on efficiently addressing the exponentially complex problem of finding an optimal (or near-optimal) coalition structure that maximises social welfare. Typically, these approaches can be divided into: (i) exact algorithms (Rahwan et al. 2009), which guarantee the identification of an optimal solution (given sufficient time), typically using techniques such as dynamic programming (Rahwan and Jennings 2008; Rahwan et al. 2009) or branch-and-bound and anytime search with provable bounds (Sandholm et al. 1999; Dang and Jennings 2004); and (ii) non-exact algorithms , which sacrifice optimality guarantees in order to rapidly produce high-quality solutions, often using heuristic or stochastic methods (Shehory and Kraus 1998). Although most work in this area has focused on CFGs, there have also been studies on Partition Function Games ,which explicitly consider externalities between coalitions (Rahwan et al. 2012). This article does not focus on the general problem of coalition structure generation 
+
+(Rahwan et al. 2015), but rather on the specific challenge of distributing coalition value calculations fairly across the agents whilst maintaining self-interest , but without the need for inter-agent coordination or duplicate allocation of coalition value calculations. Early approaches assumed that each of the agents would calculate the value of all coalitions that they were members of (Shehory and Kraus 1999; Blankenburg et al. 2005), resulting in a significant overlap of coalitions in the coalition value calculation sets and thus unnecessary computation costs for the multi-agent system (generating a total of n2(n−1) calculations for n agents). Shehory and Kraus (1995, 1996, 1998) investigated a method for distributing coali-tion value calculations (referred to as SK in this article), where agents contacted each 7other and negotiated over which coalition values to calculate. As noted by Rahwan and Jennings (2007), their approach had a number of weaknesses: (i) high communication overhead - the number of messages exchanged between agents was large (in some cases exponentially large) when negotiating; (ii) redundancy - although the method guar-anteed that every coalition value calculation would be allocated, no guarantees were provided that they were allocated once and only once , thus there was the risk of redun-dant calculations; and (iii) fairness - there were no guarantees that the agents’ coalition value calculation sets were approximately equal. Furthermore, the SK algorithm had a memory requirement that grows exponentially with the number of agents. A simple method for creating disjoint coalition value calculation sets was later investigated by Vinyals et al. (2012) (referred to here as VBFR), by exploiting an ordering amongst agents to partition the set of feasible coalitions into leading sets .Specifically, the VBFR algorithm enumerates feasible coalitions in a graph, where a coalition is feasible if and only if it forms a connected subgraph. This naturally enables the distribution of coalition value calculations across agents. The algorithm casts the problem of generating all possible coalitions on a graph as a problem of enumerating all possible subgraphs. VBFR uses an ordering amongst the agents (induced by a pseudotree) to partition the set of feasible coalitions into disjoint “leading sets” Mi, where each coalition in 
+
+Mi has agent i as the smallest-index member (i.e. ∀C ∈ Mi, min( C) = i). These sets form a partition of the coalition space and can be used to distribute coalition value calculations across agents, with agent i responsible for evaluating the coalitions in Mi. The resulting distribution of coalition value calculations is, however, highly unbalanced, as agents with low value IDs have disproportionately more calculations than those with higher IDs. For example, for a fully connected graph, agent 1 would always be assigned 2 n−1 coalitions whereas agent n is only assigned the coalition {n}.This is illustrated in Table 1, which lists the coalition value calculation sets for agents 2, 3 and 4 (for n = 6 agents generating coalitions of size s = 3); note that agent 2 has an allocation of 6 different coalitions, whereas agent 4 has a single allocation. The approach guarantees that all coalitions distributed to agent i include itself, thereby satisfying the self-interest property. This property is particularly relevant in the smart grid domain for which the approach was originally developed, where agents represent “virtual electricity consumers” that evaluate the benefits of forming coalitions for collective purchasing. Thus, if an agent i were assigned a coalition C with 
+
+i / ∈ C (as in Rahwan and Jennings (2005, 2007)), a self-interested agent would have no incentive to evaluate C accurately, since it would not benefit from that coalition obtaining a discounted electricity price. The Distributed Coalition Value Calculation (DCVC) family of algorithms (Rah-wan and Jennings 2005, 2007; Michalak et al. 2010) addresses many of the concerns identified in earlier work, by grouping coalitions into lists, and then using a decen-tralised method to divide the lists into shares , one for each agent, resulting in a much fairer allocation of coalition value calculation sets (referred to as shares in the DCVC literature) whilst eliminating redundancy. Despite being endogenous, the allocation remains fully decentralised and can be performed independently by each agent without the need for communication. 8Table 1 A representative sample of coalition value calculation allocation CV sx for agents x ∈ { 2, 3, 4}, where n = 6 and the size of the coalitions s = 3 for the three methods: N-DCA, DCVC and VBFR. Note that the allocation is broadly balanced for N-DCA and DCVC, but not for VBFR (agent 2 has an allocation of 6 coalitions, yet agent 4 has a single coalition allocated). Furthermore, for N-DCA and VBFR, each agent is a member of the coalitions that are allocated to it; this is not the case for DCVC. Method Allocation Coalitions N-DCA                                        
+
+> CV 322,3,4 2,3,5 2,3,6
+> CV 333,4,5 3,4,6 3,4,1
+> CV 344,5,6 4,5,1 4,5,2 4,6,2 DCVC
+> CV 323,4,5 2,5,6 2,4,6
+> CV 332,4,5 2,3,6 2,3,5
+> CV 342,3,4 1,5,6 1,4,6 1,2,4 VBFR
+> CV 322,5,6 2,4,6 2,4,5 2,3,6 2,3,5 2,3,4
+> CV 333,5,6 3,4,6 3,4,5
+> CV 344,5,6
+
+The DCVC algorithm represents all feasible coalitions in structured lists Ls, where 
+
+s ∈ { 1, . . . , n }, and where each Ls contains coalitions of size s ordered in reverse-lexicographical order, such that the first coalition in the list Ls is {n − s + 1 , . . . , n }
+
+and the last coalition in Ls is {1, . . . , s }. Thus, agents are aware of how Ls is ordered, even though they may not maintain the full list themselves. Agent i is assigned a con-tiguous block (or share) of k = ⌊ |Ls| 
+
+> n
+
+⌋ coalitions in Ls, corresponding to the indices (( i − 1) k + 1) to ik . For those lists whose size is not an integer multiple of the num-ber of agents, a shared counter α is used to assign the remaining coalitions (beyond 
+
+n × ⌊ |Ls| 
+
+> n
+
+⌋) to agents in a round-robin manner. The value of α is incremented for each additional coalition, and reset to 1 if it exceeds n. This counter is maintained consis-tently across all lists so that the maximum difference between the number of coalitions calculated by the agents is at most one. The assignment proceeds sequentially from list L1 onwards, ensuring that all agents consistently determine the agent responsi-ble for each additional coalition. An example of the coalition value calculation shares where n = 6 using the DCVC algorithm (for agents 2 , 3 and 4) is given in Table 1. Although the DCVC algorithm has a similar division of coalitions between agents as N-DCA, agents will sometimes calculate the values for coalitions where they are not a member (for example, agent 3 calculates coalition {2, 4, 5}). There have been a few variants of DCVC in the literature. Although the basic DCVC algorithm (Rahwan and Jennings 2005) distributes the coalitions evenly across all agents, the allocation is not fair with respect to the individual operations (of com-parisons and additions) needed to generate all coalitions in each agent’s share, as the number of operations needed to find the next coalition in each agent’s share can fluc-tuate. An extension to the DCVC algorithm was proposed (Rahwan and Jennings 2007) to minimise (but not totally eradicate) this issue. Crucially, none of these vari-ants address the self-interest property, as all of the DCVC variants allocate coalitions 9to agents based on their positional share of the reverse-lexicographic list Ls, and thus an agent may be assigned coalitions of which it is not a member. This is a structural consequence of the list-based allocation mechanism, rather than the specific share-sizing strategy, and thus applies equally to the basic algorithm, the modified variant, and the version used within D-IP (Michalak et al. 2010), described below. Subsequent work by Michalak et al. (2010) proposed a decentralised variant of the algorithm (the Distributed IP (D-IP) algorithm) for efficiently finding the optimal coalition structure. D-IP combined a modified version of DCVC with the IP (Integer Partition–based) search algorithm (Rahwan et al. 2009) to produce one of the first fully decentralised algorithms for optimal coalition structure generation. It consisted of three distributed stages; during the first, each agent uses a variant of DCVC to com-pute the characteristic function values for a subset of coalitions assigned to it. During this process, the agents also determine the per-size aggregate statistics (i.e. the maxi-mum and average coalition values M ax s and Avg s for each list Ls) and evaluate those coalition structures that can be assessed from locally available values alone, includ-ing the grand coalition, the all-singletons partition, and structures consisting of two complementary coalitions. During the second stage, agents exchange these statistics, enabling each agent to independently compute upper and lower bounds on every sub-space, using these statistics together with the integer-partition representation of the search space (where each subspace corresponds to an integer partition of n), and to prune unpromising subspaces. Novel filter rules are also applied to discard individual coalitions that provably cannot appear in an optimal structure, thereby substantially reducing the number of coalition values that need to be exchanged. In the final stage, the remaining subspaces are searched in a distributed manner; agents divide the coali-tions in each list amongst themselves and apply a branch-and-bound technique to find the optimal coalition structure, exchanging updates as improved solutions are found. As D-IP relies on DCVC for its value-calculation stage, it inherits certain limita-tions of that approach, notably that agents may be assigned coalitions of which they are not members, and, as noted earlier by Rahwan and Jennings (2007), the index-to-coalition mapping based on Pascal matrices may suffer from integer overflow for standard 64-bit integers when n ≥ 68. Crucially, D-IP goes beyond the problem of dis-tributing coalition value calculations, to address the full coalition structure generation problem, i.e. identifying the optimal partition of agents, as opposed to the specific problem of distributing the value calculations themselves fairly whilst ensuring self-interest. Interestingly, these two concerns are complementary, and thus the coalition values produced by a distributed value-calculation algorithm such as N-DCA could, in principle, serve as input to a distributed structure-search algorithm such as D-IP (thereby replacing the DCVC role). We return to this possibility in Section 8. A precursor of the mathematical approach presented in Section 4 appeared in early work by Riley et al. (2014, 2015). The notion of Increment Arrays was first presented as part of the Self-Interested Coalition Value Calculation (SICVC) approach (Riley et al. 2014), and subsequently evolved as part of the work on the Distributed Coalition Gen-eration (DCG) approach (Riley et al. 2015). In DCG, coalition value calculation shares 
+
+(CVs) are generated from which each agent could then identify and generate a subset of the coalitions to investigate. A theoretical evaluation of the approach proved that 10 all the coalitions for a community of n agents would appear within the CVs. However, the published algorithm that implemented the approach was lengthy and complex, due to the need to identify canonical sequences for different equivalence classes, and thus eliminate repeated sequences. Furthermore, no empirical analysis was presented that compared the efficiency of the DCG approach with respect to other state-of-the-art approaches. The Necklace-based Distributed Coalition Algorithm (N-DCA) 1 presented in Section 5 is a successor to DCG, replacing the explicit combinatorial construction with a formulation grounded in two-colour necklaces. The final variant of DCVC in the literature to date is the D-SlyCE algorithm (Voice et al. 2012). D-SlyCE is an algorithm that distributes coalition value calculations when the agents are represented as nodes on a graph. Edges between nodes (agents) represent synergistic links that allow the linked agents to form a coalition. When the graph is fully connected (i.e. when the graph describes a characteristic function game), then D-SlyCE mimics the operations of DCVC. The algorithms discussed above focus on distributing coalition value calculations 
+
+across the agents. A complementary body of work has investigated how, given those values, the space of possible coalition structures can be efficiently searched to find an optimal partition. Rahwan et al. (2015) present a comprehensive survey, catalogu-ing both exact and approximate approaches. Amongst the exact algorithms, the IP 
+
+algorithm (Rahwan et al. 2009) established the integer partition-based search strat-egy, which was later refined into the Improved Dynamic Programming (IDP) approach (Rahwan and Jennings 2008). Michalak et al. (2016) later combined these two strate-gies into ODP-IP, a hybrid algorithm that was at that time the fastest known exact solver for the complete set partitioning problem. More recently, Changder et al. (2020) introduced the Overlapping, Dividing the subspace, and Subspace Shrinking (ODSS) algorithm, which partitions the search space into two disjoint sets of subspaces and introduces a novel subspace-shrinking technique, yielding substantial speed-ups over ODP-IP on several benchmark value distributions, although not uniformly across all distributions. These centralised algorithms assume that a single entity has access to all 2n−1 coalition values, which contrasts with the decentralised approaches discussed ear-lier, that address the preceding step of computing those values in a distributed setting, and that should ideally produce per-agent allocations that are fair, non-redundant, and self-interested. The coalition values generated by such algorithms could subsequently serve as input to any of the above structure-search algorithms, whether centralised or, as in D-IP, distributed. Several other recent lines of work address coalition structure generation under additional constraints or using alternative computational paradigms. For example, in 
+
+Graph-Constrained Coalition Formation (GCCF) by Bistaffa et al. (2017), feasible coalitions are restricted to connected subgraphs of an interaction network. The authors propose CFSS, an anytime branch-and-bound algorithm (and its parallel variant) and demonstrate good performance in application domains including ride sharing and col-lective energy purchasing. However, the approach itself remains centralised, and does not address the distribution of coalition-value computations across agents. Further-more, in the context of unrestricted characteristic-function games, Taguelmimt et al. 
+
+> 1A preliminary version of the N-DCA algorithm appeared in Payne et al. (2024).
+
+11 (2024, 2025) have recently proposed two algorithms, SMART and SALDAE . SMART 
+
+(Taguelmimt et al. 2024) is a centralised exact algorithm built on three complemen-tary techniques: (i) complementarity-based dynamic programming (CDP); (ii) gradual search over solution subspaces (GRAD); and (iii) distributed integer-partition-based search (DIPS). For each problem size, an offline preprocessing step selects the pair of complementary coalition-size sets that minimises the dynamic-programming search space. In contrast, SALDAE (Taguelmimt et al. 2025) is a centralised anytime algo-rithm inspired by multiagent path finding that searches a graph of coalition structures using multiple search agents and conflict-resolution mechanisms. It is designed to scale to large instances with hundreds or thousands of agents, returning progressively better solutions as computation time permits. All three algorithms are examples of approaches that address coalition structure generation (i.e. the second stage of the framework proposed by Sandholm et al. (1999)), and thus complement rather than replace distributed coalition value calculation algorithms, such as DCVC, etc. None of the above approaches address the problem that specifically motivates the present work, namely the fair, decentralised, and communication-free distribution of coalition value calculations across agents in unrestricted characteristic function games, with formal guarantees that each agent only evaluates coalitions of which it is a member. N-DCA is, to the best of our knowledge, the only algorithm that provably satisfies all five of the desirable properties listed in Section 1. 
+
+# 3 Preliminaries 
+
+## 3.1 Characteristic Function Games 
+
+The original notion of coalitions emerged from the seminal work of von Neumann and Morgenstern (1944), where they constructed the theory of n-person cooperative games 
+
+in characteristic function form, where each coalition has an associated real numeric 
+
+utility value that it can achieve by completing some task or achieving some goal. A 
+
+Characteristic Function Game (CFG) is denoted G = ⟨Ag, ν ⟩, where Ag is the set of 
+
+n agents in the game and ν is the characteristic function that maps every potential coalition C ⊆ Ag to a real numeric value (i.e. ν : 2 n → R). By default an empty coalition receives no utility payoff (i.e. v(∅) = 0). In many CFGs, it is often assumed that each agent shares the characteristic func-tion (and thus has perfect information to use the characteristic function to get an accurate utility value for each coalition), and that the value of each coalition does 
+
+not change over time. Furthermore, each coalition’s characteristic function value is independent of the externalities of the coalition formation (i.e. the inter-coalitional dependencies (Rahwan et al. 2012)). The Grand Coalition C for a characteristic function game G = ⟨Ag, ν ⟩ is a coalition of all of the agents within the game ( C = Ag ). In characteristic function games that are not superadditive or subadditive, the value of each coalition needs to be calculated so that an optimal coalition structure can be found. Calculating the value of every coalition has high computation costs due to the exponential number of possible coalitions, which is equal to the powerset of 
+
+Ag without the emptyset (i.e. P (Ag ) \ { ∅}). However, it is possible within a multi-agent system to spread the computational cost of calculating these values across all 12 of the agents via a coalition value calculation set (CVCS) . We say that a coalition value calculation allocation (CV) of an agent x ∈ Ag is denoted CV x = {C1, . . . , C j },consisting of a set of j coalitions that agent x has been assigned to calculate the value of. If we specifically want to refer to the coalitions in CV x that are of size s, then the notation CV sx is used. When all coalitions have been distributed into at least one coalition value calculation allocation, we call this combination of all allocations the 
+
+coalition value calculation set (denoted CV CS ), which is defined as: 
+
+CV CS =
+
+> n
+
+[
+
+> x=1
+
+CV x = P (Ag ) \ { ∅}
+
+A coalition value calculation set ( CVCS ) is equivalent to the powerset of all agents minus the empty set. A special type of coalition value calculation set is the minimal coalition value calculation set , denoted CV CS ∗, where CV CS ∗ = {CV 1, . . . , CV n}
+
+and none of the elements in CV x ∩ CV y = ∅ for any x, y ∈ Ag where x̸ = y.
+
+## 3.2 Combinatorial Necklaces 
+
+Combinatorial necklaces (or necklace permutations ) have been used in a variety of dif-ferent modelling domains, with some of their earliest uses appearing within discussions on cyclic hashing schemes (Knuth 1974). More recently, necklaces have been used for generating kernels to support star tracking (Arnas et al. 2017), by mobile ad-hoc net-works to facilitate mutual discovery of wireless transceivers (Tirkkonen et al. 2017), and by data compression techniques such as Compression by Substring Enumeration 
+
+(Dub´ e and Yokoo 2011). They also appear within music theory to model scales within a chromatic universe (Rappaport 2007; Salazar and Zhao 2016) and rhythm (Tous-saint 2010). The necklace problem is a combinatorial problem that determines how many different arrangements of a string of beads exist within a circular loop of n
+
+beads, given k colours (see Figure 1). Two necklaces are identical (i.e. they belong to the same equivalence class) if and only if one can be transformed into another through the cyclic rotation of the beads (Figure 1 left). Thus, we can say that a necklace of 
+
+n beads in k colours is an equivalence class of k-ary n-tuples (i.e. strings of beads )under rotation (Ruskey et al. 1992). An advantage of utilising combinatorial necklaces is the fact that there are many well understood formulae that can be used to interro-gate additional information about the necklace itself; for example, the total number of necklaces of length n given k coloured beads is defined by: 
+
+Nk(n) = 1
+
+n
+
+X
+
+> d|n
+
+ϕ(d)k nd (1) i.e. the sum over all of the divisors d of n, where ϕ(d) is Euler’s totient function of 
+
+d, an arithmetic function that counts the number of positive integers up to a given integer d that are also co-prime with d (i.e. the number of integers x in the range 1 ≤ x ≤ d for which the greatest common divisor gcd (d, x ) is equal to 1). Within this study, we only consider two-colour necklaces (i.e. k = 2). Equation (2) determines the 13 FKM() - Fig. 6                        
+
+> Two Colour
+> Neckl ace Canonical IA
+> t=⟨0,2,1 ⟩
+> GEN INC ARRAY ()
+> Fig. 5
+> Designation
+> Test
+> PERIOD ()
+> Fig. 7
+> designated
+> xC(x,t)CVx
+> GEN COALITION () - Fig. 8 Fig. 2 Overview of the N-DCA pipeline executed independently by each agent x. Two-colour neck-laces of length nare generated by the FKM algorithm (Section 5.1); each necklace is converted to its canonical increment array tvia GenIncArray ; the period of tdetermines whether agent xis desig-nated to evaluate it (Section 4.6); and designated IAs are converted to coalitions via GenCoalition .The union of all generated coalitions forms agent x’s allocation CV x. The entire process requires only the agent’s identifier xand the shared parameter n.
+
+number of fixed density 2-colour necklaces of density s (Ruskey and Sawada 1999). 
+
+N2(n, s ) = 1
+
+n
+
+X
+
+> d|gcd( n,s )
+
+ϕ(d) ∗
+
+ ndsd
+
+
+
+(2) Two-colour necklaces ( k = 2) are used here as we only consider two different states for each position within the necklace: relating to whether an agent is in a coalition, or it is not in a coalition. This is achieved through the construction of increment arrays 
+
+(Section 4), that are used to generate the coalition allocations for each agent. The bijection between 2-colour necklaces and increment arrays (IAs) is given in Section 5.1, and the total number of IAs across all coalition sizes for a given number n of agents is given by N2(n), whereas N2(n, s ) determines the number of IAs generated for a given coalition size s (Equation (2)). 
+
+# 4 Distributed Coalition Value Allocation 
+
+This section develops the mathematical framework underlying the distributed, non-redundant, communication-free allocation of coalition value calculations. The central concept developed here is the notion of an increment array (IA), a compact represen-tation of a coalition that captures the spacing between its members. We show that IAs partition naturally into equivalence classes under circular shifts, and that each equivalence class generates a distinct, non-overlapping set of coalitions (Theorem 7). For classes whose IA contains a repeating sub-sequence, multiple agents can generate the same coalition. Thus, a designation scheme is described that assigns responsibility to a subset of agents, thereby ensuring that every coalition of every size is computed exactly once. A rotated variant of this scheme balances the workload so that the total number of coalition value calculations assigned to any two agents differs by at most one (Theorem 10). Throughout, every agent can determine its own assignments indepen-dently, using only its identifier and the shared parameter n, thus eliminating the need for communication between agents, and ensuring that each agent is self-interested; i.e. it is only assigned coalitions in which it is a member. The algorithmic realisation of this framework is presented in Section 5; Figure 2 provides an overview of the complete pipeline. 14 4.1 Preliminaries and Integer Increments 
+
+In the context of a characteristic function game, we assume that there are n ∈ N agents (typically n > 2), whose identifiers are represented by contiguous natural numbers; i.e. Ag = {1, 2, . . . , n }.2 A coalition C ⊆ Ag of size s =| C | is therefore represented as an ordered sequence of agents (modulo n) with respect to their identifiers (IDs), where s ∈ N, such that an agent can only appear once in any coalition within the characteristic function game model. Throughout, all agent identifiers are taken modulo 
+
+n in the range {1, 2, . . . , n }; when arithmetic on an agent ID yields 0, it is replaced by n (since 0 ≡ n (mod n)). We also use x (or y) to denote a specific agent identifier, whereas i and j are used as bound variables in quantified statements. 
+
+Definition 1 (Offset increment) Let C = {x1, x 2, . . . , x s} ⊆ { 1, 2, . . . , n } be a coalition of size s, with members ordered cyclically (modulo n). The integer increment between two consecutive members xi and xi+1 is the circular distance ( xi+1 −xi) mod n. This decomposes as the sum of a baseline increment of 1 (representing adjacency) and an offset increment 
+
+ti ≥ 0 (representing the number of agents omitted between xi and xi+1 ). That is, the integer increment between xi and xi+1 equals ti + 1. 
+
+Thus, if a single agent is omitted from the coalition (e.g. x4 is omitted from a set of six agents), the integer increment between agents x3, x 5 will be 2 (i.e. the baseline and a single offset increment), whereas the integer increment for the other five agents is simply 1. As the total integer increment for a coalition of size s from n agents is n,it trivially follows that: 
+
+Lemma 1 Let C ⊆ {1, 2, . . . , n } be a coalition with s = |C| agents, such that C =
+
+{x1, x 2, . . . , x s}, and ⟨t0, t 1 . . . , t (s−1) ⟩ is the corresponding sequence of offset increments. The total offset increment for C is given as: 
+
+> s−1
+
+X
+
+> i=0
+
+ti = n − s
+
+Proof As a pair of contiguous agents will have an offset increment of 0, the Grand Coalition (of n agents) will also have a total offset increment of 0. Removing one agent merges two adjacent integer increments (each of value 1) into a single increment of value 2, thereby increasing the total offset by 1. Removing n − s agents therefore increases the total offset from 0 to n − s. □
+
+To illustrate this, consider the coalition {1, 3, 6} (s = 3) generated from a set of six agents (i.e. n = 6). The integer increment between the first and second agent (1 and 3 respectively) consists of a single baseline increment, and an offset increment, 3
+
+such that t0 = 1. Likewise, the integer increment between 3 and 6 consists of a single        
+
+> 2For convenience, this set of agents may also be referred to as {x1, x 2, . . . , x n}.
+> 3Note that offset increments are indexed from t0(referring to positions within the IA tuple), whereas agent identifiers are indexed from 1. Thus t0denotes the offset increment between the first and second members of the coalition, t1between the second and third, and so on.
+
+15 a1                      
+
+> a2
+> a3a4
+> a5
+> a6Increment
+> between a1and a3
+> t0= 1 Increment
+> between a3and a6
+> t1= 2
+> Increment between a6and a1
+> t2= 0 Fig. 3 The increments between three agents in the coalition {1,3,6}(s= 3 from n= 6 agents), arranged as cycle. Note that the missing agents are shown in a lighter font. Each increment represents these missing agents.
+
+baseline increment, and an offset increment of 2; i.e. t1 = 2. The integer increment between 6 and 1 is only 1 (i.e. the baseline increment) as by increasing the value 6 by the baseline increment, the value 7 is obtained. Given that 1 is congruent to 7 modulo 6 (i.e. 1 ≡ 7 mod ( n)), this yields an offset increment t2 = 0, and a total offset increment of Ps−1 
+
+> i=0
+
+ti = 3. This is illustrated in Figure 3 where the agents in the coalition appear within a cycle (to represent the modulo assumption). It is possible to characterise a coalition by a sequence of offset increments, such that a coalition C ⊂ Ag (where s < n ) will have a total of n − s offset increments. Thus, multiple coalitions can be characterised by using the same sequence of offset increments if the starting agent of the coalition is changed. For example, when n = 6 and s = 3, coalitions {1, 2, 5} and {2, 3, 6} have the same increment between first and second agent (i.e. the baseline increment of 1 and therefore an offset increment of t0 = 0), the same increment between the second and third agent (i.e. the baseline increment plus an offset increment of t1 = 2), and the same increment between the third and first agent (i.e. the baseline increment plus an offset increment of t2 = 1). The total number of unique coalitions of size s from n agents can be calculated using binomial coefficients, i.e.  ns
+
+ = n! 
+
+> s!( n−s)!
+
+and share the same total offset increments 
+
+(Lemma 1); however the distribution of total offset increments will vary, depending on the coalition. This is illustrated in Table 2, which lists all of the coalitions possible for n = 6. We therefore characterise the various distributions of offset increments by defining different increment arrays (Definition 2). An integer partition of k is a collection of natural numbers (i.e. summands, or 
+
+parts ) that add up to exactly k. It is therefore possible to generate a subset of integer partitions for n − s when s < n , to determine the different offset increments between different coalition members. The full set of partitions is denoted I(n − s). For example, if n = 6 and s = 3, then this results in a set of 3 partitions: I(3) = {(3) , (2 , 1) , (1 , 1, 1) },with 1, 2, and 3 parts respectively, whereas if s = 2, this results in a set of 5 partitions: 
+
+I(4) = {(4) , (3 , 1) , (2 , 2) , (2 , 1, 1) , (1 , 1, 1, 1) }.
+
+## 4.2 Increment Arrays 
+
+An increment array (IA) denoted t = ⟨t0, t 1, . . . , t s−1⟩ is a tuple that is constructed from an integer partition λ ∈ I(n − s), where the number of parts of λ is less than or equal to s (i.e. |λ| ≤ s). If the number of parts of λ is less than s, then λ can be used to construct the IA with s − | λ| additional elements that have the value 0 in the tuple. 16 Since the elements of a partition may be arranged in different orders within the tuple, a single partition can give rise to multiple distinct IAs. However, many of these are related by circular shifts: for example, ⟨0, 1, 2⟩ and ⟨2, 0, 1⟩ are circular shifts of each other and generate the same set of coalitions (across all starting agents). We formalise this in Section 4.4 by defining an equivalence class ≈ under circular shifts; only one canonical representative per class is needed to generate a minimal coalition value calculation set ( CV CS ∗), i.e. the union of all coalition value calculation allocations with no duplicate coalitions.                                
+
+> Definition 2 (Increment array) An increment array (IA) of size sfor nagents is a tuple
+> t=⟨t0, t 1, . . . , t s−1⟩of non-negative integers satisfying Ps−1
+> i=0 ti=n−s, constructed from an integer partition λ∈I(n−s) with |λ| ≤ sparts, padded with s− | λ|zeros if necessary. Each tiis the offset increment (Definition 1) at position iwithin the coalition.
+
+Again, consider the case where n = 6, s = 3, and the partition λ = (2 , 1) is used to construct an IA. As the number of parts in λ is less than s, the partition will be augmented by an additional element whose value is 0 (which does not affect the sum of the partition). The selection of this partition would result in 6 tuples, of which two can be selected as representative IAs, whereas the others are simply permutations due to circular shifts; i.e. ⟨0, 1, 2⟩, has the two circular shifts ⟨2, 0, 1⟩ and ⟨1, 2, 0⟩;yet ⟨1, 0, 2⟩, has the two circular shifts ⟨2, 1, 0⟩ and ⟨0, 2, 1⟩. The resulting IA ⟨0, 1, 2⟩
+
+represents offset increments for the coalition {5, 6, 2} (amongst others), whereas the IA 
+
+⟨0, 2, 1⟩ represents the offset increments for the coalition {5, 6, 3}. In contrast, the IA 
+
+⟨5⟩ represents singleton coalitions for all 6 agents, as the offset increment and baseline increment t0 + 1 = n. As the addition of the increment n to any agent x ∈ C (modulo 
+
+n) results in x, any IA of size 1 is equivalent to the identity function. 
+
+## 4.3 Generating Coalition Value Calculation Allocations 
+
+An IA characterises a coalition, starting with an initial agent identifier, as each element of the IA defines the increments in the value of the identifier for each of the agents listed within the coalition. We can define the cumulative integer increment φi for 1 ≤ i ≤ s as the cumulative sum of the baseline and offset increments for the agents preceding xi in the coalition C = {x1, x 2, . . . , x s}:
+
+φi =
+
+ 0 if i = 1 
+
+Pi−2 
+
+> k=0
+
+(tk + 1) if 2 ≤ i ≤ s (3) Note that φs+1 = n, as this is equivalent to the sum of all offset increments (which, by Lemma 1, is n − s) and s baseline increments.                     
+
+> Definition 3(Coalition generation function) Given an IA t=⟨t0, t 1, . . . , t s−1⟩and a starting agent x∈ { 1,2, . . . , n }, the coalition generated by tfrom xis:
+> C(x, t ) = {x} ∪
+> s[
+> i=2
+> (x+φi) mod n(4)
+
+17 where the cumulative integer increment φi is defined as in Equation (2). By construction, the starting agent x is always a member of C(x, t ). 
+
+Each IA t represents the necessary offset increments from one agent ID of the coalition array to the next (modulo n), and thus can be used by an agent x to generate a coalition C that includes itself. This is based on the assumption that the first element of C always refers to this agent (i.e. the agent x is guaranteed to be a member of the coalition C), and the remaining agents are determined using the function C(x, t ) as defined above in Equation (4). The following lemma states that for any coalition C, there is always some IA t and an agent x ∈ C that can generate it: 
+
+Lemma 2 Let C ⊆ { 1, 2, . . . , n } with |C| = s. There is an increment array (IA) t and x ∈ C
+
+such that C = C(x, t ). 
+
+Proof Let C = {c1, c 2, . . . , c s} ⊆ { 1, 2, . . . , n } with c1 < c 2 < · · · < c s. Set x = c1 and define 
+
+tk = ck+2 − ck+1 − 1 for 0 ≤ k ≤ s − 2,ts−1 = ( n − s) −
+
+> s−2
+
+X
+
+> i=0
+
+ti
+
+We verify that t is a valid IA and that it generates C.(i) Non-negativity. For 0 ≤ k ≤ s − 2: since ck+1 < c k+2 are distinct positive integers, 
+
+ck+2 − ck+1 ≥ 1, so tk ≥ 0. For ts−1: summing the first s − 1 terms gives 
+
+> s−2
+
+X
+
+> k=0
+
+tk = ( c2 − c1 − 1) + ( c3 − c2 − 1) + · · · + ( cs − cs−1 − 1) = cs − c1 − (s − 1) where all intermediate cj cancel in pairs. Hence 
+
+ts−1 = ( n − s) − (cs − c1 − (s − 1)) = n − 1 − cs + c1 ≥ 0since c1 ≥ 1 and cs ≤ n.(ii) Correct sum. By definition, ts−1 = ( n − s) − Ps−2 
+
+> i=0
+
+ti, so Ps−1 
+
+> i=0
+
+ti = Ps−2 
+
+> i=0
+
+ti + ts−1 =
+
+n − s.(iii) Correct coalition. By Equation (3), for 2 ≤ i ≤ s:
+
+φi =
+
+> i−2
+
+X
+
+> k=0
+
+(tk + 1) = 
+
+> i−2
+
+X
+
+> k=0
+
+(ck+2 − ck+1 ) = ci − c1
+
+Hence ( x + φi) mod n = ( c1 + ci − c1) mod n = ci for 2 ≤ i ≤ s, since 1 ≤ ci ≤ n.Together with x = c1, we obtain C(x, t ) = C.
+
+□
+
+Table 2 illustrates the subset of the coalition value calculation sets for each agent, grouped into lists (i.e. columns) for each of the canonical IAs of size s, generated for each of the n = 6 agents (i.e. rows). The union of the coalition value calculation 18 Table 2 Coalition value calculation allocations CV sx for all agents x where 1 ≤ x ≤ n, n = 6, resulting in 2 6 − 1 = 63 unique coalitions. Periodic sequence designations using the rotated designation scheme (Section 4.6) are shown in bold , resulting in a balanced allocation between 10 and 11 coalitions per agent (final column). Note that the allocation of the grand coalition (not shown); i.e. s = 6 , t = ⟨0, 0, 0, 0, 0, 0⟩ is designated to agent 3 (i.e. CV 63 ) using this scheme, and as such this agent is allocated 11 coalitions.                                                                                                                     
+
+> s=1 s=2 s=3 s=4 s=5 Total
+> t⟨5⟩ ⟨ 0,4⟩ ⟨ 1,3⟩ ⟨ 2,2⟩ ⟨ 0,0,3⟩ ⟨ 0,1,2⟩ ⟨ 0,2,1⟩ ⟨ 1,1,1⟩ ⟨ 0,0,0,2⟩ ⟨ 0,0,1,1⟩ ⟨ 0,1,0,1⟩ ⟨ 0,0,0,0,1⟩ | CV x|
+> ϖ(t)666366626636
+> CV s
+> 111,2 1,3 1,4 1,2,3 1,2,4 1,2,5 1,2,3,4 1,2,3,5 1,2,4,5 1,2,3,4,5 11
+> CV s
+> 222,3 2,4 2,5 2,3,4 2,3,5 2,3,6 2,3,4,5 2,3,4,6 2,3,5,6 2,3,4,5,6 11
+> CV s
+> 333,4 3,5 3,6 3,4,5 3,4,6 3,4,1 3,4,5,6 3,4,5,1 3,4,5,6,1 11
+> CV s
+> 444,5 4,6 4,5,6 4,5,1 4,5,2 4,6,2 4,5,6,1 4,5,6,2 4,5,6,1,2 10
+> CV s
+> 555,6 5,1 5,6,1 5,6,2 5,6,3 5,1,3 5,6,1,2 5,6,1,3 5,6,1,2,3 10
+> CV s
+> 666,1 6,2 6,1,2 6,1,3 6,1,4 6,1,2,3 6,1,2,4 6,1,3,4 6,1,2,3,4 10
+
+sets listed in this Table represent the  ns
+
+ unique subsets of size s in the powerset of 
+
+N = {1, 2, 3, 4, 5, 6}. Each column represents a set of coalitions for each canonical IA 
+
+t. The rows represent the different coalitions that can be generated using C(x, t ) for each agent x for some 1 ≤ x ≤ n, where x appears as the first element in the coalition. These are the coalitions that represent the allocation of coalition value calculation allocations given to each agent x. Note that every possible coalition is assigned once and only once, and that an integer partition may form more than one IA; for example the two IAs ⟨0, 1, 2⟩ and ⟨0, 2, 1⟩ are both formed from the {2,1 } integer partition. To illustrate this process, the coalition value calculation set (CV) for agent x = 5 (assuming n = 6 and s = 3) can therefore be determined using the first three IAs: 
+
+C(5 ,⟨0,0,3⟩)= {5,(5+0+1) mod (6) ,((5+0+1)+0+1) mod (6) }≡{ 5,6,1}
+
+C(5 ,⟨0,1,2⟩)= {5,(5+0+1) mod (6) ,((5+0+1)+1+1) mod (6) }≡{ 5,6,2}
+
+C(5 ,⟨0,2,1⟩)= {5,(5+0+1) mod (6) ,((5+0+1)+2+1) mod (6) }≡{ 5,6,3}
+
+The existence of repeating sub-sequences within an IA can lead to duplicate coalitions being formed, depending on the initial agent. For example, in Table 2, the column for ⟨1, 1, 1⟩ only assigns coalitions to two agents, as the IA t contains a repeated sub-sequence ⟨1⟩ which appears 3 times. Therefore, the coalition generated for C(1 , t ), 
+
+C(3 , t ), and C(5 , t ) all contain the same agents (albeit in a different order): 
+
+C(1 ,⟨1,1,1⟩)= {1,(1+1+1) mod (6) ,((1+1+1)+1+1) mod (6) }≡{ 1,3,5}
+
+C(3 ,⟨1,1,1⟩)= {3,(3+1+1) mod (6) ,((3+1+1)+1+1) mod (6) }≡{ 3,5,1}
+
+C(5 ,⟨1,1,1⟩)= {5,(5+1+1) mod (6) ,((5+1+1)+1+1) mod (6) }≡{ 5,1,3}
+
+19 In the following subsection, we explore why this is the case, and prove that the coalition value calculation sets generated by these four different IAs are equivalent to all of the possible  ns
+
+ sets of size s = 3 from n = 6 agents. 
+
+## 4.4 Equivalence Classes 
+
+It is possible to generate a number of IAs that are permutations of each other through circular shifts, and as such all belong to the same equivalence class ≈. Therefore, only a single, canonical representative IA for each equivalence class ([ t]≈) is required when constructing a coalition value calculation. 
+
+Definition 4 (IA equivalence) Two IAs t = ⟨t0, t 1, . . . , t s−1⟩ and u = ⟨u0, u 1, . . . , u s−1⟩ of the same size s are equivalent , written t ≈ u, if u is a circular shift of t; that is, there exists 0 ≤ k ≤ s − 1 such that 
+
+⟨u0, u 1, . . . , u s−1⟩ = ⟨tk, t k+1 , . . . , t s−1, t 0, t 1, . . . , t k−1⟩
+
+The relation ≈ is an equivalence relation. The equivalence class of t is denoted [ t]≈, and its 
+
+canonical representative is the lexicographically smallest member of [ t]≈.
+
+Lemma 3 If t ≈ u then 
+
+> n
+
+[
+
+> i=1
+
+{ C(i, t ) } =
+
+> n
+
+[
+
+> i=1
+
+{ C(i, u ) }
+
+Proof sketch (full proof in Appendix A) It suffices to show the result for a single circular shift; the general case follows by composition. Without loss of generality, let u be obtained from t by moving the last element to the front: u = ⟨ts−1, t 0, t 1, . . . , t s−2⟩. Write ψr for the cumulative increments under u, analogous to φr under t. One can verify that ψk = φk + ( ts−1 − tk−2)for 2 ≤ k ≤ s, from which it follows that each coalition C(i, t ) equals C(j, u ) for a specific starting agent j determined by i and ts−1. Crucially, the mapping i 7 → j is a bijection on 
+
+{1, . . . , n }, so the union over all starting agents is identical for t and u. □
+
+Lemma 3 shows that increment arrays (IAs) belonging to the same equivalence class ([ t]≈) generate exactly the same set of coalitions of size s from {1, . . . , n }. For example, given u′ = ⟨1, 0, 2⟩ and t′ = ⟨0, 2, 1⟩, we can say that they both belong to the same equivalence class, i.e. t′ ≈ u′ as we can generate the coalition with the values {1, 4, 6}
+
+by simply selecting different agents: 
+
+C(4 ,⟨1,0,2⟩)= {4,(4+1+1) mod (6) ,((4+1+1)+0+1) mod (6) }≡{ 4,6,1}
+
+C(6 ,⟨0,2,1⟩)= {6,(6+0+1) mod (6) ,((6+0+1)+2+1) mod (6) }≡{ 6,1,4}
+
+Note that u′ results from a single circular shift from t′.20 Lemma 4 Let C = C(xi, t ) and C = {x1, x 2, . . . , x i, . . . , x s} with xi < x i+1 for all 1 ≤ i < s. There is an increment array (IA), u, for which t ≈ u and C(x1, u ) generates C in strictly increasing ordering of xi, i.e. 
+
+xi ∈
+
+(
+
+x1 +
+
+> i−2
+
+X
+
+> k=0
+
+uk + i − 1, x 1 +
+
+> i−2
+
+X
+
+> k=0
+
+uk + i − 1 − n
+
+)
+
+∀ 2 ≤ i ≤ s
+
+Proof Given t, suppose C(xi, t ) = {x1, x 2, . . . , x i, . . . , x s}. The first observation is that the following terms are strictly increasing: xi + Pr−2 
+
+> k=0
+
+tk + r − 1 = xi + φr . It follows that if xi̸ = x1 there must be a unique index, p, for which: 
+
+xi + φr is 
+
+ ≤ n if r < p > n if r ≥ p
+
+In consequence, x1 = xi + φp − n, otherwise we cannot have x1 ∈ C(xi, t ). More generally, however, it must hold that: 
+
+xk = xi + φp+k−1 − n ∀ 1 ≤ k ≤ s − p + 1 
+
+xk = xi + φp−(s−k)−1 ∀ s − p + 2 ≤ k ≤ s
+
+This, however, corresponds to the behaviour of the IA u, whose definition is: 
+
+u = ⟨tp−1, t p, . . . , t p+k, . . . , t s−1, t 0, . . . , t p−2⟩
+
+Clearly u ≈ t and C(x1, u ) = C(xi, t ) as claimed. □
+
+As an easy consequence of Lemma 4 we obtain: 
+
+Lemma 5 Let t and u be IAs for which t̸ ≈ u. In such cases, 
+
+> n
+
+[
+
+> i=1
+
+{C(i, t )} \ n[
+
+> i=1
+
+{C(i, u )} = ∅
+
+Proof Suppose the contrary and that C = {x1, . . . , x s} can be generated by C(xi, t ) and 
+
+C(xj , u ) for choices of t and u belonging to different equivalence classes of ≈. As a consequence of Lemma 4 we know that there are IAs, t′ and u′ for which, t ≈ t′, u ≈ u′ and C(x1, t ′) = 
+
+C(xi, t ) = C(xj , u ) = C(x1, u ′). Furthermore, C(x1, t ′) and C(x1, u ′) produce the elements of C in increasing ordering of xi ∈ C. This, however, is only possible if: 
+
+xi = x1 +
+
+> i−2
+
+X
+
+> k=0
+
+t′ 
+
+> k
+
++ i − 1 = x1 +
+
+> i−2
+
+X
+
+> k=0
+
+u′ 
+
+> k
+
++ i − 1that is, t′ 
+
+> i
+
+= u′ 
+
+> i
+
+for each 0 ≤ i ≤ s − 1. This, however, implies that t ≈ u, in contradiction to our starting premise. □
+
+21 4.5 Sub-sequences and Periodic IAs 
+
+For any given s, the canonical representative IAs can be constructed from integer partitions of n − s (Definition 2). When an IA is periodic, i.e. it consists of a shorter sub-sequence repeated multiple times, different starting agents can produce the same coalition. For example, in Table 2, the periodic IAs ⟨2, 2⟩, ⟨1, 1, 1⟩, and ⟨0, 1, 0, 1⟩ each assign identical coalitions to multiple agents. This subsection characterises exactly when and why such duplication occurs. 
+
+Definition 5 (Period, repetition count, and distinct coalitions) Let t = ⟨t0, t 1, . . . , t s−1⟩ be an IA of size s.1. The period of t, denoted π(t), is the length of the shortest prefix ⟨t0, . . . , t p−1⟩ such that 
+
+t consists of s/p identical copies of that prefix: 
+
+π(t) = min p ∈ { 1, . . . , s } : t = ⟨t0, . . . , t p−1, t 0, . . . , t p−1, . . . ⟩
+
+| {z } 
+
+> s/p copies
+
+2. The repetition count is μ = s/π (t), which corresponds to the number of times the minimal sub-sequence is repeated within t. This is because t is composed of identical copies of its minimal prefix, and μ ∈ N+.3. The stride of t is ϖ(t) = n/μ = n π (t)/s .4. An increment array (IA) t is aperiodic if π(t) = s (equivalently, μ = 1), and periodic if 
+
+π(t) < s (equivalently, μ > 1). 
+
+The terminology reflects the fact that, as established in Theorem 6, ϖ(t) equals the number of distinct coalitions generated by t; exactly ϖ(t) consecutive agents produce distinct coalitions before the pattern repeats. The existence of repeating sub-sequences within a periodic IA will result in the assignment of duplicate coalitions to different agents. For example, t = ⟨1, 1, 1⟩ con-tains a repeated sub-sequence ⟨1⟩ which appears μ = 3 times, where π(t) = 1, and a stride ϖ = 2. Therefore, it will result in the assignment of two different coalitions, each being assigned to three agents. 4 For example, the coalitions generated for C(1 , t ), 
+
+C(3 , t ), and C(5 , t ) all contain the same agents, albeit in a different order. Theorem 6 shows that exactly ϖ(t) distinct coalitions are generated by t, and that 
+
+C(i, t ) = C(j, t ) if and only if i ≡ j (mod ϖ(t)). Thus, each IA can be used r times to generate the same coalition; i.e. the coalitions formed for agents i and j are equivalent if and only if there exists some r ∈ N0 within the stated range. 
+
+Theorem 6 For any increment array (IA) t, and for all 1 ≤ i ≤ j ≤ n,
+
+C(i, t ) = C(j, t ) ⇔ ∃ 0 ≤ r ≤ (n − i)snπ (t) : j = i + r ×
+
+ nπ (t)
+
+s
+
+
+
+(5) 
+
+> 4Table 2 lists only the unique coalitions rather than illustrating all duplicated coalitions; this reflects the designation strategy discussed in Section 4.6.
+
+22 Proof sketch (full proof in Appendix A) (⇐) We show that j = i + r · (nπ (t)/s ) implies                                                                       
+
+> C(i, t ) = C(j, t ). The key observation is that periodicity of tyields a closed-form for the cumulative integer increments beyond one period:
+> φπ(t)+ k=nπ (t)
+> s+φk(1 ≤k≤s−π(t)) Thus, advancing the starting agent by nπ (t)/s shifts every cumulative increment by the same additive constant. Consequently the (uncorrected) sequence of coalition members generated from jis a cyclic rearrangement of that generated from i, so after reduction modulo nthe two coalitions coincide. The general case follows by applying this shift rtimes. (⇒) Suppose C(i, t ) = C(i+φρ, t ) for some 2 ≤ρ≤s. Matching the two sorted coali-tion representations element-by-element produces a system of identities on the entries of t
+> (Equations (A5) and (A6) in the Appendix). Analysing these identities shows that tmust repeat under a cyclic shift of ( ρ−1) positions, i.e. tj=tj+( ρ−1) mod sfor all j. It follows that π(t) divides gcd( s, ρ −1), and hence that trepeats in blocks of size g= gcd( s, ρ −1). Substituting back, the starting-agent offset φρevaluates to ( ρ−1) n/s , which is an integer multiple of nπ (t)/s . This establishes that jhas the required form i+r·(nπ (t)/s ). The upper bound on rfollows from j≤n.□
+
+The coalitions formed for agents i and j are equal if and only if there exists some r in the range stated in Equation (5). This r represents the number of distinct agents that produce duplicate coalitions when using the same t. More precisely, j = i + r ×
+
+(nπ (t)/s ) indicates exactly which other starting agents will generate the same coalition as agent i. Thus, in the trivial case, if r = 0, then i ≡ j. The key quantity driving this is μ = s/π (t); the number of times the repeating block occurs within t, such that: 
+
+• If t is aperiodic (i.e. π(t) = s, so that μ = 1), then nπ (t)/s = n, and the only solution is r = 0, i.e. j = i. Every agent will produce a unique coalition, and no duplicates occur. 
+
+• If t is periodic with μ > 1 repeating subsequences, then nπ (t)/s = n/μ < n ,and exactly μ agents will be spaced evenly around the cycle of n agents that all generate the same coalition. In this case, r can take the values 0 , 1, . . . , μ − 1, giving exactly μ duplicate-generating agents. Since μ divides both s (by definition) and n (because the offset increments within each repeated block must sum to a whole number), μ can be at most gcd( n, s ). There-fore, when n and s share no common factor (i.e. gcd( n, s ) = 1) then μ = 1, and every IA of that size s is aperiodic. Continuing from our previous example where the periodic IA t = ⟨1, 1, 1⟩ and s = 3 (Table 2), we have μ = 3 repeated sequences with a period π(t) = 1. If we consider the case where i = 1, then the upper bound for r is: (n − i)snπ (t) = (6 − 1) × 36 × 1 = 15 6and therefore ∃ 0 ≤ r ≤ 15 /6; i.e. r ∈ { 0, 1, 2}. Furthermore, as the stride is ϖt =
+
+nπ (t)/s = (6 × 1) /3 = 2, then this periodic IA will generate only 2 unique coalitions. 23 From this, given that C(1 , t ) = {1, 3, 5}, we have: 
+
+r = 0 , j = i + 0 = 1 C(j, t ) = C(1 , ⟨1, 1, 1⟩) = {1, 3, 5}
+
+r = 1 , j = i + 1 × 2 = 3 C(j, t ) = C(3 , ⟨1, 1, 1⟩) = {3, 5, 1}
+
+r = 2 , j = i + 2 × 2 = 5 C(j, t ) = C(5 , ⟨1, 1, 1⟩) = {5, 1, 3}
+
+Theorem 7 shows that IAs of the same equivalence class generate identical sets of coalitions, and that this is the only way that identical coalitions can be formed.                                          
+
+> Theorem 7 For any increment array (IA) tand u:
+> n[
+> i=1
+> {C(i, t )}\n[
+> i=1
+> {C(i, u )}̸ =∅⇔t≈u(6)
+> n[
+> i=1
+> {C(i, t )}=
+> n[
+> i=1
+> {C(i, u )}⇔t≈u(7)
+> Proof The fact that IAs belonging to the same equivalence class of ≈generate identical sets of coalitions of size sover all agents (and hence have a non-empty intersection) follows directly from Lemma 3. This establishes the ⇐implication for Equation (7) and hence (6). This is the only way that two increment arrays can generate a coalition in common, i.e. that should
+> tand uproduce the same subset of {1,2, . . . , n }then tand ubelong to the same equivalence class of ≈is immediate from Lemma 4 and Lemma 5. We thus have the ⇒implications of Equations (6) and (7) thereby completing the theorem proof. □
+
+When a periodic IA t is encountered, only one of the μ duplicate-generating agents should actually be assigned that coalition. This is discussed in the next section. 
+
+## 4.6 The Designation Problem 
+
+Theorem 6 establishes that when a canonical IA t is periodic (i.e. π(t) < s ), exactly 
+
+μ = s/π (t) agents generate the same coalition as each other, such that the agents that produce duplicate coalitions are spaced exactly ϖ(t) = n/μ apart; i.e. agents x and 
+
+y generate the same coalition, if and only if x ≡ y (mod ϖ(t)). This partitions the n
+
+agents into ϖ(t) groups, each of size μ, called the residue classes modulo ϖ(t). Agents within the same residue class are redundant (i.e. they would all compute the same coalition value, resulting in duplicate coalitions) while agents in different residue classes produce distinct coalitions. For example, with n = 6 and the periodic IA t = ⟨1, 1, 1⟩ (π = 1, μ = 3, ϖ = 2), the two residue classes modulo 2 are {1, 3, 5}
+
+and {2, 4, 6}. Within each class, all three agents generate the same coalition (e.g. agents 1, 3, and 5 all generate {1, 3, 5}), so only one agent per class is needed. To avoid redundant computation, exactly one agent from each residue class should be assigned the corresponding coalition. A set that contains exactly one representative from every residue class is called a transversal . In the example above, any pair such as {1, 2}, {3, 4}, or {5, 6} would be a valid transversal; i.e. each pair picks one agent from each of the two residue classes. 24 The designation problem is therefore to choose, for each periodic IA, a transversal of ϖ(t) agents to be responsible for computing the corresponding coalition values. 5
+
+For aperiodic IAs ( π(t) = s, μ = 1), no designation is needed: every agent produces a unique coalition, and all agents are implicitly designated. We refer to the agents selected for a periodic IA as the designated agents, whereas the resulting assignment of coalitions to agents across all IAs and all sizes is the allocation . The challenge therefore lies entirely with the periodic IAs. Let E(n, s ) denote the set of canonical representative IAs for coalition size s (one per equivalence class under ≈). We partition E(n, s ) into two disjoint subsets: 
+
+A(n, s ) = { t ∈ E(n, s ) : π(t) = s } (8) 
+
+P(n, s ) = { t ∈ E(n, s ) : π(t) < s } (9) so that E(n, s ) = A(n, s ) ˙∪ P(n, s ). The aperiodic IAs A(n, s ) generate n unique coalitions each, whereas each periodic IA t ∈ P(n, s ) generates only ϖ(t) = n/μ unique coalitions. The total number of coalitions of size s given n agents can therefore be expressed as: ns
+
+
+
+= n · | A(n, s )| + X  
+
+> t∈P(n,s )
+
+ϖ(t) (10) 
+
+4.6.1 The Lowest-ID Designation Scheme 
+
+The simplest approach is to designate the agents with the lowest identifiers. For a periodic IA t with d = ϖ(t) = n/μ , this scheme designates agents {1, 2, . . . , d }; i.e. a transversal of the d residue classes modulo d, since these d consecutive agents each fall in a distinct residue class. Under this scheme, the allocation to agent x for coalition size s is: 
+
+|CV sx | = |A(n, s )| + { t ∈ P(n, s ) : x ≤ ϖ(t) } (11) Agent 1 is designated for every periodic IA (since 1 ≤ d for all d ≥ 1), receiving the maximum allocation of |E(n, s )| coalitions. Agent n is designated only for aperiodic IAs, receiving the minimum of |A(n, s )| coalitions. Continuing with our running example, if we have t = ⟨1, 1, 1⟩, s = 3 , n = 6, then 
+
+d = 2 and the designated agents are {1, 2}; i.e. the two lowest numbered agents, with agent 1 computing C(1 , ⟨1, 1, 1⟩) = {1, 3, 5} and agent 2 computing C(2 , ⟨1, 1, 1⟩) = 
+
+{2, 4, 6}. Thus agents 1 and 2 would receive 4 coalitions each while agents 3–6 would each receive only 3. More generally, under the lowest-ID scheme, the maximum imbalance at any coali-tion size s is |P(n, s )|; agent 1 is designated for every periodic IA, whereas agent n is designated for none. As n grows and periodic IAs become more numerous, this imbal-ance can become substantial. The rotated designation scheme introduced next reduces the worst-case imbalance to at most 1.         
+
+> 5The periodic IA t=⟨1,1,1⟩in Table 2 is designated to the agents in the transversal {4,5}.
+
+25 4.6.2 The Rotated Designation Scheme 
+
+To achieve a tighter load balance, we introduce a rotated designation scheme that distributes the periodic-IA designations evenly across all agents. The key idea is to shift the designation window cyclically for each successive periodic IA, so that no single agent is systematically favoured. Crucially, the scheme requires no central coordinator: each agent can independently determine its own designations using only its identifier 
+
+x and the shared parameter n.
+
+Definition 6 (Rotated designation) For a given coalition size s, the periodic canonical IAs are enumerated in the deterministic order produced by a shared generation algorithm 6 as 
+
+t1, t 2, . . . , t K where K = |P(n, s )|. For each tj , let dj = ϖ(tj ) = n/μ (tj ) denote the number of distinct coalitions it generates. The cumulative offset hj is defined as: 
+
+hj =
+
+> j−1
+
+X
+
+> i=1
+
+di, h1 = 0 (12) An agent x determines that it is designated for tj if and only if (x − 1 − hj ) mod n < d j (13) Since the enumeration order and the values dj are determined entirely by n and s, every agent evaluates this test identically. The set of agents satisfying (13) for a given tj is a window of 
+
+dj consecutive agents (cyclically in {1, . . . , n }) starting at agent ( hj mod n) + 1; i.e. 
+
+Dj =  (hj + k) mod n + 1 : 0 ≤ k ≤ dj − 1 (14) 
+
+Following our example where n = 6 , s = 3, assume that there is one periodic canonical IA at this size: t1 = ⟨1, 1, 1⟩ with π = 1, μ = 3, and d1 = ϖ(t1) = 2. Since 
+
+K = 1, the cumulative offset is h1 = 0, and the designation window starts at agent (0 mod 6) + 1 = 1. Applying the designation test (13) to each agent: 
+
+x 1 2 3 4 5 6 (x−1−0) mod 6 0 1 2 3 4 5 
+
+< d 1 = 2? ✓ ✓ 
+
+Thus D1 = {1, 2} is the set of two consecutive agents, one from each of the two residue classes {1, 3, 5} and {2, 4, 6}. Agent 1 computes C(1 , t 1) = {1, 3, 5} and agent 2 computes C(2 , t 1) = {2, 4, 6}, covering all ϖ(t1) = 2 distinct coalitions generated by this IA. The remaining agents 3–6 are not designated for t1 and need not evaluate it. When multiple periodic IAs are present ( K > 1), the cumulative offset h advances after each one, rotating the window so that the next IA’s designations fall on different agents; this is illustrated for all four periodic IAs of n = 6 in the worked example of Section 4.6.4. The designation window Dj advances by dj positions after each periodic IA, caus-ing successive windows to rotate around the cycle of n agents. Since aperiodic IAs do not modify the offset (all agents are designated for them by default), h is advanced only by periodic IAs. 
+
+> 6The specific algorithm used to generate the IAs in a deterministic ordering is presented in Section 5. For the purposes of this section, it suffices that all agents use the same deterministic ordering.
+
+26 Lemma 8 (Transversal validity) Let d | n (i.e. d is a positive divisor of n). Any set of d
+
+agents with consecutive identifiers (modulo n) forms a transversal of the d residue classes of 
+
+{1, . . . , n } modulo d.
+
+Proof Using 0-indexed agents {0, 1, . . . , n −1} for clarity, the residue classes modulo d are 
+
+Rj = {j, j +d, j +2 d, . . . } for j = 0 , . . . , d −1. Consider d consecutive agents starting at position 
+
+h: agent ( h + k) mod n for k = 0 , . . . , d −1. Their residues modulo d are ( h + k) mod d for 
+
+k = 0 , . . . , d −1, which is a permutation of {0, 1, . . . , d −1}. Hence exactly one agent from each residue class is included. □
+
+Since μ(t) | n (as established by Definition 5, where ϖ(t) = nπ (t)/s must be a positive integer), we have dj = ϖ(tj ) divides n for every periodic IA. Lemma 8 therefore guarantees that each designation Dj is a valid transversal, ensuring that every unique coalition from tj is computed by exactly one agent and no coalition is missed. 
+
+4.6.3 Balancing the Coalition Value Calculation load across agents 
+
+Using the rotated designation scheme (Definition 6), we can show that the allocation of coalitions, including those from periodic IAs, will differ by no more than 1 across all of the agents. 
+
+Theorem 9 (Per-size load balance) Under the rotated designation scheme, for any fixed coalition size s and any agent x ∈ { 1, . . . , n }:
+
+$   ns
+
+
+
+n
+
+%
+
+≤ | CV sx | ≤ 
+
+&   ns
+
+
+
+n
+
+'
+
+(15) 
+
+The maximum difference in allocation between any two agents for a given coalition size is therefore at most 1. Proof Each agent receives exactly |A(n, s )| coalitions from aperiodic IAs, since every aperi-odic IA generates n distinct coalitions (one per agent). For the periodic IAs, define the total number of periodic designations at size s:
+
+D(n, s ) = 
+
+> K
+
+X
+
+> j=1
+
+dj = X  
+
+> t∈P(n,s )
+
+ϖ(t)where K = |P(n, s )| is the number of periodic canonical IAs at size s. Under the rotated scheme, the D(n, s ) designation slots are laid out consecutively (i.e. the first d1 slots for 
+
+t1, the next d2 slots for t2, and so on) and mapped to agents cyclically; the p-th slot (for 
+
+p = 1 , . . . , D (n, s )) is assigned to agent (( h1 +p−1) mod n)+1. Therefore, the number of slots assigned to any agent is either ⌊D(n, s )/n ⌋ or ⌈D(n, s )/n ⌉. Combining, the total allocation for agent x at size s gives us: 
+
+|CV sx | = |A(n, s )| + δx
+
+where δx ∈ {⌊ D(n, s )/n ⌋, ⌈D(n, s )/n ⌉} . From (10),  ns
+
+ = n·| A(n, s )|+D(n, s ), and therefore: 
+
+ ns
+
+
+
+n = |A(n, s )| + D(n, s )
+
+n
+
+Since |A(n, s )| is an integer, the bound (15) follows. □
+
+27 Note that when gcd( n, s ) = 1, there are no periodic IAs at size s (as established in Section 4.5); thus P(n, s ) = ∅ and every agent receives exactly |A(n, s )| = |E(n, s )|
+
+coalitions. In this case the allocation is perfectly balanced, with zero imbalance. The bound of Theorem 9 is therefore tight only when periodic IAs exist. Although Theorem 9 guarantees a per-size imbalance of at most 1, the aggregate imbalance across all coalition sizes can be as large as the number of sizes containing periodic IAs if the rotated designation scheme is applied independently for each coali-tion size; i.e. if the cumulative offset h is reset to 0 for each new size s. This occurs because the same agents may receive the “extra” periodic coalition at every size when the designation window always starts from the same position. This can be avoided by a simple modification: rather than resetting h at each new coalition size, the offset is carried across all sizes ; i.e. after processing all periodic IAs at size s, the cumulative offset becomes the initial offset for size s + 1. We refer to this as the global offset variant. Formally, let the periodic canonical IAs across all sizes s = 1 , . . . , n be indexed in the order they are encountered as t(1) , t (2) , . . . , t (M ), where M = Pns=1 |P(n, s )| is the total number of periodic canonical IAs. Each t(j) generates d(j) = ϖ(t(j)) = n/μ (t(j))distinct coalitions. The global cumulative offset is: 
+
+Hj =
+
+> j−1
+
+X
+
+> i=1
+
+d(i), H1 = 0 (16) and the designation test (Equation (13)) is applied with Hj in place of hj .
+
+Theorem 10 (Aggregate load balance) Under the rotated designation scheme with global offset, for any agent x ∈ { 1, . . . , n }:
+
+ 2n − 1
+
+n
+
+
+
+≤ | CV x| ≤ 
+
+ 2n − 1
+
+n
+
+
+
+(17) 
+
+The maximum difference in the total number of coalition value calculations between any two agents, across all coalition sizes, is at most 1. Proof Every agent receives exactly A = Pns=1 |A(n, s )| coalitions from aperiodic IAs (this quantity is the same for all agents). The total number of periodic designation slots across all sizes is Dglobal = PMj=1 d(j), where M is the total number of periodic canonical IAs across all sizes, and d(j) is the number of distinct coalitions generated by the j-th periodic IA. With the global offset, the designation windows for all M periodic IAs are laid out as a single consecutive sequence of Dglobal slots, mapped cyclically to the n agents. By the same counting argument as in the proof of Theorem 9, each agent receives either ⌊Dglobal /n ⌋ or 
+
+⌈Dglobal /n ⌉ periodic coalitions. Since 2 n − 1 = n · A + Dglobal , we have: 
+
+|CV x| = A + δx, 2n − 1
+
+n = A + Dglobal 
+
+n
+
+where δx ∈ {⌊ Dglobal /n ⌋, ⌈Dglobal /n ⌉} is the number of periodic designations assigned to agent x. The bound (17) follows as before. □
+
+28 Table 3 Periodic canonical IAs for n = 6 across all coalition sizes, with the global offset h and designated agents under the rotated scheme. Size s IA t μ d h Designated agents 2 ⟨2, 2⟩ 2 3 0 {1, 2, 3}                            
+
+> 3⟨1,1,1⟩323{4,5}
+> 4⟨0,1,0,1⟩235{6,1,2}
+> 6⟨0,0,0,0,0,0⟩618{3}
+
+Interestingly, the per-size bound of Theorem 9 continues to hold under the global offset. The starting offset at each size may differ from zero, but this merely shifts the designation windows without affecting the counting argument: the number of periodic designations received by any agent within a single size s still lies between ⌊D(n, s )/n ⌋
+
+and ⌈D(n, s )/n ⌉.
+
+4.6.4 Full worked example for n = 6 
+
+The rotated designation scheme with global offset is illustrated for the case where 
+
+n = 6. This complements Table 2, which lists the coalitions assigned to each agent for both periodic and aperiodic IAs for each size s. As the total number of coalitions is 26 − 1 = 63, each agent should receive either ⌊63 /6⌋ = 10 or ⌈63 /6⌉ = 11 coalitions. Recall that each agent will be allocated a coalition for each aperiodic canonical IA. Therefore, we focus on the designation of the subset of coalitions resulting from periodic canonical IAs across all coalition sizes s in increasing order. These IAs are illustrated in Table 3 in the order they are encountered, together with the repetition count μ, the number of distinct coalitions generated d = ϖ(t), the global designation offset h at the point of encounter, and the resulting designation window. As the coalition sizes s = 1 and s = 5 contain no periodic IAs (since gcd( n, s ) = 1 in both cases), the offset passes through them unchanged. The global offset h advances through the following values: 0 → 3 → 5 → 8 → 9 across the four periodic IAs, causing each designation window to fall on a different set of agents. Table 4 illustrates the number of resulting allocations to each agent for differing coalition sizes, together with the total number of coalitions (as shown in Table 2), and the theoretical bound. Note that the designations for periodic IAs appear in Table 2 in bold (with the exception of the grand coalition; i.e. when s = 6, which is not shown, but in this example is designated to agent 3). The aggregate imbalance is 11 − 10 = 1, and the per-size imbalance is at most 1 for every coalition size (e.g. at s = 2: agents receive either 2 or 3; at s = 3: either 3 or 4). Note that the per-size allocation varies across agents (e.g. agent 3 receives 3 coalitions for s = 3 but only 1 for s = 6, while agent 4 receives 4 at s = 3 and none for s = 6), but the totals are balanced to within 1. For comparison, with the lowest-ID designation the totals for increasing sizes s would be 13, 12, 11, 9, 9, 9; i.e. an imbalance of 4. The rotated scheme with global offset eliminates this bias entirely. 29 Table 4 Per-agent allocation for n = 6 under the rotated designation scheme with global offset for each coalition size s.Number of Coalitions at size s                                                                          
+
+> Agent x123456Total |CV x|Bound 113331011 ⌈63 /6⌉= 11 ✓
+> 213331011 11 ✓
+> 313321111 11 ✓
+> 412421010 ⌊63 /6⌋= 10 ✓
+> 512421010 10 ✓
+> 612331010 10 ✓
+> Total: 3×11 + 3 ×10 = 63 = 2 6−1✓
+
+## 4.7 Discussion 
+
+The use of increment arrays (IAs) address each of the desirable properties outlined in Section 1 for coalition value calculation allocation methods, which are discussed below: 1. Eliminating the need for communication between agents: As noted in Definition 6, the designation test (13) depends only on the agent’s own identifier x
+
+and the shared parameter n. The cumulative offset h and the strides dj are func-tions of the canonical IAs, which every agent generates in the same deterministic order. Consequently, no inter-agent communication, shared memory, or external coordination is required, as each agent independently and identically determines its own designations across all coalition sizes. 2. Ensuring that the allocation of coalitions is equitable: Under the rotated designation scheme (Definition 6), each agent is designated for all aperiodic IAs and for an approximately equal share of the periodic IAs for each coalition size (Theorem 9). When the global offset variant is used, the aggregate allocation across all coalition sizes is also balanced: the total number of coalition value calculations assigned to any agent lies between ⌊(2 n − 1) /n ⌋ and ⌈(2 n − 1) /n ⌉
+
+(Theorem 10). Therefore, the maximum difference between any two agents is at most 1. 3. Every possible coalition value is calculated once and only once, thus eliminating redundancy: Each coalition of size s is generated by exactly one equivalence class of IA (Theorem 7). For aperiodic IAs ( π(t) = s), every starting agent produces a distinct coalition, and thus all n coalitions in that class are covered without duplication. For periodic IAs ( π(t) < s ), as the μ agents within each residue class will generate the same coalition; the designation scheme assigns exactly one agent per residue class (i.e. a transversal of size ϖ(t)) so that each distinct coalition is computed only once. Taken together, every coalition C ⊆{1, . . . , n } with |C| = s is computed by exactly one designated agent (Lemma 2 guarantees that a generating IA exists for every such coalition). 4. Maintaining a balanced load across agents: Beyond receiving approximately equal numbers of coalitions (property (ii)), it is also desirable that agents perform 30 approximately equal amounts of computation . Every agent generates coalitions from the same set of canonical representative IAs (one per equivalence class under 
+
+≈; see Section 4.4). For each IA t of size s, the coalition generation function 
+
+C(x, t ) (Definition 3) computes s − 1 cumulative additions (one per element of the IA), regardless of the starting agent x. Consequently, every agent that is designated for the same set of IAs performs exactly the same number of arithmetic operations to generate its coalitions; there is no dependence on agent identity or on the lexicographic position of the coalitions within a list. This should be contrasted with the cost of evaluating the characteristic function ν(C) for each assigned coalition, which is application-dependent and may vary with coalition size. The per-size balance of Theorem 9 ensures that, within any given size s,allocations differ by at most one coalition, so that if the cost of evaluating ν(C)depends only on |C|, the total evaluation cost across agents is also balanced. 5. An agent is self-interested ; i.e. it is only assigned coalitions in which it is a member: The coalition generation function C(x, t ) guarantees this by con-struction; the starting agent x is always included in the coalition (Equation (4)). Furthermore, since the designation schemes only select which agents are des-ignated, and a designated agent x always computes C(x, t ), the self-interest property is preserved regardless of the designation scheme used. 
+
+# 5 Necklace-based Distributed Coalition Algorithm 
+
+The preceding section established that a minimal coalition value calculation set 
+
+CV CS ∗ can be constructed from canonical representative IAs, one per equiva-lence class under ≈, together with a rotated designation scheme that balances the workload across agents. Two questions remain: how to generate the canonical IAs effi-ciently, and how to combine generation with the designation scheme into a complete, communication-free algorithm. To address these, we first show that canonical repre-sentative IAs correspond exactly to two-colour combinatorial necklaces (Section 5.1), so that necklace generation algorithms can be used to enumerate them. We also describe the FKM algorithm for generating necklaces in constant amortised time, before presenting the full Necklace-based Distributed Coalition Algorithm (N-DCA) 
+
+that each agent executes independently to determine its own coalition value calcula-tion allocation (Section 5.2). We conclude the discussion with a complexity analysis in Section 5.3. 
+
+## 5.1 The Necklace–Increment Array Correspondence 
+
+An IA for a coalition of size s given n agents can be generated by considering the different combinations of a two-colour necklace of length n with s white beads. We assume that black beads are represented by the value 1, indicating that an agent has been omitted from a coalition, whereas white beads are represented by the value 0, representing agents that are included in a coalition (Figure 4). The elements within an IA represent the offset increments between each white bead in the necklace, which is equivalent to the number of sequential black beads between each white bead. Consider the example in Figure 4, where the lexicographically least 31 0 0 1 1 0 1 䡟0 2 1 䡠
+
+> {
+> {{
+
+0
+
+2
+
+1
+
+> (n,s)-sequence
+> n=6, s=3
+> Off set
+> increment
+> of 0
+> Off set
+> increment
+> of 1
+> Off set increment
+> of 2
+> Initial bead for
+> the lexicographically
+> smallest necklace
+> Necklace with 3 black
+> beads and 3 white beads
+> Necklace unravelled (with black
+> beads as ‘1’ and white as ‘0’)
+> Off set Increment
+> between white beads
+
+Fig. 4 Necklace with n = 6 beads, of which s = 3 represent agents in a coalition. 
+
+representative necklace is represented by the sequence 001101. Note that the first white bead is immediately followed by another white bead, with no black beads separating them. Therefore the offset increment between these two beads is 0. In contrast, there are two black beads between the second and third white bead, resulting in an offset increment of 2. For the last offset increment, we consider the number of contiguous black beads between the last and first white bead; in this case there is one final black bead resulting in an offset increment of 1. This mechanism for generating the unique run-length encoding of a necklace a as its corresponding IA t is given by GenIncArray in Figure 5. The algorithm scans the necklace left to right, maintaining a running count j of contiguous black beads (lines 7–8). Each white bead ( a[i] = 0) after the first triggers the storage of the current count as the next IA element (lines 10–11); the first white bead is skipped because the precondition a[1] = 0 (line 2) ensures the count before it is always zero (such that the  
+
+> 1:
+
+procedure GenIncArray (n, a) ▷ Generate Increment Array t from necklace a 
+
+> 2:
+
+precondition: a[1] = 0 ▷ guaranteed by FKM (Figure 6)  
+
+> 3:
+
+j ← 0 ▷ counts contiguous ‘1’ elements  
+
+> 4:
+
+s ← 0 ▷ number of white beads encountered  
+
+> 5:
+
+t ← ⟨⟩ ▷ initially empty  
+
+> 6:
+
+for i = 1 to n do  
+
+> 7:
+
+if a[i] = 1 then  
+
+> 8:
+
+j ← j + 1 ▷ increment black-bead count  
+
+> 9:
+
+else  
+
+> 10:
+
+if s > 0 then ▷ skip the first white bead  
+
+> 11:
+
+append j to t 
+
+> 12:
+
+j ← 0 ▷ reset count  
+
+> 13:
+
+s ← s + 1  
+
+> 14:
+
+if s = 0 then  
+
+> 15:
+
+return t ▷ all-black necklace: empty IA  
+
+> 16:
+
+append j to t ▷ wrap-around: trailing blacks after last white  
+
+> 17:
+
+return t 
+
+> 18:
+
+end procedure 
+
+Fig. 5 Algorithm to generate an Increment Array t of size s from a necklace a of n beads. The precondition a[1] = 0 (line 2) holds for any lexicographically least necklace containing at least one bead of each colour, and is guaranteed by the FKM algorithm (Figure 6), which produces canonical representatives. The scan skips the first white bead encountered (line 10, where s = 0) so that the initial zero-count is not recorded, and instead appends the trailing black-bead count as the cyclic wrap-around element (line 16), yielding exactly s elements satisfying Ps−1 
+
+> i=0
+
+ti = n − s (Lemma 1). 
+
+32 1: procedure FKM (k, n ) ▷ Generate necklaces of length n with k colours  
+
+> 2:
+
+for i ← 0, n do  
+
+> 3:
+
+a[i] ← 0 
+
+> 4:
+
+i ← n 
+
+> 5:
+
+ProcessNecklace (n, a) ▷ Output the all-zeros necklace 0 n 
+
+> 6:
+
+repeat  
+
+> 7:
+
+a[i] ← a[i] + 1  
+
+> 8:
+
+for j ← 1, n − i do  
+
+> 9:
+
+a[j + i] ← a[j] 
+
+> 10:
+
+if (n mod i = 0) then  
+
+> 11:
+
+ProcessNecklace (n, a) ▷ Output necklace a 
+
+> 12:
+
+i ← n 
+
+> 13:
+
+while (a[i] = ( k − 1)) do  
+
+> 14:
+
+i ← i − 1 
+
+> 15:
+
+until i = 0  
+
+> 16:
+
+end procedure           
+
+> Fig. 6 FKM Algorithm, based on Fredricksen and Maiorana (1978); Fredricksen and J. Kessler (1986) and discussed in Ruskey et al. (1992). In this implementation, a necklace of length nis stored in an array of length n+ 1, where a[0] = 0. The all-zeros necklace is output explicitly (line 6) before the main loop, which generates all remaining necklaces beginning with 0 n−11. In the context of N-DCA, ProcessNecklace corresponds to executing GenIncArray followed by the designation test (see Figure 9).
+
+guard at line 10 fails when s = 0). After the main loop, the trailing count j is appended as the final element (line 16), capturing the cyclic wrap-around from the last white bead back to the first. The result is an IA of exactly s elements. Table 5 lists each of the possible two-colour necklaces containing n = 6 beads and the corresponding IA for coalitions of size s, which also corresponds to the number of white beads in the necklace. Note that the necklace 000000 corresponds to the grand coalition (i.e. 
+
+s = 6), whereas the necklace 111111 corresponds to an empty coalition (i.e. with no agents, such that s = 0). As for generating the necklaces themselves, several algorithms have been proposed that, amongst others, calculate all possible necklaces (Cattell et al. 2000; Fredrick-sen and Maiorana 1978; Fredricksen and J. Kessler 1986; Ruskey et al. 1992; Wang 2017), those of fixed content (Sawada 2003) or those of fixed density (Ruskey and Sawada 1999). The FKM algorithm, originally proposed by Fredricksen and Kessler Fredricksen and J. Kessler (1986), is a simple and efficient algorithm which generates the lexicographically smallest string for each necklace of length n given k coloured beads, beginning with the string 0 n and ending with ( k − 1) n. It has been proven to generate all necklaces, for a given k and n, in constant amortised time or CAT, i.e. where the total time is O(Nk(n)), based on Equation (1). A version of the FKM 
+
+algorithm (Fredricksen and J. Kessler 1986; Fredricksen and Maiorana 1978) is illus-trated in Figure 6. Note that the algorithm is presented here for the general case of k
+
+colours; it is used by the procedure N-DCA (Figure 9) to only generate necklaces of two-colours (i.e. k = 2), with n corresponding to the total number of agents. The FKM increment-and-propagate loop (lines 7–14) generates necklaces beginning with 0 n−11; the all-zeros necklace 0 n must therefore be output separately before the loop is entered (line 6). This necklace corresponds to the grand coalition ( s = n), which is processed through the same designation machinery as all other necklaces. 33 Table 5 The lexicographical least representative necklaces and their corresponding Increment Arrays (IAs) for n = 6, where s denotes the number of agents in a coalition, or the number of white beads in the necklace. The order in which the necklaces are generated using the FKM algorithm (based on Fredricksen and Maiorana (1978); Fredricksen and J. Kessler (1986) and discussed in Ruskey et al. (1992)) is also given. Order Necklace s IA Order Necklace s IA 1: 000000 6 ⟨0, 0, 0, 0, 0, 0⟩ 8: 001101 3 ⟨0, 2, 1⟩
+
+2: 000001 5 ⟨0, 0, 0, 0, 1⟩ 9: 001111 2 ⟨0, 4⟩
+
+3: 000011 4 ⟨0, 0, 0, 2⟩ 10: 010101 3 ⟨1, 1, 1⟩
+
+4: 000101 4 ⟨0, 0, 1, 1⟩ 11: 010111 2 ⟨1, 3⟩
+
+5: 000111 3 ⟨0, 0, 3⟩ 12: 011011 2 ⟨2, 2⟩
+
+6: 001001 4 ⟨0, 1, 0, 1⟩ 13: 011111 1 ⟨5⟩
+
+7: 001011 3 ⟨0, 1, 2⟩ 14: 111111 0 ⟨⟩ 
+
+The following proposition establishes that this encoding is a bijection between necklaces and IA equivalence classes. 
+
+Proposition 11 (Necklace–IA bijection) Let N(n, s ) denote the set of two-colour necklaces of length n with exactly s beads of colour 0, and let E(n, s ) denote the set of canonical repre-sentative IAs of size s for n agents (i.e. one per equivalence class under ≈). The run-length encoding implemented by GenIncArray defines a bijection N(n, s ) → E(n, s ).Proof Consider a two-colour necklace of length n with s beads of colour 0 (white) and n − s
+
+beads of colour 1 (black), where 1 ≤ s ≤ n.7 Its lexicographically smallest representative is a binary string a = a1a2 · · · an. Since 0 < 1, any rotation starting with a 1 is lexicographically larger than any rotation starting with a 0; hence a1 = 0 for the canonical representative of any necklace containing at least one bead of each colour. 
+
+Encoding. We define the run-length encoding Φ as follows. Because a1 = 0, the string has the form 
+
+a = 0 1 · · · 1| {z } 
+
+> t0
+
+| {z }
+
+0 1 · · · 1| {z } 
+
+> t1
+
+| {z }
+
+· · · 0 1 · · · 1| {z } 
+
+> ts−1
+
+| {z }
+
+(18) where ti ≥ 0 is the number of consecutive 1s following the ( i+1)-th 0. The encoding produces Φ( a) = t = ⟨t0, t 1, . . . , t s−1⟩, which is exactly the output of GenIncArray (n, a ). We establish four properties: (i) t is a valid IA. Each ti ≥ 0 counts black beads between successive white beads, and 
+
+Ps−1 
+
+> i=0
+
+ti = n − s since the n − s black beads are partitioned exhaustively among the s
+
+gaps. Hence t satisfies Definition 2. (ii) The encoding is invertible. Given any valid IA t = ⟨t0, . . . , t s−1⟩ of size s with P ti =
+
+n − s, the string a = 0 1 t0 0 1 t1 · · · 0 1 ts−1 is a binary string of length s + P ti = n with exactly s zeros. By inspection, Φ( a) = t. Furthermore, the structure (18) shows that a
+
+is the unique string starting with 0 that maps to t under Φ: the positions of the 0s are       
+
+> 7The boundary cases s= 0 (all black, empty coalition) and s=n(all white, grand coalition) each consist of a single necklace and a single IA, and the correspondence for these cases is trivial.
+
+34 completely determined by the gap counts. Hence Φ is a bijection between binary strings of the form (18) and valid IA tuples of size s summing to n − s.(iii) Rotation invariance. A cyclic rotation of a binary string by one position shifts the starting point of the circular scan, cyclically permuting which 0 is encountered first. This applies a circular shift to the gap counts, producing an IA related by ≈ (Definition 4). Conversely, any circular shift of an IA corresponds to starting the run-length encoding from a different 0, which is a rotation of the string. Hence necklace equivalence under rotation coincides exactly with IA equivalence under ≈.(iv) Lexicographic order is preserved. Let t and u be two distinct IAs of the same size s, and let a and b be their corresponding strings under (18). Let j be the first index at which 
+
+t and u differ, i.e. ti = ui for i < j and tj̸ = uj . Without loss of generality, suppose 
+
+tj < u j . The strings a and b agree on the first j + 1 + Pj−1 
+
+> i=0
+
+ti + tj positions (through the tj ones following the ( j+1)-th zero in a). At the next position, a has a 0 (the start of the next block) while b has a 1 (since uj > t j means its run of 1s has not yet ended). Hence a < lex b. Since the argument is symmetric, t < lex u if and only if a < lex b: the encoding Φ is order-preserving. It follows that the lexicographically smallest rotation of a necklace string (the canonical necklace representative) maps under Φ to the lexicographically smallest circular shift of the IA (the canonical IA representative). By (i) and (ii), Φ maps each canonical necklace representative to a valid IA, and every valid IA arises from exactly one such string. By (iii), necklace equivalence classes under rotation correspond to IA equivalence classes under ≈. By (iv), canonical representatives map to canonical representatives. Hence Φ restricts to a bijection N(n, s ) → E(n, s ). □
+
+## 5.2 The N-DCA Algorithm 
+
+We can now present the complete Necklace-based Distributed Coalition Value Cal-culation Allocation (N-DCA) algorithm that each agent executes independently to determine its own coalition value calculation allocation. The algorithm combines neck-lace generation (Section 5.1) with the rotated designation scheme (Section 4.6.2) to produce the set of coalitions CV x that agent x is responsible for evaluating. The N-DCA algorithm (Figure 9) requires three other supporting procedures in addition to FKM (Figure 6). The first, GenIncArray (Figure 5), converts a necklace to its canonical IA. The second, Period (Figure 7) determines the period of an IA (Definition 5); and the third, GenCoalition (Figure 8) generates a coalition from a starting agent and an IA (Definition 3). 
+
+5.2.1 Period Detection 
+
+The designation scheme requires knowing whether each canonical IA is aperiodic (π(t) = s) or periodic ( π(t) < s ), and in the periodic case, the value of the stride 
+
+ϖ(t) = nπ (t)/s . The period can be determined by checking whether t consists of s/p 
+
+identical blocks of length p, testing divisors p of s in increasing order and returning the first match. The procedure Period is given in Figure 7. For each candidate period p (line 2), the inner loop (lines 4–7) checks whether every element beyond the first block matches its counterpart at offset k mod p (line 5). A single mismatch (line 6) breaks immediately, 35 1: procedure Period (t, s) ▷ Compute period π(t) 
+
+> 2:
+
+for each divisor p of s in increasing order do ▷ try candidate period  
+
+> 3:
+
+periodic ← true ▷ assume periodic until mismatch  
+
+> 4:
+
+for k ← p to s − 1 do ▷ compare with block counterpart  
+
+> 5:
+
+if t[k]̸ = t[k mod p] then  
+
+> 6:
+
+periodic ← false ▷ mismatch: p not the period  
+
+> 7:
+
+break  
+
+> 8:
+
+if periodic then ▷ all elements matched  
+
+> 9:
+
+return p 
+
+> 10:
+
+end procedure                 
+
+> Fig. 7 Algorithm to compute the period π(t) of an IA tof size s(Definition 5). The procedure tests divisors of sin increasing order (line 2), checking whether tconsists of s/p identical copies of its first
+> pelements (lines 4–7), and returns the first pfor which this holds (line 10). For an aperiodic IA, no proper divisor matches and the procedure returns s.
+
+and if all elements agree, the period p is returned (line 10). In the worst case (when t is aperiodic), all divisors of s are tested, but the total number of element comparisons is 
+
+O(s) as early mismatches will cause the inner loop to terminate quickly. For periodic IAs, the procedure terminates as soon as the shortest repeating block is found. 
+
+5.2.2 Coalition Generation 
+
+The procedure for generating the coalition, GenCoalition , appears in Figure 8. Given a starting agent x and an IA t = ⟨t0, t 1, . . . , t s−1⟩, the coalition C(x, t ) is constructed by computing the cumulative integer increments φi (Equation (3)) on line 5 and applying them modulo n on line 6 (Definition 3). The agent x is included as the first element of the coalition (line 2)  
+
+> 1:
+
+procedure GenCoalition (x, t, s, n) ▷ Generate C(x, t ) 
+
+> 2:
+
+C[1] ← x 
+
+> 3:
+
+φ ← 0 
+
+> 4:
+
+for i ← 2 to s do  
+
+> 5:
+
+φ ← φ + t[i − 2] + 1  
+
+> 6:
+
+C[i] ← (( x − 1 + φ) mod n) + 1 ▷ Map to {1, . . . , n } 
+
+> 7:
+
+return C 
+
+> 8:
+
+end procedure          
+
+> Fig. 8Algorithm to generate the coalition C(x, t ) of size sfor agent xgiven an IA t, with n
+> agents. The coalition members are determined using the cumulative integer increments (Equation (3), Definition 3).
+
+5.2.3 The Complete Algorithm 
+
+The full N-DCA algorithm is presented in Figure 9. Each agent x ∈ { 1, . . . , n } executes this procedure independently, using only its own identifier x and the shared parameter 
+
+n, thereby requiring no communication or shared state between agents. The FKM procedure generates all two-colour necklaces of length n in lexicographic order (line 3). As FKM interleaves necklaces of different densities (e.g. for n = 6, the sequence includes necklaces with s = 6 , 5, 4, 4, 3, 4, 3, 3, 2, . . . as shown in Table 5), the algorithm maintains a separate cumulative offset h[s] for each coalition size s (line 36 1: procedure N-DCA (x, n) ▷ Coalition allocation for agent x 
+
+> 2:
+
+h[1 . . . n ] ← 0 ▷ Per-size cumulative offsets  
+
+> 3:
+
+for each necklace a generated by FKM (2, n) do  
+
+> 4:
+
+t ← GenIncArray (n, a ) 
+
+> 5:
+
+s ← | t| ▷ Coalition size = number of white beads  
+
+> 6:
+
+if s = 0 then  
+
+> 7:
+
+continue ▷ Skip empty coalition  
+
+> 8:
+
+π ← Period (t, s ) 
+
+> 9:
+
+if π = s then ▷ Aperiodic: agent x is designated  
+
+> 10:
+
+GenCoalition (x, t, s, n) 
+
+> 11:
+
+else ▷ Periodic: apply designation test  
+
+> 12:
+
+d ← n · π / s ▷ Stride ϖ(t) 
+
+> 13:
+
+if (x − 1 − h[s]) mod n < d then  
+
+> 14:
+
+GenCoalition (x, t, s, n) 
+
+> 15:
+
+h[s] ← h[s] + d ▷ Advance offset for size s 
+
+> 16:
+
+end procedure         
+
+> Fig. 9 The N-DCA algorithm for agent xwith nagents. Canonical IAs are generated via two-colour necklaces produced by FKM (Figure 6). Aperiodic IAs are evaluated by every agent; periodic IAs are evaluated only by designated agents, as determined by the rotated designation scheme (Definition 6) A per-size cumulative offset h[s] is maintained to ensure that the per-size load balance of Theorem 9 is achieved.
+
+2). The body of the main loop (lines 4-15) realises the ProcessNecklace callback of the FKM algorithm (Figure 6): each necklace is converted to its canonical IA via 
+
+GenIncArray (line 4), and then based on its period (line 8), it is subjected to the designation test, which determines whether agent x should evaluate it (lines 9-15). For aperiodic IAs ( π = s), every starting agent produces a distinct coalition (Section 4.5), and every agent is implicitly designated and generates its coalition directly (line 10). For periodic IAs ( π < s ), μ = s/π agents would generate the same coalition, and therefore only a transversal of d = ϖ(t) = n/μ agents should evaluate it. The designation test (Equation 13) determines whether agent x falls within the current designation window for size s; if so, agent x generates its coalition (lines 13-14). The offset h[s] is then advanced by d, rotating the window for the next periodic IA of the same size (line 15). As all agents execute the same FKM procedure with the same parameter n,they encounter the necklaces in the same deterministic order and compute the same sequence of offsets. The per-size offset array ensures that the designation windows for each coalition size rotate independently, preserving the per-size load balance of Theorem 9: for any fixed s, the number of coalitions assigned to any two agents differs by at most one. The aggregate load balance of Theorem 10 can also be achieved by replacing the per-size offset array h[s] with a single global offset H that is advanced after every periodic IA, regardless of size. This trades the per-size guarantee for the stronger aggregate guarantee that the total number of coalition value calculations assigned to any two agents, across all coalition sizes, differs by at most one. Both variants have identical computational cost; the choice depends on whether per-size or aggregate balance is preferred for the application at hand. 37 5.3 Complexity Analysis 
+
+The per-agent computational cost of N-DCA is determined by the cost of generating necklaces and processing each one. We consider each component in turn. The FKM procedure generates all N2(n) two-colour necklaces of length n in con-stant amortised time (CAT), i.e. O(1) per necklace and O(N2(n)) in total (Ruskey et al. 1992). For each necklace, three operations are performed: GenIncArray con-verts the necklace string to an IA in O(n) time (a single pass over the n beads); 
+
+Period determines the period of the IA in O(s) time in the worst case; and the desig-nation test requires O(1) time (a single modular comparison). For designated agents, 
+
+GenCoalition generates the coalition in O(s) time. Since s ≤ n, the per-necklace cost is dominated by the O(n) cost of GenIncArray .The total per-agent time complexity is therefore O(n·N2(n)). Using the formula for the total number of two-colour necklaces (Equation (1)), N2(n) ∼ 2n/n asymptotically. Since each agent processes all N2(n) necklaces and performs O(n) work per necklace (scanning the bead sequence, detecting the period, and generating the coalition), the per-agent cost is O(2 n/n ) · O(n) = O(2 n). This is optimal in the following sense: the total number of coalitions across all sizes is 2 n − 1, and each agent must evaluate Θ(2 n/n ) of them (by the load-balance guarantee of Theorem 10). Since each coalition has O(n) members, the cost of merely writing down the assigned coalitions is already Ω(2 n). The overhead introduced by necklace generation and the designation scheme is therefore asymptotically negligible. The space requirement is O(n) per agent: O(n) for the necklace string and IA, and 
+
+O(n) for the per-size offset array h[s]. The FKM procedure operates in-place on the necklace array and requires no additional storage beyond the current necklace. For comparison, the DCG algorithm in the original study generates canonical IAs by enumerating integer partitions of n − s and filtering out permutations that belong to the same equivalence class (Riley et al. 2015). This filtering step requires additional bookkeeping and results in wasted computation on non-canonical permutations. N-DCA eliminates this overhead entirely: the FKM algorithm produces only canonical necklaces, and the bijection of Proposition 11 guarantees that each corresponds to exactly one equivalence class. An earlier empirical comparison by Payne et al. (2024) demonstrated that the resulting performance is competitive with both DCG and the DCVC algorithm of Rahwan and Jennings (2007), but only considered the range 2 ≤
+
+n ≤ 17. In the following section (Section 6) we provide a more extensive empirical comparison of N-DCA against DCVC across a number of additional dimensions, in the range 2 ≤ n ≤ 25. This section has established that the generation of canonical representative IAs can be reduced to the well-studied problem of enumerating two-colour combinatorial necklaces (Proposition 11), and that the resulting N-DCA algorithm (Figure 9) allows each agent to independently determine its own coalition value calculation allocation using only its identifier x and the shared parameter n. The algorithm is simple to implement, requiring only the FKM necklace generator and three short supporting procedures, and its per-agent cost of O(2 n) is asymptotically optimal. 38 6 Empirical Evaluation 
+
+We validate and evaluate N-DCA through two sets of evaluations; in Section 6.1 we provide a quantitative and qualitative comparison with a comparable approach (DCVC) across several dimensions. We then focus in Section 6.2 specifically on an analysis of the allocation imbalance of N-DCA that occurs through different variants of the rotated designation scheme, thus providing empirical evidence to support the worst-case bounds defined by Theorems 9 and 10. 
+
+## 6.1 Comparative Evaluation with DCVC 
+
+This section presents an empirical evaluation of the N-DCA algorithm. We com-pare N-DCA with the DCVC algorithm by Rahwan and Jennings (2007) across four dimensions: (i) overall coalition-generation time (Section 6.1.2); (ii) per-agent gen-eration time (Section 6.1.3); (iii) working-memory requirements (Section 6.1.4); and (iv) the internal time profile of N-DCA’s constituent operations (Section 6.1.5). These results are then situated in a practical context by analysing how generation over-head compares with the cost of evaluating the characteristic function (Section 6.1.6), and the scalability characteristics of both algorithms are discussed (Section 6.1.7). Finally, the load-balance properties of the two offset variants are validated empirically (Section 6.2). 
+
+6.1.1 Experimental Methodology 
+
+Implementations of both the N-DCA algorithm (Section 5) and the DCVC algorithm were written using the language C (thus eliminating any delays that could occur during any garbage collection processes). The DCVC implementation follows the basic allocation scheme of Rahwan and Jennings (2007, Section 3.1): for each coalition size s,the  ns
+
+ coalitions are listed in reverse-lexicographic order; each agent receives ⌊ ns
+
+/n ⌋
+
+consecutive coalitions by walking the predecessor function from a starting coalition determined by the Pascal-matrix index mapping; any remainder is distributed via a rotating pointer α.Both implementations were verified for correctness by exhaustively checking (for 2 ≤ n ≤ 20) that: (i) all 2 n − 1 non-empty coalitions are generated exactly once across 
+
+n agents (completeness and non-redundancy); and (ii) the global set of coalitions produced by both algorithms is identical (i.e. the union of each algorithm’s per-agent outputs covers exactly the same 2 n − 1 coalitions). The N-DCA implementation was additionally verified to satisfy the self-interest property: every coalition assigned to agent x contains x as a member. DCVC does not guarantee this property, as its allocation is purely mechanical; dividing the reverse-lexicographic list evenly among agents without regard to coalition membership. All timing measurements use clock gettime(CLOCK MONOTONIC) (nanosecond res-olution). Each experiment begins with one untimed warm-up execution to bring both code and data into cache. To prevent the compiler from eliminating coalition-generation code as dead, a running XOR checksum is accumulated over all generated coalition members and verified after each run. To mitigate against the effect of other processes delaying the processing time, each configuration was executed R = 1000 39 Table 6 Experiment 1: mean total execution time (ms) for all n agents to generate all 2 n − 1coalitions, with standard deviation and N-DCA / DCVC time ratio. Results are averaged over                                                                                                                  
+
+> Rruns. Coalitions IAs Samples Execution Time Ratio
+> n2n−1N2(n) + 1 RN-DCA (ms) DCVC (ms) N-DCA DCVC
+> 531 71000 0.001 ±0.000 0.000 ±0.000 2.2 8255 35 1000 0.005 ±0.001 0.002 ±0.000 2.6 10 1 023 107 1000 0.021 ±0.002 0.008 ±0.001 2.7 12 4 095 351 1000 0.082 ±0.006 0.028 ±0.002 2.9 14 16 383 1 181 1000 0.355 ±0.021 0.116 ±0.007 3.1 15 32 767 2 191 1000 0.760 ±0.043 0.234 ±0.011 3.3 17 131 071 7 711 1000 4.554 ±0.163 0.972 ±0.031 4.7 20 1 048 575 52 487 1000 47.46 ±3.07 8.29 ±0.17 5.7 22 4 194 303 190 745 100 200.7 ±1.3 34.7 ±0.5 5.8 25 33 554 431 1 342 183 100 1701.6 ±18.4 294.6 ±3.3 5.8
+
+times for n ≤ 20 and R = 100 times for n > 20; the reported results reflect the mean ¯ x
+
+and sample standard deviation σ of the per-run wall-clock times. In cases where time ratios (N-DCA / DCVC) are reported, we also state the 95% confidence interval for the mean execution time, computed as ¯ x ± t0.025 ,R −1 · σ/ √R, where t0.025 ,R −1 is the critical value of the Student t-distribution. For R = 1000 this yields t ≈ 1.962; for 
+
+R = 100, t ≈ 1.984. In all cases, the 95% confidence intervals for the two algorithms are non-overlapping for n ≥ 7, confirming that the observed differences are statistically significant. All experiments were conducted on a 2024 MacBook Pro (M4 Max) with 36GB memory. It should be noted that the aim here is not to ascertain specific running times on a specific platform, but rather to compare the computational profiles of the two algorithms under identical conditions. All non-empty coalition sizes were generated for each set of agents, including the grand coalition. 
+
+6.1.2 Experiment 1: Total Execution Time 
+
+The complexity analysis of Section 5.3 establishes that N-DCA has a per-agent time complexity of O(2 n), yielding an aggregate complexity of O(n · 2n) when all agents are run sequentially. However, the asymptotic analysis does not reveal the constant factors involved, nor does it confirm that the predicted scaling behaviour is reached for pragmatic values of n. Therefore the aim of this experiment is to empirically vali-date the theoretical claims of Section 5.3 in that the algorithm exhibits the expected exponential growth, and to quantify the constant-factor difference between N-DCA and DCVC that is not apparent given the O-notation. We achieve this by measuring the total wall-clock time for all n agents to generate all 2 n − 1 coalitions, which corre-sponds to a centralised scenario in which an orchestrator runs each agent’s generation procedure sequentially, and represents the total computational work required by each approach. Even in a distributed deployment, where agents run in parallel, the total work determines the aggregate resource consumption and is therefore a meaningful basis for comparison. 40 10 -5                
+
+> 10 -4
+> 10 -3
+> 10 -2
+> 10 -1
+> 10 0
+> 10 1
+> 10 2
+> 10 3
+> 510 15 20 25 N-DCA DCVC
+> Mean  execution  time  (ms)
+> Number of agents (n) Fig. 10 Experiment 1: the mean total execution time for generating all coalitions by N-DCA and DCVC for each of the nagents to generate all 2 n−1 coalitions. Note that the y-axis is logarithmic, and error bars show ±1 SD over Rruns.
+
+Table 6 presents the number of (non-empty) coalitions, number of IAs, samples generated, the execution times (¯ x and σ) for each algorithm, and their ratio given a selection of different sizes of agents in the range 2 ≤ n ≤ 25. Both algorithms exhibit execution times that grow linearly with the number of coalitions (which is itself exponential in n), consistent with the O(n · 2n) aggregate bounds. However, the constant factors differ; DCVC is faster than N-DCA at all tested values of n,with the ratio increasing from approximately 2 × at small n to approximately 5 .8× at 
+
+n = 25. This widening ratio is consistent with preliminary results reported by Payne et al. (2024) for n ≤ 17, and the extended range suggests that the ratio stabilises beyond n ≈ 20. The source of this constant-factor difference is analysed in detail in Section 6.1.3, where a per-coalition operation-count analysis attributes it to the O(n)cost of GenIncArray ’s necklace scan. The number of IAs reported in column 3 differs by 1 to the number of two-colour necklaces generated for each n.8 These counts include the grand coalition (represented by monochrome necklaces of only white beads, which explains the difference of 1), but omit empty IAs, where s = 0 (i.e. monochrome necklaces of black beads). The mean execution times have been plotted against the different numbers of agents (together with error bars showing ±1 SD over the R runs) in Figure 10 (note that the execution times are plotted on a logarithmic scale). Both curves are approximately linear on this scale, confirming that the growth rate is dominated by the number of coalitions. These results are also consistent with the description and performance of DCVC (Rahwan and Jennings 2007) and the fact that the complexity of the FKM algorithm was shown to have a bound of O(N (k, n )) on the total time required to generate all necklaces. The vertical separation between the curves corresponds to the constant-factor difference, which reflects the ratio as given in Table 6. 
+
+> 8The sequence of values for two-colour necklaces also appears in The Online Encyclopedia of Integer Sequences (OEIS) (OEIS Foundation Inc. 2024, A052823), which can be found at https://oeis.org/A052823.
+
+41 Table 7 Experiment 2: mean execution time (ms) for agent 1 to generate its share of coalitions, with standard deviation and N-DCA / DCVC time ratio. The allocation columns report the exact number of coalitions assigned to agent 1 under each algorithm’s designation scheme.                                                                                                                          
+
+> nN-DCA DCVC ∆RN-DCA (ms) DCVC (ms) Ratio alloc. alloc. ±±N-DCA DCVC
+> 57701000 0.000 ±0.000 0.000 ±0.000 —834 32 21000 0.001 ±0.000 0.000 ±0.000 2.5 10 105 103 21000 0.002 ±0.000 0.001 ±0.000 2.8 12 346 342 41000 0.007 ±0.000 0.002 ±0.000 2.7 14 1 175 1 171 41000 0.025 ±0.001 0.009 ±0.001 2.9 15 2 189 2 185 41000 0.050 ±0.004 0.016 ±0.001 3.1 17 7 711 7 711 01000 0.272 ±0.023 0.060 ±0.005 4.6 20 52 435 52 429 61000 2.323 ±0.053 0.435 ±0.012 5.3 22 190 655 190 651 4100 9.131 ±0.119 1.651 ±0.051 5.5 25 1 342 181 1 342 178 3100 67.48 ±0.57 12.20 ±0.28 5.5
+
+6.1.3 Experiment 2: Single-Agent Execution Time 
+
+In a distributed deployment, each agent generates its own coalition share inde-pendently. The relevant metric is therefore the per-agent execution time. In this experiment, we measure the time for agent 1 to generate its share of the coalitions. For the purposes of this experiment, the choice of agent 1 is arbitrary: for N-DCA, every agent performs the same FKM enumeration and differs only in the designation-test outcomes, which are negligible in cost. This contrasts with DCVC, where every agent performs the same number of predecessor steps, differing only in starting position. Note that for N-DCA, although each agent iterates through all necklaces via FKM, it only evaluates (i.e. calls GenCoalition for) its designated share. In Table 7, the allocation columns show the exact number of coalitions assigned to agent 1 under each algorithm. The two counts differ slightly (column ∆), reflecting the different distribution mechanisms: N-DCA’s rotated designation scheme (Definition 6) assigns coalitions based on necklace periodicity and per-size offsets, whereas DCVC divides the reverse-lexicographic coalition list evenly and distributes the remainder via a rotating pointer α. The differences are small, at most κ(n) coalitions, where 
+
+κ(n) denotes the number of coalition sizes for which n ∤  ns
+
+, and have no measurable effect on the timing comparison, since even at n = 25 the allocation difference of 3 represents less than 0 .001% of the total. Although both algorithms generate exactly 2n −1 coalitions in total across all n agents, agent 1 receives a slightly higher allocation under N-DCA than under DCVC, which is then offset by other agents receiving a slightly lower allocation. For example, at n = 20, agent 1 is allocated 52 ,435 coalitions under N-DCA versus 52 ,429 under DCVC (∆ = +6), while agent 20 receives 52 ,425 versus 52 ,428 (∆ = −3). The aggregate spread across agents is wider for N-DCA (up to κ(n), compared with at most 1 for DCVC), consistent with the per-size versus aggregate balance guarantees of Theorems 9 and 10 respectively. The relationship between κ(n) and the observed allocation spread is examined in detail in Section 6.2. 42 0                  
+
+> 1
+> 2
+> 3
+> 4
+> 5
+> 6
+> 7
+> 510 15 20 25 All agents (Exp. 1) Single agent (Exp. 2)
+> Time  ratio  (N-DCA  / DCVC)
+> Number of agents (n) Fig. 11 Time ratio (N-DCA / DCVC) for Experiments 1 and 2. Values above 1 indicate DCVC is faster. The ratio stabilises near 5 .5–5 .8×for n≥20.
+
+The single-agent ratios closely track those of Experiment 1, confirming that the performance difference arises from per-coalition overhead rather than from any inter-agent scheduling effect. Figure 11 plots the time ratio (N-DCA / DCVC) as a function of n for both experiments. The ratio increases steadily from approximately 2 × at 
+
+n = 5 to approximately 5 .5–5 .8× at n = 25, stabilising beyond n ≈ 20. The growing ratio is explained by the per-coalition operation counts of the two algorithms. For each necklace, N-DCA performs a full O(n) scan in GenIncArray 
+
+(scanning all n beads) followed by period detection (testing divisors of the coalition size s). At n = 20, an operation-count analysis shows that agent 1 performs approx-imately 1 ,049 ,760 GenIncArray scans and 298 ,797 period comparisons to generate 52 ,435 coalitions—roughly 25 .7 operations per coalition. DCVC, by contrast, generates each successive coalition via a single predecessor step that scans backwards through the coalition array until it finds an incrementable position. At n = 20, this averages approximately 2 .6 scan steps per predecessor call, giving roughly 2 .6 operations per coalition. The resulting operation-count ratio of approximately 9 .8× at n = 20 is con-sistent with the observed wall-clock ratio of 5 .3–5 .7× (the gap between the two ratios reflects differences in the cost per operation: DCVC’s predecessor involves compari-son and branching, while GenIncArray ’s inner loop is a simpler scan). As n grows, 
+
+GenIncArray ’s O(n) scan cost per necklace increases the per-coalition overhead for N-DCA, while DCVC’s per-predecessor scan cost remains approximately constant, causing the ratio to widen. 
+
+6.1.4 Experiment 3: Working Memory 
+
+The timing experiments of Sections 6.1.2 and 6.1.3 quantify the computational cost of each algorithm, but do not address their memory requirements. In resource-constrained settings, such as embedded multi-agent systems or agents running on low-power devices, the per-agent working-memory footprint may be as important as execution 43 Table 8 Experiment 3: analytical per-agent working memory (bytes) for N-DCA and DCVC. Both are O(n), whereas N-DCA uses approximately one third of DCVC’s footprint.                   
+
+> nN-DCA (bytes) DCVC (bytes) DCVC / N-DCA 5108 264 2.4 10 168 464 2.8 15 228 664 2.9 20 288 864 3.0 25 348 1064 3.1
+
+speed. Both algorithms are known to be O(n) in space, but the constant factors and the structural characteristics of that usage (e.g. iterative versus recursive) can differ significantly. This experiment compares the per-agent working-memory footprints of N-DCA and DCVC analytically. Both algorithms use only stack-allocated arrays with O(n) space, and neither require (or within the implementation, perform) heap allocation. Therefore, to com-pare their memory footprints, we analytically count the working variables necessary to support each algorithm’s per-agent execution. N-DCA maintains three arrays: (i) the FKM necklace array a[n+1]; (ii) the increment array t[n]; and (iii) the per-size offset array h[n+1], together with a small number of scalar variables, giving a total of approximately 3 n + 12 integers. DCVC maintains two coalition arrays, M [n] and 
+
+Mprev [n], together with scalar variables for the index arithmetic. In addition, the index-to-coalition mapping algorithm (Figure 2 in Rahwan and Jennings (2007)), which recovers a coalition from its position in the ordered list Ls by iteratively decompos-ing the index through a precomputed Pascal matrix (see Equation (3) and Figure 3 in Rahwan and Jennings (2007)), uses a call stack of up to n frames, each containing local integers and a long-integer accumulator. Table 8 reports the analytical byte counts. N-DCA uses approximately one third of the working memory of DCVC across the range tested. The ratio approaches 3 as n grows because DCVC’s recursive call stack dominates at higher values of n. In absolute terms, both footprints are negligible (under 1.1 KB even at n = 25), and thus the practical significance lies not in the byte counts themselves but in the struc-tural difference: N-DCA is purely iterative and requires no recursion, which may be advantageous in resource-constrained settings such as embedded multi-agent systems. Empirical measurements using getrusage confirmed that neither algorithm performs hidden heap allocation, and the process resident set size remained constant before and after execution at n = 25. 
+
+6.1.5 Experiment 4: Component Time Profile 
+
+To understand where the time is spent within each algorithm, we decompose the per-agent execution time into its constituent operations. Direct per-operation timing (e.g. calling clock gettime around each operation) introduces substantial measurement overhead when operations are fine-grained; for example at n = 25, N-DCA processes 44 Table 9 Experiment 4: N-DCA component time profile for a single agent (agent 1), measured by the subtraction method. Percentages indicate the fraction of total single-agent time. Total FKM GenInc- Period Designation GenCoal-                              
+
+> n(ms) step Array detection test ition
+> 10 0.002 19.2% 51.3% 20.0% 5.3% 4.2% 15 0.055 13.1% 58.2% 19.1% 0.5% 9.1% 20 2.416 6.7% 58.3% 22.5% 1.1% 11.4% 25 68.01 5.8% 58.7% 25.5% 1.2% 8.7%
+
+over 1.3 million necklaces, and the overhead of 5 timing calls per necklace could inflate the time measurements. We therefore use a subtraction method : for each component depth level ℓ ∈{0, 1, 2, 3, 4}, we run a modified version of N-DCA that executes only the first ℓ stages of the pipeline, and time each run with a single pair of clock gettime calls: 
+
+ℓ = 0 : FKM necklace stepping only (enumerate necklaces without processing); 
+
+ℓ = 1 : FKM + GenIncArray ;
+
+ℓ = 2 : FKM + GenIncArray + period detection; 
+
+ℓ = 3 : FKM + GenIncArray + period detection + designation test; 
+
+ℓ = 4 : full N-DCA (all components including GenCoalition ). The time attributable to each component is therefore Tℓ − Tℓ−1. The results are reported in Table 9. For N-DCA, GenIncArray is the dominant component, account-ing for approximately 59% of total time at large n. Period detection accounts for approximately 25%, while the FKM necklace stepping itself (the combinatorial enu-meration engine) is comparatively fast at under 6% for n ≥ 20. The designation test is negligible ( ≈ 1%), confirming that the rotated-designation scheme (Definition 6) adds minimal overhead. GenCoalition accounts for approximately 9% of total time. The reason for this dominance in N-DCA is a structural asymmetry between FKM 
+
+and GenIncArray . The FKM algorithm achieves constant amortised time (CAT), 
+
+O(1) per necklace on average, because most steps modify only a short suffix of the necklace array. GenIncArray , however, performs a complete O(n) scan of all n beads for every necklace, regardless of how few beads changed since the previous step. At 
+
+n = 25, this amounts to approximately 25 × 1,342 ,184 ≈ 33 .6 × 10 6 bead inspections, compared with the O(N2(n)) total work performed by FKM itself. The quantitative impact of this overhead can be estimated from the breakdown data. At n = 25, GenIncArray accounts for 39 .95 ms of the 68 .01 ms single-agent total. Eliminating this cost entirely would reduce N-DCA’s time to 28 .05 ms, lowering the N-DCA / DCVC ratio from 5 .6× to 2 .3×. A more realistic scenario; for example, an incremental update scheme achieving O(1) amortised cost per necklace, with con-stant factors comparable to FKM’s own stepping cost (3 .96 ms), would thus yield an estimated single-agent time of approximately 32 ms, corresponding to a ratio of 2 .6×.Period detection (25 .5%) would then become the dominant component. The possibility of such an incremental scheme is discussed further in Section 7. 45 1                            
+
+> 2
+> 3
+> 4
+> 5
+> 6
+> 0.001 0.01 0.1 110 100 1000 n=25 n=20 n=15
+> Ratio  of  total  time  (N-DCA  / DCVC)
+> Per-coalition evaluation cost μ(C) (μs) Fig. 12 Total time ratio η(c) (N-DCA / DCVC) as a function of the per-coalition characteristic-function evaluation cost c, for n∈ { 15 ,20 ,25 }. As cincreases beyond ≈1μs, the ratio converges rapidly toward 1.
+
+6.1.6 Generation Overhead in Context 
+
+Although the previous experiments focus on the time required to generate coalitions, a pragmatic deployment of coalition value calculation allocations would be followed by the evaluation of the characteristic function ν(C) itself for each generated coalition. The cost of this evaluation is application-dependent and typically dominates overall execution time. Even a modest evaluation cost of 1 μs per coalition at n = 25 (where each agent generates approximately 1 .34 × 10 6 coalitions) would add approximately 1,342 ms of evaluation time, compared with generation times of 67 .5 ms (N-DCA) and 12 .2 ms (DCVC). To quantify this effect, we compute the total time ratio (N-DCA / DCVC) as a function of the per-coalition evaluation cost c:
+
+η(c) = T N-DCA gen + m · cT DCVC gen + m · c (19) where m denotes the number of coalitions generated per agent and Tgen denotes the mean generation time from Experiment 2. Since both algorithms generate the same coalitions (and hence incur the same evaluation cost), the evaluation term m·c appears in both numerator and denominator, causing the ratio to converge to 1 as c increases. Figure 12 plots η(c) for n ∈ { 15 , 20 , 25 }. At a per-coalition evaluation cost of 10 μs, which is very conservative for any non-trivial characteristic function, the time ratio falls below 1 .05 for all values of n tested, suggesting that the two algorithms have effectively indistinguishable total execution times. At 100 μs per coalition, the ratio is below 1 .005. This analysis shows that the generation-time difference between N-DCA and DCVC, while real and measurable in isolation, has negligible practical impact in typical coalition value calculation scenarios. The performance-relevant comparison between the two algorithms therefore shifts to their structural and algorithmic prop-erties, where N-DCA offers several distinct advantages: a per-agent working-memory footprint approximately one third that of DCVC (Section 6.1.4); a purely iterative 46 implementation requiring no recursion; the self-interest guarantee that every coalition assigned to agent x contains x (a property that DCVC does not provide, as verified empirically for n up to 20); and the absence of integer-overflow constraints that limit DCVC to n < 68 under standard 64-bit arithmetic (Section 6.1.7). 
+
+6.1.7 Scalability Considerations 
+
+A further structural difference between the two algorithms that is not captured by the timing experiments concerns their numerical requirements. DCVC’s allocation procedure relies on computing binomial coefficients  ns
+
+ and using them for index arithmetic: determining each agent’s starting index, mapping that index to a coalition via the Pascal-matrix decomposition, and computing the remaining number of coalitions. All of these operations require exact integer values of  ns
+
+. In a standard 64-bit integer representation, the largest representable value is 2 63 − 1, i.e. 
+
+≈ 9.22 ×10 18 . The central binomial coefficient   n
+
+> ⌊n/ 2⌋
+
+, corresponding to the number of coalitions of the most populous size, and hence the largest index that DCVC’s Pascal-matrix decomposition must represent (see Figure 2 in Rahwan and Jennings (2007)) exceeds this threshold at n = 68 (  68 34 
+
+ ≈ 2.8 × 10 19 ), at which point DCVC’s index arithmetic overflows and produces incorrect results unless arbitrary-precision integers are used. In contrast, N-DCA performs no index arithmetic and computes no binomial coef-ficients. The FKM algorithm operates on a binary array of length n; GenIncArray 
+
+and period detection operate on the increment array of length at most n; and Gen-Coalition uses only modular arithmetic on agent identifiers. All quantities remain bounded by n throughout, regardless of the number of coalitions. N-DCA is therefore free of integer-overflow constraints and can, in principle, be applied at any value of n
+
+for which the exponential number of coalitions remains computationally tractable. While values of n ≥ 68 are unlikely to be encountered in current practice (as 268 ≈ 2.95 × 10 20 coalitions would require astronomical computation), the absence of numerical preconditions simplifies implementation and eliminates an entire class of potential errors. 
+
+## 6.2 N-DCA Load Balance Analysis 
+
+The rotated designation scheme (Section 4.6.2) is responsible for distributing the periodic-IA designations evenly across all agents, without the need for any inter-agent communication or central coordinator. Whilst this ensures that exactly 2 n − 1 coali-tions will be generated across all n agents, individual agents may receive slightly different allocations, depending on whether the aim is to balance the load for a spe-cific coalition size s (Theorem 9), or if the aggregate load across all sizes should be balanced (Theorem 10). In this subsection, we validate these theoretical guarantees empirically, characterise the conditions under which each bound is tight, and examine the trade-offs between the two variants across a range of values of n.For each value of n in the range 2 ≤ n ≤ 25, the N-DCA algorithm (Algorithm 9) is executed independently for every agent x ∈ { 1, . . . , n } under both offset variants: 47 Table 10 Maximum per-size imbalance (max ps-imb) and aggregate imbalance (agg-imb) for the two N-DCA offset variants, for 2 ≤ n ≤ 25. The per-size offset variant ( h[s]) always achieves per-size imbalance ≤ 1 (Theorem 9); the global offset variant ( H) always achieves aggregate imbalance ≤ 1 (Theorem 10). κ(n) denotes the number of coalition sizes for which n ∤  ns                                                                                                                                                          
+
+> . Prime values of nare marked with ∗.
+> h[s]Hh[s]Hnκ(n)max agg max agg nκ(n)max agg max agg ps-imb imb ps-imb imb ps-imb imb ps-imb imb 2∗1111114 818113∗1111115 7171142121116 818415∗1111117 ∗1111164141118 818317∗1111119 ∗1111184141120 10 110 9193131121 7173110 4142122 8188111 ∗1111123 ∗1111112 7173124 14 114 12 113 ∗1111125 51511
+
+• Per-size offsets (h[s]): the cumulative offset is maintained independently for each coalition size s and reset to 0 at the start of each new size (Definition 6). 
+
+• Global offset (H): a single cumulative offset is carried across all coalition sizes (Equation (16)). For each variant, the number of coalitions assigned to each agent is recorded for every coalition size s, yielding the per-agent, per-size allocation counts |CV sx |. From these, we can determine the per-size imbalance at each size s (max x |CV sx |− min x |CV sx |), the maximum per-size imbalance over all sizes, and the aggregate imbalance (max x |CV x|− 
+
+min x |CV x|, where |CV x| = Pns=1 |CV sx |). We also compute κ(n) in Equation (20), which counts the number of coalition sizes at which the total number of coalitions  ns
+
+
+
+is not evenly divisible by n (i.e. n ∤  ns
+
+). 
+
+κ(n) = s ∈ { 1, . . . , n } : n ∤  ns
+
+ (20) Table 10 reports the results for 2 ≤ n ≤ 25. The per-size offset variant achieves a maximum per-size imbalance of exactly 1 for every value of n tested, confirming Theorem 9. The global offset variant achieves an aggregate imbalance of exactly 1 for every value of n, confirming Theorem 10. Both bounds are therefore tight. Under per-size offsets, the observed aggregate imbalance matches κ(n) exactly for all values of n tested. This confirms that the bound is tight: when each coalition size maintains its own independent designation window, the remainder coalitions (i.e. the extra coalitions arising when n ∤  ns
+
+) accumulate on the same agent at every such size, and the aggregate imbalance equals the number of sizes at which a remainder exists. A well-known property of binomial coefficients provides a useful special case; when 48 n = p is prime, p |  ps
+
+ for all 1 ≤ s ≤ p − 1, so the only non-divisible size is s = n (the grand coalition, where  nn
+
+ = 1). Hence κ(p) = 1 for any prime p, and both guarantees hold simultaneously under either variant. This is confirmed empirically for all primes in the range ( n = 2 , 3, 5, 7, 11 , 13 , 17 , 19 , 23). The global offset variant introduces per-size imbalance because the single offset H
+
+is advanced by strides of varying magnitude (depending on the stride ϖ(t) of each periodic IA encountered), so the designation window does not cycle uniformly within any single coalition size. The per-size imbalance under the global offset is generally modest for small n but can grow for larger composite values; for example, at n = 24, the maximum per-size imbalance reaches 12. Notably, some composite values (e.g. 
+
+n = 14 , 15 , 25) exhibit a maximum per-size imbalance of only 1 under the global offset, indicating that the interaction between stride sizes and n can sometimes yield favourable cancellations. The two variants are therefore complementary: the per-size offset variant guaran-tees per-size balance at the cost of aggregate imbalance up to κ(n), while the global offset variant guarantees aggregate balance at the cost of per-size imbalance. Neither variant achieves both guarantees simultaneously for all composite n. However, for prime values of n, both guarantees hold under either variant ( κ(p) = 1), eliminating the need to choose. The choice between the two variants depends on the application context: 
+
+• The per-size offset variant is appropriate when the cost of evaluating the char-acteristic function ν(C) varies significantly with coalition size, so that the computational cost of processing a coalition depends primarily on |C|; balancing the number of evaluations within each size then ensures that no agent bears a dis-proportionate share of the most expensive evaluations. The aggregate imbalance of κ(n) is a second-order effect: even at n = 24, the maximum aggregate imbal-ance is 14, which is negligible relative to the per-agent load of approximately 699 ,050 coalitions. 
+
+• The global offset variant is appropriate when all coalition value calculations have roughly equal cost (irrespective of coalition size), or when the primary concern is minimising the maximum total number of evaluations per agent; in this case, Theorem 10 ensures that no agent evaluates more than ⌈(2 n − 1) /n ⌉ coalitions in total. For prime values of n, the distinction is moot: both guarantees hold simultaneously with either variant, and κ(n) = 1. Since the number of agents in many practical multi-agent systems is a design parameter, choosing a prime n eliminates the need to trade off between per-size and aggregate balance. 
+
+# 7 Discussion 
+
+Having established the framework (Section 4), algorithm (Section 5), and empirical results (Section 6), we now situate N-DCA within the broader literature with respect 49 to the five properties (Section 7.1), discuss the principal source of its constant-factor overhead (Section 7.2), and outline future directions (Section 7.3). 
+
+## 7.1 Comparison with Related Approaches 
+
+Given the presentation and evaluation of N-DCA, it is now possible to compare the approach with three distributed coalition value calculation baselines: the DCVC family of algorithms (Rahwan and Jennings 2005, 2007; Michalak et al. 2010; Voice et al. 2012); VBFR (Vinyals et al. 2012); and the SK algorithm (Shehory and Kraus 1995, 1996, 1998), based on the five properties listed in Section 1. 1. Eliminating the need for communication between agents: The alloca-tion of coalition value calculations in N-DCA depends solely on the agent’s own identifier x, the increment array (IA) t (Definition 3) and the shared parameter 
+
+n. A similar mechanism exists for the DCVC and VBFR algorithms, whereby the agents have: (i) a pre-agreed ordering of the coalitions; and (ii) a pre-agreed algorithm to dictate which exact allocation of this ordering each agent should cal-culate. Conditions (i) and (ii) do not hold for the SK algorithm, thus agents need to coordinate their actions through communication to verify which coalitions will be in each agent’s allocation. It should be noted that for any distributed coalition value calculation algorithm, if the agents want to complete the decentralised coalition formation process, com-munication costs will be incurred later when agents need to communicate their best coalitions or coalition structures found (e.g. Sandholm et al. (1999); Michalak et al. (2010)). Even when the best coalition structure is known, further communi-cation may be necessary if the agents need to negotiate on their final utility payoff (e.g. Wu (1977); Cesco (1998); Shehory and Kraus (1999); Arnold and Schwalbe (2002); Lehrer (2003); Goradia and Vidal (2007)). 2. Ensuring that the allocation of coalitions is equitable: Of the four algo-rithms under consideration, only N-DCA and the DCVC algorithms guarantee that the agents’ coalition value calculation allocations (referred to as shares by Rahwan and Jennings (2007)) will be approximately equal (Section 4.6.3). VBFR does not generate balanced allocations to the agents (in the case where all the agents are assumed to be in a fully connected graph). In this case, for n agents, agent 1 is always assigned 2 n−1 coalitions because there are 2 n−1 coalitions where agent ID 1 is the smallest ID of that coalition. Agent n on the other hand is always assigned only one coalition because there is only one coalition with agent n
+
+as the smallest ID, which is the singleton coalition {n}. The SK algorithm has no guarantees on the maximum difference between any two agents’ allocations; the average difference grows exponentially with the number of agents, as detailed in Rahwan and Jennings (2007). 3. Every possible coalition value is calculated once and only once, thus eliminating redundancy: One and only one canonical representative from each equivalence class is used to generate the coalition value allocation in N-DCA (Theorem 7). Neither the DCVC algorithm nor VBFR generate any redundant coalition value calculation issues, as the agents are aware how the coalitions 50 are ordered in both algorithms, and therefore each agent’s allocation does not “accidentally” overlap. The SK algorithm does result in an exponentially large redundancy because, as stated in Rahwan and Jennings (2007), each agent com-mits to calculating the value of a set of coalitions with limited knowledge of the other agent’s commitments. 4. Maintaining a balanced load across agents: Beyond receiving approximately equal numbers of coalitions (property 2), it is also desirable that agents perform approximately equal amounts of computation . The DCVC algorithms do not guar-antee an equal number of operations (where the operations are comparisons and additions) when generating each agent’s coalition value calculation share, even when the shares are equally sized (Rahwan and Jennings 2007). This is due to the lexicographical ordering of the coalitions that the DCVC algorithm uses. For N-DCA, as each IA of the same size requires the exact same number of addition operations to find the corresponding coalition, equal operations will be performed by agents that are allocated an equal number of coalitions of each size. This is because, unlike the DCVC algorithm, N-DCA does not rely on lexicographical order to generate the coalitions themselves. The DCVC algorithm keeps track of which agent was responsible for previously generated allocations (through an α
+
+pointer) to generate approximately equal coalition value sets. A similar approach is used by N-DCA’s rotated designation scheme (Definition 6) for periodic IAs (Definition 5), with the per-size balance of Theorem 9 and the aggregate balance of Theorem 10 providing formal guarantees. 5. An agent is self-interested ; i.e. it is only assigned coalitions in which it is a member: N-DCA, like the SK and VBFR algorithms before it, guar-antees that every coalition distributed to an agent x includes x as a member (Equation (4)). This is not the case in any of the DCVC algorithms, and is a weakness in certain domains. Note that self-interest is independent of load bal-ance: even when allocations are not perfectly equal (e.g. under the per-size offset variant, where aggregate imbalance can reach κ(n)), every agent still computes only coalitions of which it is a member (Section 6.2). Consider an e-commerce environment where agents (representing a single busi-ness) form a temporary coalition in order to gain price discounts and economies of scale. As there may be anti-monopoly penalties or other considerations, such as communication and logistic costs, then this problem cannot simply be solved by forming the grand coalition. Therefore the agents together would have to cal-culate the values of the different coalitions to find their most preferable ones. If the values involved in the calculations were public knowledge, then this situa-tion could be treated as a characteristic function game, and the coalition value calculation costs could be shared with the other agents in the system. In this sit-uation, it would make no sense for an agent to calculate the value of a coalition 
+
+C that does not include itself, as the agent will gain no benefit if C were to form. A similar argument is made for VBFR for the smart grid domain (Vinyals et al. 2012). Although N-DCA guarantees that agents evaluate only coalitions contain-ing themselves, the possibility of strategic misreporting within those coalitions remains; the implications for mechanism design are discussed in Section 7.3. 51 Table 11 Comparison of the properties of coalition value allocation algorithms. Property SK DCVC VBFR N-DCA                     
+
+> 1. Eliminates Communication ×✓✓✓
+> 2. Equitable Allocation ×✓×✓
+> 3. Eliminates Redundancy ×✓✓✓
+> 4. Balanced Load ×××✓
+> 5. Self-Interest ✓×✓✓
+
+This discussion, summarised in Table 11, supports the claim that N-DCA satisfies all the above properties, unlike the other algorithms considered. 
+
+## 7.2 Towards an Incremental Increment-Array Update 
+
+The current implementation of GenIncArray (Figure 5) performs a complete O(n)scan of the necklace array each time a new necklace is produced by FKM. This stands in contrast to FKM itself, which generates successive necklaces in constant amortised time (CAT) by modifying only a suffix of the array (Ruskey et al. 1992), leaving posi-tions 1 , . . . , i −1 unchanged. This locality suggests that an incremental update of the increment array may be possible, maintaining the IA across successive FKM steps and recomputing only the entries affected by the modified suffix. The principal complica-tion is that the IA is a cyclic run-length encoding: changes near the end of the necklace can affect the wrap-around entry even when the prefix is unchanged. Nevertheless, since FKM’s own suffix copies amortise to O(1) per necklace (Ruskey et al. 1992), there is reason to expect that the corresponding IA updates would amortise similarly. If such a scheme could achieve O(1) amortised cost per necklace, the practical impact would be substantial: the breakdown data of Section 6.1.5 show that reduc-ing GenIncArray ’s cost to that of FKM’s own stepping time would lower the N-DCA / DCVC ratio from approximately 5 .6× to approximately 2 .6×. The present article deliberately maintains a clean separation between FKM and GenIncArray 
+
+for analytical clarity; an incremental scheme would trade this modularity for perfor-mance. The design, implementation, and formal analysis of such a scheme is left to future work. 
+
+## 7.3 Broader Implications and Future Directions 
+
+The empirical evaluation of Section 6 covers the range 2 ≤ n ≤ 25, which spans the regime in which exhaustive coalition value calculation remains computationally tractable. For significantly larger populations, the exponential number of coalitions (2 n − 1) makes exhaustive evaluation infeasible regardless of how the workload is distributed. Recent centralised approaches such as SALDAE (Taguelmimt et al. 2025) have demonstrated scalability to thousands of agents by adopting anytime search strategies that avoid exhaustive enumeration. N-DCA operates in a complementary regime: its contribution is not to extend the frontier of tractable n, but rather to ensure 52 that within the range where exhaustive calculation is viable, the distribution across agents is fair, communication-free, and self-interested. For applications with moderate numbers of agents, which remain common in domains such as e-commerce, logistics, and smart-grid energy trading, these guarantees are directly relevant. The self-interest property has implications beyond the value-calculation stage itself. In a fully decentralised coalition formation process, value calculation is typically fol-lowed by structure search, negotiation, and payoff division (Sandholm et al. 1999; Rahwan et al. 2015). If agents are assigned coalitions in which they are not members (which can occur when using DCVC), they may have an incentive to misreport values strategically, since they bear no cost from a coalition they would never join. By ensur-ing that every agent evaluates only coalitions containing itself, N-DCA reduces the scope for such manipulation. More fundamentally, it also eliminates the prior problem of rational non-compliance: an agent x assigned ν(C) for C̸ ∋ x has no individually rational reason to perform the computation at all, whether or not it intends to mis-report; the self-interest property ensures that every assignment is one the agent has a direct incentive to execute correctly. Nevertheless, self-interested agents may still misreport values for coalitions of which they are members, for example by understating the value of a rival coalition in order to steer the structure-search stage toward a more personally favourable out-come. Addressing this residual vulnerability would require wrapping N-DCA within a mechanism-design framework (Nisan 2007), where the coalition value calculation phase is embedded in a mechanism that constitutes a Bayesian game. If the resulting mechanism has Bayesian equilibria in which the optimal strategy for each agent is to misreport information, then by the revelation principle (Myerson 1979; Shoham and Leyton-Brown 2008) there exists a payoff-equivalent, individually rational mechanism with an equilibrium in which agents truthfully report their types. The design and anal-ysis of such a truthful mechanism for distributed coalition value calculation remains an open problem. A related open concern is privacy: computing ν(C) for C̸ ∋ x may require agent x to access capability or valuation data belonging to members of C,representing a structural information-leakage risk that is independent of any intent to deceive, and that privacy-preserving mechanism design (Nisan 2007) should address. A natural direction for future work is to investigate whether N-DCA can serve as a replacement for DCVC within a distributed coalition structure generation framework such as D-IP (Michalak et al. 2010). The work on D-IP has demonstrated that DCVC’s distributed value-calculation stage can be combined with a distributed version of the IP search algorithm (Rahwan et al. 2009) to solve the full coalition structure gener-ation problem without a centralised coordinator. However, as D-IP inherits DCVC as its value-calculation substrate, it also inherits DCVC’s limitations; agents may be assigned coalitions of which they are not members, and the approach is constrained by DCVC’s 64-bit index representation. Replacing DCVC with N-DCA in the first stage of D-IP would bring several potential advantages. First, every agent would com-pute values only for coalitions in which it is a member, preserving the self-interest guarantee and reducing the incentive for misreporting in adversarial settings. Second, the necklace-based encoding avoids the large-integer indices that limit DCVC’s scala-bility. The principal challenge would lie in adapting D-IP’s communication stages to 53 N-DCA’s allocation scheme: in particular, the aggregate statistics ( M ax s, Avg s) and filter rules (FR1, FR2) that D-IP computes during and after the value-calculation stage would need to be derived from N-DCA’s necklace-based coalition shares rather than from DCVC’s reverse-lexicographic lists. Exploring this combination (i.e. a fully decentralised, self-interested coalition structure generation algorithm) is a promising direction for future research. More broadly, the mathematical framework developed in Section 4 may be applicable beyond coalition value calculation. The core construction: partitioning com-binatorial objects with cyclic symmetry into equivalence classes, selecting canonical representatives, and distributing them across agents via a rotated designation scheme, is independent of the coalition-formation domain. Any distributed computation requir-ing a fair, communication-free allocation of work items that exhibit circular structure (for example, cyclic task schedules, distributed enumeration of chemical isomers, or the generation of necklace codes in wireless networks (Tirkkonen et al. 2017)) could potentially exploit the same approach. Investigating such generalisations is a natural direction for future work. Finally, we note several limitations of the present work. N-DCA assumes a char-acteristic function game in which coalition values depend only on membership; games with externalities (where the value of a coalition depends on the actions of non-members) are not addressed. The approach also requires that all agents know the total number of agents n in advance, which may not hold in open or dynamic environments. Furthermore, as demonstrated in Section 6, N-DCA incurs a constant-factor over-head relative to DCVC in generation time, attributable primarily to the per-necklace 
+
+O(n) cost of GenIncArray . Although this overhead is negligible for any non-trivial characteristic-function evaluation cost (Section 6.1.6), it may matter in settings where the characteristic function is extremely cheap to evaluate or where generation must complete within a strict real-time budget; precisely the scenario that motivates the incremental update scheme discussed in Section 7.2. 
+
+# 8 Conclusions and Future Work 
+
+This article presents N-DCA, a necklace-based distributed algorithm for allocating coalition value calculations in unrestricted characteristic function games. The method exploits combinatorial necklaces to generate increment arrays (IAs) for each equiv-alence class. These canonical representatives are in turn used to generate coalition value calculation allocations to each agent such that the allocation is fair , both in the number of coalitions assigned to each agent and in the computational burden of generating those assignments, and non-redundant. By exploiting different two-colour necklace generation algorithms (for example those that generate all combinations, or those that generate fixed density necklaces), the computational cost of generating the coalition value allocation can be managed, and for most algorithms, the complexity has been proven to be constant amortised time (CAT) with respect to the number of necklaces (and hence number of increment arrays) generated. Furthermore, N-DCA is suited for scenarios that include self-interested agents, as agents are guaranteed to be 54 a member of all of the coalitions that they are allocated. We prove that each coali-tion value is calculated exactly once and that the resulting allocations satisfy formal balance guarantees in both size and computational effort. Within the setting con-sidered, N-DCA appears to be the only approach with formal guarantees for all five target properties identified in Section 1 simultaneously : communication-free alloca-tion, equitable distribution, elimination of redundancy, balanced computational load, and self-interest. Several directions for future work have been identified in the course of this article, including the development of an incremental update scheme for GenIncArray that could reduce N-DCA’s constant-factor overhead (Section 7.2), and the integration of N-DCA with distributed coalition structure generation frameworks such as D-IP to bring the self-interest guarantee to the full structure search problem (Section 7.3). 
+
+Acknowledgments. We would like to thank the anonymous reviewers for their valu-able comments and feedback, and acknowledge the assistance of previous collaborators for their support and comments during the earlier phase of the work. 
+
+# Appendix A Proofs for the correctness of IAs 
+
+In this appendix, we restate the relevant assumptions from Section 4 and provide the full proofs for Lemma 3 and Theorem 6. We assume that there are n agents (typically 
+
+n > 2) represented by Ag = {1, 2, . . . , n }. A coalition C ⊆ Ag of size s = |C| represents a sequence of agents, where n, s ∈ N. As the agents are represented as natural numbers, we say that two integers a and b are congruent modulo n (i.e. a ≡ b (mod n)) where 
+
+a, b ∈ { 1 . . . n }. We use t to denote an arbitrary sequence ⟨t0, t 1, . . . , t s−1⟩ such that 
+
+Ps−1 
+
+> i=0
+
+ti = n − s (see also Lemma 1). We call such a sequence an Increment Array 
+
+(IA), whose period , denoted by π(t) is: min  
+
+> 1≤p≤s
+
+t = ⟨t0, t 1, . . . , t p−1, t 0, t 1, . . . , t p−1, . . . , t 0, t 1, . . . , t p−1⟩
+
+where t is formed by μ identical copies of a subsequence of length p = π(t); i.e. the period of t is the length of the smallest subsection of t that is repeated throughout t.Given C ⊆ { 1, 2, . . . , n } and ( x, t ) (for some 1 ≤ x ≤ n) we say that t generates C
+
+from x if C = {x1, x 2, . . . , x s} using (4), where φ (given in (3) and repeated here for clarity) is the cumulative integer increment :
+
+φi =
+
+ 0 if i = 1 
+
+Pi−2 
+
+> k=0
+
+(tk + 1) if 2 ≤ i ≤ s + 1 Note that φs+1 = n, as this is equivalent to the sum of all offset increments (which, by Lemma 1, is n − s) and s baseline increments. Furthermore, Lemma 2 states that for any coalition C, there is always some IA and an agent that can generate it. 55 Proof of Lemma 3 
+
+Definition 4 states that two IAs t and u of the same size s are equivalent t ≈ u, if u
+
+is a circular shift of t. Lemma 3 states that the same coalitions will be generated by any IA belonging to the same equivalence class [ t]≈.
+
+Lemma 3 If t ≈ u then 
+
+> n
+
+[
+
+> i=1
+
+{ C(i, t ) } =
+
+> n
+
+[
+
+> i=1
+
+{ C(i, u ) }
+
+Proof Without loss of generality we may assume that t ≈ u is witnessed by the choice 
+
+k = s − 1, i.e. ⟨u0, u 1, . . . , u s−1⟩ = ⟨ts−1, t 0, t 1, . . . , t s−3, t s−2⟩. Define φr for 1 ≤ r ≤ s + 1 as before and ψr for 1 ≤ r ≤ s + 1 via: 
+
+ψr =
+
+ 0 if r = 1 (ts−1 + 1) + Pr−3
+
+> k=0
+
+(tk + 1) if 2 ≤ r ≤ s + 1 Comparing respective terms we see that for all 2 ≤ k ≤ s, we have: ψk = φk + ( ts−1 − tk−2). We claim that this leads to the following: 
+
+C(i, t ) =
+
+ C(n − ts−1 + i − 1, u ) if 1 ≤ i ≤ ts−1 + 1 
+
+C(i − ts−1 − 1, u ) if ts−1 + 2 ≤ i ≤ n
+
+To see this, consider the case when 1 ≤ i ≤ ts−1 + 1. We have C(i, t ) = Ssk=1 {i + φk} which is claimed to be: 
+
+C(n−ts−1 +i−1,u ) =
+
+> s
+
+[
+
+> k=1
+
+{n−ts−1 +i−1+ ψk}
+
+= {n−ts−1 +i−1}∪ 
+
+> s
+
+[
+
+> k=2
+
+{n−ts−1 +i−1+ φk +ts−1 −tk−2}
+
+Consider the terms n − ts−1 + i − 1 + φk + ts−1 − tk−2. For 2 ≤ k ≤ s, from the fact that 
+
+φk = Pk−2 
+
+> j=0
+
+tj + k − 1, these are equal to: 
+
+n − ts−1 + i − 1 + 
+
+> k−3
+
+X
+
+> j=0
+
+tj + k − 1 + ts−1 = n + i + φk−1
+
+In total we have, for 1 ≤ i ≤ ts−1 + 1: 
+
+C(i, t ) =
+
+> s
+
+[
+
+> k=1
+
+{i + φk}
+
+C(n − ts−1 + i − 1, u ) = {n − ts−1 + i − 1} ∪ 
+
+> s
+
+[
+
+> k=2
+
+{n + i + φk−1}
+
+Noting that after n correction terms n + i + φk−1 become i + φk−1 all of which are elements of C(i, t ), the only terms unaccounted for are {n − ts−1 + i − 1} ∈ C(n − ts−1 + i − 1, u ) and 
+
+{i + φs} ∈ C(i, t ). For these, however: 
+
+i + φs = i +
+
+> s−2
+
+X
+
+> j=0
+
+tj + s − 1
+
+56 = i + ( n − s − ts−1) + s − 1= i + n − ts−1 − 1When ts−1 + 2 ≤ i ≤ n, it is claimed that C(i, t ) = Ssk=1 {i + φk} corresponds to: 
+
+C(i − ts−1 − 1, u ) =
+
+> s
+
+[
+
+> k=1
+
+{i − ts−1 − 1 + ψk}
+
+= {i − ts−1 − 1} ∪ 
+
+> s
+
+[
+
+> k=2
+
+{i − ts−1 − 1 + φk + ts−1 − tk−2}
+
+Inspecting the terms for 2 ≤ k ≤ s, we have i − ts−1 − 1 + φk + ts−1 − tk−2. These, again, simplify to i + φk−1, so that: 
+
+C(i, t ) =
+
+> s
+
+[
+
+> k=1
+
+{i + φk}
+
+C(i − ts−1 − 1, u ) = {i − ts−1 − 1} ∪ 
+
+> s
+
+[
+
+> k=2
+
+{i + φk−1}
+
+When 1 ≤ k ≤ s − 1, the term i + φk appears in both C(i, t ) and C(i − ts−1 − 1, u ), For the terms i + φs ∈ C(i, t ) and i − ts−1 − 1 ∈ C(i − ts−1 − 1, u ) we have already seen that 
+
+i + φs = i + n − ts−1 − 1 which after n correction is i − ts−1 − 1 as required. This establishes the property claimed: if t and u belong to the same equivalence class of ≈ then: 
+
+> n
+
+[
+
+> i=1
+
+{C(i, t )} =
+
+> n
+
+[
+
+> i=1
+
+{C(i, u )}
+
+□
+
+## Proof of Theorem 6 
+
+Given an arbitrary sequence of non-negative integers, b = ⟨b0, . . . , b s−1⟩ say, the 
+
+n-correction of b is the sequence, corr (b, n ), obtained by replacing each bi > n with the value bi − n. If c = corr (b, n ) and c̸ = b then b is said to be uncorrected for n.Theorem 6 states that each IA can be used r times to generate the same coalition; i.e. the coalitions formed for agents i and j are equal if and only if there exists some r in the range stated in Equation (5). 
+
+Theorem 6 For any IA t, and for all 1 ≤ i ≤ j ≤ n,
+
+C(i, t ) = C(j, t ) ⇔ ∃ 0 ≤ r ≤ (n − i)snπ (t) : j = i + r ×
+
+ nπ (t)
+
+s
+
+
+
+(5) 
+
+Proof 
+
+(⇐) Direction. We first show that j = i + ( rnπ (t)/s ) implies that C(i, t ) and C(j, t ) are identical. The case r = 0 gives j = i, which is trivial. It therefore suffices to establish the case r = 1; the general result then follows by applying this case r times inductively. Note that no assumptions are made concerning i other than those prescribed by the requirement 1 ≤ i ≤ n − π(t)n/s .
+
+57 The (uncorrected with respect to n) sequence generated by C(i, t ) is ⟨i+φ1, i +φ2, . . . , i +
+
+φs⟩, and that by C(j, t ) (again uncorrected with respect to n) is: 
+
+⟨i + ( nπ (t)/s ) + φ1, i + ( nπ (t)/s ) + φ2, . . . , i + ( nπ (t)/s ) + φs⟩
+
+Consider the term φπ(t)+ k for 1 ≤ k ≤ s − π(t): 
+
+φπ(t)+ k =
+
+> π(t)+ k−2
+
+X
+
+> p=0
+
+tp + π(t) + k − 1=
+
+> π(t)−1
+
+X
+
+> p=0
+
+tp +
+
+> π(t)+ k−2
+
+X
+
+> q=π(t)
+
+tq + π(t) + k − 1= φπ(t)+1 +
+
+> k−2
+
+X
+
+> q=0
+
+tq + k − 1= φπ(t)+1 + φk
+
+The penultimate identity follows from tπ(t)+ q = tq . Now consider φπ(t)+1 . We have: 
+
+φπ(t)+1 =
+
+> π(t)−1
+
+X
+
+> k=0
+
+tk + π(t)and 
+
+n − s =
+
+> s−1
+
+X
+
+> k=0
+
+tk =
+
+> s/π (t)−1
+
+X
+
+> m=0 (m+1) π(t)−1
+
+X
+
+> k=mπ (t)
+
+tk
+
+=
+
+> s/π (t)−1
+
+X
+
+> m=0 (m+1) π(t)−1
+
+X
+
+> k=mπ (t)
+
+tk−mπ (t)
+
+= sπ(t)
+
+> π(t)−1
+
+X
+
+> p=0
+
+tp
+
+= sπ(t)
+
+
+
+φπ(t)+1 − π(t)
+
+
+
+which gives: 
+
+φπ(t)+1 = nπ (t)
+
+s (A1) A direct computation using periodicity then gives, for 1 ≤ k ≤ s − π(t): 
+
+φπ(t)+ k = nπ (t)
+
+s + φk (A2) Returning to the (uncorrected) sequences defining C(i, t ) and C(i + nπ (t)/s, t ), the former contributes: s[
+
+> k=1
+
+{i + φk} =
+
+> s/π (t)−1
+
+[
+
+> m=0
+> π(t)
+
+[
+
+> k=1
+
+{i + mφ π(t)+1 + φk}
+
+which is: s/π (t)−1
+
+[
+
+> m=0
+> π(t)
+
+[
+
+> k=1
+
+
+
+i + mnπ (t)
+
+s + φk
+
+
+
+(A3) 
+
+58 And, by a similar analysis of j = i + ( nπ (t)/s ), we obtain, prior to correction, C(j, t ) as: 
+
+> s/π (t)−1
+
+[
+
+> m=0
+> π(t)
+
+[
+
+> k=1
+
+
+
+i + (m + 1) nπ (t)
+
+s + φk
+
+
+
+(A4) Comparing (A3) and (A4), the terms with 1 ≤ m < s/π (t) − 1 clearly occur in both sets. The terms for m = 0 in (A3) are: 
+
+> π(t)
+
+[
+
+> k=1
+
+{i + φk}
+
+Similarly, the terms corresponding to m = s/π (t) − 1 in (A4), are: 
+
+> π(t)
+
+[
+
+> k=1
+
+
+
+i + sπ(t)
+
+nπ (t)
+
+s + φk
+
+
+
+These terms are prior to n correction, so that: 
+
+i + sπ(t)
+
+nπ (t)
+
+s + φk ∈ C(j, t ) = i + n + φk = i + φk ∈ C(i, t )This establishes the first part of the Theorem: 
+
+j = i + r
+
+ nπ (t)
+
+s
+
+
+
+⇒ C(i, t ) = C(j, t )
+
+(⇒) Direction. To complete the proof we show that: 
+
+C(i, t ) = C(j, t ) ⇒ ∃ 0 ≤ r ≤ (n − i)snπ (t) : j = i + r ×
+
+ nπ (t)
+
+s
+
+
+
+Suppose C(i, t ) = C(j, t ); i.e. we can observe that if C′ = C(j, t ) ⊆ { 1, 2, . . . , n } of size s is the same set as C = C(i, t ) = {x1, . . . , x s} there must be some 2 ≤ ρ ≤ s such that: 
+
+corr (⟨i + φρ + φ1, i + φρ + φ2, . . . , i + φρ + φp, . . . , i + φρ + φs⟩, n )is exactly the set C(i, t ) whose elements are: 
+
+corr (⟨i + φ1, i + φ2, i + φ3, . . . , i + φp, . . . , i + φs⟩, n )From C(i, t ) = C(j, t ) we can deduce: i ∈ C(i, t ) and each element contributing to C(i, t )(prior to n-correction) has the form i + φk so that there is a choice, ρ, for which j ∈ { i +
+
+φρ, i + φρ − n}.The terms generated by ( i, t ) are: β(i) = corr (⟨i + φ1, . . . , i + φp, . . . , i + φs⟩, n ), whereas the terms generated by ( i + φρ, t ) are β(ρ) = corr (⟨i + φρ + φ1, . . . , i + φρ + φp, . . . , i + φρ +
+
+φs⟩, n ). From the premise C(i, t ) = C(i + φρ, t ), every term in corr (β(ρ), n ) must correspond to some term in corr (β(i), n ) such that: 
+
+∀ p ∃ q : i + φp ∈ {i + φρ + φq , i + φρ + φq − n}
+
+After some trivial rearrangement this is simply: 
+
+∀ p∃ q : φp ∈ { φρ + φq , φ ρ + φq − n}
+
+For any sequence ⟨y1, . . . , y s⟩ generated via ( y1, t ), there is at most one index λ for which: 
+
+yi ≤ n ∀ i ≤ λ, yλ+1 > n, and yi − n ≤ n ∀ λ + 2 ≤ i ≤ s. Consequently, the values 
+
+⟨y1, . . . , y λ⟩ are strictly increasing, as are the values ⟨yλ − n, y λ+1 − n, . . . , y s − n⟩. We can therefore deduce that for a particular φρ witnessing the behaviour of t in the analysis above, there is a unique index p for which: 
+
+φρ + φq is 
+
+ ≤ n if q ≤ p> n if q > p 
+
+59 From i + φρ + φp = i + n = i + n + φ1, it follows that: 
+
+φρ + φp = n + φ1
+
+φρ + φp+1 = n + φ2
+
+· · · 
+
+φρ + φp+k = n + φk+1 
+
+· · · 
+
+φρ + φp+( s−p) = n + φs−p+1 
+
+φρ + φp−1 = φs
+
+φρ + φp−2 = φs−1
+
+· · · 
+
+φρ + φp−k = φs−k+1 
+
+φρ + φp−(p−2) = φs−p+3 
+
+φρ + φp−(p−1) = φs−p+2 
+
+In consequence, s and ρ, uniquely determine the value of p as s − ρ + 2. Rearranging the expression above, gives 
+
+n + φ1 = φρ + φ(s−ρ+2) 
+
+n + φ2 = φρ + φ(s−ρ+2)+1 
+
+· · · 
+
+n + φk+1 = φρ + φ(s−ρ+2)+ k
+
+· · · 
+
+n + φs−(s−ρ+2)+1 = φρ + φ(s−ρ+2)+( s−s−ρ+2) 
+
+φs−(s−ρ+2)+2 = φρ + φ(s−ρ+2) −(( s−ρ+2) −1) 
+
+φs−(s−ρ+2)+3 = φρ + φ(s−ρ+2) −(( s−ρ+2) −2) 
+
+· · · 
+
+φs−k+1 = φρ + φ(s−ρ+2) −k
+
+· · · 
+
+φs−1 = φρ + φ(s−ρ+2) −2
+
+φs = φρ + φ(s−ρ+2) −1
+
+Giving the final set of identities that t must satisfy in order for C(i, t ) = C(i + φρ, t ) after 
+
+n-correction. Recall that φs+1 = n:
+
+φρ + φq =
+
+ φρ+q−1 if 2 ≤ q ≤ s − ρ + 1 
+
+φs+1 + φρ+q−1−s if s − ρ + 2 ≤ q ≤ s
+
+where 
+
+φρ =
+
+ 0 if ρ = 1 
+
+Pρ−2 
+
+> k=0
+
+tk + ( ρ − 1) if 2 ≤ ρ ≤ s
+
+We first observe that these systems of identities can be expressed solely in terms of 
+
+⟨t0, . . . , t s−1⟩: the terms on the left-hand side contribute ρ − 1 + q − 1 = ρ − q − 2 in addition to the tk values. The terms on the right-hand side, however, also contribute ρ + q − 3 (via 
+
+s + ( ρ + q − 2 − s) when s − ρ + 2 ≤ q ≤ s) in addition to the tk values, so that these cancel. We have so far shown that if after n-correction, C(i, t ) = C(i + φρ, t ) for some value ρ
+
+with 2 ≤ ρ ≤ s, t = ⟨t0, . . . , t s−1⟩ is a solution for the system of identities: 
+
+> ρ−2
+
+X
+
+> k=0
+
+tk +
+
+> q−2
+
+X
+
+> k=0
+
+tk =
+
+> ρ+q−3
+
+X
+
+> k=0
+
+tk 2 ≤ q ≤ s − ρ + 1 (A5) 
+
+60 ρ−2X
+
+> k=0
+
+tk +
+
+> q−2
+
+X
+
+> k=0
+
+tk =
+
+> s−1
+
+X
+
+> k=0
+
+tk +
+
+> ρ+q−3−s
+
+X
+
+> k=0
+
+tk s − ρ + 2 ≤ q ≤ s (A6) We now show that any such solution must have π(t) ≤ ρ − 1. Let t be an IA that satisfies the system of identities given in (A5) and (A6) using ρ. In order to simplify the notation we use η(n, s, ρ, q ) to denote the relevant identity. We analyse the general behaviours of: 
+
+η(n, s, ρ, ρ − p) for 1 ≤ p ≤ ρ − 2
+
+η(n, s, ρ, ρ + p) for 0 ≤ p ≤ s − ρ
+
+For η(n, s, ρ, ρ −p) (A5) and (A6) yield the identities (post simplification and rearrangement): 
+
+> ρ−p−2
+
+X
+
+> k=0
+
+tk =
+
+> 2ρ−p−3
+
+X
+
+> k=ρ−1
+
+tk 2ρ − s − 1 ≤ p ≤ ρ − 2 (A7) 
+
+> ρ−p−2
+
+X
+
+> k=2 ρ−p−2−s
+
+tk =
+
+> s−1
+
+X
+
+> k=ρ−1
+
+tk 1 ≤ p ≤ 2ρ − s − 2 (A8) For η(n, s, ρ, ρ + p) we obtain, in a similar manner: 
+
+> ρ−2
+
+X
+
+> k=0
+
+tk =
+
+> 2ρ+p−3
+
+X
+
+> k=ρ+p−1
+
+tk 0 ≤ p ≤ s − 2ρ + 1 (A9) 
+
+> ρ+p−2
+
+X
+
+> k=2 ρ+p−2−s
+
+tk =
+
+> s−1
+
+X
+
+> k=ρ−1
+
+tk s − 2ρ + 2 ≤ p ≤ s − ρ (A10) Consider (A7) and (A8). As p decreases from its maximum value (for these cases) of ρ − 2to its minimum of 1 the system of identities follows the pattern: 
+
+t0 = tρ−1 p=ρ−2, q=2 
+
+t0 +t1 = tρ−1 +tρ p=ρ−3, q=3 
+
+t0 +t1 +t2 = tρ−1 +tρ +tρ+1 p=ρ−4, q=4 
+
+··· 
+
+t0 +t1 +t2 +··· +tρ−k−2 = tρ−1 +tρ +tρ+1 +··· +t2ρ−k−3 p=ρ−k, q=k
+
+··· 
+
+t0 +t1 +t2 +··· +tρ−3 = tρ−1 +tρ +tρ+1 +··· +t2ρ−4 p=1, q=ρ−1We then have, via (A9) and the first case of (A10) (that is, p = s − 2ρ + 2, q = s − ρ + 2), a sequence of s − 2ρ + 3 identities: 
+
+t0 +t1 +··· +tρ−2 = tρ−1 +tρ +tρ+1 +··· +t2ρ−3 q=ρt0 +t1 +··· +tρ−2 = tρ +tρ+1 +tρ+2 +··· +t2ρ−3 +t2ρ−2 q=ρ+1 
+
+t0 +t1 +··· +tρ−2 = tρ+1 +tρ+2 +··· +t2ρ−2 +t2ρ−1 q=ρ+2 
+
+··· 
+
+t0 +t1 +··· +tρ−2 = tρ+k−1 +tρ+k +··· +t2ρ+k−4 +t2ρ+k−3 q=ρ+k
+
+··· 
+
+t0 +t1 +··· +tρ−2 = ts−ρ +ts−ρ+1 +··· +ts−3 +ts−2 q=s−ρ+1 
+
+t0 +t1 +··· +tρ−2 = ts−ρ+1 +ts−ρ+2 +··· +ts−2 +ts−1 q=s−ρ+2 Finally, from the remaining ρ − 2 cases of (A10), we obtain the identities: 
+
+t1 +t2 +t3 +··· +tρ−2 = ts−ρ+2 +ts−ρ+3 +··· +ts−2 +ts−1 q=s−ρ+3 
+
+t2 +t3 +··· +tρ−2 = ts−ρ+3 +··· +ts−2 +ts−1 q=s−ρ+4 
+
+··· 
+
+tk +··· +tρ−2 = ts−ρ+k+1 +··· +ts−2 +ts−1 q=s−ρ+k+2 
+
+··· 
+
+tρ−3 +tρ−2 = ts−2 +ts−1 q=s−1
+
+tρ−2 = ts−1 q=s
+
+61 It is clear, from these patterns, that the following equalities must hold in order for t to lead to C(i, t ) = C(i + φρ, t ) after n-correction. From the first set of ρ − 2 identities together with that for q = ρ, we obtain: 
+
+t0 = tρ−1
+
+t1 = tρ
+
+· · · 
+
+tρ−k−2 = t2ρ−k−3
+
+· · · 
+
+tρ−3 = t2ρ−4
+
+tρ−2 = t2ρ−3
+
+(A11) For the identities which must hold when ρ ≤ q ≤ s − ρ + 2, the left-hand of side of these is always Pρ−2 
+
+> k=0
+
+tk while the right-hand side of the identity for q has exactly two terms in common with the right-hand side of q − 1 and two in common with q + 1. In consequence we further deduce: tρ−1 = t2ρ−2
+
+tρ = t2ρ−1
+
+· · · 
+
+tρ+k−1 = t2ρ+k−2
+
+· · · 
+
+ts−ρ = ts−1
+
+(A12) Finally, in a similar manner to the identities in the first collection we deduce from the final set: ts−1 = tρ−2
+
+ts−2 = tρ−3
+
+· · · 
+
+ts−ρ+k+1 = tk
+
+· · · 
+
+t1 = ts−ρ+2 
+
+t0 = ts−ρ+1 
+
+(A13) Combining (A11) and (A12), we have tj = tj+( ρ−1) , ∀0 ≤ j ≤ s − ρ. Together with (A13), which gives ts−ρ+1+ k = tk, ∀0 ≤ k ≤ ρ − 2, these three families establish that 
+
+tj = tj+( ρ−1) mod s, ∀0 ≤ j ≤ s − 1; i.e. the sequence of values comprising t repeats under a shift of its own indices by ( ρ − 1) positions modulo s. Since any sequence of length s that is invariant under cyclic shift by d positions has period dividing gcd( s, d ), it follows that π(t)divides gcd( s, ρ − 1) = g, and hence π(t) ≤ g.To illustrate this, the effect of combining (A11) - (A13) on ⟨t0, . . . , t s−1⟩ can be seen in Table A1. For each j,
+
+t(ρ−1) −j = t2( ρ−1) −j from (A11) 
+
+t(ρ−1)+ j = t2( ρ−1)+ j from (A12) 
+
+tj = ts−(ρ−1)+ j from (A13) Now suppose we write s as s = g × μ where g = gcd (s, ρ − 1): note that since this allows g = 1 the value of g is always well defined for any s and 2 ≤ ρ ≤ s. In this case the conditions expressed in (A11)–(A13) indicate, from s = g × μ and ( ρ − 1) = g × v that 
+
+t conforms to the behaviour in Table A1. That this is the behaviour imposed, follows from the conditions arising via (A13) to the effect tj = ts−(ρ−1)+ j , which is equivalent to the identity, tj = tgμ −gv +j = tg(μ−v)+ j , indicating that values repeat in blocks of size g. This configuration, however, indicates that t for which C(i, t ) = C(i + φρ, t ) after n-correction must have the form: ⟨t0, t 1, . . . , t g−1, t 0, t 1, . . . , t g−1, . . . , t 0, t 1, . . . , t g−1, t 0, t 1, . . . , t g−1⟩
+
+62 Table A1 Values of ti(ρ−1)+ j implied by (A11)–(A13), s = μ × g, ( ρ − 1) = v × g
+
+0 1 · · · j · · · (g − 2) (g − 1) · · · (v − 1) g · · · vg − 10 t0 t1 · · · tj · · · t(g−2) t(g−1) · · · t0 · · · t(g−1) 
+
+1 t0 t1 · · · tj · · · t(g−2) t(g−1) · · · t0 · · · t(g−1) 
+
+· · · t0 t1 · · · tj · · · t(g−2) t(g−1) · · · t0 · · · t(g−1) 
+
+i t0 t1 · · · tj · · · t(g−2) t(g−1) · · · t0 · · · t(g−1) 
+
+· · · t0 t1 · · · tj · · · t(g−2) t(g−1) · · · t0 · · · t(g−1) 
+
+μ − 2 t0 t1 · · · tj · · · t(g−2) t(g−1) · · · t0 · · · t(g−1) 
+
+μ − 1 t0 t1 · · · tj · · · t(g−2) t(g−1) · · · t0 · · · t(g−1) 
+
+Now in order to complete the proof it remains to demonstrate that φρ = l × (nπ (t)/s ) for some positive integer l. Since π(t) ≤ g and we have already shown that t repeats in blocks of length g, should π(t) < g then we must have g an exact multiple ( > 1) of π(t). We have from our analysis above: 
+
+φρ =
+
+> ρ−2
+
+X
+
+> k=0
+
+tk + ρ − 1= ρ − 1
+
+g
+
+> g−1
+
+X
+
+> k=0
+
+tk + ρ − 1= ρ − 1
+
+g
+
+
+
+> g−1
+
+X
+
+> k=0
+
+tk + g
+
+
+
+=
+
+ ρ − 1
+
+g
+
+
+
+φg+1 
+
+In addition, however: 
+
+n − s =
+
+> s−1
+
+X
+
+> k=0
+
+tk = sg
+
+> g−1
+
+X
+
+> k=0
+
+tk = sg (φg+1 − g)So that: 
+
+φg+1 = gs (n − s) + g = gn s
+
+Thereby giving φρ as: 
+
+φρ =
+
+ ρ − 1
+
+g
+
+ gn s = (ρ − 1) ns = l ×
+
+ nπ (t)
+
+s
+
+
+
+for some choice of l since ( ρ − 1) = v × g = l × π(t). Setting the theorem’s multiplier 
+
+r = l = ( ρ − 1) /π (t) gives the required conclusion, and j ≤ n immediately yields the upper bound r ≤ (n − i)s/ (nπ (t)): 
+
+C(i, t ) = C(j, t ) ⇒ j = i + r ×
+
+ nπ (t)
+
+s
+
+
+
+□
+
+# References 
+
+Arnas D, Fialho MA, Mortari D (2017) Fast and robust kernel generators for star trackers. Acta Astronautica 134:291–302. https://doi.org/https://doi.org/10.1016/ j.actaastro.2017.02.016 63 Arnold T, Schwalbe U (2002) Dynamic coalition formation and the core. Journal of Economic Behavior and Organization 49(3):363–380. https://doi.org/https://doi. org/10.1016/S0167-2681(02)00015-X Belecheanu RA, Munroe S, Luck M, et al (2006) Commercial applications of agents: lessons, experiences and challenges. In: Proceedings of the Fifth International Joint Conference on Autonomous Agents and Multiagent Systems. Association for Computing Machinery, New York, NY, USA, AAMAS ’06, p 1549–1555, https: //doi.org/10.1145/1160633.1160932 Bistaffa F, Farinelli A, Cerquides J, et al (2017) Algorithms for graph-constrained coalition formation in the real world. ACM Transactions on Intelligent Systems and Technology 8(4). https://doi.org/10.1145/3040967 Blankenburg B, Dash RK, Ramchurn SD, et al (2005) Trusted kernel-based coali-tion formation. In: Proceedings of the Fourth International Joint Conference on Autonomous Agents and Multiagent Systems. Association for Computing Machin-ery, New York, NY, USA, AAMAS ’05, p 989–996, https://doi.org/10.1145/1082473. 1082623 Brˆ anzei S, Larson K (2009) Coalitional affinity games and the stability gap. In: Pro-ceedings of the 21st International Joint Conference on Artificial Intelligence. Morgan Kaufmann Publishers Inc., San Francisco, CA, USA, IJCAI’09, p 79–84 Cattell K, Ruskey F, Sawada J, et al (2000) Fast algorithms to generate necklaces, unlabeled necklaces, and irreducible polynomials over gf(2). Journal of Algorithms 37(2):267–282. https://doi.org/10.1006/jagm.2000.1108 Cesco JC (1998) A convergent transfer scheme to the core of a TU-game. Revista de Matem´ aticas Aplicadas 19(1-2):23–35 Chalkiadakis G, Elkind E, Wooldridge M (2011) Computational Aspects of Coop-erative Game Theory (Synthesis Lectures on Artificial Intelligence and Machine Learning). Springer Cham, Springer Nature Switzerland AG 2012, https://doi.org/ 10.1007/978-3-031-01558-8 Changder N, Aknine S, Ramchurn SD, et al (2020) ODSS: Efficient hybridization for optimal coalition structure generation. In: Proceedings of the Thirty-Fourth AAAI Conference on Artificial Intelligence, pp 7079–7086, https://doi.org/10.1609/aaai. v34i05.6194 Contreras J, Klusch M, Yen J (1998) Multi-agent coalition formation in power trans-mission planning: a bilateral shapley value approach. In: Proceedings of the Fourth International Conference on Artificial Intelligence Planning Systems, AIPS’98, p 19–26 64 Dang VD, Jennings NR (2004) Generating coalition structures with finite bound from the optimal guarantees. In: Proceedings of the Third International Joint Confer-ence on Autonomous Agents and Multiagent Systems - Volume 2. IEEE Computer Society, USA, AAMAS ’04, p 564–571 Dang VD, Dash RK, Rogers A, et al (2006) Overlapping coalition formation for effi-cient data fusion in multi-sensor networks. In: Proceedings of the 21st National Conference on Artificial Intelligence - Volume 1, AAAI’06, p 635–640 Dub´ e D, Yokoo H (2011) The universality and linearity of compression by sub-string enumeration. In: 2011 IEEE International Symposium on Information Theory Proceedings, pp 1519–1523, https://doi.org/10.1109/ISIT.2011.6033796 Fredricksen H, J. Kessler I (1986) An algorithm for generating necklaces of beads in two colors. Discrete Mathematics 61(2):181–188. https://doi.org/10.1016/ 0012-365X(86)90089-0 Fredricksen H, Maiorana J (1978) Necklaces of beads in k colors and k-ary de bruijn sequences. Discrete Mathematics 23(3):207–210. https://doi.org/10.1016/ 0012-365X(78)90002-X Goradia HJ, Vidal JM (2007) A distributed algorithm for finding nucleolus-stable payoff divisions. In: 2007 IEEE/WIC/ACM International Conference on Intelligent Agent Technology (IAT’07), pp 395–398, https://doi.org/10.1109/IAT.2007.99 Knuth DE (1974) Computer science and its relation to mathematics. The American Mathematical Monthly 81(4):323–343. URL http://www.jstor.org/stable/2318994 Lehrer E (2003) Allocation processes in cooperative games. International Journal of Game Theory 31(3):341–351. https://doi.org/10.1007/s001820200123 Li C, Sycara K, Scheller-Wolf A (2010) Combinatorial coalition formation for multi-item group-buying with heterogeneous customers. Decision Support Systems 49(1):1–13. https://doi.org/10.1016/j.dss.2009.12.002 Michalak T, Sroka J, Rahwan T, et al (2010) A distributed algorithm for anytime coalition structure generation. In: Proceedings of the 9th International Conference on Autonomous Agents and Multiagent Systems: Volume 1 - Volume 1. Interna-tional Foundation for Autonomous Agents and Multiagent Systems, Richland, SC, AAMAS ’10, p 1007–1014 Michalak TP, Rahwan T, Elkind E, et al (2016) A hybrid exact algorithm for complete set partitioning. Artificial Intelligence 230:14–50. https://doi.org/10.1016/j.artint. 2015.09.002 Myerson RB (1979) Incentive compatibility and the bargaining problem. Econometrica 47(1):61–73. URL http://www.jstor.org/stable/1912346 65 von Neumann J, Morgenstern O (1944) The Theory of Games and Economic Behavior. Princeton University Press Nisan N (2007) Introduction to mechanism design (for computer scientists). In: Algorithmic Game Theory. Cambridge University Press, p 209–242 OEIS Foundation Inc. (2024) The On-Line Encyclopedia of Integer Sequences. Published electronically at http://oeis.org Osborne MJ, Rubinstein A (1994) A Course in Game Theory. MIT Press Payne TR, Riley L, Atkinson K, et al (2024) Using two colour necklaces to fairly allocate coalition value calculations. In: 2024 IEEE/WIC International Conference on Web Intelligence and Intelligent Agent Technology (WI-IAT), pp 249–256, https: //doi.org/10.1109/WI-IAT62293.2024.00040 Rahwan T, Jennings NR (2005) Distributing coalitional value calculations among cooperative agents. In: Proceedings of the 20th National Conference on Artificial Intelligence - Volume 1, AAAI’05, p 152–157 Rahwan T, Jennings NR (2007) An algorithm for distributing coalitional value cal-culations among cooperating agents. Artificial Intelligence 171(8):535–567. https: //doi.org/10.1016/j.artint.2007.03.002 Rahwan T, Jennings NR (2008) An improved dynamic programming algorithm for coalition structure generation. In: Proceedings of the 7th International Joint Conference on Autonomous Agents and Multiagent Systems - Volume 3. Interna-tional Foundation for Autonomous Agents and Multiagent Systems, Richland, SC, AAMAS ’08, p 1417–1420 Rahwan T, Ramchurn SD, Jennings NR, et al (2009) An anytime algorithm for optimal coalition structure generation. Journal of Artificial Intelligence Research 34(1):521–567. https://doi.org/10.1613/jair.2695 Rahwan T, Michalak T, Wooldridge M, et al (2012) Anytime coalition structure gen-eration in multi-agent systems with positive or negative externalities. Artificial Intelligence 186:95–122. https://doi.org/10.1016/j.artint.2012.03.007 Rahwan T, Michalak TP, Wooldridge M, et al (2015) Coalition structure generation: A survey. Artificial Intelligence 229:139–174. https://doi.org/10.1016/j.artint.2015. 08.004 Rappaport D (2007) Maximal area sets and harmony. Graphs and Combinatorics 23(1):321–329. https://doi.org/10.1007/s00373-007-0703-6 66 Riley L, Payne TR, Bench-Capon T, et al (2014) Distributing coalition value calculations to self-interested agents. In: Proceedings of the 2014 International Con-ference on Autonomous Agents and Multi-Agent Systems. International Foundation for Autonomous Agents and Multiagent Systems, Richland, SC, AAMAS ’14, p 1431–1432 Riley L, Atkinson K, Dunne PE, et al (2015) Distributing coalition value calculations to coalition members. In: Proceedings of the Twenty-Ninth AAAI Conference on Artificial Intelligence, AAAI’15, p 2117–2123, https://doi.org/10.1609/aaai.v29i1. 9433 Ruskey F, Sawada J (1999) An efficient algorithm for generating necklaces with fixed density. SIAM J Comput 29(2):671–684 Ruskey F, Savage C, Min Yih Wang T (1992) Generating necklaces. Journal of Algorithms 13(3):414–430. https://doi.org/https://doi.org/10.1016/0196-6774(92) 90047-G Salazar AEC, Zhao L (2016) Musical scales recognition via deterministic walk in a graph. In: 2016 5th Brazilian Conference on Intelligent Systems (BRACIS), pp 151– 156, https://doi.org/10.1109/BRACIS.2016.037 Sandholm T, Larson K, Andersson M, et al (1999) Coalition structure generation with worst case guarantees. Artificial Intelligence 111(1):209–238. https://doi.org/ 10.1016/S0004-3702(99)00036-3 Sandholm TW, Lesser VR (1997) Coalitions among computationally bounded agents. Artificial Intelligence 94(1):99–137. https://doi.org/10.1016/S0004-3702(97) 00030-1, economic Principles of Multi-Agent Systems Sawada J (2003) A fast algorithm to generate necklaces with fixed content. Theo-retical Computer Science 301(1):477–489. https://doi.org/https://doi.org/10.1016/ S0304-3975(03)00049-5 Service T (2012) Coalition structure generation in characteristic function games. PhD thesis, USA, aAI3533811 Shehory O, Kraus S (1995) Task allocation via coalition formation among autonomous agents. In: Proceedings of the 14th International Joint Conference on Artificial Intel-ligence - Volume 1. Morgan Kaufmann Publishers Inc., San Francisco, CA, USA, IJCAI’95, p 655–661 Shehory O, Kraus S (1996) Formation of overlapping coalitions for precedence-order task-execution among autonomous agents. In: Proceedings of the 2nd International Conference on Multiagent Systems (ICMAS), pp 330–337 67 Shehory O, Kraus S (1998) Methods for task allocation via agent coalition formation. Artificial Intelligence 101(1–2):165–200. https://doi.org/10.1016/S0004-3702(98) 00045-9 Shehory O, Kraus S (1999) Feasible formation of coalitions among autonomous agents in nonsuperadditive environments. Computational Intelligence 15(3):218–251. https: //doi.org/10.1111/0824-7935.00092 Shoham Y, Leyton-Brown K (2008) Multiagent Systems: Algorithmic, Game-Theoretic, and Logical Foundations. Cambridge University Press, USA Taguelmimt R, Aknine S, Boukredera D, et al (2024) Faster optimal coalition struc-ture generation via offline coalition selection and graph-based search. In: Larson K (ed) Proceedings of the Thirty-Third International Joint Conference on Artificial Intelligence (IJCAI-24). International Joint Conferences on Artificial Intelligence Organization, pp 238–248 Taguelmimt R, Aknine S, Boukredera D, et al (2025) A multiagent path search algo-rithm for large-scale coalition structure generation. In: Proceedings of the Thirty-Ninth AAAI Conference on Artificial Intelligence, AAAI’25/IAAI’25/EAAI’25, https://doi.org/10.1609/aaai.v39i22.34498 Tirkkonen O, Li Z, Wei L, et al (2017) On-off necklace codes for asynchronous mutual discovery. In: 2017 IEEE 28th Annual International Symposium on Personal, Indoor, and Mobile Radio Communications (PIMRC). IEEE Press, p 1–6, https://doi.org/ 10.1109/PIMRC.2017.8292573 Toussaint G (2010) Computational geometric aspects of rhythm, melody, and voice-leading. Computational Geometry 43(1):2–22. https://doi.org/10.1016/j.comgeo. 2007.01.003, special Issue on the 14th Annual Fall Workshop Vinyals M, Bistaffa F, Farinelli A, et al (2012) Coalitional energy purchasing in the smart grid. In: 2012 IEEE International Energy Conference and Exhibition (ENERGYCON), pp 848–853, https://doi.org/10.1109/EnergyCon.2012.6348270 Voice T, Ramchurn SD, Jennings NR (2012) On coalition formation with sparse syn-ergies. In: Proceedings of the 11th International Conference on Autonomous Agents and Multiagent Systems - Volume 1. International Foundation for Autonomous Agents and Multiagent Systems, Richland, SC, AAMAS ’12, p 223–230 Wang J (2017) An arithmetic view on generating necklaces. In: 2017 IEEE Second International Conference on Data Science in Cyberspace (DSC), pp 412–416, https: //doi.org/10.1109/DSC.2017.106 Wooldridge M, Jennings NR (1995) Intelligent agents: theory and practice. The Knowledge Engineering Review 10(2):115–152. https://doi.org/10.1017/ S0269888900008122 68 Wu LSY (1977) A dynamic theory for the class of games with nonempty cores. SIAM Journal on Applied Mathematics 32(2):328–338. https://doi.org/10.1137/0132026 69

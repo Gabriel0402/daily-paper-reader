@@ -1,0 +1,1599 @@
+Title: Live LTL Progress Tracking: Towards Task-Based Exploration
+
+URL Source: https://arxiv.org/pdf/2604.17106v1
+
+Published Time: Tue, 21 Apr 2026 00:59:15 GMT
+
+Number of Pages: 40
+
+Markdown Content:
+# Live LTL Progress Tracking: Towards Task-Based Exploration 
+
+Noel C. Brindise NBRINDI 2@ ILLINOIS .EDU 
+
+Cedric Langbort LANGBORT @ILLINOIS .EDU 
+
+Melkior Ornik MORNIK @ILLINOIS .EDU 
+
+Coordinated Science Laboratory, University of Illinois Urbana-Champaign, Urbana, USA 
+
+Abstract 
+
+Motivated by the challenge presented by non-Markovian objectives in reinforcement learning (RL), we present a novel framework to track and represent the progress of autonomous agents through complex, multi-stage tasks. Given a specification in finite linear temporal logic (LTL), the frame-work establishes a ‘tracking vector’ which updates at each time step in a trajectory rollout. The values of the vector represent the status of the specification as the trajectory develops, assigning true, false, or ‘open’ labels (where ‘open’ is used for indeterminate cases). Applied to an LTL formula tree, the tracking vector can be used to encode detailed information about how a task is executed over a trajectory, providing a potential tool for new performance metrics, diverse ex-ploration, and reward shaping. In this paper, we formally present the framework and algorithm, collectively named Live LTL Progress Tracking, give a simple working example, and demonstrate avenues for its integration into RL models. Future work will apply the framework to problems such as task-space exploration and diverse solution-finding in RL. 
+
+Keywords: Explainable Reinforcement Learning, Exploration, Linear Temporal Logic 
+
+1. Introduction 
+
+In this work, we consider a common setting in reinforcement learning (RL) where goal specifica-tions are known a priori, such as pre-determined tasks to complete or constraints to follow. We pay special attention to non-Markovian tasks, which contain time or order dependencies. Though multi-stage, order-dependent tasks are quite common, a significant challenge arises when they are applied to the typical Markov decision process (MDP) model in RL, which can only capture Marko-vian dependencies. While it is possible to extend the system and explicitly encode past events in the state itself, this is prone to state-space explosion (Bonet and Geffner, 2003) and has prompted a wide variety of workarounds. The most prominent of these is the incorporation of replay buffers and memory (Liu and Zou, 2018). A popular solution is long short-term memory (LSTM), which pre-serves information from recent time steps (Hochreiter and Schmidhuber, 1997; Greff et al., 2017). Unfortunately, even state-of-the-art LSTMs suffer in both performance and computation time as the memory size increases, in part due to the inability of the model to reliably identify which past events are most relevant (Kandadi and Shankarlingam, 2025). In the special case where specifications are known a priori, it seems preferable to leverage this system knowledge to incorporate relevant events more directly into training. Variants of reward shaping have incorporated memory in tailored ways to make non-Markovian tasks learnable, especially via recently-developed reward machines and LTL (Icarte et al., 2018). In general, reward shaping carefully engineers functions to distribute rewards for improved feedback (Ibrahim et al., 2024; Ren et al., 2021; Tang et al., 2024). In a reward machine (RM), the usual reward function is replaced by a finite state machine (FSM) whose internal states and transitions are 1  
+
+> arXiv:2604.17106v1 [cs.LG] 18 Apr 2026 BRINDISE LANGBORT ORNIK
+
+𝜑 1.1𝜑 1.0
+
+𝜑 0 𝜑 1
+
+𝜑  (𝜑 )
+
+(𝜑 0)
+
+(𝜑 1)
+
+(𝜑 1.0)
+
+(𝜑 1.1)
+
+[1, 1, 1, −1, −1 … ]
+
+[1, 1, 1, −1, −1, … ]
+
+[0, 0, 1, −1, −1 … ]
+
+[0, 0, 1, −1, −1 … ]
+
+[0, 0, 0, −1, −1 … ]
+
+𝜑 = 𝛼 1𝐔 (𝛼 2∨ 𝛼 3)  
+
+> LTL specification
+> Specification tre eUpdated tracking vector
+> Live Progress Tracking
+> Trajectory update
+
+Figure 1: A diagram of the Live Progress Tracking algorithm. The tracking vector output is updated at every trajectory time step, such that the vector values specify a true (1), false (0), or 
+
+open (-1) status for each tree node at each time step. structured according to the specification of interest, making it possible to assign rewards depend-ing directly on a notion of progress (Icarte et al., 2022). Several recent RM approaches consider specifications in LTL, a convenient syntax for time- and order-dependent expressions like tasks and constraints (Liao, 2020), and shown that RMs on these objectives have asymptotic learning guaran-tees (Le et al., 2024). We present our framework, Live LTL Progress Tracking (LPT), and discuss its integration into existing RM methods; we also propose it as a starting point for less-explored capabilities in RL. In line with the suggestion by Camacho et al. (2019) that internal states of RMs be leveraged dur-ing learning, our framework decomposes LTL specifications into a novel multilayered structure, forming an enhanced, informative new tracking state. As shown in Figure 1, we first decompose a specification into a common tree structure. This tree is used by the algorithm to structure its track-ing state. To perform live tracking, trajectory updates are fed into the algorithm, which produces a corresponding tracking state vector. This vector may serve as a reference to identify solutions which are meaningfully different from each other in terms of the task of interest, potentially providing a guiding diagnostic during exploration and a basis for diverse solution finding. We intend this paper as a theoretical basis for future work and exclude exhaustive experimenta-tion. We will present the algorithm structure and include a reference to a prototype Python imple-mentation. We supplement the formalization with basic conceptual examples and discuss potential for integration and new capabilities in RL. 
+
+1.1. Notation 
+
+2P The power set of P , i.e. all possible subsets of a set P .
+
+f : X → [Y → Z] Function f maps the set X to a function space of all functions Y → Z.
+
+ϕ1 | ϕ2 In a context-free grammar (CFG), the symbol | is used to delineate alternatives .In this notation, a rule φ := ϕ1 | ϕ2 specifies that φ may take the form φ = ϕ1
+
+or φ = ϕ2. For further discussion, see Chomsky (1956) and Hopcroft et al. (2001).   
+
+> 2LIVE LTL P ROGRESS TRACKING
+
+2. Previous Work 
+
+In this section, we situate our work more thoroughly within the literature. Firstly, a variety of methods exist to seek optimal policies for non-Markovian tasks in linear temporal logic (LTL). For stochastic systems, a common objective is to maximize the probability that a specification is satisfied by a strategy. In RL, this strategy is a policy , a function prescribing the choice of actions taken by the agent (Camacho et al., 2017). LTL synthesis, the most-explored framing for LTL specifications on transition systems, involves a two-step process. First, the LTL specification is converted into an automaton, such as a limit-deterministic B¨ uchi automaton (LDBA). The original system is likewise converted, and the two are combined into a single system over a product state space (Baier and Katoen, 2008; Wang et al., 2020). Next, an optimal policy is found by attempting to maximize the probability that good (“accepting”) states of the automaton are reached via dynamic programming (Fu and Topcu, 2014). Problematically for the first step, automaton generation is computationally intensive (Kretinsky et al., 2025). Moreover, the guarantees obtained in the maximization step are severely conditioned on sufficient sampling (Ding et al., 2011, 2014). It is thus perhaps unsurprising that practical exam-ples are typically limited to low-complexity tasks, such as simple reach-avoid problems (Cai et al., 2023; Li et al., 2018). Partly in response to the challenges of classic LTL synthesis, some approaches in RL have instead shaped a reward function to correspond to progress through the specification. In many cases, these introduce a distance measure to calculate how far the current state is from an accepting state in terms of transitions; actions which take the agent ‘in the right direction’ are rewarded (Kantaros, 2022a,b; Kwon et al., 2025), Shah et al. (2025). For complicated tasks, many approaches seek modularity: breaking TL specifications into simpler subtasks to be learned individually and then applied to multi-step or multi-objective problems (Yuan et al., 2019). Reward shaping has also been implemented by approximating a value function on an LDBA (Bagatella et al., 2025). Sometimes in combination with the aforementioned strategies, LTL reward machines have be-gun to gain popularity. Similarly to LTL synthesis, these machines typically begin by constructing an automaton from an LTL specification which is then used to assign rewards. These RMs have been developed for time-discounted LTL (Alur et al., 2023), modularized versions of LTL tasks (“sequential” LTL) (Zheng et al., 2022), and finite LTL (Camacho et al., 2018). However, RMs structured in this way suffer from the same complexity hurdle as LTL synthesis during automaton generation. To track a more explicit notion of progress, some approaches incorporate LTL progression , first proposed by Bacchus and Kabanza (2000). LTL progression is a method to update a specification dynamically as a trajectory rolls out, simplifying the LTL specification as its individual requirements are satisfied. In this way, progression tracks the requirements ‘to go’ from a current timestep, i.e., which requirements remain to be met at that point. For example, Vaezipoor et al. (2021) encode a specification as a Graph Neural Network (GNN) and assigns rewards based on LTL progression. Similarly to an application we will recommend in this paper, some methods use progression to identify subtasks and learn value functions for each of them (Toro Icarte et al., 2018). We avoid LTL progression because of the way it expresses progress, namely as a dynamic specification which compiles remaining requirements into one running ‘to-do.’ As is the case in the automata of LTL synthesis, the single representation obscures many of the finer details of how a specification is met. When applied to the exploration problem, such as by Hasanbeig et al. (2020),   
+
+> 3BRINDISE LANGBORT ORNIK
+
+we propose that our framework will help to identify a wider variety of behaviors. We will explore the distinction in our example scenario. 
+
+3. Preliminaries 
+
+3.1. Reinforcement Learning and Reward Machines 
+
+We primarily propose the use of our LPT framework for RL. RL is a paradigm in machine learning in which agents learn behaviors using rewards or costs as feedback. The agent and its environment are generally expressed together as a Markov Decision Process (MDP). In our case, we will introduce a labeling function to the base MDP. 
+
+Definition 1 (Labeled Markov Decision Process) A labeled MDP is a tuple 
+
+M = ⟨S, A, T, R, P, L⟩ , (1) 
+
+where S is a finite set of discrete states, A is a finite set of actions, T : S ×A×S → R is a transition function expressing the probability of state transitions given a choice of action, and R : S × A → R
+
+is a reward function. P is a finite set of labels, and L : S → 2P is a labeling function assigning a set L ⊆ P to each state in S.
+
+An agent prescribes a policy π : S → A to map states to actions, aiming to optimize its expected cumulative reward on the MDP. This may incorporate a discount factor γ ∈ [0 , 1] :
+
+V π(st) = Eπ
+
+ ∞X
+
+> k=0
+
+γkR(st+k, a t+k) (2) where Eπ denotes the expectation given that at = π(st) and transitions (st, a t, s t+1 ) occur with probability T (st, a t, s t+1 ). The optimal policy is π∗(s) = arg max π V π(s).Recently, some RL approaches have replaced or supplemented the simple reward function with a reward machine . We consider a simplified version adapted from Icarte et al. (2018): 
+
+Definition 2 (Reward Machine) Let M = ⟨S, A, T, R, P, L⟩ . A reward machine for M is 
+
+RM = ⟨U, u 0, F, δ u, δ r⟩ (3) 
+
+where U is a finite set of internal states, u0 ∈ U is an initial state, F is a finite set of terminal states such that U ∩ F = ∅, δu : U × 2P → U ∪ F is the internal transition function, and 
+
+δr : U → [S × A → R] is the reward function. 
+
+Note that the function δr produces functions S × A → R as its output. The machine’s structure makes it possible to represent rewards which are non-Markovian on M by allowing the reward function to vary depending on an internal state.   
+
+> 4LIVE LTL P ROGRESS TRACKING
+
+3.2. System Traces and Linear Temporal Logic 
+
+From its labeling function, any system run over the MDP of Definition 1 produces a sequence of sets of labels over time. This sequence, called a system trace, serves as a description of the trajectory. We consider systems producing finite traces: 
+
+Definition 3 (Finite Trace) Let st denote the state in a trajectory at time t. Denote its correspond-ing label set L(st) by Lt. A finite trace is the sequence ρ = ( LT0 , ..., L Tf ) produced by system trajectory (sT0 , ..., s Tf ) over discrete time interval {T0, ..., T f }.
+
+Definition 4 (Finite Trace Suffix) The trace suffix ρt... = ( Lt, ..., L Tf ) is the part of the full trace 
+
+ρ which begins at t, where T0 ≤ t ≤ Tf .
+
+Our method analyzes traces using LTL (Pnueli, 1977). LTL is a fixture in formal methods and rule inference, where it is used to express constraints, such as safety requirements or operational limits, and tasks, such as goals and processes (Camacho and McIlraith, 2019). Formulas are ex-pressed over a vocabulary of atomic propositions , in our case the set P of labels from M. We specifically adopt finite LTL (LTL f ), which adapts the standard (infinite-trace) LTL satisfaction conditions to apply to finite sequences (De Giacomo et al., 2013; Fionda and Greco, 2018). Ageneral formula in LTL and LTL f can be expressed as a context-free grammar as follows: 
+
+φ := true | α | φ1 ∧ φ2 | ¬ φ1 | Xφ1 | φ1Uφ2 where α ∈ P . (4) Given finite suffix ρt... = ( Lt, ..., L Tf ), the truth of φ on ρt... is determined by Definition 5. 
+
+Definition 5 (Formula Evaluation on Finite Traces) LTL formula φ is true on ρt... = ( Lt, ..., L Tf ),denoted ρt... |= φ, if T0 ≤ t ≤ Tf and :
+
+• ρt... |= α where α ∈ P iff α ∈ LT0
+
+• ρt... |= ¬φ iff ρt... ̸ |= φ
+
+• ρt... |= φ1 ∧ φ2 iff ρt... |= φ1 and ρt... |= φ2
+
+and for the temporal operators Next X and Until U,
+
+• ρt... |= Xφ iff ρt+1 ... |= φ and t < T f
+
+• ρt... |= φ1Uφ2 iff ∃i ≥ t s.t. ρi... |= φ2 and ρk... |= φ1 ∀k, t ≤ k < i and i ≤ Tf .
+
+The condition ρ |= φ, read as “ φ holds on ρ,” means that the trace ρ satisfies the conditions set by formula φ. For example, if φ specifies a task to be completed, ρ |= φ means that the agent behavior captured by ρ successfully completed the task. The notation ρ̸ |= φ denotes the negation of this. For convenience, additional LTL operators ∨ and G, F, R, M, W are typically defined as well, though they can be constructed directly from ∧, ¬, X, U (Pnueli, 1977). Intuitive interpretations of each operator are given in Table 1. Now we define formula arguments to decompose formulas into their constituent parts: 
+
+Definition 6 (Arguments of an LTL formula) Consider the LTL order of operations: (1) group-ing symbols; (2) ¬, X, and other unary operators; (3) U and other temporal binary operators; and (4) ∨, ∧, →. For LTL formula φ, all φj bound by the weakest operator are the arguments of φ.
+
+Recalling our purpose, we are interested in a framework to track an agent’s progress in terms of specifications. This leads us to the proposed framework, which we will define in terms of LTL formulas and their arguments.   
+
+> 5BRINDISE LANGBORT ORNIK
+
+Operator Truth Condition (when ρ |= φ)Gφ Global : φ is always true 
+
+Fφ Eventual : φ1 is eventually true 
+
+Xφ Next : φ1 must be true at the next time step 
+
+φ1Uφ2 Until : φ1 remains true until φ2 is true (the latter must occur at some t)
+
+φ1Wφ2 Weak until : φ1 must remain true (1) always, or (2) until φ2 becomes true 
+
+φ1Rφ2 Release : φ2 must remain true (1) always, or (2) until (and including) the time step when φ1 becomes true 
+
+φ1Mφ2 Strong release : True only if Condition (2) for Release is met 
+
+¬φ Negation : φ must be false 
+
+φ1 ∧ φ2 Conjunction : both φ1 and φ2 must be true 
+
+φ1 ∨ φ2 Disjunction : φ1 or φ2 or both must be true 
+
+φ1 → φ2 Implication : if φ1 is true, φ2 must also be true Table 1: Intuitive descriptions of LTL operators. 
+
+4. LTL Live Progress Tracking 
+
+4.1. Overview 
+
+LTL Live Progress Tracking (LPT) is a novel framework that uses LTL specifications to describe and track behaviors, such as an agent completing steps in a task. This is done by mapping agent trajectories to traces and providing the updated traces to the framework as the trajectory progresses. The framework ultimately encodes the trace as a ‘signature:’ a vector which serves as a unique identifier for behavior patterns. In short, LTP signatures are generated from a ternary tracking vector which contains a value for each time step in the trace. The values correspond to a truth status for each argument of the specification (true, false, open), and they update continuously as the agent trace rolls out (hence the 
+
+live descriptor). Intuitively, an argument is assigned true at t only if its formula must logically hold on any suffix from t, given what has already occurred. It is likewise false only if the formula must logically be false. The open assignment means that the algorithm has not identified conditions for 
+
+true nor false . (We intentionally avoid a stronger statement; we reserve the discussion of this for the Definitions below.) The example below gives a brief demonstration of how such signatures can describe system traces. 
+
+Example 1 Consider an agent which should eventually collect two keys, Key A and Key B, repre-sented by formula 
+
+φ = FkeyA ∧ FkeyB .  
+
+> 6LIVE LTL P ROGRESS TRACKING
+
+We begin by considering the formula tree for φ, which has five nodes: 
+
+FkeyA ∧ FkeyB FkeyA FkeyB keyA keyB (5) The LPT framework establishes a tracking vector for each of these nodes, with each vector con-taining one entry per time step. The signature is simply a concatenation of these vectors with consecutive repeated values merged, e.g. [0 , 0, 1, −1, −1] becomes [0 , 1, −1] , since this preserves the order of events while removing excess information about precise timing. For a fixed formula, trajectories can then be compared behaviorally in terms of their signatures. 𝐿 2 = [keyB ]
+
+𝐿 4 = [keyA ]
+
+A
+
+B
+
+𝐿 0 = [ ] 
+
+A
+
+B𝐿 4 = [keyA ]
+
+A
+
+B
+
+𝐿 2 = [keyA ]
+
+A
+
+B
+
+𝐿 5 = [keyB ]
+
+Figure 2: Snapshots from a key collection example. Consider Figure 2. On the upper left, an agent begins at t = 0 with trace ρ0... 0 = ( {} ). (keyA )
+
+and (keyB ) are false. It is unknown whether the agent will obtain either key in the future, so 
+
+(FkeyA ), (FkeyB ) and their conjuction are open. Listing the nodes in the same order as (5), the signature is 
+
+[[ −1] , [−1] , [−1] , [0] , [0]] .
+
+On the upper right, the agent is at t = 2 with ρ0... 2 = ( {} , {} , {keyA }). Now that key A has been obtained, (FkeyA ) is conclusively true for ρ0... , ρ 1... , and ρ2... . Key B is not yet acquired, so 
+
+(keyB ) is false for t = 0 , 1, 2. However, it may be acquired in the future, so (FkeyB ) remains open. Because of this, (FkeyA ∧ FkeyB ) is open as well. In all, the signature is 
+
+[[ −1] , [1] , [−1] , [0 , 1] , [0]] .
+
+The bottom left shows an alternative path, where key A is obtained at t = 4 . The new trace is ρ0... 4 = ( {} , {} , {} , {} , {keyA }). The timing is different, but the behavior is the same as before and has an identical signature. Finally, the bottom right shows an alternative where key B is obtained instead of key A. The trace is ρ0... 5 = ( {} , {} , {} , {} , {} , {keyB }). Following the same reasoning as previously, the signature is 
+
+[[ −1] , [−1] , [1] , [0] , [0 , 1]] 
+
+> 7
+
+BRINDISE LANGBORT ORNIK 
+
+reflecting the change in behavior. The signatures of LPT track progress for every node in a rule tree, giving higher-fidelity infor-mation than the automata in LTL synthesis (discussed in section 4.4). We propose that this gives potential advantages for exploration and diverse solution-finding. We will now define the frame-work as in Brindise (2025) and give an algorithm which generates tracking data in adherence with the framework. We then demonstrate an application of LPT and present a reward machine structure for use in RL. 
+
+4.2. Definitions 
+
+LPT tracks progress at a selected ‘current’ time step t′ during a trajectory rollout. The trajectory up to t′ is described by finite trace 
+
+ρt0...t ′
+
+:= ( Lt0 , ..., L t′ ). (6) For a rollout which terminates at a future time Tf > t ′, we call the future sequence of unknown values a continuation: 
+
+Definition 7 (Trace Continuation) Consider ρt...t ′
+
+= ( Lt, ..., L t′ ), where Lt, ..., L t′ are known and remain fixed. Then a continuation of ρt...t ′
+
+refers to any trace created by appending an arbitrary label set sequence to ρt0...t ′
+
+, i.e. 
+
+ρt...t +
+
+= ( Lt, ..., L t′ , L +
+
+> t′+1
+
+, ..., L + 
+
+> t+
+
+) (7) 
+
+where each L+ is any set of labels L ⊆ P .
+
+Note that this definition does not require ρt...t +
+
+to represent a feasible trajectory on M.The goal of LPT is to assign tracking values true (h), false (v), and open (o) to each formula argument appropriately at each time step given the known information in ρt...t ′
+
+. A value assignment is considered valid if it satisfies the following properties: 
+
+Definition 8 (Tracking value properties) Consider an LTL formula φ on ρt...t ′
+
+with continuations 
+
+ρt...t +
+
+. Then a value assignment of (h),(v), or (o) is valid if: 
+
+• true (h) : ρt...t +
+
+|= φ for all t+ ≥ t′.
+
+• false (v) : ρt...t +̸ |= φ for all t+ ≥ t′.
+
+• open (o) : any of these conditions may or may not be met. 
+
+Definition 8 deliberately leaves flexibility in the assignment of (o), using it as a catch-all for cases where ρt0...t + ?
+
+|= φ is perhaps determinate but not resolved by the algorithm. For example, consider the formula φ = φ0 ∧ ¬ φ0. If the truth of ρ |= φ0 is unknown (o), the LPT algorithm as defined below will assign φ as (o), despite the fact that ρ̸ |= φ by logical deduction. Since LPT is focused on tracking rather than formal verification, this is an acceptable limitation. Value assignments are organized for LTL arguments as a tracking value vector , which depends on current time step t′:
+
+8LIVE LTL P ROGRESS TRACKING 
+
+Definition 9 (Tracking value vector) Consider φ and finite traces in discrete time ρT0... with final time Tf . Then a tracking value vector for any argument of φ can be expressed as 
+
+ξ = ( ξ[T0], ..., ξ [t′], ..., ξ [Tf ]) T , where t′ is a current update time with t′ ∈ { T0, ..., T f }. For all entries ξ[t],
+
+ξ[t] = 
+
+
+
+1 φ has value (h) on ρt...t ′
+
+0 φ has value (v) on ρt...t ′
+
+−1 otherwise 
+
+(8) 
+
+Definition 10 (Validity of tracking value vector) A tracking value vector ξ is called valid for LTL formula φ on ρT0... if and only if all entries ξ[t] correspond to a valid assignment of (h), (v), or (o) by Definition 8. 
+
+We now present an algorithm to calculate tracking value vectors which provably satisfy Defini-tion 10. Such an algorithm will be able to provide module-by-module tracking information as we have described for system trajectories. 
+
+4.3. Algorithm 
+
+4.3.1. D EFINITIONS AND GUARANTEES 
+
+For any specification, the LPT algorithm begins by constructing a formula tree. As in a standard LTL tree, the top-level node contains the original formula, which has child node(s) containing its arguments, and so on, such that the leaves of the tree are atomic formulas (labels). Each node is additionally assigned a type to identify its top-level LTL operator (e.g. F, ∧, U, ... ). The algorithm then processes a current trajectory for the entire tree from the bottom, starting from the tree leaves (φ := α) and progressing upward. For each node, it assigns a tracking value for the argument in question based on its formula type and the tracking values of its children. Once the algorithm finishes at the top level, tracking value vectors have been populated for every node in the tree.   
+
+> 9BRINDISE LANGBORT ORNIK
+
+Live LTL Progress Tracking Algorithm 
+
+1. Construct tree for LTL rule φ. For each node, store the top-level LTL operator as the node type θ.2. Find ξ of each node for all ρt0...t ′
+
+such that t0 ≤ t′ and t0, t ′ ∈ { T0, ..., T f }:
+
+Initialize ξ = ( −1, ..., −1) for all nodes. 
+
+Set t′ = T0. While t′ ≤ Tf :(a) For each distinct label α appearing in any leaf, pass ρT0...t ′
+
+, φ = α into the AP 
+
+module. Store outputs ξ for all leaves containing this α.(b) For leaf φ...x.y , check parent φ...x . If ξ is already stored for all children of φ...x ,proceed to (c); otherwise, move to next leaf and repeat (b). (c) Identify θ of φ...x . Pass φ...x , ρT0...t ′
+
+into θ module; store output ξ for φ...x .(d) Check parent of φ...x . If it exists and all its children are instantiated, repeat step c) for this parent. Otherwise, move to next leaf and begin again from step (b). (e) If t′ = Tf , perform terminal evaluation for all tree nodes ϕ of φ: for all t ∈{T0, ..., T f }, if ξ[t] = −1, set 
+
+ξ[t] = 
+
+(
+
+1 ρt...T f |= ϕ
+
+0 ρt...T f̸ |= ϕ (9) (f) Increment t′.
+
+The modules for LPT are given in Tables 2 and 3. Intuitively, each module determines an assignment (o), (h), or (v) based on the LTL definitions for its node type. For example, a node containing φ = φx ∨ φy will determine whether ρ |= φ by checking the output of its child nodes, which contain the current tracking values for ρ |= φx and ρ |= φy. The module is designed to assign for φ based on the definition of ∨ (‘or’). Intuitively, this will be true (h) if either argument is conclusively true (h), false (v) if both arguments are conclusively false (v), and open (o) otherwise. To formally guarantee that every module makes logically-sound assignments based on the LTL definitions, we will prove Theorem 11. 
+
+Theorem 11 (LPT Algorithm Output) Consider an LTL formula φ and trace ρT0...t ′
+
+which up-dates incrementally ( t′ = T0, ..., T f ). For inputs at each update t′, the LPT algorithm always assigns valid tracking value vectors ξ by Definition 10 for all nodes of φ.
+
+The full proof of this theorem is in Appendix A. In brief, the proof follows an inductive logic: 1. Show that ξ are initially valid tracking value vectors. 2. When performing an update at t′, assume that all ξt′−1 are valid. 3. Prove that, given a valid ξt′−1, the algorithm generates a ξt′ which is a valid tracking value vector. 
+
+> 10
+
+LIVE LTL P ROGRESS TRACKING 
+
+This is accomplished in part by establishing properties of the evolution of correct ξ and examining the logic for each operator in a module-by-module way. 
+
+Not (neg ) LTL: φ = ¬φ1
+
+Initialize: Load ξ for φ and ξ1 for child node φ1.For t = T0, ..., t ′: If ξ1[t] = 0 : Set ξ[t] = 1 .Else if ξ1[t] = 1 : Set ξ[t] = 0 .
+
+Or (or ) LTL: φ = φ1 ∨ φ2
+
+Initialize: Load ξ for φ and ξ1, ξ2 for child nodes φ1, φ 2.For t = T0, ..., t ′: If ξ1[t] = 1 or ξ2[t] = 1 : Set ξ[t] = 1 .Else if ξ1[t] = 0 and ξ2[t] = 0 : Set ξ[t] = 0 .
+
+And (and ) LTL: φ = φ1 ∧ φ2
+
+Initialize: Load ξ for φ and ξ1, ξ2 for child nodes φ1, φ 2.For t = T0, ..., t ′: If ξ1[t] = 1 and ξ2[t] = 1 : Set ξ[t] = 1 .Else if ξ1[t] = 0 or ξ2[t] = 0 : Set ξ[t] = 0 .
+
+Implication (→) LTL: φ = φ1 → φ2
+
+Initialize: Load ξ for φ and ξ1, ξ2 for child nodes φ1, φ 2.For t = T0, ..., t ′: If ξ1[t] = 0 or ξ2[t] = 1 : Set ξ[t] = 1 .Else if ξ1[t] = 1 and ξ2[t] = 0 : Set ξ[t] = 0 .Table 2: Logical operator module definitions. 
+
+11 BRINDISE LANGBORT ORNIK 
+
+Atomic (AP ) LTL: φ = α
+
+Initialize: Load ξ for φ.If α ∈ Lt′ : Set ξ[t′] = 1 .Else: Set ξ[t′] = 0 .
+
+Next (X) LTL: φ = Xφ1
+
+Initialize: Load ξ for φ and ξ1 for child node φ1.For t = T0, ..., t ′: If ξ1[t] = 1 , t > T 0: Set ξ[t − 1] = 1 .Else if ξ1[t] = 0 , t > T 0 or t′ = Tf : Set ξ[t − 1] = 0 .
+
+Eventual (F ) LTL: φ = Fφ1
+
+Initialize: Load ξ for φ and ξ1 for child node φ1.For t = T0, ..., t ′: If ξ1[t] = 1 : For all t0 s.t. T0 ≤ t0 ≤ t: set ξ[t0] = 1 .
+
+Global (G) LTL: φ = Gφ1
+
+Initialize: Load ξ for φ and ξ1 for child node φ1. Set t = t′.While t ≥ T0: If ξ1[t] = 0 : For all t0 s.t. T0 ≤ t0 ≤ t: set ξ[t0] = 0 . Set t = T0 − 1.Else: set t = t − 1.
+
+Until (U ) LTL: φ = φ1Uφ2
+
+See Algorithm 1. 
+
+W. until (W ) LTL: φ = φ1Wφ2
+
+Same as U.
+
+S. release (M ) LTL: φ = φ1Mφ2
+
+See Algorithm 2. 
+
+Release (R) LTL: φ = φ1Rφ2
+
+Same as M.Table 3: Temporal operator module definitions. 
+
+12 LIVE LTL P ROGRESS TRACKING  
+
+> 1
+
+Initialize: Load ξ for φ and ξ1, ξ2 for child nodes φ1, φ 2. 
+
+> 2
+
+Set t0, t = T0. 
+
+> 3
+
+while t ≤ t′ do  
+
+> 4
+
+if ξ1[t] = 0 and ξ2[t] = 0 then  
+
+> 5
+
+Set ξ[t] = 0  
+
+> 6
+
+Set t = t + 1  
+
+> 7
+
+Set t0 = t 
+
+> 8
+
+else if ξ2[t] = 1 then  
+
+> 9
+
+Set ξ[t0], ..., ξ [t] = 1  
+
+> 10
+
+Set t = t + 1  
+
+> 11
+
+Set t0 = t 
+
+> 12
+
+else if ξ1[t] = 0 or ξ1[t] = −1 then  
+
+> 13
+
+Set t = t + 1  
+
+> 14
+
+Set t0 = t 
+
+> 15
+
+else  
+
+> 16
+
+Set t = t + 1 
+
+end Algorithm 1: Until/Weak Until Modules for LPT.  
+
+> 17
+
+Initialize: Load ξ for φ and ξ1, ξ2 for child nodes φ1, φ 2. 
+
+> 18
+
+Set t0, t = T0. 
+
+> 19
+
+while t ≤ t′ do  
+
+> 20
+
+if ξ2[t] = 0 then  
+
+> 21
+
+Set ξ[t] = 0  
+
+> 22
+
+Set t = t + 1  
+
+> 23
+
+Set t0 = t 
+
+> 24
+
+else if ξ1[t] = 1 and ξ2[t] = 1 then  
+
+> 25
+
+Set ξ[t0], ..., ξ [t] = 1  
+
+> 26
+
+Set t = t + 1  
+
+> 27
+
+Set t0 = t 
+
+> 28
+
+else if ξ2[t] = −1 then  
+
+> 29
+
+Set t = t + 1  
+
+> 30
+
+Set t0 = t 
+
+> 31
+
+else  
+
+> 32
+
+Set t = t + 1 
+
+end Algorithm 2: Release/Strong Release Module for LPT. 
+
+13 BRINDISE LANGBORT ORNIK 
+
+4.3.2. C OMPLEXITY 
+
+The computational complexity of LPT is dependent on the length of the trajectory, the depth of the specification, and the specification operator types. The necessary number of computations is also affected by the sequence of events in any individual trajectory. The bound of Theorem 12 is the most general bound, but computation time may be much lower in practice. 
+
+Theorem 12 (Live LTL Progress Tracking Complexity) For a formula tree with height L, base node at level l = 0 , and maximum 2 children per node evaluated on trace ρ, complexity has upper bound 
+
+O(2 L|ρ|2). (10) 
+
+Proof Consider a trace with from T0 to Tf , i.e. |ρ| = Tf − T0, for which an LPT update is performed at every time step. For each node φ...x in a tree, the corresponding module is called once per update; each module produces a tracking value for every t0 in {T0, ..., t ′}, resulting in ≤ t′ − T0
+
+evaluations per module call. At each t0, the module performs one evaluation per argument φ...x.y .Thus, any node with a binary operator (two arguments) performs n ≤ 2( t′ − T0) evaluations per update, yielding conservative bound n < 2|ρ|.A tree with height L, base node at level l = 0 , and maximum 2 children per node will have 
+
+nL ≤ 2L nodes at level L. In particular, since the final level L must consist of atomic nodes, this may be further bounded as nL ≤ 2L−1. Furthermore, atomic nodes require only one evaluation per call. This means that the number of evaluations for a tree of depth L is of order O(2 L−12|ρ|), or 
+
+O(2 L|ρ|).Now, if an update is performed at every time step, there are |ρ| total updates. The upper bound on complexity thus becomes 2L|ρ|| ρ|, or 
+
+O(2 L|ρ|2)
+
+for the full tree. 
+
+4.4. Automata-Theoretic Comparison 
+
+In this section, we provide a comparison of our algorithm structure with the automata of LTL syn-thesis using an illustrative example. 
+
+Example 2 (LPT vs. LTL Synthesis: Automaton Perspective) Consider the LTL rule 
+
+φ = G(α → Xβ) (11) 
+
+where α, β are atomic propositions. 
+
+In this case, LTL synthesis represents φ as the automaton shown in Figure 3. State transitions occur in the automaton at each time step in the trace ρ, where the domain of the transition function is the alphabet Σ = {ϵ, {α}, {β}, {α, β }} . Here, ϵ represents all sets of atomic propositions that do not contain α or β.Importantly, when interpreting or tracking system progress, the automaton in Figure 3 provides limited information. State q1 is an accepting state; this means that, if the automaton transitions to   
+
+> 14 LIVE LTL P ROGRESS TRACKING
+
+q1 at a given time step, the full rule ϕ is true on the current trace. State q3 is a non-accepting sink state, so a transition here means that the rule must be false (and remain false for the rest of the trace). However, tracking only these states may provide extremely sparse information. Indeed, for our example rule, q1 is not a sink, and so the system transitions away from it any time {α}, {α, β }
+
+appear in the trace. Therefore, if φ is true for the entire trace, we will not have this information until the final time step. Note that the other states q0, q 2 are not as readily interpreted; they are abstract automaton states, constructs of the LTL synthesis. φ
+
+q1
+
+q2
+
+*
+
+q0
+
+q2
+
+q1
+
+φ1→ φ2
+
+{φ 1, φ 2}, 
+
+{φ2}, ϵ
+
+Σ = {𝜖 , {𝜙 1}, {𝜙 2}, { 𝜙 1, 𝜙 2}}
+
+{φ 1}
+
+q3
+
+q2
+
+φ
+
+ϵ
+
+ϵ *
+
+*
+
+*
+
+*
+
+q0
+
+q2
+
+q1
+
+α
+
+Σ = {𝜖 , 𝛼 }
+
+ϵ
+
+*
+
+*
+
+α
+
+q0
+
+q2
+
+q1
+
+*G( α → Xβ)
+
+Σ = {𝜖 , 𝛼 , 𝛽 , {𝛼 , 𝛽 }}
+
+{α,β} 
+
+q3
+
+{β},ϵ 
+
+{β},ϵ 
+
+{α}, 
+
+{α,β}  {β} 
+
+{α},ϵ 
+
+Figure 3: Now we consider the automaton interpretation of LPT. Recall that LPT assigns status values for 
+
+every time step in a trace for each rule argument. This is done modularly, where the module for argument φx updates a vector ξx = ( ξ[T0], ..., ξ [Tf ]) . The atomic modules ingest trace time steps, giving them the same alphabet as before. For non-atomic arguments, the input to each module is the ξ of its child modules, meaning that their alphabet is 
+
+Σ = {(xT0 , ..., x Tf ) | xi ∈ {− 1, 0, 1}} (12) for unary operators, and 
+
+Σ = {(( xT0 , ..., x Tf ), (yT0 , ..., y Tf )) | xi, y j ∈ {− 1, 0, 1}} (13) for binary ones. For this rule, then, the LPT algorithm is equivalent to the series of automata shown in Figure 4. Every automaton has the same structure , with five transitions and the true (h) and false (v) values captured by sink states 0, 1. This matches the intuitive purpose of the status assignments, which should only assign 1, 0 on a trace segment once the value is conclusive for the entire future trace. The difference between module types is determined solely by which values from Σ lead to each of the five possible transitions. For simplicity, we show automata to calculate the LPT status value for a single time step t, i.e. the tracking vector entries ξ[t] for each node (Gϕ), (ϕ1 → ϕ2), (Xϕ), (α), (β). A key takeaway from this diagram is that values are available to track progress through every single argument, providing much more detail. Specifically, LPT provides one tracking state (with possible values true, false, open) per argument, yielding a 5-valued vector for each time step in this example (and up to 35 distinct assignments). In contrast, the automaton of LPT synthesis assigns a single abstract state for the entire rule at each time step, where multiple possible values roughly correspond to ‘open’ states; the vector of information allows for 4 distinct assignments. In all, while the LTL synthesis approach results in a more concise representation, LPT provides higher-resolution tracking data. 
+
+> 15
+
+BRINDISE LANGBORT ORNIK φ1→ φ2
+
+Values of (𝜉 1 𝑡 , 𝜉 2 𝑡 )
+
+*
+
+*
+
+Xφ
+
+*
+
+*
+
+α
+
+ϵ
+
+*
+
+*
+
+α
+
+Assignment for 𝝃 𝒕 at update step 𝒕′ 
+
+β
+
+ϵ
+
+*
+
+*
+
+β
+
+−1
+
+Values 
+
+of 𝜉 1 𝑡 + 1
+
+−1 1
+
+0
+
+0
+
+1
+
+Values of 𝜌 𝑡  Values of 𝜌 𝑡 
+
+1 1
+
+1
+
+0
+
+−1 −1
+
+0 0
+
+−1
+
+Values of 𝜉 1 𝜏 , ∀𝜏 ≥ 𝑡 
+
+1,1 , 0,∗ ,
+
+(−1,1)
+
+*
+
+*
+
+1
+
+0
+
+−1
+
+State values 
+
+correspond to 
+
+module -
+
+assigned value 
+
+for 𝜉 𝑡 
+
+𝜉 1
+
+𝜉 1
+
+𝜉 1
+
+𝜉 2
+
+(1, … , 1)
+
+𝜉 𝜏 = 1, −1
+
+∀𝜏 
+
+Figure 4: LPT algorithm expressed as a series of automata for example formula G(α → Xβ).
+
+16 LIVE LTL P ROGRESS TRACKING 
+
+5. Conceptual Application: Reward Machines 𝜑 𝑥 
+
+> module
+
+## 𝜑 𝑦 
+
+> module
+
+## 𝜑 
+
+> module
+
+## 𝜑 𝑥 .𝑥 
+
+> module
+
+## 𝜑 𝑥 .𝑦  
+
+> module
+> 𝜑 𝑥
+> 𝜑 𝑥 .𝑥 𝜑 𝑥 .𝑦
+> 𝜑 𝑦
+> 𝜑
+
+# 𝜑  tree 
+
+## 𝑢 𝑡 ′
+
+## 𝑢 𝑡 ′−1, 𝐿 𝑡 ′
+
+# 𝛿 𝑢 
+
+Figure 5: Transition function δu of an LPT reward machine. The internal state is dependent on the formula φ. In this example, ut′ = ( ξ, ξx, ξx.x , ξx.y , ξy, t ′).In the introduction, we suggest that LPT be applied to guide exploration and incentivize diverse behaviors. A starting point is the application of LPT in a reward machine. Taking tracking vectors as states and considering the dynamics by which they are updated, LPT fits easily into an RM framework. Recalling the Preliminaries, RMs serve as a replacement for simple reward functions in an MDP, assigning rewards based on a separate state space and transition function within the machine itself. Consider Figure 5. As shown in the figure, we first define an RM-internal state (u, L ). Here, 
+
+u contains a current time as well as the tracking vectors for all nodes of a given specification. L
+
+is a set of labels as before. Just as in LPT, we take the previous tracking vector ut′−1 as an input alongside the most recent trace step Lt′ . The updated tracking vector is then calculated modularly exactly as before, shown in the diagram as the output ut′ . Since the original LPT algorithm does not require any additional or intermediate inputs beyond (ut′−1, L t′ ) as described, it may be treated as a self-contained transition function. In the diagram, we show it as δu.Given this internal state, a new reward function δr may be established. In the general definition of RMs, δr may map U to a function space, i.e. a function R : S × A → R is output for each u ∈ U .Suppose all rewards are non-negative. Then, to incentivize a specific tracking state ugoal , for example, take 
+
+δr =
+
+(
+
+R(s, a ) ut′ = ugoal 
+
+0 otherwise. (14) Consider the common case that an agent has learned a specific behavior, but different behaviors are desired. Collecting the tracking vectors observed during the first behavior in the set Uold :
+
+δr =
+
+(
+
+R(s, a ) ut′̸ ∈ Uold 
+
+0 otherwise. (15) When applying an RM to an MDP, it is necessary to give the machine access to the RM state as well as its own, such that policies may have the form π : S × U → A.  
+
+> 17 BRINDISE LANGBORT ORNIK
+
+6. Conclusion and Future Work 
+
+In this paper, we establish Live Linear Temporal Logic Progress Tracking (LPT), an algorithm for detailed tracking of autonomous agent trajectories. LPT produces vector representations of an agent’s progress through tasks that are specified in finite Linear Temporal Logic (LTL). These vectors encode behavioral information such as the order in which task-related events occur. By com-pressing vectors into a ‘signature’, it is possible to compare trajectories in terms of their behavioral features, independently of specific timing or time scales. We suggest that LPT has promising applications in reinforcement learning and give a frame-work for an LPT-based reward machine. By providing progress-based non-Markovian rewards, the machine could be used to incentivize incremental progress through tasks or exploration of diverse behaviors. Future work will apply the conceptual framework of LPT to RL, both for exploration and agent performance diagnostics. 
+
+Acknowledgments 
+
+This research was funded in part by an Army Educational Outreach Program fellowship. 
+
+References 
+
+Rajeev Alur, Osbert Bastani, Kishor Jothimurugan, Mateo Perez, Fabio Somenzi, and Ashutosh Trivedi. Policy synthesis and reinforcement learning for discounted LTL. In International Con-ference on Computer Aided Verification , pages 415–435. Springer, 2023. Fahiem Bacchus and Froduald Kabanza. Using temporal logics to express search control knowledge for planning. Artificial Intelligence , 116(1):123–191, 2000. ISSN 0004-3702. doi: https://doi. org/10.1016/S0004-3702(99)00071-5. Marco Bagatella, Andreas Krause, and Georg Martius. Directed exploration in reinforcement learn-ing from linear temporal logic, 2025. URL https://arxiv.org/abs/2408.09495 .Christel Baier and Joost-Pieter Katoen. Principles of model checking . MIT press, 2008. Blai Bonet and Hector Geffner. Labeled RTDP: Improving the convergence of real-time dynamic programming. In ICAPS , volume 3, pages 12–21, 2003. Noel C. Brindise. Local and diverse explanations for autonomous systems . PhD thesis, University of Illinois Urbana-Champaign, May 2025. Mingyu Cai, Shaoping Xiao, Junchao Li, and Zhen Kan. Safe reinforcement learning under tempo-ral logic with reward design and quantum action selection. Scientific reports , 13(1):1925, 2023. Alberto Camacho and Sheila A McIlraith. Learning interpretable models expressed in linear tempo-ral logic. In Proceedings of the International Conference on Automated Planning and Scheduling ,volume 29, pages 621–630, 2019. Alberto Camacho, Eleni Triantafillou, Christian Muise, Jorge Baier, and Sheila McIlraith. Non-deterministic planning with temporally extended goals: LTL over finite and infinite traces. In 
+
+Proceedings of the AAAI conference on artificial intelligence , volume 31, 2017.   
+
+> 18 LIVE LTL P ROGRESS TRACKING
+
+Alberto Camacho, Oscar Chen, Scott Sanner, and Sheila A McIlraith. Non-Markovian rewards ex-pressed in LTL: Guiding search via reward shaping (extended version). In GoalsRL, a workshop collocated with ICML/IJCAI/AAMAS , 2018. Alberto Camacho, Rodrigo Toro Icarte, Toryn Q Klassen, Richard Anthony Valenzano, and Sheila A McIlraith. LTL and beyond: Formal languages for reward function specification in reinforcement learning. In IJCAI , volume 19, pages 6065–6073, 2019. N. Chomsky. Three models for the description of language. IRE Transactions on Information Theory , 2(3):113–124, 1956. doi: 10.1109/TIT.1956.1056813. Giuseppe De Giacomo, Moshe Y Vardi, et al. Linear temporal logic and linear dynamic logic on finite traces. In IJCAI , volume 13, pages 854–860, 2013. Xu Chu Dennis Ding, Stephen L Smith, Calin Belta, and Daniela Rus. LTL control in uncertain environments with probabilistic satisfaction guarantees. IFAC Proceedings Volumes , 44(1):3515– 3520, 2011. Xuchu Ding, Stephen L. Smith, Calin Belta, and Daniela Rus. Optimal control of Markov decision processes with linear temporal logic constraints. IEEE Transactions on Automatic Control , 59 (5):1244–1257, 2014. doi: 10.1109/TAC.2014.2298143. Valeria Fionda and Gianluigi Greco. LTL on finite and process traces: Complexity results and a practical reasoner. Journal of Artificial Intelligence Research , 63:557–623, 2018. Jie Fu and Ufuk Topcu. Probably approximately correct MDP learning and control with temporal logic constraints. arXiv preprint arXiv:1404.7073 , 2014. Klaus Greff, Rupesh K. Srivastava, Jan Koutn´ ık, Bas R. Steunebrink, and J¨ urgen Schmidhuber. LSTM: A search space odyssey. IEEE Transactions on Neural Networks and Learning Systems ,28(10):2222–2232, 2017. doi: 10.1109/TNNLS.2016.2582924. Mohammadhosein Hasanbeig, Daniel Kroening, and Alessandro Abate. Deep reinforcement learn-ing with temporal logics. In International Conference on Formal Modeling and Analysis of Timed Systems , pages 1–22. Springer, 2020. Sepp Hochreiter and J¨ urgen Schmidhuber. Long short-term memory. Neural computation , 9(8): 1735–1780, 1997. John E Hopcroft, Rajeev Motwani, and Jeffrey D Ullman. Introduction to automata theory, lan-guages, and computation. ACM SIGACT News , 32(1):60–65, 2001. Sinan Ibrahim, Mostafa Mostafa, Ali Jnadi, Hadi Salloum, and Pavel Osinenko. Comprehensive overview of reward engineering and shaping in advancing reinforcement learning applications. 
+
+IEEE Access , 2024. Rodrigo Toro Icarte, Toryn Klassen, Richard Valenzano, and Sheila McIlraith. Using reward ma-chines for high-level task specification and decomposition in reinforcement learning. In Interna-tional Conference on Machine Learning , pages 2107–2116. PMLR, 2018.   
+
+> 19 BRINDISE LANGBORT ORNIK
+
+Rodrigo Toro Icarte, Toryn Q Klassen, Richard Valenzano, and Sheila A McIlraith. Reward ma-chines: Exploiting reward function structure in reinforcement learning. Journal of Artificial Intelligence Research , 73:173–208, 2022. Thirupathi Kandadi and G Shankarlingam. Drawbacks of LSTM algorithm: A case study. Available at SSRN 5080605 , 2025. Yiannis Kantaros. Accelerated reinforcement learning for temporal logic control objectives. In 2022 IEEE/RSJ International Conference on Intelligent Robots and Systems (IROS) , pages 5077–5082, 2022a. doi: 10.1109/IROS47612.2022.9981759. Yiannis Kantaros. Accelerated reinforcement learning for temporal logic control objectives. In 2022 IEEE/RSJ International Conference on Intelligent Robots and Systems (IROS) , pages 5077–5082. IEEE, 2022b. Jan Kretinsky, Tobias Meggendorfer, Maximilian Prokop, and Ashkan Zarkhah. SemML: Enhanc-ing automata-theoretic LTL synthesis with machine learning, 2025. URL https://arxiv. org/abs/2501.17496 .Minjae Kwon, Ingy ElSayed-Aly, and Lu Feng. Adaptive reward design for reinforcement learning, 2025. URL https://arxiv.org/abs/2412.10917 .Xuan Bach Le, Dominik Wagner, Leon Witzman, Alexander Rabinovich, and Luke Ong. Rein-forcement learning with LTL and omega-regular objectives via optimality-preserving translation to average rewards. Advances in Neural Information Processing Systems , 37:117109–117132, 2024. Xiao Li, Yao Ma, and Calin Belta. A policy search method for temporal logic specified reinforce-ment learning tasks. In 2018 Annual American Control Conference (ACC) , pages 240–245, 2018. doi: 10.23919/ACC.2018.8431181. Hsuan-Cheng Liao. A survey of reinforcement learning with temporal logic rewards. 2020. URL 
+
+https://mediatum.ub.tum.de/doc/1579215/document.pdf .Ruishan Liu and James Zou. The effects of memory replay in reinforcement learning. In 2018 56th annual Allerton Conference on Communication, Control, and Computing (Allerton) , pages 478–485. IEEE, 2018. Amir Pnueli. The temporal logic of programs. In 18th Annual Symposium on Foundations of Computer Science (SFCS 1977) , pages 46–57. IEEE, 1977. Zhizhou Ren, Ruihan Guo, Yuan Zhou, and Jian Peng. Learning long-term reward redistribution via randomized return decomposition. arXiv preprint arXiv:2111.13485 , 2021. Ameesh Shah, Cameron Voloshin, Chenxi Yang, Abhinav Verma, Swarat Chaudhuri, and Sanjit A. Seshia. LTL-constrained policy optimization with cycle experience replay, 2025. URL https: //arxiv.org/abs/2404.11578 .Yuting Tang, Xin-Qiang Cai, Jing-Cheng Pang, Qiyu Wu, Yao-Xiang Ding, and Masashi Sugiyama. Beyond simple sum of delayed rewards: Non-Markovian reward modeling for reinforcement learning, 2024. URL https://arxiv.org/abs/2410.20176 .  
+
+> 20 LIVE LTL P ROGRESS TRACKING
+
+Rodrigo Toro Icarte, Toryn Q Klassen, Richard Valenzano, and Sheila A McIlraith. Teaching mul-tiple tasks to an RL agent using LTL. In Proceedings of the 17th International Conference on Autonomous Agents and MultiAgent Systems , pages 452–461, 2018. Pashootan Vaezipoor, Andrew C Li, Rodrigo A Toro Icarte, and Sheila A. Mcilraith. LTL2action: Generalizing LTL instructions for multi-task RL. In Marina Meila and Tong Zhang, editors, 
+
+Proceedings of the 38th International Conference on Machine Learning , volume 139 of Pro-ceedings of Machine Learning Research , pages 10497–10508. PMLR, 7 2021. URL https: //proceedings.mlr.press/v139/vaezipoor21a.html .Chuanzheng Wang, Yinan Li, Stephen L Smith, and Jun Liu. Continuous motion planning with tem-poral logic specifications using deep neural networks. arXiv preprint arXiv:2004.02610 , 2020. Lim Zun Yuan, Mohammadhosein Hasanbeig, Alessandro Abate, and Daniel Kroening. Modular deep reinforcement learning with temporal logic specifications. arXiv preprint arXiv:1909.11591 ,2019. Xuejing Zheng, Chao Yu, and Minjie Zhang. Lifelong reinforcement learning with temporal logic formulas and reward machines. Knowledge-Based Systems , 257:109650, 2022. 
+
+Appendix A. Theorem 11 
+
+Theorem 11 : Consider an LTL formula φ and trace ρT0...t ′
+
+which updates incrementally ( t′ =
+
+T0, ..., T f ). For inputs at each update t′, the LPT algorithm always assigns valid tracking value vectors ξ by Definition 10 for all nodes of φ.
+
+We prove the theorem in several steps. First, we will briefly confirm that the proof does indeed instantiate tracking value vectors for all nodes at each update. By the algorithm description, all modules take the following inputs: • Initial and current times T0, t ′, respectively • Trace ρT0...t ′
+
+= ( LT0 , ..., L t′ )
+
+• Tracking value vectors ξx for each argument φx of φ
+
+Importantly, the LPT algorithm works up from child to parent nodes, processing all children of a parent before progressing to the parent. This means that tracking value vectors for the arguments of a formula will always be instantiated by the time the formula module is called, continuing to the full rule at the trunk of the tree. 
+
+A.1. Foundation: Proof by Induction 
+
+Critically for the proof, all ξ are initialized with ξ[t] = −1 for all t ∈ { T0, ..., T f }. By Definition 9, this corresponds to an initial value of (o), and the vector is trivially valid by Definition 10. Then, to prove that each module produces a valid tracking value vector for its own node, it is possible to use induction: if all ξ at t are initially valid by Definition 10, a module which provably updates ξ according to Definition 10 will also produce a valid ξ at t+1 . More specifically, the proof takes the following format:   
+
+> 21 BRINDISE LANGBORT ORNIK
+
+1. Show that ξ are initially valid tracking value vectors in line with Definition 10. 2. When performing an update at t′, assume that all ξt′−1 are valid tracking value vectors. 3. Prove that, given a valid ξt′−1, the algorithm generates a ξt′ which is valid. (1) is handled above. To complete (3), all updates to ξ must be examined. By the LPT algorithm, all updates take place either in the defined operator modules (Tables 2 and 3) or at the terminal update (equation (25) in the LPT Algorithm). The proofs by module below show that each modular update from t′ to t′ + 1 produces valid tracking value vectors. The terminal update is handled in Lemma 14. Once all updates are considered, it must follow that all ξ are valid tracking value vectors at all 
+
+t′, proving Theorem 11. 
+
+A.2. Select Definitions 
+
+We revisit several relevant definitions here, including relevant notes on the proof which follows. Concerning notation: in the evaluations of module compliance to Definition 8, • by Definition 9, an equivalence is made between numerical values 1, 0, −1 as assigned by a module and their corresponding tracking values (h),(v),(o). In other words, if conditions are proven to satisfy the property for a given tracking value, it is treated as sufficient to show that the module assigns the matching numerical value for the appropriate entry of ξ. This • Regarding notation, when an assignment is proven to satisfy Definition 8 conditions for a tracking value, it is denoted by the corresponding value in bold, e.g. (h) signifies that an assignment has been proven to meet the criterion for a time step to have value 1.Definition 8: Tracking value properties Consider an LTL formula φ on ρt...t ′
+
+with continuations ρt...t +
+
+. Then a value assignment of (h),(v), or (o) is valid if: 
+
+• true (h): ρt...t +
+
+|= φ for all t+ ≥ t′.
+
+• false (v): ρt...t +̸ |= φ for all t+ ≥ t′.
+
+• open (o): any of these conditions may or may not be met. Definition 9: Tracking value vector Consider φ and finite traces in discrete time ρT0... with final time Tf . Then a tracking value vector for any argument of φ can be expressed as 
+
+ξ = ( ξ[T0], ..., ξ [t′], ..., ξ [Tf ]) T (16) where t′ is a current update time with t′ ∈ { T0, ..., T f }. For all entries ξ[t],
+
+ξ[t] = 
+
+
+
+1 φ has value (h) on ρt...t ′
+
+0 φ has value (v) on ρt...t ′
+
+−1 otherwise (17) 
+
+> 22
+
+LIVE LTL P ROGRESS TRACKING 
+
+Now, for each module, Definition 5 is extended as necessary to identify the conditions for 
+
+ρt′... |= φ.Definition 5 and Extensions LTL formula φ is true on finite trace ρt0... = ( Lt0 , ..., L Tf ), denoted ρt0... |= φ, if T0 ≤ t0 ≤
+
+Tf and :
+
+• ρt0... |= α where α ∈ P iff α ∈ L0
+
+• ρt0... |= ¬φ iff ρt0... ̸ |= φ
+
+• ρt0... |= φ1 ∧ φ2 iff ρt0... |= φ1 and ρt0... |= φ2
+
+and for the temporal operators Next X and Until U,
+
+• ρt0... |= Xφ iff ρt0+1 ... |= φ and t0 < T f
+
+• ρt0... |= φ1Uφ2 iff ∃i ≥ t0 s.t. ρi... |= φ2 and ρk... |= φ1 for all k s.t. t0 ≤ k < i and 
+
+i ≤ Tf
+
+Extending definitions for the additional operators yields 
+
+• ρt0... |= φ1 ∨ φ2 iff ρt0... |= φ1 or ρt0... |= φ2
+
+• ρt0... |= φ1 → φ2 iff ρt0... ̸ |= φ1 or ρt0... |= φ2
+
+• ρt0... |= Fφ iff ∃i ≥ t0 s.t. ρi... |= φ for i ≤ Tf
+
+• ρt0... |= Gφ iff ρi... |= φ for all i where t0 ≤ i ≤ Tf
+
+• ρt0... |= φ1Wφ2 iff (∃i ≥ t0 s.t. ρi... |= φ2 and ρk... |= φ1 for all t0 ≤ k < i and 
+
+i ≤ Tf ) or (ρi... |= φ1 for all i where t0 ≤ i ≤ Tf )
+
+• ρt0... |= φ1Rφ2 iff for all i s.t. t0 ≤ i ≤ Tf , (ρi... |= φ2) ∨ (∃k < i s.t. ρk... |= φ1)
+
+• ρt0... |= φ1Mφ2 iff ∃i, t 0 ≤ i ≤ Tf s.t. (ρi... |= φ1) ∧ (ρi... |= φ2) ∧ (ρk... |= φ2 for all k s.t. t0 ≤ k < i )
+
+A.3. Lemmas and Properties of ξ
+
+All valid ξ can be shown to have specific additional properties as a consequence of Definition 8. An important result is given in Lemma 13. Finally, the terminal update step in the LPT algorithm is handled by Lemma 14. 
+
+Lemma 13 (Dynamics of ξ) Consider ξ which is a valid tracking value vector by Definition 10 at update t′. Denote all entries at t′ by ξ[t]t′ . Then, for entries ξ[t]t′′ at a later update, 
+
+(ξ[t]t′ = 1 valid ) ⇒ (ξ[t]t′′ = 1 valid ) (18) 
+
+(ξ[t]t′ = 0 valid ) ⇒ (ξ[t]t′′ = 0 valid ) (19) 
+
+for all t′′ > t ′.
+
+Proof Consider a valid tracking value vector ξ for some φ and update time t′. First suppose ξ[t] = 1 
+
+for some t, corresponding to (h). Then, by the conditions of Definition 8, 
+
+ρt...t +
+
+|= φ ∀t+ ≥ t′ (20) where ρt...t +
+
+is a continuation of ρt...t ′
+
+as in Definition 7. Now select any t′′ such that t′ < t ′′ ≤ t+. Clearly, if (20) is true, it must also be true that 
+
+ρt...t +
+
+|= φ ∀t+ ≥ t′′ . (21) 
+
+23 BRINDISE LANGBORT ORNIK 
+
+This is the required property of a valid assignment of (h) at t by Definition 8, making ξ[t]t′′ = 1 
+
+valid by Definition 10. Thus, 
+
+(ξ[t]t′ = 1 valid ) ⇒ (ξ[t]t′′ = 1 valid )
+
+for any t′′ > t ′.Now suppose ξ[t] = 0 for φ, t ′, corresponding to assignment (v). Then, by Definition 8, 
+
+ρt...t +̸ |= φ ∀t+ ≥ t′ (22) where ρt...t +
+
+is a continuation of ρt...t ′
+
+. Again, select any later update t′′ such that t′ < t ′′ ≤ t+.Then, given (22), it must also be true that 
+
+ρt...t +̸ |= φ ∀t+ ≥ t′′ . (23) This is the property of a valid assignment of (v) at t. Thus ξ[t]t′′ = 0 is a valid tracking value vector, and so 
+
+(ξ[t]t′ = 0 valid ) ⇒ (ξ[t]t′′ = 0 valid )
+
+for any t′′ > t ′, completing the proof. Lemma 13 yields a useful consequence for updates of ξ:Property of valid ξ
+
+Given any entry ξ[t] which is valid by Definition 10 at update t′, the entry remains valid at any later update t′′ > t ′ if no evaluation is performed. 
+
+Proof 
+
+Trivially by Definitions 10 and 8, any assignment ξ[t] = −1 is always valid (if unspecific). Thus, only entries with ξ[t] = 0 , 1 can be potentially be invalid and may require evaluation. The algorithm initializes all entries with ξ[t] = −1. As the algorithm never evaluates entries with t > t ′ given strictly increasing update time t′,
+
+ξ[t] = −1 ∀t > t ′.
+
+Thus, entries for ξ[t], t > t ′ are uniformly valid at t′ and do not require evaluation. Now, for all entries ξ[t] with t ≤ t′,• if ξ[t] = 0 at the time of a previous update t−, i.e. ξ[t]t− = 0 with t− < t ′, then ξ[t]t′ must remain 0 by Lemma 13. Thus, no new evaluation is required for such ξ[t] at any update t′.• if ξ[t] = 1 , the same principle applies. • if ξ[t] = −1, the entry is valid trivially. Therefore, any entry ξ[t] which is a valid tracking value at update t′ remains valid at any later update t′′ > t ′ if no evaluation is performed. 
+
+24 LIVE LTL P ROGRESS TRACKING 
+
+Lemma 14 (Terminal Update Tf ) Consider ξ which is valid by Definition 10 at final update Tf .Denote entries of any ξTf by ξ[t]Tf . Then, if the following terminal update is performed for each tree node φ:
+
+ξ[t] = 
+
+(
+
+1 ρt...T f |= φ
+
+0 ρt...T f̸ |= φ, (24) 
+
+the resulting ξTf is a valid tracking value vector. 
+
+Proof 
+
+Beginning with the assignment ξ[t]Tf = 1 : by Definition 8, φ has the property associated with (h) at update t′ = Tf if, for all t+ ≥ Tf ,
+
+ρt...t +
+
+|= φ. 
+
+As Tf is the terminal time, the only such t+ is Tf itself. Therefore, if ρt...T f |= φ, then ξ[t]Tf =1 meets the criterion for valid ξ.Next, for the assignment ξ[t]Tf = 0 : by Definiton 8, φ has the property associated with (v) at update t′ = Tf if, for all t+ ≥ Tf ,
+
+ρt...t +̸ |= φ. 
+
+By the same logic as (h), this is equivalent to the condition ρt...T f̸ |= φ at update Tf . Therefore, 
+
+ξ[t]Tf = 0 meets the criterion for valid ξ in this case. 
+
+25 BRINDISE LANGBORT ORNIK 
+
+Appendix B. Logical modules 
+
+This section proves that, given update t′ and valid tracking value vectors for each child node of some φ, the logical modules assign a valid tracking value vector for φ at t′.
+
+B.1. Atomic proposition Atomic (AP ) LTL: φ = α
+
+Initialize: Load ξ for φ.If α ∈ Lt′ : Set ξ[t′] = 1 .Else: Set ξ[t′] = 0 .Table 4: Atomic proposition module definition. Definition 5: Formula Evaluation on Finite Traces (AP) LTL formula φ is true on finite trace ρt0... = ( Lt0 , ..., L Tf ), denoted ρt0... |= φ, if T0 ≤ t0 ≤
+
+Tf and :
+
+ρt0... |= α where α ∈ P iff α ∈ L0 (∗)
+
+Proof: AP Module 
+
+Module updates step-by-step: 
+
+(Initialize: Load ξ for φ and ξ1 for child node φ1.) 
+
+If α ∈ Lt′ : Set ξ[t′] = 1 .• By (∗), α ∈ Lt′ implies that ρt′...t +
+
+|= φ for all t+ ≥ t′. (h) (ξt′ [t′] = 1 )
+
+Else : Set ξ[t′] = 0 .• By (∗), α̸ ∈ Lt′ implies that ρt′...t +̸ |= φ for all t+ ≥ t′. (v) (ξt′ [t′] = 0 )
+
+26 LIVE LTL P ROGRESS TRACKING 
+
+B.2. Not Not (neg ) LTL: φ = ¬φ1
+
+Initialize: Load ξ for φ and ξ1 for child node φ1.For t = T0, ..., t ′: If ξ1[t] = 0 : Set ξ[t] = 1 .Else if ξ1[t] = 1 : Set ξ[t] = 0 .Table 5: Not module definition. Definition 5: Formula Evaluation on Finite Traces (neg) LTL formula φ is true on finite trace ρt0... = ( Lt0 , ..., L Tf ), denoted ρt0... |= φ, if T0 ≤ t0 ≤
+
+Tf and :
+
+ρt0... |= ¬φ iff ρt0... ̸ |= φ (∗)
+
+Proof: Not Module 
+
+Module updates step-by-step: 
+
+(Initialize: Load ξ for φ and ξ1 for child node φ1.) 
+
+For t = T0, ..., t ′:
+
+If ξ1[t] = 0 : Set ξ[t] = 1 .• By the loop from T0, ..., t ′, t always satisfies t ≤ t′ for current update time t′.• ξ1[t] = 0 at t′ means that ρt...t +̸ |= φ1 for all t+ ≥ t′.• By (∗), this is equivalent to ρt...t +
+
+|= φ for all t+ ≥ t′. (h) (ξt′ [t])
+
+Else if ξ1[t] = 1 : Set ξ[t] = 0 .• ξ1[t] = 1 at t′ means that ρt...t +
+
+|= φx for all t+ ≥ t′.• Then by (∗), ρt...t +̸ |= φ for all t+ ≥ t′. (v) (ξt′ [t])
+
+27 BRINDISE LANGBORT ORNIK 
+
+B.3. And And (and ) LTL: φ = φ1 ∧ φ2
+
+Initialize: Load ξ for φ and ξ1, ξ2 for child nodes φ1, φ 2.For t = T0, ..., t ′: If ξ1[t] = 1 and ξ2[t] = 1 : Set ξ[t] = 1 .Else if ξ1[t] = 0 or ξ2[t] = 0 : Set ξ[t] = 0 .Table 6: And module definition. Definition 5: Formula Evaluation on Finite Traces (and) LTL formula φ is true on finite trace ρt0... = ( Lt0 , ..., L Tf ), denoted ρt0... |= φ, if T0 ≤ t0 ≤
+
+Tf and :
+
+ρt0... |= φ1 ∧ φ2 iff ρt0... |= φ1 and ρt0... |= φ2 (∗)
+
+Proof: And Module 
+
+Module updates step-by-step: 
+
+(Initialize: Load ξ for φ and ξ1, ξ2 for child nodes φ1, φ 2.) 
+
+For t = T0, ..., t ′:
+
+If ξ1[t] = 1 and ξ2[t] = 1 : Set ξ[t] = 1 .• By the loop from T0, ..., t ′, t always satisfies t ≤ t′ for current update time t′.• ξ1[t], ξ 2[t] = 1 at current update time t′ means that ρt...t +
+
+|= φx, ∀x ∈ { 1, 2} for all t+ ≥ t′.• By (∗), φ1 ∧ φ2 is true whenever ρt...t +
+
+|= φx ∀x ∈ { 1, 2}.• Since this is true for all t+ ≥ t′, ρt...t +
+
+|= φ for all t+ ≥ t′. (h) (ξt′ [t])
+
+Else if ξ1[t] = 0 or ξ2[t] = 0 : Set ξ[t] = 0 .• ξx[t] = 0 at update t′ means that ρt...t +̸ |= φx, x ∈ { 1, 2} for all t+ ≥ t′.• By (∗), φ1 ∧ φ2 is not true whenever ρt...t +̸ |= φx for some x ∈ { 1, 2}.• Since this is the case for all t+ ≥ t′, ρt...t +̸ |= φ for all t+ ≥ t′. (v) (ξt′ [t])
+
+28 LIVE LTL P ROGRESS TRACKING 
+
+B.4. Or Or (or ) LTL: φ = φ1 ∨ φ2
+
+Initialize: Load ξ for φ and ξ1, ξ2 for child nodes φ1, φ 2.For t = T0, ..., t ′: If ξ1[t] = 1 or ξ2[t] = 1 : Set ξ[t] = 1 .Else if ξ1[t] = 0 and ξ2[t] = 0 : Set ξ[t] = 0 .Table 7: Or module definition. Definition 5: Formula Evaluation on Finite Traces (or) LTL formula φ is true on finite trace ρt0... = ( Lt0 , ..., L Tf ), denoted ρt0... |= φ, if T0 ≤ t0 ≤
+
+Tf and :
+
+ρt0... |= φ1 ∨ φ2 where ρt0... |= ¬(¬φ1 ∧ ¬ φ2).
+
+• The requirement ρt0... |= ¬φ1 ∧ ¬ φ2 is equivalent to requiring ρt0... ̸ |= φ1 and ρt0... ̸ |=
+
+φ2 (by def. of ∧ and ¬). This condition, (ρt0... ̸ |= φ1 and ρt0... ̸ |= φ2) is false when 
+
+(ρt0... |= φ1) or (ρt0... |= φ2) is true. The final condition is thus 
+
+ρt0... |= φ1 ∨ φ2 iff ρt0... |= φ1 or ρt0... |= φ2 (∗)
+
+Proof: Or Module 
+
+Module updates step-by-step: 
+
+(Initialize: Load ξ for φ and ξ1, ξ2 for child nodes φ1, φ 2.) 
+
+For t = T0, ..., t ′:
+
+If ξ1[t] = 1 or ξ2[t] = 1 : Set ξ[t] = 1 .• By the loop from T0, ..., t ′, t always satisfies t ≤ t′ for current update time t′.• ξ1[t] = 1 or ξ2[t] = 1 at current update time t′ means that ρt...t +
+
+|= φx for some x ∈ { 1, 2} for all 
+
+t+ ≥ t′.• By (∗), φ1 ∨ φ2 is true whenever ρt...t +
+
+|= φx for some x ∈ { 1, 2}.• Since this is true for all t+ ≥ t′, ρt...t +
+
+|= φ for all t+ ≥ t′. (h) (ξt′ [t])
+
+Else if ξ1[t] = 0 and ξ2[t] = 0 : Set ξ[t] = 0 .• ξ1[t], ξ 2[t] = 0 at update t′ means that ρt...t +̸ |= φx, ∀x ∈ { 1, 2} for all t+ ≥ t′.• By (∗), φ1 ∨ φ2 is not true whenever ρt...t +̸ |= φx ∀x ∈ { 1, 2}.• Since this is the case for all t+ ≥ t′, ρt...t +̸ |= φ for all t+ ≥ t′. (v) (ξt′ [t])
+
+29 BRINDISE LANGBORT ORNIK 
+
+B.5. Implication Implication (→) LTL: φ = φ1 → φ2
+
+Initialize: Load ξ for φ and ξ1, ξ2 for child nodes φ1, φ 2.For t = T0, ..., t ′: If ξ1[t] = 0 or ξ2[t] = 1 : Set ξ[t] = 1 .Else if ξ1[t] = 1 and ξ2[t] = 0 : Set ξ[t] = 0 .Table 8: Implication module definition. Definition 5: Formula Evaluation on Finite Traces ( →)LTL formula φ is true on finite trace ρt0... = ( Lt0 , ..., L Tf ), denoted ρt0... |= φ, if T0 ≤ t0 ≤
+
+Tf and :
+
+ρt0... |= φ1 → φ2 where ρt0... |= ¬φ1 ∨ φ2
+
+• We see that ρt0... |= ¬φ1 ∨ φ2 when ρt0... |= ¬φ1 or ρt0... |= φ2 (by def. of ∨). Thus, 
+
+ρt0... |= φ1 → φ2 iff ρt0... ̸ |= φ1 or ρt0... |= φ2 (∗)
+
+30 LIVE LTL P ROGRESS TRACKING 
+
+Proof: Implication Module 
+
+Module updates step-by-step: 
+
+(Initialize: Load ξ for φ and ξ1, ξ2 for child nodes φ1, φ 2.) 
+
+For t = T0, ..., t ′:
+
+If ξ1[t] = 0 or ξ2[t] = 1 : Set ξ[t] = 1 .• By the loop from T0, ..., t ′, t always satisfies t ≤ t′ for current update time t′.• ξ1[t] = 0 at current update time t′ means that ρt...t +̸ |= φ1 for all t+ ≥ t′. By (∗), this is a sufficient condition for ρt...t +
+
+|= φ.• Since this is the case for all t+ ≥ t′, ρt...t +
+
+|= φ for all t+ ≥ t′. (h) (ξt′ [t])• ξ2[t] = 1 at t′ means that ρt...t +
+
+|= φ2 for all t+ ≥ t′. By (∗), this is another sufficient condition for ρt...t +
+
+|= φ.• Since this is the case for all t+ ≥ t′, ρt...t +
+
+|= φ for all t+ ≥ t′. (h) (ξt′ [t])
+
+Else if ξ1[t] = 1 and ξ2[t] = 0 : Set ξ[t] = 0 .• ξ1[t] = 1 at current update time t′ means that ρt...t +
+
+|= φ1 for all t+ ≥ t′.• ξ2[t] = 0 at t′ means that ρt...t +̸ |= φ2 for all t+ ≥ t′.• By (∗), this means that ρt...t +̸ |= φ for all t+ ≥ t′. (v) (ξt′ [t])
+
+31 BRINDISE LANGBORT ORNIK 
+
+Appendix C. Temporal modules 
+
+Likewise, this section proves that, given update t′ and valid tracking value vectors for each child node of some φ, the temporal modules assign a valid tracking value vector for φ at t′.
+
+C.1. Next Next (X) LTL: φ = Xφ1
+
+Initialize: Load ξ for φ and ξ1 for child node φ1.For t = T0, ..., t ′: If ξ1[t] = 1 , t > T 0: Set ξ[t − 1] = 1 .Else if ξ1[t] = 0 , t > T 0 or t′ = Tf : Set ξ[t − 1] = 0 .Table 9: Next module definition. Definition 5: Formula Evaluation on Finite Traces (X) LTL formula φ is true on finite trace ρt0... = ( Lt0 , ..., L Tf ), denoted ρt0... |= φ, if T0 ≤ t0 ≤
+
+Tf and :
+
+ρt0... |= Xφ iff ρt0+1 ... |= φ and t0 < T f (∗)
+
+Proof: Next Module 
+
+Module updates step-by-step: 
+
+(Initialize: Load ξ for φ and ξ1 for child node φ1.) 
+
+For t = T0, ..., t ′:
+
+If ξ1[t] = 1 , t > T 0: Set ξ[t − 1] = 1 .• By the loop from T0, ..., t ′, t always satisfies t ≤ t′ for current update time t′.• ξ1[t] = 1 at t′ means that ρt...t +
+
+|= φ1 for all t+ ≥ t′.• Taking t0 = t − 1, this is equivalent to ρt−1...t +
+
+|= φ by (∗) for all t+ ≥ t′. (h) (ξt′ [t − 1] )
+
+Else if ξ1[t] = 0 , t > T 0 or t′ = Tf : Set ξ[t − 1] = 0 .• ξ1[t] = 0 at t′ means that ρt...t +̸ |= φ1 for all t+ ≥ t′.• Then by (∗), ρt−1...t +̸ |= φ for all t+ ≥ t′. (v) (ξt′ [t])
+
+32 LIVE LTL P ROGRESS TRACKING 
+
+C.2. Eventual Eventual (F ) LTL: φ = Fφ1
+
+Initialize: Load ξ for φ and ξ1 for child node φ1.For t = T0, ..., t ′: If ξ1[t] = 1 : For all t0 s.t. T0 ≤ t0 ≤ t: set ξ[t0] = 1 .Table 10: Eventual module definition. Definition 5: Formula Evaluation on Finite Traces (F) LTL formula φ is true on finite trace ρt0... = ( Lt0 , ..., L Tf ), denoted ρt0... |= φ, if T0 ≤ t0 ≤
+
+Tf and :
+
+ρt0... |= Fφ where ρt0... |= true Uφ
+
+• By definition, ρt0... |= true Uφ2 iff ∃i ≥ t0 s.t. ρi... |= φ2 and ρk... |= true for all t0 ≤ k < i and i ≤ Tf . Clearly ρk... |= true trivially, and thus 
+
+ρt0... |= Fφ iff ∃i ≥ t0 s.t. ρi... |= φ for i ≤ Tf (∗)
+
+Proof: Eventual Module 
+
+Module updates step-by-step: 
+
+(Initialize: Load ξ for φ and ξ1 for child node φ1.) 
+
+For t = T0, ..., t ′:
+
+If ξ1[t] = 1 : For all t0 s.t. T0 ≤ t0 ≤ t: set ξ[t0] = 1 .• By the outer loop with t = T0, ..., t ′, t always satisfies t ≤ t′ for current update time t′.• ξ1[t] = 1 at t′ means that ρt...t +
+
+|= φ1 for all t+ ≥ t′.• Taking i = t and t0 ≤ t, (∗) gives that ρt0...t +
+
+|= φ for all t+ ≥ t′. (h) (ξt′ [t0])
+
+33 BRINDISE LANGBORT ORNIK 
+
+C.3. Global Global (G) LTL: φ = Gφ1
+
+Initialize: Load ξ for φ and ξ1 for child node φ1. Set t = t′.While t ≥ T0: If ξ1[t] = 0 : For all t0 s.t. T0 ≤ t0 ≤ t: set ξ[t0] = 0 . Set t = T0 − 1.Else: set t = t − 1.Table 11: Global module definition. Definition 5: Formula Evaluation on Finite Traces (G) LTL formula φ is true on finite trace ρt0... = ( Lt0 , ..., L Tf ), denoted ρt0... |= φ, if T0 ≤ t0 ≤
+
+Tf and :
+
+ρt0... |= Gφ where ρt0... |= ¬F¬φ
+
+• We have that ρt0... |= ¬Fψ iff ̸ ∃i ≥ t0 s.t. ρi... |= φ for i ≤ Tf . If this is true, it must be true that ρi... ̸ |= ψ for all i where t0 ≤ i ≤ Tf . Equivalently, ρi... |= ¬ψ for all 
+
+t0 ≤ i ≤ Tf .• Taking ψ = ¬φ, ρt0... |= Gφ iff ρi... |= φ for all i where t0 ≤ i ≤ Tf (∗)
+
+Proof: Global Module 
+
+Module updates step-by-step: 
+
+(Initialize: Load ξ for φ and ξ1 for child node φ1.) 
+
+While t ≥ T0:
+
+If ξ1[t] = 0 : For all t0 s.t. T0 ≤ t0 ≤ t: set ξ[t0] = 0 . Set t = T0 − 1.• By the outer loop, t begins at t = t′.• ξ1[t] = 0 at t′ means that ρt...t +̸ |= φ1 for all t+ ≥ t′.• Take i = t. Then (∗) gives that ρt...t +̸ |= φ for all t+ ≥ t′. (v) (ξt′ [t] = 0 )• Moreover, the same selection of i = t satisfies t0 ≤ i for all t0 in {T0, ..., t }. Therefore, from (∗),
+
+ρt0...t +̸ |= φ for all t+ ≥ t′ (v) for every ξt′ [t0] as well. 
+
+Else: set t = t − 1.• (No assignment of ξ is made here) 
+
+34 LIVE LTL P ROGRESS TRACKING 
+
+C.4. Until  
+
+> 33
+
+Initialize: Load ξ for φ and ξ1, ξ2 for child nodes φ1, φ 2. 
+
+> 34
+
+Set t0, t = T0. 
+
+> 35
+
+while t ≤ t′ do  
+
+> 36
+
+if ξ1[t] = 0 and ξ2[t] = 0 then  
+
+> 37
+
+Set ξ[t] = 0  
+
+> 38
+
+Set t = t + 1  
+
+> 39
+
+Set t0 = t 
+
+> 40
+
+else if ξ2[t] = 1 then  
+
+> 41
+
+Set ξ[t0], ..., ξ [t] = 1  
+
+> 42
+
+Set t = t + 1  
+
+> 43
+
+Set t0 = t 
+
+> 44
+
+else if ξ1[t] = 0 or ξ1[t] = −1 then  
+
+> 45
+
+Set t = t + 1  
+
+> 46
+
+Set t0 = t 
+
+> 47
+
+else  
+
+> 48
+
+Set t = t + 1 
+
+end Algorithm 3: Until Module for LPT. Definition 5: Formula Evaluation on Finite Traces (U) LTL formula φ is true on finite trace ρt0... = ( Lt0 , ..., L Tf ), denoted ρt0... |= φ, if T0 ≤ t0 ≤
+
+Tf and :
+
+ρt0... |= φ1Uφ2 iff ∃i ≥ t0 s.t. ρi... |= φ2 and ρk... |= φ1 for all k s.t. t0 ≤ k < i and 
+
+i ≤ Tf (∗)
+
+35 BRINDISE LANGBORT ORNIK 
+
+Proof: Until Module 
+
+Module updates step-by-step: 
+
+(Initialize: Load ξ for φ and ξ1, ξ2 for child nodes φ1, φ 2. Set t0, t = T0.) 
+
+While t ≤ t′:
+
+If ξ1[t] = 0 and ξ2[t] = 0 : Set ξ[t] = 0 . Set t = t + 1 . Set t0 = t. (Lines 36-39) • Consider (∗), taking k = t. Then ξ1[k] = 0 at t′ means that ρk...t +̸ |= φ1 for all t+ ≥ t′.• For any i at which ρi...t +
+
+|= φ2, it is thus clearly not true that ρk...t +
+
+|= φ1 for all t0 ≤ k < i for any choice of t0 ≤ k (v) .
+
+Else if ξ2[t] = 1 : Set ξ[t0], ..., ξ [t] = 1 . Set t = t + 1 . Set t0 = t. (Lines 40-43) • Consider (∗) again, taking i = t. Since ξ2[i] = 1 at t′ means that ρi...t +
+
+|= φ2 for all t+ ≥ t′, the first condition of (∗) is met. • The remaining condition requires that ρk...t +
+
+|= φ1 for all t0 ≤ k < i .• Suppose this is uncertain for some k. Then ξ1[k]̸ = 1 . However, by the module, whenever 
+
+ξ1[k]̸ = 1 , t0 is set so that t0 = t.• As t is strictly increasing, this means either t0 = t or ξ1[k] = 1 ∀k s.t. t0 ≤ k < i . Thus, the conditions of (∗) are indeed met, and the assignment ξ[k] = 1 must be correct for all k in 
+
+{t0, ..., t }. (h) Else if ξ1[t] = 0 or ξ1[t] = −1: Set t = t + 1 . Set t0 = t (Lines 44-46) • (No assignment of ξ is made here) 
+
+Else: Set t = t + 1 . (Lines 47-48) • (No assignment of ξ is made here) 
+
+36 LIVE LTL P ROGRESS TRACKING 
+
+C.5. Weak until 
+
+Definition 5: Formula Evaluation on Finite Traces (W) 
+
+LTL formula φ is true on finite trace ρt0... = ( Lt0 , ..., L Tf ), denoted ρt0... |= φ, if T0 ≤ t0 ≤
+
+Tf and :
+
+ρt0... |= φ1Wφ2 where ρt0... |= ( φ1Uφ2) ∨ Gφ1
+
+• We have that ρt0... |= ( φ1Uφ2) ∨ Gφ1 if ρt0... |= Gφ1 or ρt0... |= φ1Uφ2. The latter condition is true iff ∃i ≥ t0 s.t. ρi... |= φ2 and ρk... |= φ1 for all t0 ≤ k < i and 
+
+i ≤ Tf (by def. of U). Thus, 
+
+ρt0... |= φ1Wφ2 iff (∃i ≥ t0 s.t. ρi... |= φ2 and ρk... |= φ1 for all t0 ≤ k < i and 
+
+i ≤ Tf ) ( ∗) or (ρi... |= Gφ1 for all i where t0 ≤ i ≤ Tf ) ( ∗∗ )
+
+Proof The proof for the Weak Until module is identical to that for the Until module above. This is a consequence of the fact that the condition (∗) above is the same as that for Until. The two operators are distinct only in their handling of the terminal time step Tf of ρt0...T f ; in particular, for Weak Until, 
+
+(ρt0...T f |= Gφ1) ⇒ (ρt0...T f |= φ)
+
+which means that ρTf ...T f |= φ2 is not necessary for satisfaction. This is different from Until, for which (∗) is the only satisfying condition. The difference in requirement is handled by the terminal update step of the LPT algorithm, reproduced here: 
+
+If t′ = Tf , perform terminal evaluation for all tree nodes ϕ of φ. For all t ∈ { T0, ..., T f }, if 
+
+ξ[t] = −1, set 
+
+ξ[t] = 
+
+(
+
+1 ρt...T f |= ϕ
+
+0 ρt...T f̸ |= ϕ (25) By this update, any ξ[t] = −1 are assigned appropriate truth values by the definition for ϕ on the complete trace; this is trivially possible, since the entire trace is known at t′ = Tf , and equates to traditional LTL evaluation. This update will affect the only difference in evaluation of ξ between 
+
+W and U. If ρt...T f does not meet the stricter requirement, this last update sets ξ[t] = 0 for U, but 
+
+ξ[t] = 1 for W.
+
+37 BRINDISE LANGBORT ORNIK 
+
+C.6. Strong release  
+
+> 49
+
+Initialize: Load ξ for φ and ξ1, ξ2 for child nodes φ1, φ 2. 
+
+> 50
+
+Set t0, t = T0. 
+
+> 51
+
+while t ≤ t′ do  
+
+> 52
+
+if ξ[t] = 0 then  
+
+> 53
+
+Set ξ[t] = 0  
+
+> 54
+
+Set t = t + 1  
+
+> 55
+
+Set t0 = t 
+
+> 56
+
+else if ξ1[t] = 1 and ξ2[t] = 1 then  
+
+> 57
+
+Set ξ[t0], ..., ξ [t] = 1  
+
+> 58
+
+Set t = t + 1  
+
+> 59
+
+Set t0 = t 
+
+> 60
+
+else if ξ2[t] = −1 then  
+
+> 61
+
+Set t = t + 1  
+
+> 62
+
+Set t0 = t 
+
+> 63
+
+else  
+
+> 64
+
+Set t = t + 1 
+
+end Algorithm 4: Release/Strong Release Module for LPT. Definition 5: Formula Evaluation on Finite Traces (M) LTL formula φ is true on finite trace ρt0... = ( Lt0 , ..., L Tf ), denoted ρt0... |= φ, if T0 ≤ t0 ≤
+
+Tf and :
+
+ρt0... |= φ1Mφ2 where ρt0... |= φ2U(φ1 ∧ φ2)
+
+• We have that ρt0... |= φ2U(φ1 ∧ φ2) iff ∃i, t 0 ≤ i ≤ Tf s.t. ρi... |= ( φ1 ∧ φ2) and 
+
+ρk... |= φ2 for all k s.t. t0 ≤ k < i ) (by def. of U). We can rewrite this: 
+
+ρt0... |= φ1Mφ2 iff ∃i, t 0 ≤ i ≤ Tf s.t. (ρi... |= φ1) ∧ (ρk... |= φ2 for all k s.t. 
+
+t0 ≤ k ≤ i) ( ∗)
+
+38 LIVE LTL P ROGRESS TRACKING 
+
+Proof: Strong Release Module 
+
+Module updates step-by-step: 
+
+(Initialize: Load ξ for φ and ξ1, ξ2 for child nodes φ1, φ 2. Set t0, t = T0.) 
+
+While t ≤ t′:
+
+If ξ2[t] = 0 : Set ξ[t] = 0 . Set t = t + 1 . Set t0 = t. (Lines 52-55) • Consider (∗), taking i = t. Then ξ2[i] = 0 at t′ means that ρi...t +̸ |= φ1 for all t+ ≥ t′.• This violates the second condition of (∗), which requires that ρi...t +̸ |= φ1 ∀k, t 0 ≤ k ≤ i (where 
+
+t0 is an arbitrary value t0 ≤ k). (v) Else if ξ1[t] = 1 and ξ2[t] = 1 : Set ξ[t0], ..., ξ [t] = 1 . Set t = t + 1 . Set t0 = t. (Lines 56-59) • Consider (∗) again, taking i = t. Since ξ1[i] = 1 at t′ means that ρi...t +
+
+|= φ1 for all t+ ≥ t′, one condition of (∗) is met for that i.• The remaining condition requires that ρk...t +
+
+|= φ2 for all t0 ≤ k ≤ i.• Suppose this is uncertain for some k. Then ξ2[k]̸ = 1 . However, by the module, whenever 
+
+ξ1[k]̸ = 1 , t0 is set so that t0 = t.• As t is strictly increasing, this means either t0 = t or ξ2[k] = 1 ∀k s.t. t0 ≤ k ≤ i. Thus, the second condition of (∗) is indeed met, and the assignment ξ[k] = 1 must be correct for all k in 
+
+{t0, ..., t }. (h) Else if ξ2[t] = −1: Set t = t + 1 . Set t0 = t (Lines 60-62) • (No assignment of ξ is made here) 
+
+Else: Set t = t + 1 . (Lines 63-64) • (No assignment of ξ is made here) 
+
+39 BRINDISE LANGBORT ORNIK 
+
+C.7. Release 
+
+Definition 5: Formula Evaluation on Finite Traces (R) 
+
+LTL formula φ is true on finite trace ρt0... = ( Lt0 , ..., L Tf ), denoted ρt0... |= φ, if T0 ≤ t0 ≤
+
+Tf and :
+
+ρt0... |= φ1Rφ2 where ρt0... |= ¬(¬φ1U¬φ2)
+
+• Consider ¬(ψ1Uψ2). This is true on ρt0... iff ¬(∃i ≥ t0 s.t. ρi... |= ψ2 and ρk... |= ψ1
+
+for all k s.t. t0 ≤ k < i ) (by def. of U) and i ≤ Tf . The former is equivalent to requiring ̸ ∃i ≥ t0 s.t. ( ρi... |= ψ2 and ρk... |= ψ1 for all i, k where t0 ≤ k < i ). • This means that for all i with ρi... |= ψ2 (if such i exist), there exists some k with t0 ≤
+
+k < i such that ρk... ̸ |= ψ1. More formally, ¬(ψ1Uψ2) iff for all i s.t. t0 ≤ i ≤ Tf ,
+
+¬(ρi... |= ψ2) ∨ (∃k < i s.t. ρk... ̸ |= ψ1).• Substitute ψ1 := ¬φ1 and ψ2 := ¬φ2. Then ρt0... |= ¬(¬φ1U¬φ2) iff for all i s.t. 
+
+t0 ≤ i ≤ Tf , ¬(ρi... ̸ |= φ2) ∨ (∃k < i s.t. ρk... |= φ1), which yields 
+
+ρt0... |= φ1Rφ2 iff for all i s.t. t0 ≤ i ≤ Tf , (ρi... |= φ2) ( ∗) or (∃k < i s.t. ρk... |= φ1)(∗∗ )
+
+Proof The proof for the Release module is identical to that for the Strong Release module above. The difference in conditions between these two operators is expressed in condition (∗) above; Re-lease allows 
+
+(ρi...T f |= φ2 ∀i, t 0 ≤ i ≤ Tf ) ⇒ (ρt0...T f |= φ).
+
+For Strong Release, there is a stricter requirement: 
+
+ρi... |= φ1
+
+for some i such that t0 ≤ i. Once again, the difference in requirement is handled by the terminal update step of the LPT algorithm. This update will assign any ξ[t0] = −1 where ρt0...T f does not meet the stricter requirement to (v) for M, but (h) for R.
+
+40

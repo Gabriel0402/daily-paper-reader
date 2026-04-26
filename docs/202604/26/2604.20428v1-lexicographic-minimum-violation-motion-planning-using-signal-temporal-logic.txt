@@ -1,0 +1,1903 @@
+Title: Lexicographic Minimum-Violation Motion Planning using Signal Temporal Logic
+
+URL Source: https://arxiv.org/pdf/2604.20428v1
+
+Published Time: Thu, 23 Apr 2026 00:53:28 GMT
+
+Number of Pages: 20
+
+Markdown Content:
+> Received XX Month, XXXX; revised XX Month, XXXX; accepted XX Month, XXXX; Date of publication XX Month, XXXX; date of current version XX Month, XXXX.
+> Digital Object Identifier 10.1109/OJITS.2026.1234567
+
+# Lexicographic Minimum-Violation Motion Planning using Signal Temporal Logic 
+
+PATRICK HALDER 1,2 , LOTHAR KILTZ 2, HANNES HOMBURGER 3, JOHANNES REUTER 3,AND MATTHIAS ALTHOFF 1   
+
+> 1School of Computation, Information and Technology, Technical University of Munich, 85748 Garching, Germany
+> 2ZF Friedrichshafen AG, 88046 Friedrichshafen, Germany
+> 3Institute of System Dynamics, HTWG Konstanz, 78562 Konstanz, Germany CORRESPONDING AUTHOR: P. HALDER (e-mail: patrick.halder@tum.de)
+
+ABSTRACT Motion planning for autonomous vehicles often requires satisfying multiple conditionally conflicting specifications. In situations where not all specifications can be met simultaneously, minimum-violation motion planning maintains system operation by minimizing violations of specifications in accordance with their priorities. Signal temporal logic (STL) provides a formal language for rigorously defining these specifications and enables the quantitative evaluation of their violations. However, a total ordering of specifications yields a lexicographic optimization problem, which is typically computationally expensive to solve using standard methods. We address this problem by transforming the multi-objective lexicographic optimization problem into a single-objective scalar optimization problem using non-uniform quantization and bit-shifting. Specifically, we extend a deterministic model predictive path integral (MPPI) solver to efficiently solve optimization problems without quadratic input cost. Additionally, a novel predicate-robustness measure that combines spatial and temporal violations is introduced. Our results show that the proposed method offers an interpretable and scalable solution for lexicographic STL minimum-violation motion planning within a single-objective solver framework. 
+
+INDEX TERMS Autonomous vehicles, motion planning, formal methods in robotics and automation, intelligent transportation systems, minimum-violation motion planning, multi-objective optimization. 
+
+I. Introduction 
+
+# MOTION planning for autonomous vehicles requires satisfying numerous specifications, such as collision avoidance, traffic rules, and schedules [1], [2]. In complex environments, these specifications are often in conflict and cannot be satisfied simultaneously. To resolve such situations systematically, specifications can be prioritized, enabling a deliberate selection of a minimum-violation maneuver. Fig. 1 provides an illustrative example: complying with the lane boundaries prevents the ego vehicle from passing the broken-down vehicle, creating a conflict between making progress and adherence to the in-lane-driving specification. In this work, we present a novel minimum-violation motion planner utilizing totally ordered signal temporal logic (STL) specifications. By transforming the underlying multi-objective lexicographic optimization problem into a single-objective scalar optimization problem using non-uniform quantization and bit-shifting, we enable the application of standard single-objective solvers. Specifically, we extend the deterministic model predictive path integral (MPPI) solver from our previous work [3] by eliminating the quadratic input cost and dynamically adapting the number of used samples. The resulting framework is highly flexible and supports various STL robustness definitions without restricting STL fragments or predicates. Furthermore, we introduce a new robustness measure that jointly quantifies spatial and temporal violations. 
+
+yb
+
+ye
+
+yc
+
+ya
+
+yd
+
+Ego vehicle Broken-down vehicle 
+
+1. Do not collide 
+
+2. Make progress 
+
+3. Drive in lane 
+
+FIGURE 1: An overtaking scenario involving a broken-down vehicle and five example trajectories: ya, yb, yc, yd, and ye. According to the specification prioritization (the top specification has the highest priority; the bottom specification has the lowest), yd is the worst because it violates the collision avoidance specification. Trajectory yc is collision-free and makes the most progress but fails to eventually return to the lane. Trajectories ya and yb
+
+make similar progress to yc, but ya also fails to eventually return to the lane, making yb the best trajectory.   
+
+> This work has been submitted to the IEEE for possible publication. Copyright may be transferred without notice, after which this version may no longer be accessible. VOLUME XX, 2026 1
+> arXiv:2604.20428v1 [cs.RO] 22 Apr 2026 Halder et al. : Lexicographic Minimum-Violation Motion Planning using Signal Temporal Logic
+> A. Related Work
+
+We subsequently review related work on motion planning subject to STL specifications, prioritized motion planning, and minimum-violation motion planning. 
+
+> 1) Motion Planning subject to STL specifications
+
+STL-based motion planning requires formalizing objectives, defining their robustness measures, and optimizing these measures. 
+
+> Formalizing Objectives in Temporal Logic
+
+Objectives for cyber-physical systems are often specified in natural language, which is inherently vague and ambiguous. A formal representation of objectives is therefore crucial: it removes linguistic ambiguity, enables machine interpretability, and supports the formal verification of system behavior. Temporal logic is a common choice, as it can describe system behavior over time while remaining intuitive to humans [1]. It is widely used in verification, runtime monitoring, and planning, as it provides a rigorous mathematical foundation that enables formal analysis of system behavior. One of the most commonly used temporal logics is linear temporal logic (LTL) [4]–[8]. While LTL is widely adopted as a specification language in verification, its standard Boolean semantics is less suitable for motion planning, where a quantitative measure of satisfaction is often required to guide optimization algorithms. Consequently, applying LTL to motion planning usually necessitates defining auxiliary measures to quantify satisfaction and violation [9], [10]. In contrast to LTL, metric temporal logic (MTL) and STL provide an inherent robustness measure [11], making them well-suited for expressing spatio-temporal properties. Consequently, motion planning for autonomous vehicles predominantly employs MTL [5], [12]–[15] and STL [16]– [18]. In [19], [20], the interpretability of STL specifications is questioned based on a user study. However, in engineering practice, temporal logic specifications are either formalized by experts [12] or derived from data [21], [22]. 
+
+> STL Robustness Measures
+
+Many works on temporal-logic motion planning optimize the standard space robustness of STL [23], [24]. In contrast, only a few works focus on the time robustness [25], and, to the best of our knowledge, no work optimizes the standard space-time robustness of [26]. Instead, a wide range of robustness measures is proposed, each targeting specific use cases or properties, e.g., smoothness and differentiability, monotonicity, soundness, or completeness. For instance, smooth approximations [27]–[33] provide differentiability for gradient-based solvers, while weighted variants of STL enable prioritization of subformulas [34]–[36]. Others define averaging-based and accumulative measures [37]–[43] or a model predictive robustness [44]. The work in [45] shows that many of the aforementioned measures are special cases of a generalized mean robustness. Temporal deviations are addressed by time-robustness measures [46]–[49]. In addition, some works propose custom combinations, such as products of space and time robustness [50], [51], a weighted sum of space robustness with a measure of time tolerances [52], or a combination of violation magnitude and violation duration [53]. 
+
+> Optimizing STL Robustness
+
+Considering the standard space and time robustness measures in optimization problems poses significant challenges due to their non-smoothness and non-convexity. Mostly, these robust-ness measures are encoded as mixed-integer constraints [24], [25], [35], [47]–[49], [54]–[59]. However, these encodings introduce many binary variables, resulting in an exponential computational complexity [23]. To enable gradient-based optimization, the minimum and maximum operators are often replaced with smooth approximations. This allows the use of sequential quadratic programming [27], [28], [30], [32], first-order methods [34], [39], [60], [61], or convex optimization [62]–[64]. However, these methods trade the exactness of the original non-smooth robustness for computational tractability. Control barrier functions and funnel-based methods encode the robustness using barrier certificates [37], [65]–[72], and are often formulated as mixed-integer or quadratic programs. However, these methods may not find feasible solutions for complex STL specifications, due to the non-convex, combinatorial structure of the resulting constraints. Sampling-based methods, such as rapidly exploring random trees [10], [50], [73]–[76] or MPPI [3], [77], can handle arbitrary STL robustness measures, though they generally only provide probabilistic completeness. Learning-based methods, such as supervised learning [78], [79] or reinforcement learning [80]–[82], enable fast execution but typically lack formal guarantees. Despite the variety of STL optimization methods, most solvers impose restrictions: they are limited to STL frag-ments [61], [65], [66], [83], [84], restrict predicates to be linear [35], [56], [85], piecewise-linear [86], or convex [24], [43], or alter the original problem by smoothing the robust-ness [27]–[32]. In this work, we present a method that imposes no restrictions on STL specifications. To handle conflicting specifications, we discuss prioritization methods next. 
+
+> B. Prioritized Motion Planning
+
+We first review prioritization methods in motion planning, followed by lexicographic optimization methods. 
+
+> Methods for Prioritization
+
+Although conflicts of specifications can be resolved offline by explicitly encoding every possible scenario (e.g., allowing the use of a bike lane to avoid a crash), enumerating all combinations of conditionally conflicting specifications is  
+
+> 2VOLUME XX, 2026
+
+cumbersome and often intractable [87]. Therefore, such conflicts are typically addressed online during planning. Weighting methods [88] are the most common form of prioritization. The weighted-sum approach [89] is widely used, but it cannot capture non-convex regions of the Pareto front [90], [91]. Other variants include the weighted product method and the weighted Tchebycheff method [92]–[94]. However, weights are highly scenario-dependent [18], [95], prone to misinterpretation, and often require normalization, which complicates tuning tremendously [34], [35], [96]. Despite the ease of integrating weighting methods into optimization problems, the high tuning effort remains a key drawback. On the contrary, hierarchical methods allow qualitative prioritization based on order relations. Lexicographic ordering is the most prevalent method [18], [43], [97]–[102]. In [68], rules are organized into totally ordered equivalence classes and lexicographic optimization is performed across the classes; within each class, rules are aggregated by a weighted Tchebycheff formulation. A generalization to lexicographic preferences is provided by the rulebook framework [103], where specifications are pre-ordered. In [96], the relation of rulebooks to mixed Pareto-lexicographic optimization [104] is shown. Rulebooks are more interpretable than machine learn-ing models [105], but they can yield multiple incomparable solutions [96], raising the issue of solution selection. While hierarchical methods allow straightforward prioritization of specifications, incorporating them into optimization problems remains a challenge. In this work, we focus on lexicographic optimization and subsequently review methods for solving such problems. 
+
+> Lexicographic Optimization Methods
+
+Lexicographic optimization methods can be broadly cate-gorized into preemptive, search-based, sampling-based, and scalarization approaches. In the commonly used preemptive scheme, an optimization problem is solved for each objective, with solutions to higher-priority objectives constraining those to lower-priority objectives [18], [88], [106]–[110]. Consequently, the complexity of the solution method strongly depends on the number of objectives. Search-based methods instead compare path costs lexicographically, e.g., using Dijkstra [99], [111] or A* [43] algorithms, but they require cost separability, making them unsuitable for STL robustness. Sampling-based approaches offer fast convergence and can handle arbitrary robustness measures, but they are only probabilistically complete [96]. Scalarization methods aim to transform the lexicographic problem into a weighted-sum problem, enabling the use of standard single-objective solvers. However, an order-preserving utility function does not exist in general, i.e., a set of equivalent weights [112]. Equivalent weights can be constructed only under specific assumptions, such as linearity [113], [114], convexity [97], [115], or when Boolean objectives are used [100], [116]. A utility function that approximates the lexicographic order is proposed in [101]. 
+
+> C. Minimum-Violation Motion Planning
+
+Minimum-violation motion planning addresses situations where it is impossible to satisfy all specifications simul-taneously. It combines a quantitative violation measure with specification prioritization to determine a minimum-violation trajectory. When specifications are formalized in LTL, minimum-violation motion planning approaches typically quantify violations using weighted automata [117], [118] and compare trajectories lexicographically [119], [120]. However, these approaches rely on auxiliary violation measures that are not inherent to the logic itself [9], severely limiting their usability. For STL specifications, violation is typically quantified using space robustness, and prioritization is handled through weighted sums [51], [121], lexicographic orders [18], [43], or pre-orders [68], [103]. 
+
+> D. Contributions
+
+We present a minimum-violation motion planning framework that supports various STL robustness definitions without restricting the STL fragment or predicates. Conflicting specifications are resolved using a lexicographic ordering within a single-objective optimization framework. In detail, our contributions are: 
+
+• introducing a novel predicate robustness measure that combines spatial and temporal robustness; 
+
+• providing a new scalarization technique that transforms the multi-objective lexicographic optimization problem into a single-objective scalar problem using non-uniform quantization and bit-shifting, allowing the use of single-objective solvers; 
+
+• extending the deterministic MPPI solver [3] to han-dle non-smooth, non-convex optimization problems by eliminating the mandatory quadratic input cost. We further provide adaptations improving solution quality and convergence time; and 
+
+• extensively validating the proposed approach through numerical experiments, which analyze the impact of cost discretization, evaluate the solver adaptations, demon-strate its applicability to complex autonomous driving scenarios, and benchmark various STL robustness mea-sures. The remainder of this article is structured as follows: after introducing the preliminaries in Sec. II, we present our problem statement in Sec. III. Our solution is discussed in Sec. IV, and the extended deterministic MPPI solver is introduced in Sec. V. Finally, we evaluate our minimum-violation motion planning approach in Sec. VI and conclude in Sec. VII.   
+
+> VOLUME XX, 2026 3Halder et al. : Lexicographic Minimum-Violation Motion Planning using Signal Temporal Logic
+
+II. Preliminaries 
+
+This section introduces fundamentals for our approach: the system model, definitions of order theory, STL, preemptive lexicographic optimization, and the deterministic MPPI solver. 
+
+A. System Definition 
+
+Let k ∈ N0 denote the discrete time index, with the corresponding continuous time given by tk := k ∆t, where 
+
+∆t ∈ R>0 is the time increment. Without loss of generality, the initial time index is k0 = 0 , and the final time index is 
+
+K ∈ N. We model the vehicle motion using a deterministic, nonlinear, discrete-time system 
+
+xk+1 = f (xk, uk),
+
+yk = g(xk, uk), (1) with xk ∈ Rnx , uk ∈ Rnu , and yk ∈ Rny , representing the state, input, and output, respectively, at discrete time 
+
+k ∈ [0 , K ]. Further, the inputs are bounded elementwise by 
+
+u ≤ uk ≤ u for all k ∈ [0 , K ], with u, u ∈ Rnu . The solution of (1) over the horizon [0 , K ] for an initial state 
+
+x0 ∈ Rnx and an input trajectory u([0 , K ]) := [ u0, . . . , uK ]
+
+is the state trajectory x([0 , K ]) := [ x0, x1, . . . , xK ]. The cor-responding output trajectory is y([0 , K ]) := [ y0, y1, . . . , yK ].Subsequently, we use x, u, and y as shorthand notations for 
+
+x([0 , K ]) , u([0 , K ]) , and y([0 , K ]) , respectively. Further, let 
+
+Y be the set of all possible output trajectories. 
+
+B. Order-Theoretic Definitions 
+
+In this subsection, we present the order-theoretic notions used in our proposed approach. 
+
+Definition 1 (Partially Ordered Set, Partial Order [122, Def. 8.11]) . A partially ordered set is a tuple (Q, ⪯), where 
+
+Q is a set and ⪯ ⊆ Q × Q is a reflexive, antisymmetric, and transitive binary relation. We call ⪯ a partial order .For convenience, we define q ⪯ q′ ⇐⇒ (q, q ′) ∈ ⪯ , with 
+
+q, q ′ ∈ Q , and say that q precedes q′. Let us further introduce the following shorthand notations: 
+
+strict precedence: q ≺ q′ ⇐⇒ q ⪯ q′ ∧ q′⪯̸ q, 
+
+indifference: q ∼ q′ ⇐⇒ q ⪯ q′ ∧ q′ ⪯ q. 
+
+Definition 2 (Totally Ordered Set, Totality [122, Def. 2.1]) .
+
+A totally ordered set is a tuple (Q, ⪯), where Q is a set and ⪯ ⊆ Q × Q is a partial order that additionally satisfies 
+
+totality ; i.e., for all q, q ′ ∈ Q it holds that q ⪯ q′ ∨ q′ ⪯ q.
+
+Definition 3 (Lexicographically Ordered Set [122, Ex. 1.2-9]) .
+
+A lexicographically ordered set is a tuple (Q, ⪯lex ), where Q
+
+is a set and ⪯lex ⊆ Q × Q is a binary relation defined as fol-lows: for q = [ q1, . . . , q N ]⊤ ∈ Q and q′ = [ q′
+
+> 1
+
+, . . . , q ′ 
+
+> N
+
+]⊤ ∈Q, we write q ⪯lex q′ iff qi = q′ 
+
+> i
+
+for all i ∈ { 1, . . . , N } or there exists an index i∗ ∈ { 1, . . . , N } such that qi = q′ 
+
+> i
+
+for all i < i ∗ and qi∗ < q ′ 
+
+> i∗
+
+.
+
+Definition 4 (Utility Representability, Utility Function [123, Sec. 1]) . Let (Q, ⪯) be a totally ordered set. We say that 
+
+(Q, ⪯) is representable by a utility function if there exists a function h : Q → R such that 
+
+q ⪯ q′ ⇐⇒ h(q) ≤ h(q′), ∀q, q ′ ∈ Q .
+
+The function h is then called a utility function .
+
+C. Signal Temporal Logic 
+
+The syntax of STL is given by the grammar [11, Sec. 2.1] 
+
+φ := μ | ¬ φ | φ1 ∧ φ2 | φ1UI φ2 | φ1SI φ2,
+
+where μ denotes a predicate of the form μ := p(y, k ) ≥ 0,with p : Rny ×(K+1) × N0 → R. The expressions φ, φ1, and 
+
+φ2 represent STL specifications, while ¬ and ∧ correspond to logical negation and conjunction, respectively. Disjunction is introduced as a derived operator φ1 ∨φ2 := ¬(¬φ1 ∧¬ φ2),and implication is defined as φ1 =⇒ φ2 := ¬φ1 ∨ φ2.The temporal operator UI specifies that φ1 must hold until 
+
+φ2 becomes true at some discrete time k in the interval 
+
+I := [ k, k ] ⊆ N0, with k ≤ k. The since operator SI
+
+is defined equivalently. Other derived temporal operators are FI φ := True UI φ (eventually ), OI φ := True SI φ (once ), 
+
+GI φ := ¬FI ¬φ (globally ), and HI φ := ¬OI ¬φ (histori-cally ). When I = [0 , K ], we omit I from the operator. Let (y, k ) |= φ indicate that trajectory y satisfies STL specification φ at discrete time k.Next, we introduce a quantitative semantics, called ro-bustness. The robustness ηφ(y, k ) : Rny ×(K+1) × N0 → R
+
+characterizes the degree to which an STL specification φ
+
+is satisfied or violated by a trajectory y at discrete time 
+
+k ∈ [0 , K ], where R := R ∪ {−∞ , +∞} . We define it as follows [11, Sec. 2.2]: 
+
+ηTrue (y, k ) := + ∞,ημ(y, k ) := ϱμ(y, k ),η¬φ(y, k ) := −ηφ(y, k ),ηφ1∧φ2 (y, k ) := ▽  ηφ1 (y, k ), η φ2 (y, k ),ηφ1UI φ2 (y, k ) := △k′∈(k+I)∩[0 ,K ]
+
+  ▽(ηφ2 (y, k ′),
+
+▽k′′ ∈[k,k ′) (ηφ1 (y, k ′′ ))) ,ηφ1SI φ2 (y, k ) := △k′∈(k−I)∩[0 ,K ]
+
+  ▽(ηφ2 (y, k ′),
+
+▽k′′ ∈(k′,k ] (ηφ1 (y, k ′′ ))) ,
+
+with k ◦ I := { k ◦ k′ | k′ ∈ I }, and ◦ ∈ {− , +}. Here, 
+
+ϱ : Rny ×(K+1) × N0 → R denotes a predicate robustness measure, and ▽, △ are custom minimum and maximum functions. Various definitions for ϱ, ▽, and △ exist, yielding different robustness measures that each exhibit distinct properties. In this work, we compare the selected subset of robustness measures shown in Tab. 1. The corresponding definitions of ϱ are presented in Tab. 2. Our proposed space-left-time predicate robustness ϱμ 
+
+> space-left-time
+
+is discussed further in Sec. IV -A. The definitions for ▽ and △ are provided in Appendix A. For instance, the space robustness uses the standard min and max operators.  
+
+> 4VOLUME XX, 2026
+
+TABLE 1: Definitions of the used robustness measures.                                        
+
+> Measure Pred. Rob. (ϱ)Min (▽)Max (△)Space [26] ( ηspace )ϱspace ▽std △std
+> Left-Time [26] ( ηleft-time )ϱleft-time ▽std △std
+> Right-Time [26] ( ηright-time )ϱright-time ▽std △std
+> Combined-Time [47] ( ηcomb-time )ϱcomb-time ▽std △std
+> Duration [53] ( ηdur )ϱspace ▽dur △dur
+> Duration-Severity [53] ( ηdur-sev )ϱspace ▽dur-sev △dur-sev
+> Smooth [30] ( ηsmooth )ϱspace ▽smooth △smooth
+> AGM [40] ( ηagm )ϱspace ▽agm △agm
+> New [41] ( ηnew )ϱspace ▽new △new
+> Power-Mean [45] ( ηpm )ϱspace ▽pm △pm
+> Space-Left-Time ( ηspace-left-time )ϱspace-left-time ▽std △std
+
+D. Preemptive Lexicographic Optimization 
+
+One common approach to solving lexicographic optimization problems is the preemptive scheme, in which cost functions are optimized sequentially in decreasing order of priority. Let 
+
+c(y) : Rny ×(K+1) → RN be a vector-valued cost function and let ci(y) denote its i-th component. Given a fixed initial state ˆx0 ∈ Rnx , the preemptive lexicographic optimization problem is formulated as a sequence of N optimization problems [88, Sec. 3.3]: 
+
+min  
+
+> u,x,y
+
+ci(y)
+
+s.t. x0 = ˆ x0,
+
+xk+1 = f (xk, uk), ∀k ∈ [0 , K − 1] ,
+
+yk = g(xk, uk), ∀k ∈ [0 , K ],cj (y) = cj (y∗ 
+
+> j
+
+),j = 1 , 2, . . . , i − 1 when i > 1,i = 1 , 2, . . . , N. 
+
+(2) The equality cj (y) = cj (y∗ 
+
+> j
+
+) encodes that the i-th opti-mization problem optimizes the i-th cost function ci(y)
+
+subject to the optimal cost values cj (y∗ 
+
+> j
+
+) obtained in the previous j = 1 , 2, . . . , i − 1 optimization problems. Thus, each subsequent problem introduces additional constraints and increases complexity, making the overall optimization computationally expensive. 
+
+E. Deterministic MPPI Solver 
+
+In this work, we modify a deterministic MPPI solver such that it is not restricted to quadratic costs of the input. The underlying deterministic MPPI solver is a variant of the MPPI approach presented in [124] tailored to solve deterministic programs [3, Sec. IV-B]: 
+
+min  
+
+> u,x,y
+
+s(y) + 
+
+> K
+
+X
+
+> k=0
+
+12 u⊤ 
+
+> k
+
+R uk
+
+s.t. x0 = ˆ x0,
+
+xk+1 = f (xk, uk), ∀k ∈ [0 , K − 1] ,
+
+yk = g(xk, uk), ∀k ∈ [0 , K ],
+
+(3) with s : Rny ×(K+1) → R and ˆx0 ∈ Rnx . The system input is penalized quadratically with R ∈ Rnu×nu , given by R := 
+
+λ Σ−1, where Σ ∈ Rnu×nu is a positive definite covariance matrix and λ ∈ R>0 is a tuning parameter called temperature .In the deterministic MPPI algorithm (cf. [3, Sec. IV-B]), 
+
+λ and Σ are both scaled by a factor β2, where β ∈ (0 , 1) is reduced over successive iterations. As β → 0, the algorithm returns the optimal input u∗ [125, Thm. 1]. Since λ and Σ
+
+are scaled identically, the scalar β2 cancels out, meaning the quadratic input cost weighting R remains constant and is independent of β for any β > 0:
+
+(β2λ) ( β2 Σ)−1 = λ Σ−1 = R. (4) We will later modify this behavior and scale λ and Σ at different rates, allowing us to eliminate the quadratic input cost term in (3) as β → 0.
+
+III. Problem Statement 
+
+Our minimum-violation motion planner is embedded within a typical motion planning framework, as depicted in Fig. 2. 
+
+yrep 
+
+No 
+
+Repairer 
+
+Fail-safe Planner 
+
+Satisfies all 
+
+φ ∈ Φ
+
+Approved 
+
+Minimum-Violation Planner 
+
+Solver (Sec. V) 
+
+Solution (Sec. IV) 
+
+Problem Statement (Sec. III) 
+
+Violation Measure Prioritization 
+
+ymin-viol 
+
+yfail-safe 
+
+Yes 
+
+Yes 
+
+No 
+
+ynom 
+
+No 
+
+Nominal Planner 
+
+Satisfies all 
+
+φ ∈ Φ
+
+Yes 
+
+FIGURE 2: Overview of the motion planning framework. Figure derived from [126, Fig. 4]. 
+
+The planning process begins with a nominal planner that attempts to generate a trajectory ynom that satisfies all specifications simultaneously (see, e.g., [127]). If this fails, a repairer may be used to generate a repaired trajectory yrep 
+
+(see, e.g., [126]). However, due to a) other traffic participants violating traffic rules, b) overly restrictive specifications, or c) incorrect assumptions, a trajectory that satisfies all specifications may not always exist. In this case, minimum-violation motion planning is employed to ensure continued                                                                                 
+
+> VOLUME XX, 2026 5Halder et al. : Lexicographic Minimum-Violation Motion Planning using Signal Temporal Logic
+> TABLE 2: Predicate robustness definitions. Let sgn( κ) := 1 if κ≥0, else −1, with κ∈R.
+> Predicate Rob. Definition
+> Space [26] ϱμ
+> space (y, k ):= pμ(y, k )
+> Left-Time [26] ϱμ
+> left-time (y, k ):= sgn( pμ(y, k )) max τ∈N0τs.t. sgn( pμ(y, k ′)) = sgn( pμ(y, k )) ,∀k′∈[k, k +τ]∩[0 , K ]
+> Right-Time [26] ϱμ
+> right-time (y, k ):= sgn( pμ(y, k )) max τ∈N0τs.t. sgn( pμ(y, k ′)) = sgn( pμ(y, k )) ,∀k′∈[k−τ, k ]∩[0 , K ]
+> Comb.-Time [47] ϱμ
+> comb-time (y, k ):= sgn( pμ(y, k )) max τ∈N0τs.t. sgn( pμ(y, k ′)) = sgn( pμ(y, k )) ,∀k′∈[k−τ, k +τ]∩[0 , K ]
+> Space-Left-Time ϱμ
+> space-left-time (y, k ):= sgn( pμ(y, k )) max τ∈N0
+>  τ+|pμ(y, k +τ)|s.t. sgn( pμ(y, k ′)) = sgn( pμ(y, k )) ,∀k′∈[k, k +τ]∩[0 , K ]
+
+vehicle operation by generating a trajectory ymin-viol that minimizes specification violations according to a violation measure and a prioritization. Due to the intentional violation of the specifications, such driving maneuvers should be approved by a control instance (e.g., an offline safety operator or an automated verification system). Approved trajectories are executed by the vehicle, while unapproved trajectories trigger the execution of a fail-safe maneuver yfail-safe that at least ensures collision avoidance (see, e.g., [128]). In this paper, we focus on the minimum-violation motion planner and subsequently introduce a corresponding planning problem. Let Φ := {φ1, φ 2, . . . , φ N } be a finite set of STL specifications. To quantify the violation of a specification 
+
+φ ∈ Φ, we define a cost function cφ(y) based on the negative part of its robustness: 
+
+cφ(y) := − min  0, η φ(y, 0) . (5) In our minimum-violation motion planning context, this definition requires the robustness measure ηφ to be at least sound , i.e., ηφ(y, k ) ≥ 0 = ⇒ (y, k ) |= φ. Sound-ness guarantees that we always penalize violations, i.e., 
+
+(y, 0) ̸ |= φ =⇒ cφ(y) > 0, but it does not exclude the possibility that satisfied trajectories are also penalized. If the robustness measure is additionally reverse sound , i.e., 
+
+ηφ(y, k ) < 0 = ⇒ (y, k )̸ |= φ, then we exclusively penalize violating trajectories, i.e., (y, 0) ̸ |= φ ⇐⇒ cφ(y) > 0. All robustness measures listed in Tab. 1 are at least sound, and some are additionally reverse sound. Next, we equip Φ with a total order ⪯spec , such that 
+
+(Φ , ⪯spec ) forms a finite totally ordered set. Without loss of generality, we index the specifications such that 
+
+φ1 ⪯spec φ2 ⪯spec · · · ⪯ spec φN .
+
+Let c : Rny ×(K+1) → RN be the corresponding vector-valued cost function defined by 
+
+c(y) := [ cφ1 (y), c φ2 (y), . . . , c φN (y)] ⊤. (6) We compare trajectories lexicographically, which induces a total order ⪯cont on the set of output trajectories Y according to 
+
+y ⪯cont y′ ⇐⇒ c(y) ⪯lex c(y′), (7) with y, y′ ∈ Y . Intuitively, this expresses that a trajectory 
+
+y precedes (i.e., is at least as good as) a trajectory y′ iff its cost vector is lexicographically less than or equal to that of y′.
+
+Definition 5 (Set of Optimal Trajectories [129, Def. 1.23]) .
+
+Let (Φ , ⪯spec ) be a totally ordered set of STL specifications and let Y denote the set of output trajectories. The set of optimal trajectories is defined as 
+
+Y∗ 
+
+> cont
+
+:= 
+
+n
+
+y ∈ Y ∀ y′ ∈ Y : y ⪯cont y′
+
+o
+
+.
+
+Definition 6 (Planning Problem) . Given a totally ordered set of STL specifications (Φ , ⪯spec ) and a set Y of output trajectories, the planning problem consists of finding a trajectory y∗ 
+
+> cont
+
+∈ Y ∗
+
+> cont
+
+.
+
+IV. Solution 
+
+Subsequently, we present our solution to the planning problem in Def. 6. We first introduce a robustness measure that combines spatial and temporal violations. Next, we demonstrate how to discretize the continuous cost, analyze the effects of this discretization, and finally employ a utility-based reformulation to transform the multi-objective lexicographic optimization problem into an equivalent single-objective scalar optimization problem. 
+
+A. Robustness Measure 
+
+The standard measures of space and time robustness ηspace ,
+
+ηleft-time , ηright-time , and ηcomb-time are not suitable for minimum-violation motion planning, because they quantify either the magnitude of a violation or its duration. This is problematic because trajectories describing different maneuvers can become indistinguishable, as shown next. 
+
+Running Example. Consider the scenario depicted in Fig. 1, where the ego vehicle approaches an obstacle that is bro-ken down. We introduce STL specifications for collision avoidance, making progress, and in-lane driving: 
+
+φcoll := G(¬μcollision ),φprog := F(μmake-progress ),φlane := G(μleft-bound ∧ μright-bound ).
+
+The space robustness for φlane has the form 
+
+ηφlane 
+
+> space
+
+(y, k ) = min 
+
+> k∈[0 ,K ]
+
+(min( ϱμleft-bound  
+
+> space
+
+, ϱ μright-bound  
+
+> space
+
+)) .
+
+Since the trajectories ya and yb have the same maximum lateral deviation from the left bound of the lane, their space robustness is equal, i.e., ηφlane 
+
+> space
+
+(ya, 0) = ηφlane 
+
+> space
+
+(yb, 0) , despite describing different maneuvers. Thus, we introduce a custom robustness measure, denoted by ηspace-left-time , that combines spatial and temporal violations.  
+
+> 6VOLUME XX, 2026
+
+It utilizes the standard ▽std and △std operators (see Tab. 1 and Appendix A) and a custom predicate robustness function 
+
+ϱspace-left-time (see final row in Tab. 2). Inspired by the space-time robustness proposed in [26], it is intuitively defined as the maximum sum of the space robustness and the left-time robustness. Fig. 3 (a) provides a visualization. Further, 
+
+ηspace-left-time maintains the properties of soundness and reverse soundness of ηspace and ηleft-time .                   
+
+> pμ
+> k+2 k+3 kk+1 k−1
+> |pμ(y, k +τ)|
+> τ
+> pμ(y, k )
+> (a) Space-left-time robustness.
+> ηφlane (y,0)
+> cost
+> 0
+> 1
+> 2
+> 3
+> cφlane
+> ˜cφlane
+> I0I1I2I3
+> (b) Cost functions. FIGURE 3: Example visualizations of predicate robustness and cost functions. (a) Space-left-time robustness for a predicate μat discrete time k.(b) Continuous and discretized cost functions for the specification φlane .
+
+The robustness measures of the second group in Tab. 1 implicitly combine spatial and temporal violations since they use alternative definitions of the minimum and maximum operators. This works for simple temporal specifications, e.g., GI (μ), as it provides an average violation of the predicate μ over the time interval I. However, for logically composed or nested specifications, e.g., G(μ) ∧ F(μ′), it yields an unintuitive violation measure, since the violation of time is coupled with the violation between specifications. As an example, using the power-mean robustness for a conjunction where one specification is strongly violated (−100 ) and the other specification is marginally satisfied (0.1) results in ηpm = −50 (using ν5 = 1 .0). This severely underrepresents the actual magnitude of the violation and obscures the influence of the involved sub-specifications. In contrast, our proposed ηspace-left-time relies on the standard 
+
+▽std and △std operators and combines spatial and temporal violations exclusively at the predicate level. This enables a comprehensible, traceable quantification of violations. 
+
+B. Cost Discretization 
+
+We introduce a discretized cost ˜cφ(y) by non-uniform quantization of the continuous cost cφ(y). Let mφ ∈ N
+
+be the number of violation intervals and let ξ ∈ { 0, . . . , m φ}
+
+be an index. We introduce strictly increasing positive thresh-olds αξ ∈ R>0 for ξ ∈ {1, . . . , m φ − 1}, such that 
+
+α1 < α 2 < · · · < α mφ−1. By additionally defining α0 := 0 ,the intervals Iξ are constructed as follows: 
+
+Iξ := 
+
+
+
+[0 , 0] , if ξ = 0 ,
+
+(αξ−1, α ξ ], if 1 ≤ ξ < m φ,
+
+(αmφ−1, ∞), if ξ = mφ.
+
+(8) The unique assignment defines the discretized cost: 
+
+˜cφ(y) = ξ ⇐⇒ cφ(y) ∈ Iξ . (9) It is important to note that ˜cφ(y) is bounded, i.e., ˜cφ(y) ∈{0, 1, . . . , m φ}.
+
+Running Example. For the specifications φcoll , φ prog , and 
+
+φlane , we define the discretized cost functions using mφcoll =1, m φprog = 6 , and mφlane = 3 . Fig. 3 (b) shows cφlane (y) and 
+
+˜cφlane (y) by example. Equivalent to the vector-valued continuous cost, we define a vector-valued discrete cost function ˜c : Rny ×(K+1) → NN 
+
+> 0
+
+:
+
+˜c(y) := [˜ cφ1 (y), ˜cφ2 (y), . . . , ˜cφN (y)] ⊤, (10) based on which the total order ⪯disc is induced on the set of output trajectories Y according to 
+
+y ⪯disc y′ ⇐⇒ ˜c(y) ⪯lex ˜c(y′), (11) with y, y′ ∈ Y . Using ⪯disc , the set of optimal trajectories 
+
+Y∗ 
+
+> disc
+
+and the optimal trajectory y∗ 
+
+> disc
+
+of the respective planning problem are defined analogously to Def. 5 and Def. 6. 
+
+Running Example. Based on Fig. 1, the order of the specifications is φcoll ⪯spec φprog ⪯spec φlane , i.e., we prioritize collision avoidance over making progress and making progress over staying in lane. Example discrete cost for the trajectories from Fig. 1 are as follows: 
+
+> ˜c(yb)=
+
+011
+
+ ⪯lex 
+
+> ˜c(ya)=
+
+012
+
+ ⪯lex 
+
+> ˜c(yc)=
+
+014
+
+ ⪯lex 
+
+> ˜c(ye)=
+
+050
+
+ ⪯lex 
+
+> ˜c(yd)=
+
+140
+
+ .
+
+The induced order on the trajectories is yb ⪯disc ya ⪯disc 
+
+yc ⪯disc ye ⪯disc yd and thus, the best trajectory is 
+
+y∗ 
+
+> disc
+
+= yb.
+
+C. Effects of Discretization 
+
+The relation between the set of optimal trajectories of the continuous and the discretized problem, Y∗ 
+
+> cont
+
+and Y∗
+
+> disc
+
+,is governed by the orders ⪯cont and ⪯disc on Y. If two trajectories have identical continuous cost vectors, then they also have identical discrete cost vectors, since each component is mapped deterministically to a discrete interval index (cf. (9) ). Formally, it holds y ∼cont y′ =⇒ y ∼disc y′,with y, y′ ∈ Y . However, discretization may map distinct continuous costs to the same discrete value. Thus, the critical case is strict continuous precedence, i.e., y ≺cont y′, which yields three possible outcomes for the resulting discrete order: 1) Order preservation: If y ≺cont y′ =⇒ y ≺disc y′ for all y, y′ ∈ Y , then the sets of optimal trajectories are identical, i.e., Y∗ 
+
+> cont
+
+= Y∗
+
+> disc
+
+;2) Order relaxation: If y ≺cont y′ =⇒ y ≺disc y′ ∨ y ∼disc 
+
+y′ for all y, y′ ∈ Y , then the set of optimal trajectories of the discretized problem still contains the continuous optima, i.e., Y∗ 
+
+> cont
+
+⊆ Y ∗
+
+> disc
+
+;3) Order inversion: If there exist y, y′ ∈ Y such that 
+
+y ≺cont y′ =⇒ y′ ≺disc y, then the continuous optima may not be contained in the discretized optima, i.e., 
+
+Y∗ 
+
+> cont
+
+⊈ Y∗ 
+
+> disc
+
+may occur.   
+
+> VOLUME XX, 2026 7Halder et al. : Lexicographic Minimum-Violation Motion Planning using Signal Temporal Logic
+
+To understand when these outcomes occur, let i∗ 
+
+> cont
+
+∈{1, . . . , N } be the smallest index at which the continuous cost vectors differ, i.e., cφi (y) = cφi (y′) for all i < i ∗
+
+> cont
+
+and cφi∗
+
+> cont
+
+(y) < c φi∗
+
+> cont
+
+(y′) (cf. Def. 3). If these costs lie in different violation intervals, i.e., cφi∗
+
+> cont
+
+(y) ∈ Iξ and 
+
+cφi∗
+
+> cont
+
+(y′) ∈ Iξ′ with ξ < ξ ′, then y ≺disc y′ is preserved. If, in contrast, both costs lie in the same interval, i.e., 
+
+cφi∗
+
+> cont
+
+(y), c φi∗
+
+> cont
+
+(y′) ∈ Iξ for some ξ, then the distinction at index i∗ 
+
+> cont
+
+is lost. The resulting order between y and y′
+
+is then determined solely by lower-priority specifications 
+
+φi∗
+
+> cont +1
+
+, . . . , φ N and may therefore be preserved ( y ≺disc y′), relaxed to a tie ( y ∼disc y′), or even inverted ( y′ ≺disc y). The effect of the lower-priority specifications cannot be assessed 
+
+a priori , but our numerical evaluations in Sec. VI -A demon-strate that the impact of order relaxation and order inversion can be effectively mitigated for practical applications. 
+
+Running Example. Consider the trajectories ya and yc in Fig. 1 with the continuous and discretized cost shown below, and let a violation interval for φprog be I1 = [5 .0, 7.0) :
+
+> c(yc)=
+
+0.0
+
+5.8
+
+6.3
+
+ ⪯lex 
+
+> c(ya)=
+
+0.0
+
+6.5
+
+3.2
+
+,
+
+> ˜c(yc)=
+
+01
+
+4
+
+ ⪰lex 
+
+> ˜c(ya)=
+
+01
+
+2
+
+ .
+
+Since cφprog (ya), c φprog (yc) ∈ I1, the discretization removes the distinction for φprog . The order in the discrete cost case is therefore determined by the lower-priority specification 
+
+φlane , and consequently, yc ⪯cont ya, whereas ya ⪯disc yc.
+
+D. Utility-based Reformulation 
+
+To circumvent the disadvantages of preemptive lexicographic optimization (cf. Sec. II -D), we seek to optimize a single scalar utility function s(y). While lexicographic orders on continuous spaces (e.g., RN ) generally do not admit a real-valued utility representation [112], the strict finiteness of both the set of specifications Φ and the values of each discrete cost component {0, 1, . . . , m φ} allows us to construct a scalar utility representation. Inspired by mixed-radix representations [130], we construct the utility function s(y) by assigning disjoint bit ranges to the individual cost components according to their priorities. Formally, this is expressed as 
+
+s(y) := 
+
+> N
+
+X
+
+> i=1
+
+˜cφi (y) 2 Bi , with 
+
+Bi := 
+
+(PNj=i+1 bj if i < N, 
+
+0 if i = N, bi := ⌈log 2(mφi + 1) ⌉ .
+
+(12) The term bi denotes the word width needed to represent the specification φi, i.e., the number of Bits required to represent the maximum discrete cost value that a specification can take. The factor 2Bi acts as a bit shift that strictly separates priority levels. Consequently, conversions between ˜c(y) and 
+
+s(y) reduce to simple bitwise operations, making them fast and computationally efficient in applications. It is worth noting that the exponential structure of (12) may lead to large integer values. However, this is no limitation for practical applications, since arbitrary-precision integer computation libraries are widely available. 
+
+Running Example. Using the word widths b1 = 1 , b2 = 3 ,and b3 = 2 , the discrete cost ˜c(yd) = [ 1 , 4 , 0 ]⊤ yields the following scalar cost and equivalent binary representation: 
+
+s(yd) = 1 · 23+2 + 4 · 22 + 0 = 48 ≡ 1
+
+> b2+b3
+
+←−−−−−
+
+100 00 
+
+←−
+
+> b3
+
+.
+
+Lemma 1 (Order Representation) . For any output trajectories 
+
+y, y′ ∈ Y , it holds 
+
+˜c(y) ⪯lex ˜c(y′) ⇐⇒ s(y) ≤ s(y′).
+
+A formal proof of Lem. 1 is provided in Appendix B. Analogously to (11), we can infer 
+
+y ⪯disc y′ ⇐⇒ s(y) ≤ s(y′),
+
+with y, y′ ∈ Y , and solve the single-objective optimization problem, which is equivalent to the original lexicographic optimization problem in (2): 
+
+min  
+
+> x,u,y
+
+s(y)
+
+s.t. x0 = ˆ x0,
+
+xk+1 = f (xk, uk), ∀k ∈ [0 , K − 1] ,
+
+yk = g(xk, uk), ∀k ∈ [0 , K ].
+
+(13) 
+
+Running Example. The scalar cost values are as follows: 
+
+> s(yb)=
+
+5 ≤ s(ya)= 
+
+6 ≤ s(yc)= 
+
+8 ≤ s(ye)= 
+
+20 ≤ s(yd)= 
+
+48 .
+
+The induced order on the trajectories is again yb ⪯disc 
+
+ya ⪯disc yc ⪯disc ye ⪯disc yd and thus, the best trajectory is 
+
+y∗ 
+
+> disc
+
+= yb.The scalar cost function s(y) is, by design, non-smooth and non-convex. We thus require an efficient solver capable of handling such challenging cost functions. 
+
+V. Solver 
+
+We now present our approach to solve (13), which is built upon our deterministic MPPI solver introduced in [3]. However, this solver requires a quadratic input cost (cf. (3) )and is therefore not directly applicable to our problem. Subsequently, we briefly introduce our algorithm, demonstrate how to eliminate the quadratic input cost, and outline several adaptations that improve the efficiency of the solver in our specific use case. 
+
+A. Deterministic MPPI Solver 
+
+Given an initial system state ˆx0, an initial input trajectory 
+
+ˆu, the number of iterations J, the initial covariance Σ, and the initial temperature λ, Alg. 1 computes a solution y∗ to (13). In each iteration, M input samples are drawn from a  
+
+> 8VOLUME XX, 2026
+
+truncated normal distribution (see lines 7 to 10) and applied to system (1) (see lines 11 to 15). Subsequently, the cost function is evaluated (see line 16), and the MPPI correction term is computed according to [124, Sec. 3] (see lines 20 to 23). A weight is determined for each sample (see lines 24 to 27), and the input trajectory is updated accordingly (see lines 28 and 29), which serves as the base for the next iteration. By progressively shrinking the initial covariance Σ
+
+and the initial temperature λ across the iterations (see line 4), the algorithm converges to the optimum (cf. [3], [125]). If the solver operates in a model predictive control (MPC) scheme, the previous solution can be used as the initial input trajectory 
+
+ˆu for warm-starting. Next, we describe the parts of Alg. 1 that distinguish our approach from [3]. 
+
+Algorithm 1 Deterministic MPPI Solver 
+
+Input: Initial system state ˆx0, initial input trajectory ˆu, number of iterations J, initial covariance Σ, initial temperature λ
+
+Output: Optimal output trajectory y∗ 
+
+> 1:
+
+ybest ← ∅ , ˆsmin ← ∞  
+
+> 2:
+
+for j ∈ { 1, . . . , J } do ▷ Iterations  
+
+> 3:
+
+β ← Bcos (j) 
+
+> 4:
+
+λj ← β2λ, Σj ← β Σ 
+
+> 5:
+
+M ← Mcos (j) 
+
+> 6:
+
+for m ∈ { 1, . . . , M } do ▷ Samples  
+
+> 7:
+
+for k ∈ { 0, . . . , K } do ▷ Generate inputs  
+
+> 8:
+
+ϵmk ∼ N (0 , Σj ) 
+
+> 9:
+
+ˆumk ← min( u, max( u, ˆuk + ϵmk )) ▷ (Comp.-wise)  
+
+> 10:
+
+ϵmk ← ˆumk − ˆuk 
+
+> 11:
+
+xm 
+
+> 0
+
+= ˆ x0 ▷ Apply to system (1)  
+
+> 12:
+
+for k ∈ { 0, . . . , K − 1} do  
+
+> 13:
+
+xmk+1 ← f (xmk , ˆumk ) 
+
+> 14:
+
+ymk ← g(xmk , ˆumk ) 
+
+> 15:
+
+ymK ← g(xmK , ˆumK ) 
+
+> 16:
+
+ˆsm ← s(ym) ▷ Evaluate cost function (12)  
+
+> 17:
+
+if ˆsm < ˆsmin then ▷ Track best sample  
+
+> 18:
+
+ˆsmin ← ˆsm 
+
+> 19:
+
+ybest ← ym 
+
+> 20:
+
+ℓm ← 0 ▷ Compute correction term  
+
+> 21:
+
+for k ∈ { 0, . . . , K } do  
+
+> 22:
+
+ℓm ← ℓm + λj ϵmk ⊤ Σ−1 
+
+> j
+
+ˆuk 
+
+> 23:
+
+ℓm ← ℓm + ˆ sm 
+
+> 24:
+
+ℓmin ← min m ℓm ▷ Compute sample weights  
+
+> 25:
+
+ϑ ← PMm=1 exp 
+
+
+
+− 1 
+
+> λj
+
+(ℓm − ℓmin )
+
+ 
+
+> 26:
+
+for m ∈ { 1, . . . , M } do  
+
+> 27:
+
+ωm ← 1 
+
+> ϑ
+
+exp 
+
+
+
+− 1 
+
+> λj
+
+(ℓm − ℓmin )
+
+ 
+
+> 28:
+
+for k ∈ { 0, . . . , K } do ▷ Update input trajectory  
+
+> 29:
+
+ˆuk ← ˆuk + PMm=1 ωm ϵmk 
+
+> 30:
+
+y∗ ← ybest ▷ Return overall best output trajectory  
+
+> 31:
+
+return y∗
+
+B. Elimination of Quadratic Input Cost 
+
+The deterministic MPPI algorithm [3] incorporates a quadratic input cost term, whose weighting is solely determined by the initial temperature λ and the initial covariance matrix Σ
+
+(cf. (4) ). These input costs manifest in Alg. 1 as a correction term (see lines 20 to 23). However, our goal in (13) is to minimize s(y), meaning the correction term must not influence the solution. To achieve this, in contrast to [3], we scale λ and Σ differently (see line 4), resulting in a 
+
+β-dependent weighting matrix 
+
+R(β) = β2λ (β Σ)−1 = βλ Σ−1 . (14) Consequently, as β → 0 over the J iterations, R(β) → 0,and the influence of the correction term on the total cost vanishes. Notably, the convergence of Alg. 1 to the global optimum of s(y) for lim β→0 R(β) = 0 can be shown using the Laplace method (cf. [125, Thm. 1]). Our numerical experiments in Sec. VI -B demonstrate that this approach effectively eliminates the influence of the quadratic input cost. Since any real implementation is limited to a finite number of trajectory samples, the decay behavior of β plays a crucial role. Let B : N → R≥0 be a decay rule returning the value of β for iteration j ∈ { 1, . . . , J }. The exponential decay rule 
+
+Bexp (j) := pγ j−1, with γ ∈ (0 , 1) , which is used in [3], [125], causes a rapid reduction of the covariance in early iterations. Consequently, the solver spends many iterations with little exploration, which is highly unfavorable in our nonlinear and non-smooth problem setup. Instead, we propose a cosine-based decay rule 
+
+Bcos (j) := 1 − (1 − βmin ) 12
+
+
+
+1 − cos 
+
+
+
+π j−1
+
+> J−1
+
+ 
+
+,
+
+with βmin ∈ (0 , 1) . In contrast to the exponential rule, the cosine decay rule maintains a high covariance (and thus an effective exploration) for more iterations, while gradually approaching βmin . This ensures reliable convergence in our experiments. 
+
+Running Example. Let J = 20 , γ = 0 .5 and βmin = 10 −6.Fig. 4 (a) shows the exponential and the cosine decay rule, respectively. Fig. 4 (b) illustrates the overtaking scenario, including the sampled trajectories at three selected iterations, and the optimal trajectory. The cosine decay rule is used. 
+
+C. Additional Adaptations 
+
+The deterministic MPPI solver draws samples from a normal distribution N (0 , Σ). However, in our problem setup, the system inputs must satisfy strict bounds. We thus clip the sampled inputs component-wise to [u, u] (see line 9), similar to [124]. While input clipping can break the theoretical guar-antees of standard stochastic MPPI, it does not compromise convergence in our deterministic setting (cf. [131]). The runtime of the solver strongly depends on the total number of evaluated samples. Let M : N → N provide the number M of samples for iteration j. In our previous           
+
+> VOLUME XX, 2026 9Halder et al. : Lexicographic Minimum-Violation Motion Planning using Signal Temporal Logic
+> 1510 15 20
+> 0
+> 0.5
+> 1
+> Iteration j
+> β
+> Bexp (j)
+> Bcos (j)
+> (a) Decay rules.
+> Ego vehicle
+> y∗
+> j= 0
+> j= 18
+> j= 10
+> (b) Overtaking scenario. FIGURE 4: Visualization of decay rules and example solution of the proposed algorithm. (a) Visualization of the exponential and cosine decay rule. (b) Overtaking scenario from the running example with sampled trajectories at three selected iterations and the optimal trajectory.
+
+work [3], the number of samples per iteration is constant, i.e., 
+
+Mconst (j) := Minit , with Minit ∈ N. To reduce the runtime without compromising solution quality, we couple the number of samples per iteration with the covariance decay. The idea is to use more samples in early iterations when the covariance is large and fewer in later iterations when the covariance is smaller. Analogous to Bcos (j), we define a cosine-based decay rule for the number of samples per iteration: 
+
+Mcos (j) := 
+
+
+
+Minit − (Minit − Mfinal ) 12
+
+
+
+1 − cos 
+
+
+
+π j−1
+
+> J−1
+
+ 
+
+,
+
+where Mfinal ∈ N is the final number of samples and Minit ≥
+
+Mfinal .Finally, instead of returning the trajectory ymppi which is generated by the input trajectory ˆu obtained at the final iteration J, we track the sample with the lowest cost across all iterations (see lines 17 to 19) and return its corresponding trajectory ybest (see line 30). This ensures that the executed maneuver corresponds to the best-known solution encountered during the optimization process. 
+
+VI. Numerical Experiments 
+
+We evaluate our minimum-violation motion planning ap-proach in several experiments. Specifically, we aim to validate the following hypotheses: 
+
+H1 A finer discretization granularity mitigates the effects of order relaxation and order inversion, and low violation errors can be achieved with a limited number of violation intervals; 
+
+H2 Our proposed solver adaptations improve solution quality while reducing the number of required samples; 
+
+H3 Our minimum-violation motion planning approach ef-fectively handles conflicting specifications in complex, real-world autonomous driving scenarios; 
+
+H4 Our proposed space-left-time robustness measure re-solves the trajectory indistinguishability of standard space and time robustness measures while remaining computationally competitive. The experiments are implemented in Python and C++ and are executed on an AMD Ryzen Threadripper PRO 5975WX CPU; the code can be accessed at https://github.com/TUMcps/STL-Lex-MPPI-Planner. 
+
+A. Effects of Discretization 
+
+Based on a linear problem setup, we numerically investigate how discretization granularity and the distribution of vio-lation intervals affect the approximation of the continuous lexicographic optimum by the discretized cost function. 
+
+1) Setup 
+
+We consider a linear scalar discrete-time integrator with the dynamics 
+
+xk+1 = xk + uk,yk = xk.
+
+The inputs are bounded by u = −1.35 and u = 1 .35 , the time horizon is K = 8 , and the initial state is ˆx0 = 0 . We introduce eight STL specifications φk, with k ∈ { 1, . . . , 8},which are designed such that they only target specific discrete times: 
+
+φk := 
+
+(
+
+yk < r k if k is odd ,yk ≥ rk if k is even ,
+
+where rk ∈ R are user-defined thresholds. As an example, the highest-priority specification φ1 requires the output at 
+
+k = 1 to be below r1, while the second-highest priority specification φ2 requires the output at k = 2 to be above or equal to r2. This setup allows us to clearly observe the degradation in the optimization result due to discretization, as approximation errors from higher-priority specifications are directly propagated to lower-priority ones. Given a user-defined upper bound cost value c = 10 , we divide the range [0 , c ] into equally sized intervals. Following (8), the positive thresholds αξ,k for a specification φk and 
+
+mφk > 1 are generated by 
+
+αξ,k := cmφk − 1 ξ, (15) for ξ ∈ { 1, . . . , m φk − 1}. Further, let the total number of used violation intervals be denoted as mtotal := P8 
+
+> k=1
+
+mφk .The linear problem setup (i.e., linear system dynamics and predicates) allows us to exactly compute the sets of lexicographically optimal solutions Y∗ 
+
+> cont
+
+and Y∗ 
+
+> disc
+
+using stan-dard forward and backward reachability analysis (cf. [132]). To evaluate how much more violation is generated by Y∗
+
+> disc
+
+compared to the violation that is lexicographically necessary according to Y∗
+
+> cont
+
+, we compute the worst-case difference of the continuous cost between both solutions and average this error over all N specifications: 
+
+εviol := 1
+
+N
+
+> N
+
+X
+
+> i=1
+
+max(0 , ∆cφi ), with 
+
+∆cφi := max 
+
+> y∈Y ∗
+> disc
+
+cφi (y) − min 
+
+> y∈Y ∗
+> cont
+
+cφi (y). 
+
+> 10 VOLUME XX, 2026
+
+2) Example Scenario 
+
+Fig. 5 (a) presents an example scenario for mφ1 = · · · =
+
+mφ8 = 5 . The deviation of Y∗ 
+
+> disc
+
+from Y∗ 
+
+> cont
+
+due to order relaxation and order inversion (cf. Sec. IV -C) is evident. For instance, the solution of the discretized problem violates φ2
+
+more than the solution of the continuous problem, which subsequently enables satisfying φ3, which the continuous solution cannot achieve. The violation error for this scenario is εviol = 0 .9.                             
+
+> 012345678
+> −10 .0
+> −7.5
+> −5.0
+> −2.50.02.55.07.510 .0
+> State  yk
+> Discrete time k
+> ˜c1c1˜c3c3˜c5c5˜c7c7
+> ˜c2c2˜c4c4˜c6c6˜c8c8
+> Y∗
+> cont
+> Y∗
+> disc
+> (a) Visualization of the reachable set for the solution using the continuous cost function (blue) and for the solution using the discretized cost function (orange). Additionally, the continuous and discretized costs corresponding to the specifications φkare presented (arrows pointing towards lower cost values).
+> 016 32 48 64 80 96 112 128 144 160
+> 0
+> 0.2
+> 0.4
+> 0.6
+> 0.8
+> 1
+> 1.2
+> 1.4
+> 1.6
+> Total number mtotal of violation intervals Violation error  εviol
+> Even Distribution
+> Linear Increase
+> Linear Decrease
+> Best Distribution
+> Sampled Distributions
+> (b) Violation error for different interval distributions over the total number of violation intervals. Highlighted are the even distribution (red), distribution of linear increase (blue), distribution of linear decrease (green), and the best found distribution (gray). FIGURE 5: Results of the discretization experiments. (a) Comparison of the lexicographically optimal solutions for the continuous and discretized cost function. (b) Influence of the discretization granularity and violation interval distribution on the violation error.
+
+To investigate the effect of discretization granularity, we increase the total number of violation intervals mtotal stepwise from 8 to 160 and allocate them among the eight specifica-tions by generating 10000 unbiased random compositions via the stars-and-bars method [133]. By evaluating the violation error for all compositions at each step, we identify the distribution that minimizes the error. Also, we evaluate an even distribution (i.e., mφ1 = · · · = mφ8 ), a linear increase, and a linear decrease, mimicking our hierarchical structure. Fig. 5 (b) illustrates the resulting violation errors. The graph of the best distribution shows that the finer the discretization, the lower the error. As the total number of violation intervals increases, the individual violation intervals become smaller, thereby mitigating the influence of order relaxation and order inversion. Furthermore, the error strongly depends on the chosen distribution of violation intervals. For a few violation intervals ( mtotal < 40 ), the linear decrease performs better. However, the even distribution consistently outperforms the other strategies for mtotal ≥ 40 .
+
+3) Batch Evaluation 
+
+Next, we conduct a batch evaluation of 10000 scenarios to validate our previous findings. For each scenario, the thresholds rk are randomly sampled from the interval [−3, 3] .As in the previous analysis, we vary the total number mtotal 
+
+of violation intervals and sample 10000 distinct interval distributions for each mtotal .Fig. 6 illustrates the average violation error ¯εviol aggregated across all scenarios for different interval distribution strategies. As the total number of intervals increases, the average violation error decreases significantly across all strategies. This confirms that a finer discretization effectively mitigates the influence of order relaxation and order inversion. Also, the results show that even with a limited number of violation intervals, we can achieve low violation errors. These findings strongly support hypothesis H1 .                
+
+> 016 32 48 64 80 96 112 128 144 160
+> 0
+> 0.2
+> 0.4
+> 0.6
+> 0.8
+> 1
+> 1.2
+> 1.4
+> Total number mtotal of violation intervals
+> Average violation error  ¯εviol  Linear Decrease
+> Linear Increase
+> Even Distribution
+> FIGURE 6: Average violation error ¯εviol over 10000 scenarios for a varying total number of violation intervals and different distribution strategies. Solid lines represent the mean values, while the shaded areas indicate the standard deviation.
+
+B. Solver Evaluations 
+
+We investigate the influence of our solver adaptations on the solution quality using the 10000 scenarios from Sec. VI -A3. Specifically, we examine the impact of the β-decay ( Bcos 
+
+vs. Bexp ), the sample size decay ( Mcos vs. Mconst ), and the output trajectory selection ( ymppi vs. ybest ). We compare a   
+
+> VOLUME XX, 2026 11 Halder et al. : Lexicographic Minimum-Violation Motion Planning using Signal Temporal Logic
+
+baseline solver (which uses Bexp , Mconst , and ymppi ) against configurations that incrementally enable our adaptations (see Tab. 3), leading to our proposed Alg. 1. We again use reachability analysis to compute the true lexicographic optimum Y∗ 
+
+> disc
+
+of the respective discretized problems for reference. The used parameters are: J = 20 , Σ = 0 .5,
+
+λ = 1.0, ˆx0 = 0, ˆuk = 0, ∀k ∈ [0 , K ], γ = 0.6,
+
+βmin = 1 .0e −6, Minit = 400 , and Mfinal = 250 . The solvers are evaluated using the following metrics: 
+
+• Plower , P equal , and Phigher : the percentage over all scenar-ios where the evaluated solver yields a lower, equal, or higher cost than the baseline solver, respectively; 
+
+• ¯εsolv : the mean over all scenarios of the optimality gap 
+
+εsolv := s(y∗ 
+
+> solv )−s(y∗
+> disc )
+> s(y∗
+> disc )
+
+·100% , where y∗ 
+
+> solv
+
+is the solution returned by the solver and y∗ 
+
+> disc
+
+∈ Y ∗
+
+> disc
+
+;
+
+• ¯∆εsolv : the mean over all scenarios of the gap improve-ment compared to the baseline, defined as ∆εsolv := 
+
+εsolv − εbase , where εbase is the optimality gap of the baseline solver. Tab. 3 summarizes the results. Comparing the baseline solver to the true optimum, it already finds the true optimal solution in 63 .17% of the scenarios. Further, implementing our adaptations without reducing the sample size (Config. 1 to Config. 3) consistently outperforms the baseline and substantially lowers the mean optimality gap and the gap improvement. The configurations that use the cosine sample-size decay rule (Config. 4 to Config. 6 and Alg. 1) reduce the overall number of used samples, while the degradation in solution quality is negligible compared to the other configurations. Overall, our Alg. 1 improves the solution quality while also reducing the number of evaluated samples, thereby confirming hypothesis H2 .
+
+TABLE 3: Comparison of solver configurations. The baseline solver configuration uses Bexp , Mconst , and ymppi . Arrows indicate whether higher or lower values are preferred. All metric values are given in %.                                                                                    
+
+> Method Configuration Metrics
+> Mcos Bcos ybest Plower ↑Pequal Phigher ↓¯εsolv ↓¯∆εsolv ↓
+> Baseline ◦◦◦0.00 0.00 0.00 4.13 0.00
+> Config. 1 ◦◦•3.94 96 .06 0.00 4.01 −0.11
+> Config. 2 ◦•◦23 .01 69 .37 7.62 0.70 −3.43
+> Config. 3 ◦••29 .59 66 .86 3.55 0.23 −3.89
+> Config. 4 •◦◦2.36 94 .25 3.39 4.08 −0.05
+> Config. 5 •◦•5.74 91 .82 2.44 3.96 −0.17
+> Config. 6 ••◦21 .01 69 .43 9.56 1.00 −3.13
+> Alg. 1 •••28 .92 67 .12 3.96 0.26 −3.87
+> Optimum –36 .83 63 .17 0.00 0.00 −4.13
+
+C. CommonRoad Scenario 
+
+We demonstrate the practical applicability of our planner in a complex autonomous driving scenario from the CommonRoad benchmark suite [134]. First, we introduce the setup and subsequently present the planning results. 
+
+1) Setup 
+
+We use a kinematic single-track model with state xk := [x, y, θ, δ, v]⊤, where (x, y) is the rear axle position, θ is the orientation, δ is the steering angle, and v is the velocity. The input is uk := [ vδ , a]⊤, where vδ is the steering velocity and a is the longitudinal acceleration. Given the wheelbase 
+
+Lwb ∈ R, the discrete-time system, obtained by explicit Euler discretization, is described by 
+
+xk+1 = xk +∆ t
+
+
+
+vk cos( θk)
+
+vk sin( θk) 
+
+> vk
+> Lwb
+
+tan( δk)
+
+vδ,k 
+
+ak
+
+ , yk =
+
+xk
+
+uk
+
+
+
+.
+
+We apply our minimum-violation planner in an MPC scheme. At each MPC iteration, the planner computes an optimal trajectory y∗, which the ego vehicle follows for one discrete time instance. The initial state is then updated accordingly. This procedure is repeated H times. We define 12 STL specifications that reflect a realistic autonomous-driving setting, including collision avoidance, maintaining safe distances, adhering to speed limits, and complying with a schedule. These specifications are inspired by [12], [13], and are defined as follows: 
+
+φ1 := G(μvelocity-in-limits ∧ μsteering-angle-in-limits ),φ2 := V 
+
+> o∈O
+
+(G(¬μo
+
+> collision
+
+)) ,φ3 := V 
+
+> o∈O
+
+(G(( μo 
+
+> is-ambulance
+
+∧ μo
+
+> is-close
+
+)=⇒ (μis-shifted-to-left ∧ μis-slow ))) ,φ4 := V 
+
+> o∈O
+
+(G(μo
+
+> keeps-static-distance
+
+)) ,φ5 := V 
+
+> o∈O
+
+(G(( μo 
+
+> in-same-lane
+
+∧ μo
+
+> in-front-of
+
+∧ ¬ O[0 ,10] (μo 
+
+> cut-in
+
+∧ O[1 ,1] (¬μo
+
+> cut-in
+
+))) =⇒ μo
+
+> keeps-safe-distance-prec
+
+)) ,φ6 := G(μin-lane ),φ7 := V
+
+> in ∈I
+
+V 
+
+> o∈O
+
+(G(μo 
+
+> has-priority
+
+=⇒ ¬ μin in-intersection )) ,φ8 := G(μbelow-speed-limit ),φ9 := G(μbrakes-abruptly =⇒ V 
+
+> o∈O
+
+(μo 
+
+> in-front-of
+
+∧ μo
+
+> in-same-lane
+
+∧ (¬μo 
+
+> keeps-safe-distance-prec
+
+∨ μo
+
+> brakes-abruptly-relative
+
+))) ,φ10 := G(( V 
+
+> o∈O
+
+(¬(μo 
+
+> is-slow
+
+∧ μo 
+
+> in-same-lane
+
+∧ μo
+
+> in-front-of
+
+))) =⇒ μpreserves-flow ),φ11 := G(μbelow-long-acc-limit ∧ μbelow-lat-acc-limit ),φ12 := F[K,K ](μat-scheduled-long-pos ),
+
+where O is the set of obstacles and I is the set of intersections in the CommonRoad scenario, respectively. The movement of the obstacles is predicted using a constant-velocity model. For details on the implementation of the predicates, see our source code. As we investigate the in-lane driving specification φ6
+
+later in detail, we formally introduce the used predicate 
+
+μin-lane subsequently. Provided with a reference path, we assume a constant lane width wlane along this path. Fur-thermore, we introduce the functions leftDeviation( yk) and 
+
+rightDeviation( yk), which determine the maximum left and right deviation from the reference path of the ego vehicle,  
+
+> 12 VOLUME XX, 2026
+
+respectively, utilizing a three-disc approximation of the ego vehicle occupancy [135]. The predicate is defined as 
+
+μin-lane := min 
+
+ wlane 
+
+2 − leftDeviation( yk),
+
+rightDeviation( yk) − wlane 
+
+2
+
+
+
+≥ 0.
+
+We adopt the following discretization scheme: For specifi-cations φ1 and φ2, we only differentiate between satisfaction and violation, i.e., mφ1 = mφ2 = 1 . For specifications 
+
+φ3 to φ12 , we use (15) to define the interval bounds. The specific upper bound cost values c for each specification are provided in our source code. We set mφ3 = · · · = mφ12 = 31 
+
+and utilize our space-left-time robustness ηspace-left-time . The remaining parameters are summarized in Tab. 4.                                                       
+
+> TABLE 4: Parameters of the CommonRoad experiments.
+> Description Notation and value Problem Parameters
+> Time increment ∆t= 0 .2sPlanning time horizon K= 15
+> Number of MPC iterations H= 70
+> Upper input bounds u= [0 .3rad/s ,8.0m/s 2]
+> Lower input bounds u= [ −0.3rad/s ,−8.0m/s 2]
+> Wheelbase Lwb = 3 .0mLane width wlane = 4 .0mMin-Max functions ν1=ν2= 10 , ν 3= 1 , ν 4=ν5= 2
+> Solver Parameters
+> Number of iterations J= 20
+> Initial covariance Σ=0.1 0 .00.0 6 .0
+> 
+> Initial temperature λ= 1 .0
+> Initial input trajectory ˆuk= [0 rad/s ,0m/s 2],∀k∈[0 , K ]
+> Minimum decay value βmin = 1 .0e −6
+> Initial number of samples Minit = 1000
+> Final number of samples Mfinal = 100
+
+2) Planning Results 
+
+We analyze the CommonRoad scenario depicted in Fig. 7, rep-resenting a busy intersection on which the ego vehicle intends to turn left. This scenario includes obstacles approaching from the left and right with priority, an approaching ambulance from behind the ego vehicle, and an impatient driver cutting in front of the ego vehicle. Fig. 7 shows the scenario at four MPC iterations, visualizing the planned, sampled, and executed trajectories, respectively, along with the velocity and steering angle profiles for the entire MPC horizon. A video of this maneuver is provided as a supplementary attachment. During the maneuver, the ego vehicle shifts to the right to allow the ambulance to pass (see MPC iteration 20 ). Subsequently, it returns to the lane and plans to cross the intersection, as the impatient driver indicates no intention to move at this time and no other priority vehicles are present (see MPC iteration 42 ). However, the impatient driver abruptly cuts in front, necessitating a hard-braking maneuver of the ego vehicle (see MPC iteration 46 ). Following this, the ego vehicle proceeds by following the leading vehicle (see MPC iteration 
+
+58 ). Overall, given the specifications and system bounds, our minimum-violation planning approach yields a reasonable driving behavior in this highly complex scenario, thereby 
+
+confirming hypothesis H3 .
+
+D. Comparison of Robustness Measures 
+
+Finally, we compare the comprehensive set of robustness measures defined in Tab. 1 and conduct experiments using our running example and the previously introduced CommonRoad scenario. We also assess the computational performance of the measures across 1750 CommonRoad scenarios. 
+
+1) Running Example 
+
+We revisit the overtaking maneuver of a broken-down obstacle from the running example. Fig. 8 (a) illustrates two distinct planning times t1 and t2, and 21 manually created trajectories, respectively. The lane width is wlane = 6 m. We evaluate the robustness measures from Tab. 1 on the trajectories. For clarity, we omit ηtime-left , η time-right , and ηdur as they behave similarly to ηtime-comb , as well as ηagm and ηnew which behave similar to ηpm . Fig. 8 (b) shows the resulting robustness values for all samples for both time steps. For our motion planning purposes, trajectories describing different maneuvers must be numerically distinguishable. This does not hold for the space robustness ηspace , which is evident at t2, as the samples that would turn right towards the lane (samples 10 to 20 ) share the same robustness value. This effect is even more dominant for the combined-time robustness ηtime-comb . At time t1, we cannot differentiate the samples that remain in the lane (samples 7 to 13 ). At time t2, only the samples 18 to 20 can be distinguished, as only for these samples the ego vehicle is completely back in the lane. For the smooth robustness ηsmooth at t2, the samples 12 to 20 have almost identical robustness values, making differentiation challenging. In contrast, the power-mean robustness ηpm , the duration-severity robustness ηdur-sev ,and our space-left-time robustness ηspace-left-time provide a good differentiation of the trajectories at both time steps. These results support hypothesis H4 .
+
+2) CommonRoad Scenario 
+
+We now evaluate the robustness measures on the Common-Road scenario from Sec. VI -C. We plan over H = 70 MPC iterations using our Alg. 1. Fig. 9 (a) visualizes the scenario, and Fig. 9 (b) presents the robustness values of the executed trajectory per measure over the MPC iterations for the in-lane driving specification φ6. Again, we only present a subset of the robustness measures for clarity. Fig. 9 (a) shows that all robustness measures, except the combined-time robustness ηcomb-time , initially swerve to the right to clear the way for the ambulance and subsequently return to the lane. In contrast, ηcomb-time causes the ego vehicle to drive off the road and fails to return to the lane, which is also evident in its robustness values in Fig. 9 (b). Similarly, the values of the space robustness ηspace remain negative after the ego vehicle leaves the lane, clearly emphasizing the lack of differentiation between trajectory samples (as demonstrated in Sec. VI -D1). For the space-left-time robustness ηspace-left-time ,  
+
+> VOLUME XX, 2026 13 Halder et al. : Lexicographic Minimum-Violation Motion Planning using Signal Temporal Logic
+
+MPC iteration 20 MPC iteration 42 MPC iteration 46 MPC iteration 58 
+
+Reference path Lane 
+
+Samples Planned trajectory Executed trajectory Ego vehicle Ambulance 
+
+Obstacles with priority Obstacles without priority 
+
+(a) The CommonRoad Scenario at four MPC iterations.        
+
+> 010 20 30 40 50 60 70
+> 0
+> 2
+> 4
+> 6
+> 8
+> MPC iteration
+> v [m/s]
+
+(b) Velocity profile of the executed trajectory.        
+
+> 010 20 30 40 50 60 70
+> −0.4
+> −0.2
+> 0
+> 0.2
+> 0.4
+> MPC iteration
+> δ [rad ]
+
+(c) Steering angle profile of the executed trajectory. FIGURE 7: Planning results of the CommonRoad scenario. (a) Scenario at four MPC iterations, including the planned trajectory, sampled trajectories, and executed trajectory. (b) Velocity profile and (c) steering angle profile of the executed trajectory over the entire MPC horizon. 
+
+the ego vehicle rapidly moves to the right, as indicated by the steep decline of the robustness values during MPC iterations 0 to 10 . Subsequently, the ego vehicle quickly returns to the lane, and the robustness remains positive after MPC iteration 45 . The remaining robustness measures exhibit similar behavior. These results show that, unlike our combined measure, the pure space and time robustness measures are not suitable for our motion planning purposes. This again supports hypothesis H4 .
+
+3) Computational Performance 
+
+Finally, we compare the computational performance of the robustness measures over 1750 CommonRoad scenarios. We compare the following metrics over all scenarios: 
+
+• tsol : the total solve time of Alg. 1 for one MPC iteration; 
+
+• trob : the time for evaluating a robustness measure for the in-lane-driving specification φ6 for 11000 trajectory samples per MPC iteration; 
+
+• Pcalls : the number of calls of the predicate function 
+
+pμin-lane (y, k ) per trajectory evaluation. The results are presented in Tab. 5: Due to their mathe-matical definition (cf. Tab. 2), the space-left-time robustness and the time robustness measures inherently have the highest number of predicate evaluations Pcalls . However, due to pos-sible caching of evaluation results, the trajectory evaluation time trob is only doubled, compared to space robustness. The solver times tsol remain similar across all measures due 
+
+TABLE 5: Computational performance of robustness measures. 
+
+Robustness Measure 
+
+tsol [ms] trob [ms] Pcalls 
+
+Mean Std. Mean Std. Mean Std. 
+
+ηspace 355 .4 38 .2 9.6 0.3 16 0
+
+ηleft-time 377 .0 44 .2 17 .6 1.0 100 23 
+
+ηright-time 369 .1 43 .5 16 .3 0.7 100 23 
+
+ηcomb-time 373 .1 43 .2 17 .8 0.8 95 21 
+
+ηdur 357 .4 40 .0 10 .0 0.3 16 0
+
+ηdur-sev 355 .9 40 .6 9.5 0.3 16 0
+
+ηsmooth 359 .9 41 .4 11 .2 0.3 16 0
+
+ηagm 356 .7 36 .6 9.9 0.3 16 0
+
+ηnew 383 .7 40 .3 14 .4 0.6 16 0
+
+ηpm 366 .8 38 .4 11 .6 0.5 16 0
+
+ηspace-left-time 377 .0 43 .9 18 .0 0.9 100 24 
+
+to the parallelizability of the trajectory evaluations. This demonstrates that our space-left-time robustness remains computationally competitive, thus supporting hypothesis H4 .Note that a qualitative comparison of the resulting trajectories is omitted, as solution quality depends heavily on the parameterization and specifications used. 
+
+VII. Conclusions 
+
+We present a comprehensive framework for minimum-violation motion planning that resolves conflicting, totally ordered specifications formalized in STL. By transforming the underlying lexicographic optimization problem into a single-objective problem via non-uniform quantization and bit-shifting, we avoid the high computational complexity of  
+
+> 14 VOLUME XX, 2026
+
+Ego vehicle at t1
+
+> Samples
+
+20 0
+
+Ego vehicle at t2
+
+Obstacle 
+
+> Samples
+
+20 0
+
+(a) Scenario at time t1 and time t2 with the respective trajectory samples.                 
+
+> −1
+> −0.5
+> 0
+> 0.5
+> 1
+> 0
+> Ego vehicle at t1
+> Robustness value  ηφlane
+> ηsmooth ηpm ηdur-sev
+> ηspace ηcomb-time ηspace-left-time
+> 0246810 12 14 16 18 20
+> −1
+> −0.8
+> −0.6
+> −0.4
+> Ego vehicle at t2
+> Sample index Robustness value  ηφlane
+
+(b) Robustness values the specification φlane for different robustness measures at time t1 (top) and time t2 (bottom). The values are normalized to [−1, 1] for each measure. FIGURE 8: Comparison of robustness measures for the running example. (a) Visualization of the scenario and trajectory samples. (b) Robustness values for φlane .
+
+traditional preemptive schemes. This enables the optimization of non-smooth STL robustness measures without restricting the STL fragment, thereby allowing the tackling of highly complex autonomous driving scenarios in a computation-ally tractable manner. To address the resulting non-smooth optimization problem, we extend the deterministic MPPI solver by eliminating the mandatory quadratic input cost and introducing additional adaptations that improve solution quality and computation time. Our extensive experimental evaluations demonstrate that for the proposed scalarization, even a limited number of evenly distributed violation intervals achieves low violation errors. Finally, our benchmark confirms that our proposed space-left-time robustness measure resolves the trajectory indistinguishability of standard measures while remaining computationally competitive. Future work will focus on automating the tuning of discretization parameters, such as the upper bound cost values. We also plan to validate the approach through real-world testing. 
+
+Ego vehicle 
+
+ηsmooth 
+
+ηpm 
+
+ηdur-sev 
+
+ηspace 
+
+ηcomb-time 
+
+ηspace-left-time 
+
+(a) Executed trajectories for different robustness measures.             
+
+> 010 20 30 40 50 60 70
+> −1
+> −0.75
+> −0.5
+> −0.25
+> 0
+> 0.25
+> 0
+> Discrete time k
+> Robustness value  ηφ6
+> ηsmooth ηpm ηdur-sev
+> ηspace ηcomb-time ηspace-left-time
+
+# 0 10 20 30 40 50 60 70 
+
+# −1
+
+# −0.75 
+
+# −0.5
+
+# −0.25 
+
+# 0
+
+# 0.25 
+
+# 0
+
+# Discrete time k
+
+> Robustness value  ηφ6
+
+# ηsmooth ηpm ηdur-sev 
+
+# ηspace ηcomb-time ηspace-left-time 
+
+(b) Robustness values for the specification φ6 over the MPC iterations. The values are normalized to [−1, 1] for each measure. FIGURE 9: Comparison of robustness measures in the CommonRoad scenario. (a) Visualization of the executed trajectories. (b) Robustness values for the in-lane driving specification φ6.
+
+VIII. Acknowledgment 
+
+The authors gratefully thank Fabian Christ for his help with the code implementations. 
+
+Appendix A Minimum and Maximum Operators Definitions 
+
+This appendix provides the definitions of the minimum operators ▽⋆ and the maximum operators △⋆. Let κ =[κ1, . . . , κ z ] ∈ Rz with z ≥ 1, and let ν1, ν 2, ν 3, ν 4, ν 5 ∈
+
+R>0. For ⋆ ∈ { std , dur }, we define the associated maximum operators by the duality rule △⋆(κ) := − ▽ ⋆(− κ). For 
+
+⋆ ∈ { agm , new , pm , dur-sev }, we likewise define △⋆ by duality, but additionally enforce the following conventions on R for the corresponding minimum operators: if any component satisfies κi = −∞ , then ▽⋆(κ) := −∞ ; if all components satisfy κi = + ∞, then ▽⋆(κ) := + ∞.The smooth operators are defined explicitly (i.e., ▽smooth 
+
+and △smooth are not linked by duality); therefore, to ensure soundness on R we also impose extended-real conventions: if any κi = −∞ , then ▽smooth (κ) := −∞ ; if all κi = + ∞,then ▽smooth (κ) := + ∞. Similarly for the maximum operator, if any κi = +∞, then △smooth (κ) := +∞, and if all 
+
+κi = −∞ , then △smooth (κ) := −∞ . In all remaining cases (i.e., after applying the above conventions), the operators are   
+
+> VOLUME XX, 2026 15 Halder et al. : Lexicographic Minimum-Violation Motion Planning using Signal Temporal Logic
+
+evaluated using standard extended-real arithmetic conventions (e.g., e−∞ = 0 ). The operators are defined as follows: 
+
+▽std (κ) := κmin ,
+
+▽dur (κ) := 
+
+(
+
+κmin , if κmin > 0,
+
+− 1
+
+> z
+
+Pzi=1 1κi<0, else ,
+
+▽dur-sev (κ) := 
+
+(
+
+κmin , if κmin > 0,
+
+> 1
+> z
+
+Pzi=1 min( κi, 0) , else ,
+
+▽smooth (κ) := − 1
+
+ν1
+
+log 
+
+> z
+
+X
+
+> i=1
+
+e−ν1κi
+
+!
+
+,
+
+△smooth (κ) := 
+
+Pzi=1 κieν2κi
+
+Pzi=1 eν2κi
+
+,
+
+▽agm (κ) := 
+
+
+
+> 1
+> z
+
+Pzi=1 min( κi, 0) , if κmin ≤ 0,
+
+> z
+
+pQ zi=1 (1 + κi) − 1, else ,
+
+▽new (κ) := 
+
+Pzi=1 κmin e˜κi eν3 ˜κi
+
+Pzi=1 eν3 ˜κi
+
+, if κmin < 0,
+
+Pzi=1 κie−ν3 ˜κi
+
+Pzi=1 e−ν3 ˜κi
+
+, if κmin > 0,
+
+0, else ,
+
+▽pm (κ) := 
+
+  1
+
+> z
+
+Pzi=1 κν4
+
+> i
+
+ 1 
+
+> ν4
+
+, if κmin > 0,
+
+−   1
+
+> z
+
+Pzi=1 (− min( κi, 0)) ν5
+
+ 1 
+
+> ν5
+
+, else ,
+
+with κmin := min( κ), ˜κi := ( κi − κmin )/κ min for κmin ̸ = 0 ,and 1κi<0 := 1 if κi < 0, else 0.
+
+Appendix B Proof of Order Representation 
+
+This appendix provides the proof for Lem. 1, establishing the equivalence between the lexicographic order on the discrete cost vectors and the scalar cost values. 
+
+Proof: 
+
+If ˜c(y) = ˜ c(y′), then s(y) = s(y′) holds trivially. Assume 
+
+˜c(y)̸ = ˜ c(y′) and ˜c(y) ⪯lex ˜c(y′). Let i∗ ∈ { 1, . . . , N } be the smallest index at which the discrete cost vectors differ, i.e., 
+
+˜cφi (y) = ˜ cφi (y′) for all i < i ∗ and ˜cφi∗ (y) < ˜cφi∗ (y′) (cf. Def. 3). This strict inequality implies ˜cφi∗ (y′) − ˜cφi∗ (y) ≥ 1.The difference in scalar cost is 
+
+s(y′) − s(y) = (˜ cφi∗ (y′) − ˜cφi∗ (y))2 Bi∗
+
++
+
+> N
+
+X
+
+> i=i∗+1
+
+(˜ cφi (y′) − ˜cφi (y))2 Bi .
+
+Since 0 ≤ ˜cφi (·) ≤ mφi < 2bi , the magnitude of the residual sum is strictly bounded by PNi=i∗+1 (2 bi − 1)2 Bi = 2 Bi∗ − 1.Consequently, the term (˜ cφi∗ (y′) − ˜cφi∗ (y))2 Bi∗ ≥ 2Bi∗
+
+dominates the lower-priority terms, ensuring s(y′)−s(y) > 0.The reverse direction follows from the uniqueness of the base representation, which is guaranteed by the disjoint bit ranges assigned to each cost component in (12). 
+
+REFERENCES 
+
+[1] N. Mehdipour, M. Althoff, R. Duintjer Tebbens, and C. Belta, “Formal methods to comply with rules of the road in autonomous driving: State of the art and grand challenges,” Automatica , vol. 152, pp. 1–15, 2023. [2] M. Althoff, S. Maierhofer, G. W ¨ursching, Y. Lin, F. Lercher, and R. Stolz, “No more traffic tickets: A tutorial to ensure traffic-rule compliance of automated vehicles,” Proc. of the IEEE , pp. 1–30, 2025. [3] P. Halder, H. Homburger, L. Kiltz, J. Reuter, and M. Althoff, “Trajec-tory planning with signal temporal logic costs using deterministic path integral optimization,” in Proc. of the IEEE Int. Conf. on Robotics and Automation , 2025, pp. 4221–4228. [4] A. Rizaldi, J. Keinholz, M. Huber, J. Feldle, F. Immler, M. Althoff, E. Hilgendorf, and T. Nipkow, “Formalising and monitoring traffic rules for autonomous vehicles in Isabelle/HOL,” in Proc. of the Int. Conf. on Integrated Formal Methods , 2017, pp. 50–66. [5] K. Esterle, L. Gressenbuch, and A. Knoll, “Formalizing traffic rules for machine interpretability,” in Proc. of the IEEE Connected and Automated Vehicles Symposium , 2020, pp. 1–7. [6] J. T ˚umov ´a, L. I. Reyes Castro, S. Karaman, E. Frazzoli, and D. Rus, “Minimum-violation LTL planning with conflicting specifications,” in 
+
+Proc. of the American Control Conf. , 2013, pp. 200–205. [7] L. I. Reyes Castro, P. Chaudhari, J. T ˚umov ´a, S. Karaman, E. Frazzoli, and D. Rus, “Incremental sampling-based algorithm for minimum-violation motion planning,” in Proc. of the IEEE Conf. on Decision and Control , 2013, pp. 3217–3224. [8] J. Rong and N. Luan, “Safe reinforcement learning with policy-guided planning for autonomous driving,” in Proc. of the IEEE Int. Conf. on Mechatronics and Automation , 2020, pp. 320–326. [9] H. Schl ¨uter, P. Schillinger, and M. B ¨urger, “On the design of penalty structures for minimum-violation LTL motion planning,” in Proc. of the IEEE Conf. on Decision and Control , 2018, pp. 4153–4158. [10] C.-I. Vasile, J. T ˚umov ´a, S. Karaman, C. Belta, and D. Rus, “Minimum-violation scLTL motion planning for mobility-on-demand,” in Proc. of the IEEE Int. Conf. on Robotics and Automation , 2017, pp. 1481– 1488. [11] E. Bartocci, J. Deshmukh, A. Donz ´e, G. Fainekos, O. Maler, D. Ni ˇckovi ´c, and S. Sankaranarayanan, “Specification-based mon-itoring of cyber-physical systems: A survey on theory, tools and applications,” in Lectures on Runtime Verification: Introductory and Advanced Topics , 2018, pp. 135–175. [12] S. Maierhofer, A.-K. Rettinger, E. C. Mayer, and M. Althoff, “Formalization of interstate traffic rules in temporal logic,” in Proc. of the IEEE Intelligent Vehicles Symposium , 2020, pp. 752–759. [13] S. Maierhofer, P. Moosbrugger, and M. Althoff, “Formalization of intersection traffic rules in temporal logic,” in Proc. of the IEEE Intelligent Vehicles Symposium , 2022, pp. 1135–1144. [14] H. Krasowski and M. Althoff, “Temporal logic formalization of marine traffic rules,” in Proc. of the IEEE Intelligent Vehicles Symposium ,2021, pp. 186–192. [15] R. Shi and X. Wang, “Digitizing traffic rules to guide automated vehicle trajectory planning,” Expert Systems with Applications , vol. 272, pp. 1–22, 2025. [16] M. Hekmatnejad, S. Yaghoubi, A. Dokhanchi, H. B. Amor, A. Shri-vastava, L. Karam, and G. Fainekos, “Encoding and monitoring responsibility sensitive safety rules for automated vehicles in signal temporal logic,” in Proc. of the ACM/IEEE Int. Conf. on Formal Methods and Models for System Design , 2019, pp. 1–11. [17] N. Ar ´echiga, “Specifying safety of autonomous vehicles in signal temporal logic,” in Proc. of the IEEE Intelligent Vehicles Symposium ,2019, pp. 58–63. [18] P. Halder, F. Christ, and M. Althoff, “Lexicographic mixed-integer motion planning with STL constraints,” in Proc. of the IEEE Int. Conf. on Intelligent Transportation Systems , 2023, pp. 1361–1367. [19] H. C. Siu, K. Leahy, and M. Mann, “STL: Surprisingly tricky logic (for system validation),” in Proc. of the IEEE/RSJ Int. Conf. on Intelligent Robots and Systems , 2023, pp. 8613–8620. [20] I. Hurley, R. Paleja, A. Suh, J. D. Pe ˜na, and H. C. Siu, “STL: Still tricky logic (for system validation, even when showing your work),” in Proc. of the Conf. on Neural Information Processing Systems , 2024, pp. 119 099–119 122.  
+
+> 16 VOLUME XX, 2026
+
+[21] A. Linard, I. Torre, I. Leite, and J. T ˚umov ´a, “Inference of multi-class STL specifications for multi-label human-robot encounters,” in Proc. of the IEEE/RSJ Int. Conf. on Intelligent Robots and Systems , 2022, pp. 1305–1311. [22] P. Khanna, J. Fredberg, M. Bj ¨orkman, C. Smith, and A. Linard, “Hand it to me formally! Data-driven control for human-robot handovers with signal temporal logic,” IEEE Robotics and Automation Letters ,vol. 9, no. 10, pp. 9039–9046, 2024. [23] C. Belta and S. Sadraddini, “Formal methods for control synthesis: An optimization perspective,” Annual Review of Control, Robotics, and Autonomous Systems , vol. 2, no. 1, pp. 115–140, 2019. [24] V. Kurtz and H. Lin, “Mixed-integer programming for signal temporal logic with fewer binary variables,” IEEE Control Systems Letters ,vol. 6, pp. 2635–2640, 2022. [25] A. Rodionova, L. Lindemann, M. Morari, and G. Pappas, “Temporal robustness of temporal logic specifications: Analysis and control design,” ACM Trans. on Embedded Computing Systems , vol. 22, no. 1, pp. 1–44, 2022. [26] A. Donz ´e and O. Maler, “Robust satisfaction of temporal logic over real-valued signals,” in Proc. of the Int. Conf. on Formal Modeling and Analysis of Timed Systems , 2010, pp. 92–106. [27] Y. V. Pant, H. Abbas, and R. Mangharam, “Smooth operator: Control using the smooth robustness of temporal logic,” in Proc. of the IEEE Conf. on Control Technology and Applications , 2017, pp. 1235–1240. [28] Y. V. Pant, H. Abbas, R. A. Quaye, and R. Mangharam, “Fly-by-logic: Control of multi-drone fleets with temporal logic objectives,” in Proc. of the ACM/IEEE Int. Conf. on Cyber-Physical Systems , 2018, pp. 186–197. [29] C. Dawson and C. Fan, “Robust counterexample-guided optimization for planning from differentiable temporal logic,” in Proc. of the IEEE/RSJ Int. Conf. on Intelligent Robots and Systems , 2022, pp. 7205–7212. [30] Y. Gilpin, V. Kurtz, and H. Lin, “A smooth robustness measure of signal temporal logic for symbolic control,” IEEE Control Systems Letters , vol. 5, no. 1, pp. 241–246, 2021. [31] V. Kurtz and H. Lin, “Trajectory optimization for high-dimensional nonlinear systems under STL specifications,” IEEE Control Systems Letters , vol. 5, no. 4, pp. 1429–1434, 2021. [32] S. Welikala, H. Lin, and P. J. Antsaklis, “Smooth robustness measures for symbolic control via signal temporal logic,” arXiv preprint arXiv:2305.09116 , 2023. [33] S. Uzun, P. Elango, P.-L. Garoche, and B. Acikmese, “Optimization with temporal and logical specifications via generalized mean-based smooth robustness measures,” arXiv preprint arXiv:2405.10996 , 2024. [34] N. Mehdipour, C.-I. Vasile, and C. Belta, “Specifying user preferences using weighted signal temporal logic,” IEEE Control Systems Letters ,vol. 5, no. 6, pp. 2006–2011, 2021. [35] G. A. Cardona and C.-I. Vasile, “Preferences on partial satisfaction using weighted signal temporal logic specifications,” in Proc. of the European Control Conf. , 2023, pp. 1–6. [36] N. Baharisangari, K. Hirota, R. Yan, A. Julius, and Z. Xu, “Weighted graph-based signal temporal logic inference using neural networks,” 
+
+IEEE Control Systems Letters , vol. 6, pp. 2096–2101, 2022. [37] L. Lindemann and D. V. Dimarogonas, “Robust motion planning employing signal temporal logic,” in Proc. of the American Control Conf. , 2017, pp. 2950–2955. [38] I. Haghighi, N. Mehdipour, E. Bartocci, and C. Belta, “Control from signal temporal logic specifications with smooth cumulative quantitative semantics,” in Proc. of the IEEE Conf. on Decision and Control , 2019, pp. 4361–4366. [39] N. Mehdipour, C.-I. Vasile, and C. Belta, “Average-based robustness for continuous-time signal temporal logic,” in Proc. of the IEEE Conf. on Decision and Control , 2019, pp. 5312–5317. [40] ——, “Arithmetic-geometric mean robustness for control from signal temporal logic specifications,” in Proc. of the American Control Conf. ,2019, pp. 1690–1695. [41] P. Varnai and D. V. Dimarogonas, “On robustness metrics for learning STL tasks,” in Proc. of the American Control Conf. , 2020, pp. 5394– 5399. [42] D. Zhao, Z. Zhou, Z. Cai, T. Long, S. Yangui, and X. Xue, “ASTL: Accumulative signal temporal logic for IoT service monitoring,” in 
+
+Proc. of the IEEE Int. Conf. on Web Services , 2022, pp. 256–265. [43] P. Halder and M. Althoff, “Minimum-violation velocity planning with temporal logic constraints,” in Proc. of the IEEE Int. Conf. on Intelligent Transportation Systems , 2022, pp. 2520–2527. [44] Y. Lin, H. Li, and M. Althoff, “Model predictive robustness of signal temporal logic predicates,” IEEE Robotics and Automation Letters ,vol. 8, no. 12, pp. 8050–8057, 2023. [45] N. Mehdipour, C.-I. Vasile, and C. Belta, “Generalized mean robust-ness for signal temporal logic,” IEEE Trans. on Automatic Control ,vol. 70, no. 3, pp. 1949–1956, 2025. [46] L. Lindemann, A. Rodionova, and G. Pappas, “Temporal robustness of stochastic signals,” in Proc. of the ACM Int. Conf. on Hybrid Systems: Computation and Control , 2022, pp. 1–11. [47] A. Rodionova, L. Lindemann, M. Morari, and G. J. Pappas, “Combined left and right temporal robustness for control under STL specifications,” 
+
+IEEE Control Systems Letters , vol. 7, pp. 619–624, 2023. [48] X. Yu, X. Yin, and L. Lindemann, “Efficient STL control synthesis under asynchronous temporal robustness constraints,” in Proc. of the IEEE Conf. on Decision and Control , 2023, pp. 6847–6854. [49] J. Verhagen, L. Lindemann, and J. T ˚umov ´a, “Temporally robust multi-agent STL motion planning in continuous time,” in Proc. of the American Control Conf. , 2024, pp. 251–258. [50] J. Karlsson, F. S. Barbosa, and J. T ˚umov ´a, “Sampling-based motion planning with temporal logic missions and spatial preferences,” IFAC-PapersOnLine , vol. 53, no. 2, pp. 15 537–15 543, 2020. [51] J. Karlsson, S. van Waveren, C. Pek, I. Torre, I. Leite, and J. T ˚umov ´a, “Encoding human driving styles in motion planning for autonomous vehicles,” in Proc. of the IEEE Int. Conf. on Robotics and Automation ,2021, pp. 1050–1056. [52] Z. Lin and J. S. Baras, “Optimization-based motion planning and runtime monitoring for robotic agent with space and time tolerances,” 
+
+IFAC-PapersOnLine , vol. 53, no. 2, pp. 1874–1879, 2020. [53] F. Finkeldei, M. Wolf, J.-N. Weghorn, A. Pretschner, and M. Althoff, “Enhanced traffic rule monitoring using model-predictive and duration-aware robustness,” in Proc. of the IEEE Int. Conf. on Intelligent Transportation Systems , 2025, pp. 1322–1329. [54] S. Sadraddini and C. Belta, “Formal synthesis of control strategies for positive monotone systems,” IEEE Trans. on Automatic Control ,vol. 64, no. 2, pp. 480–495, 2019. [55] Y. E. Sahin, R. Quirynen, and S. D. Cairano, “Autonomous vehicle decision-making and monitoring based on signal temporal logic and mixed-integer programming,” in Proc. of the American Control Conf. ,2020, pp. 454–459. [56] E. Aasi, C. I. Vasile, and C. Belta, “A control architecture for provably-correct autonomous driving,” in Proc. of the American Control Conf. ,2021, pp. 2913–2918. [57] Y. Yuan, T. Quartz, and J. Liu, “Signal temporal logic planning with time-varying robustness,” IEEE Control Systems Letters , vol. 8, pp. 3015–3020, 2024. [58] E. Aasi, M. Cai, C.-I. Vasile, and C. Belta, “A two-level control algorithm for autonomous driving in urban environments,” IEEE Trans. on Intelligent Transportation Systems , vol. 26, no. 1, pp. 410–424, 2025. [59] A. Rodionova, L. Lindemann, M. Morari, and G. J. Pappas, “Time-robust control for STL specifications,” in Proc. of the IEEE Conf. on Decision and Control , 2021, pp. 572–579. [60] K. Leung, N. Ar ´echiga, and M. Pavone, “Backpropagation through signal temporal logic specifications: Infusing logical structure into gradient-based methods,” The Int. Journal of Robotics Research ,vol. 42, no. 6, pp. 356–370, 2023. [61] A. T. Buyukkocak and D. Aksaray, “Resilient online planning for mobile robots with minimal relaxation of signal temporal logic specifications,” IEEE Robotics and Automation Letters , vol. 10, no. 6, pp. 5935–5942, 2025. [62] Y. Mao, B. Acikmese, P.-L. Garoche, and A. Chapoutot, “Succes-sive convexification for optimal control with signal temporal logic specifications,” in Proc. of the ACM Int. Conf. on Hybrid Systems: Computation and Control , 2022, pp. 1–7. [63] T. Claudet, D. Martire, D. Losa, F. Sanfedino, and D. Alazard, “A novel graph-based theory for convexification of mission-planning constraints and generative pre-trained trajectory optimization,” IFAC Journal of Systems and Control , vol. 30, pp. 1–13, 2024. [64] Y. Takayama, K. Hashimoto, and T. Ohtsuka, “STLCCP: Efficient convex optimization-based framework for signal temporal logic   
+
+> VOLUME XX, 2026 17 Halder et al. : Lexicographic Minimum-Violation Motion Planning using Signal Temporal Logic
+
+specifications,” IEEE Trans. on Automatic Control , vol. 70, no. 9, pp. 6064–6079, 2025. [65] L. Lindemann and D. V. Dimarogonas, “Control barrier functions for signal temporal logic tasks,” IEEE Control Systems Letters , vol. 3, no. 1, pp. 96–101, 2019. [66] ——, “Barrier function based collaborative control of multiple robots under signal temporal logic tasks,” IEEE Trans. on Control of Network Systems , vol. 7, no. 4, pp. 1916–1928, 2020. [67] M. Charitidou and D. V. Dimarogonas, “Barrier function-based model predictive control under signal temporal logic specifications,” in Proc. of the European Control Conf. , 2021, pp. 734–739. [68] W. Xiao, N. Mehdipour, A. Collin, A. Y. Bin-Nun, E. Frazzoli, R. D. Tebbens, and C. Belta, “Rule-based optimal control for autonomous driving,” in Proc. of the ACM/IEEE Int. Conf. on Cyber-Physical Systems , 2021, pp. 143–154. [69] L. Lindemann, G. J. Pappas, and D. V. Dimarogonas, “Control barrier functions for nonholonomic systems under risk signal temporal logic specifications,” in Proc. of the IEEE Conf. on Decision and Control ,2020, pp. 1422–1428. [70] Z. Huang, W. Lan, and X. Yu, “A formal control framework of autonomous vehicle for signal temporal logic tasks and obstacle avoidance,” IEEE Trans. on Intelligent Vehicles , vol. 9, no. 1, pp. 1930–1940, 2024. [71] A. Ruo, L. Sabattini, and V. Villani, “CBF-based motion planning for socially responsible robot navigation guaranteeing STL specification*,” in Proc. of the European Control Conf. , 2024, pp. 122–127. [72] P. Yu, X. Tan, and D. V. Dimarogonas, “Continuous-time control synthesis under nested signal temporal logic specifications,” IEEE Trans. on Robotics , vol. 40, pp. 2272–2286, 2024. [73] F. S. Barbosa, J. Karlsson, P. Tajvar, and J. T ˚umov ´a, “Formal methods for robot motion planning with time and space constraints,” in Proc. of the Int. Conf. on Formal Modeling and Analysis of Timed Systems ,2021, pp. 1–14. [74] A. Linard, I. Torre, E. Bartoli, A. Sleat, I. Leite, and J. T ˚umov ´a, “Real-time RRT* with signal temporal logic preferences,” in Proc. of the IEEE/RSJ Int. Conf. on Intelligent Robots and Systems , 2023, pp. 8621–8627. [75] M. Sewlia, C. K. Verginis, and D. V. Dimarogonas, “Cooperative sampling-based motion planning under signal temporal logic specifica-tions,” in Proc. of the American Control Conf. , 2023, pp. 2697–2702. [76] G. Marchesini, S. Liu, L. Lindemann, and D. V. Dimarogonas, “Sampling-based planning under STL specifications: A forward invariance approach,” arXiv preprint arXiv:2506.10739 , 2025. [77] P. V ´arnai, “Path integral control endowed robot planning under spatiotemporal logic specifications,” Ph.D. dissertation, KTH Royal Institute of Technology, 2022. [78] W. Liu, N. Mehdipour, and C. Belta, “Recurrent neural network controllers for signal temporal logic specifications subject to safety constraints,” IEEE Control Systems Letters , vol. 6, pp. 91–96, 2022. [79] K. Leung and M. Pavone, “Semi-supervised trajectory-feedback controller synthesis for signal temporal logic specifications,” in Proc. of the American Control Conf. , 2022, pp. 178–185. [80] Y. Meng and C. Fan, “Signal temporal logic neural predictive control,” 
+
+IEEE Robotics and Automation Letters , vol. 8, no. 11, pp. 7719–7726, 2023. [81] N. K. Singh and I. Saha, “STL-based synthesis of feedback controllers using reinforcement learning,” in Proc. of the AAAI Conf. on Artificial Intelligence , 2023, pp. 15 118–15 126. [82] N. Saxena, G. Sandeep, and P. Jagtap, “Reinforcement learning for signal temporal logic using funnel-based approach,” in Proc. of the Indian Control Conf. , 2023, pp. 1–6. [83] F. S. Barbosa, D. Duberg, P. Jensfelt, and J. T ˚umov ´a, “Guiding autonomous exploration with signal temporal logic,” IEEE Robotics and Automation Letters , vol. 4, no. 4, pp. 3332–3339, 2019. [84] P. Kapoor, E. Kang, and R. Meira-G ´oes, “Safe planning through incremental decomposition of signal temporal logic specifications,” in 
+
+Proc. of the NASA Formal Methods Symposium , 2024, pp. 377–396. [85] S. Sadraddini and C. Belta, “Robust temporal logic model predictive control,” in Proc. of the Allerton Conf. on Communication, Control, and Computing , 2015, pp. 772–779. [86] S. S. Farahani, V. Raman, and R. M. Murray, “Robust model predictive control for signal temporal logic synthesis,” IFAC-PapersOnLine ,vol. 48, no. 27, pp. 323–328, 2015. [87] I. P. Gambo and K. Taveter, “Identifying and resolving conflicts in requirements by stakeholders: A clustering approach,” in Proc. of the Int. Conf. on Evaluation of Novel Approaches to Software Engineering ,2021, pp. 158–169. [88] R. T. Marler and J. S. Arora, “Survey of multi-objective optimization methods for engineering,” Structural and Multidisciplinary Optimiza-tion , vol. 26, pp. 369–395, 2004. [89] B. Paden, M. ˇC ´ap, S. Z. Yong, D. Yershov, and E. Frazzoli, “A survey of motion planning and control techniques for self-driving urban vehicles,” IEEE Trans. on Intelligent Vehicles , vol. 1, no. 1, pp. 33–55, 2016. [90] I. Das and J. E. Dennis, “A closer look at drawbacks of minimizing weighted sums of objectives for pareto set generation in multicriteria optimization problems,” Structural Optimization , vol. 14, no. 1, pp. 63–69, 1997. [91] J. Branke, Multiobjective Optimization: Interactive and Evolutionary Approaches . Springer, 2008, vol. 1. [92] D. Yi, M. A. Goodrich, and K. D. Seppi, “MORRF: Sampling-based multi-objective motion planning,” in Proc. of the Int. joint Conf. on Artificial Intelligence , 2015, pp. 1733–1739. [93] A. Thoma, K. Thomessen, A. Gardi, A. Fisher, and C. Braun, “Prioritising paths: An improved cost function for local path planning for UAV in medical applications,” The Aeronautical Journal , vol. 127, no. 1318, pp. 2125–2142, 2023. [94] N. Wilde, S. L. Smith, and J. Alonso-Mora, “Scalarizing multi-objective robot planning problems using weighted maximization,” 
+
+IEEE Robotics and Automation Letters , vol. 9, no. 3, pp. 2503–2510, 2024. [95] A. Abouelazm, J. Michel, and J. M. Z ¨ollner, “A review of reward functions for reinforcement learning in the context of autonomous driving,” in Proc. of the IEEE Intelligent Vehicles Symposium , 2024, pp. 156–163. [96] P. Halder and M. Althoff, “Sampling-based motion planning with preordered objectives,” in Proc. of the IEEE Intelligent Vehicles Symposium , 2025, pp. 125–131. [97] C. Schnurr, S. Hohmann, and J. Kolb, “Novel lexicographic MPC for loss optimized torque control of nonlinear PMSM,” in Proc. of the IEEE Conf. on Control Technology and Applications , 2018, pp. 690–697. [98] S. Khosravani, M. Jalali, A. Khajepour, A. Kasaiezadeh, S.-K. Chen, and B. Litkouhi, “Application of lexicographic optimization method to integrated vehicle control systems,” IEEE Trans. on Industrial Electronics , vol. 65, no. 12, pp. 9677–9686, 2018. [99] T. Shan, W. Wang, B. Englot, C. Ratti, and D. Rus, “A receding horizon multi-objective planner for autonomous surface vehicles in urban waterways,” in Proc. of the IEEE Conf. on Decision and Control ,2020, pp. 4085–4092. [100] S. Veer, K. Leung, R. K. Cosner, Y. Chen, P. Karkus, and M. Pavone, “Receding horizon planning with rule hierarchies for autonomous vehicles,” in Proc. of the IEEE Int. Conf. on Robotics and Automation ,2023, pp. 1507–1513. [101] M. Penlington, A. Zanardi, and E. Frazzoli, “Optimization of rulebooks via asymptotically representing lexicographic hierarchies for autonomous vehicles,” arXiv preprint arXiv:2409.11199 , 2024. [102] P. d. l. H. Molins, E. Roy-Almonacid, D. H. Lee, L. Peters, D. Fridovich-Keil, and G. Bakirtzis, “Approximate solutions to games of ordered preference,” arXiv preprint arXiv:2507.11021 , 2025. [103] A. Censi, K. Slutsky, T. Wongpiromsarn, D. Yershov, S. Pendleton, J. Fu, and E. Frazzoli, “Liability, ethics, and culture-aware behavior specification using rulebooks,” in Proc. of the IEEE Int. Conf. on Robotics and Automation , 2019, pp. 8536–8542. [104] L. Lai, L. Fiaschi, M. Cococcioni, and K. Deb, “Pure and mixed lexicographic-paretian many-objective optimization: State of the art,” 
+
+Natural Computing , vol. 22, no. 2, pp. 227–242, 2022. [105] B. Helou, A. Dusi, A. Collin, N. Mehdipour, Z. Chen, C. Lizarazo, C. Belta, T. Wongpiromsarn, R. D. Tebbens, and O. Beijbom, “The reasonable crowd: Towards evidence-based and interpretable models of driving behavior,” in Proc. of the IEEE/RSJ Int. Conf. on Intelligent Robots and Systems , 2021, pp. 6708–6715. [106] M. Cococcioni, M. Pappalardo, and Y. D. Sergeyev, “Lexicographic multi-objective linear programming using grossone methodology: Theory and algorithm,” Applied Mathematics and Computation , vol. 318, pp. 298–311, 2018.  
+
+> 18 VOLUME XX, 2026
+
+[107] H. Wang, Y. Huang, A. Khajepour, D. Cao, and C. Lv, “Ethical decision-making platform in autonomous vehicles with lexicographic optimization based model predictive controller,” IEEE Trans. on Vehicular Technology , vol. 69, no. 8, pp. 8164–8175, 2020. [108] A. Hussain and H.-M. Kim, “EV prioritization and power allocation during outages: A lexicographic method-based multiobjective opti-mization approach,” IEEE Trans. on Transportation Electrification ,vol. 7, no. 4, pp. 2474–2487, 2021. [109] A. Zanardi, E. Mion, M. Bruschetta, S. Bolognani, A. Censi, and E. Frazzoli, “Urban driving games with lexicographic preferences and socially efficient Nash equilibria,” IEEE Robotics and Automation Letters , vol. 6, no. 3, pp. 4978–4985, 2021. [110] L. Fiaschi and M. Cococcioni, “A non-archimedean interior point method and its application to the lexicographic multi-objective quadratic programming,” Mathematics , vol. 10, no. 23, pp. 1–34, 2022. [111] P. Maristany de las Casas, L. Kraus, A. Sede ˜no-Noda, and R. Bornd ¨orfer, “Targeted multiobjective Dijkstra algorithm,” Networks ,vol. 82, no. 3, pp. 277–298, 2023. [112] G. Debreu and W. Hildenbrand, “Representation of a preference ordering by a numerical function,” in Mathematical Economics: Twenty Papers of Gerard Debreu , 1983, pp. 105–110. [113] H. D. Sherali and A. L. Soyster, “Preemptive and nonpreemptive multi-objective programming: Relationship and counterexamples,” Journal of Optimization Theory and Applications , vol. 39, no. 2, pp. 173–186, 1983. [114] A. S. Sathya, G. Pipeleers, W. Decr ´e, and J. Swevers, “A weighted method for fast resolution of strictly hierarchical robot task specifica-tions using exact penalty functions,” IEEE Robotics and Automation Letters , vol. 6, no. 2, pp. 3057–3064, 2021. [115] M. Zarepisheh and E. Khorram, “On the transformation of lex-icographic nonlinear multiobjective programs to single objective programs,” Mathematical Methods of Operations Research , vol. 74, no. 2, pp. 217–231, 2011. [116] H. Rahmani and J. M. O’Kane, “What to do when you can’t do it all: Temporal logic planning with soft temporal logic constraints,” in 
+
+Proc. of the IEEE/RSJ Int. Conf. on Intelligent Robots and Systems ,2020, pp. 6619–6626. [117] M. Lahijanian, S. Almagor, D. Fried, L. Kavraki, and M. Vardi, “This time the robot settles for a cost: A quantitative approach to temporal logic planning with partial satisfaction,” in Proc. of the AAAI Conf. on Artificial Intelligence , 2015, pp. 1–8. [118] J. Karlsson, C.-I. Vasile, J. T ˚umov ´a, S. Karaman, and D. Rus, “Multi-vehicle motion planning for social optimal mobility-on-demand,” in 
+
+Proc. of the IEEE Int. Conf. on Robotics and Automation , 2018, pp. 7298–7305. [119] J. T ˚umov ´a, G. C. Hall, S. Karaman, E. Frazzoli, and D. Rus, “Least-violating control strategy synthesis with safety rules,” in Proc. of the ACM Int. Conf. on Hybrid Systems: Computation and Control , 2013, pp. 1–10. [120] T. Wongpiromsarn, K. Slutsky, E. Frazzoli, and U. Topcu, “Minimum-violation planning for autonomous systems: Theoretical and practical considerations,” in Proc. of the American Control Conf. , 2021, pp. 4866–4872. [121] F. Baldini, F. M. Tariq, S. Bae, and D. Isele, “Don’t get stuck: A deadlock recovery approach,” in Proc. of the IEEE Int. Conf. on Intelligent Transportation Systems , 2024, pp. 3688–3695. [122] B. S. W. Schr ¨oder, Ordered Sets: An Introduction with Connections from Combinatorics to Topology . Springer, 2016, vol. 2. [123] A. F. Beardon, J. C. Candeal, G. Herden, E. Indur ´ain, and G. B. Mehta, “The non-existence of a utility function and the structure of non-representable preference relations,” Journal of Mathematical Economics , vol. 37, no. 1, pp. 17–38, 2002. [124] G. Williams, P. Drews, B. Goldfain, J. M. Rehg, and E. A. Theodorou, “Information-theoretic model predictive control: Theory and applica-tions to autonomous driving,” IEEE Trans. on Robotics , vol. 34, no. 6, pp. 1603–1622, 2018. [125] H. Homburger, F. Messerer, M. Diehl, and J. Reuter, “Optimality and suboptimality of MPPI control in stochastic and deterministic settings,” IEEE Control Systems Letters , vol. 9, pp. 763–768, 2025. [126] Y. Lin, Z. Xing, X. Han, and M. Althoff, “Traffic-rule-compliant trajectory repair via satisfiability modulo theories and reachability analysis,” IEEE Transactions on Robotics , vol. 41, pp. 5932–5950, 2025. [127] F. Lercher and M. Althoff, “Efficient driving corridor extraction for autonomous vehicles using best-first reachability analysis,” in Proc. of the IEEE Int. Conf. on Intelligent Transportation Systems , 2025, pp. 407–414. [128] C. Pek and M. Althoff, “Fail-safe motion planning for online verification of autonomous vehicles using convex optimization,” IEEE Trans. on Robotics , vol. 37, no. 3, pp. 798–814, 2021. [129] M. Ehrgott, Multicriteria Optimization . Springer, 2005, vol. 2. [130] R. Kohli and K. Jedidi, “Representation and inference of lexicographic preference models and their variants,” Marketing Science , vol. 26, no. 3, pp. 380–399, 2007. [131] H. Homburger, S. Wirtensohn, and J. Reuter, “Efficient nonlinear model predictive path integral control for stochastic systems consider-ing input constraints,” in Proc. of the European Control Conf. , 2023, pp. 1–6. [132] M. Wetzlinger and M. Althoff, “Backward reachability analysis of perturbed continuous-time linear systems using set propagation,” IEEE Trans. on Automatic Control , vol. 71, no. 1, pp. 352–367, 2026. [133] W. Feller, An introduction to probability theory and its applications .John Wiley & Sons, 1991, vol. 2. [134] M. Althoff, M. Koschi, and S. Manzinger, “CommonRoad: Compos-able benchmarks for motion planning on roads,” in Proc. of the IEEE Intelligent Vehicles Symposium , 2017, pp. 719–726. [135] J. Ziegler and C. Stiller, “Fast collision checking for intelligent vehicle motion planning,” in Proc. of the IEEE Intelligent Vehicles Symposium ,2010, pp. 518–522. 
+
+Patrick Halder is a Ph.D. candidate in the Cyber-Physical Systems Group at the Technical University of Munich, Germany, and is a software developer at ZF Friedrichshafen AG, Germany. He received his M.Sc. degree in Mechanical Engineering from the Technical University of Munich, Germany, in 2019, and his B.Eng. degree in Mechanical Engineering from Baden-W ¨urttemberg Cooperative State University Friedrichshafen, Germany, in 2016. His research interests include motion planning, formal methods, and multi-objective optimization. 
+
+Lothar Kiltz received the Diploma degree in systems and electrical engineering and the Ph.D. degree in mechatronics engineering from Saarland University, Saarbr ¨ucken, Germany. He joined ZF Friedrichshafen AG in 2014 and is currently a Software Project Manager in the Industrial Tech-nology Division. From 2020 to 2024, he led the Corporate Expert Team of Control Engineering. His research interests include modeling, estimation, and control of mechatronic systems and their robust, optimization-based design, as well as systems engineering with an emphasis on software-intensive, large-scale, variability-rich systems and their complexity and governance. He is an appointed member of the VDI/VDE Committee AUTOREG. 
+
+Hannes Homburger is a cooperative Ph.D. can-didate at the Institute of System Dynamics at the University of Applied Sciences Konstanz, Germany, and the Systems Control and Optimization Labo-ratory at the University of Freiburg, Germany. He received his M.Eng. degree in Electrical Systems from the University of Applied Sciences Konstanz in 2021 and his B.Eng. degree in Electrical Engi-neering from the Baden-W ¨urttemberg Cooperative State University Stuttgart, Germany, in 2017. His research interests include optimal planning and model predictive control based on zero- and second-order methods with applications to autonomous systems.   
+
+> VOLUME XX, 2026 19 Halder et al. : Lexicographic Minimum-Violation Motion Planning using Signal Temporal Logic
+
+Johannes Reuter is a professor at the University of Applied Sciences Konstanz, Germany, since 2007, and the director of the Institute for System Dynamics at the University of Applied Sciences Konstanz since 2010. He received his Ph.D. degree from the Technical University of Berlin, Germany, in 2000. Between 2000 and 2007, he held various leadership positions at IAV GmbH in Berlin, Ger-many; IAV Automotive Engineering in Ann Arbor, USA; and the Eaton Corporation Innovation Center in Southfield, USA. His research interests include nonlinear control, multi-sensor data fusion, and autonomous systems. 
+
+Matthias Althoff is an associate professor in computer science at the Technical University of Munich, Germany. He received his diploma engi-neering degree in Mechanical Engineering in 2005, and his Ph.D. degree in Electrical Engineering in 2010, both from the Technical University of Munich, Germany. From 2010 to 2012, he was a postdoctoral researcher at Carnegie Mellon Uni-versity, Pittsburgh, USA, and from 2012 to 2013 an assistant professor at Technische Universit ¨at Ilmenau, Germany. His research interests include formal verification of continuous and hybrid systems, reachability analysis, planning algorithms, nonlinear control, automated vehicles, and power systems.
