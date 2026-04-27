@@ -1,0 +1,578 @@
+Title: FOCAL: Filtered On-device Continuous Activity Logging for Efficient Personal Desktop Summarization
+
+URL Source: https://arxiv.org/pdf/2604.19541v1
+
+Published Time: Wed, 22 Apr 2026 01:26:05 GMT
+
+Number of Pages: 9
+
+Markdown Content:
+# FOCAL: Filtered On-device Continuous Activity Logging for Efficient Personal Desktop Summarization 
+
+# Haoran Yin 
+
+The Hong Kong Polytechnic University Hong Kong, China hao-ran.yin@connect.polyu.hk 
+
+# Zhiyuan Wen 
+
+The Hong Kong Polytechnic University Hong Kong, China zyuanwen@polyu.edu.hk 
+
+# Jiannong Cao ∗
+
+The Hong Kong Polytechnic University Hong Kong, China jiannong.cao@polyu.edu.hk 
+
+# Ruosong Yang 
+
+The Hong Kong Polytechnic University Hong Kong, China rsong.yang@polyu.edu.hk 
+
+# Bo Yuan 
+
+China Mobile Communications Company Limited Research Institute Beijing, China yuanbo@cmjt.chinamobile.com 
+
+## Abstract 
+
+Desktop interaction streams provide a continuous, privacy-sensitive record of interleaved user tasks. Transforming these streams into task-organized personal logs on-device faces two main challenges: exhaustive Vision-Language Model (VLM) processing strains local resources, and global stream processing causes cross-task context pollution. We present FOCAL (Filtered On-device Continuous 
+
+Activity Logging), a privacy-first multi-agent system utilizing a unified filter–plan–log architecture. It cascades a lightweight Fil-ter Agent for noise suppression, a text-only Brain Agent for task attribution, a Record Agent for selective visual reasoning, and a task-isolated Memory Agent for context-coherent summarization. Exper-iments on DesktopBench (comprising 2,572 screenshots across 420 complex sessions) show FOCAL reduces total token consumption by 60.4% and VLM call count by 72.3% versus a baseline, while boost-ing Key Information Recall (KIR) from 0.38 to 0.61. Crucially, under 
+
+𝐴 →𝐵 →𝐴 task interruptions, FOCAL maintains Task Acc 0.81 and KIR 0.80, whereas the baseline collapses to Task Acc 0.03. FOCAL pioneers the efficient, on-device summarization of instruction-free desktop streams into multi-perspective personal logs. 
+
+## Keywords 
+
+Multi-agent System, Isolated Task Memory, Activity Summarization 
+
+## 1 Introduction 
+
+The information underlying personal computing is inherently multi-perspective: a single workday interleaves drafting documents, browsing references, debugging code, and communicating with collaborators into a continuous multimodal interaction stream [ 4, 11 , 19 ]. Turning this stream into compact, task-organized desktop logs could support productivity self-assessment and knowledge retrieval. Desktop logging is also highly privacy-sensitive: screenshots and GUI traces may expose emails, chats, draft documents, credentials, and other sensitive content, making 
+
+on-device understanding a practical requirement. Recent advances in large language models (LLMs) and vision-language models (VLMs) have made semantic activity logging feasible for wearable sensors [ 6] and mobile contexts [ 25 ]. However, they have not 
+
+> ∗Corresponding author.
+
+yet been extended to privacy-first, on-device desktop interaction streams. At the same time, existing progress in long-horizon multimodal reasoning, semantic distillation, and memory-based retrieval has substantially improved video understanding [ 5, 9 , 10 , 12 , 17 , 18 , 21 ,27 ]. However, these approaches largely assume pre-collected offline inputs , a given query or task label , or deployment settings without strict on-device constraints. A desktop workday, by contrast, is a continuous, instruction-free desktop interaction stream spanning multiple applications and interleaved tasks, where no task boundary is pre-annotated and no query is provided. The missing capability is an instruction-free mechanism that can decide whether a moment warrants visual reasoning and which task context that observation should enter. Bridging this gap exposes two intertwined challenges. The first is on-device inference intrusiveness : every visual reasoning call competes with the user’s foreground applications for local GPU, CPU, and memory resources, so exhaustive VLM processing intro-duces latency and resource contention. The second is cross-task context pollution : users frequently switch among concurrent tasks, yet existing methods process the stream globally, causing shared memory to mix semantically similar but task-irrelevant de-scriptions. Together, these challenges expose a critical gap: existing methods lack an instruction-free pre-inference mechanism that both selects semantically valuable moments and routes evidence into task-specific context, forcing a trade-off be-tween task-faithful reasoning and unobtrusive on-device op-eration. Addressing this gap is fundamentally a multi-perspective multimedia summarization problem: each task provides a distinct semantic lens on the same continuous activity stream, and context-adaptive information access must be achieved without any prior query or user instruction. To address this gap, we propose FOCAL (Filtered On-device Con-tinuous Activity Logging), a privacy-first, on-device multi-agent logging system for desktop activity summarization that processes a continuous desktop interaction stream into multi-perspective, task-organized desktop logs through a unified “filter-plan-log” ar-chitecture. The key idea is to move task-aware control before ex-pensive visual reasoning. A lightweight Filter Agent suppresses low-information events before any model call; a text-only Brain 
+
+> arXiv:2604.19541v1 [cs.MA] 21 Apr 2026
+
+Preprint. Under review. 
+
+Figure 1: Overview of FOCAL. 
+
+Agent then uses GUI metadata to perform task attribution and adap-tive planning; a VLM-based Record Agent writes intent-centric log entries within task scope; a Memory Agent enforces task-isolated context management; and a Summary Agent composes task-level memories into coherent multi-perspective summaries. By front-loading selection and routing, FOCAL reduces unnecessary local visual processing while preserving task-faithful context under con-tinuous task switching. To validate FOCAL, we conduct experiments on DesktopBench, reconstructed from VideoGUI, with both multi-task sessions and interruption scenarios. We compare against a Naive LLM Agent (full-coverage processing without task-aware control) and FOCAL-GM (FOCAL with global shared memory), and evaluate both com-putational efficiency (VCC, TCS) and summary quality (BS-F1, Task Acc, KIR, G-Eval). Results show that FOCAL effectively addresses the identified gap by jointly improving non-intrusive efficiency and task-faithful summarization in instruction-free desktop activity summarization. In particular, FOCAL reduces visual token volume by 60.4% relative to naive VLM inference while also improving summary quality. We further perform ablation studies to verify the effectiveness of key local modules, especially adaptive sampling and task-isolated memory. Our contributions are three-fold: 
+
+• Privacy-First On-Device Logging. We propose FOCAL, a privacy-first, fully on-device multi-agent logging system that operationalizes filtered on-device continuous activity logging for instruction-free desktop activity summarization through a unified filter–plan–log architecture. 
+
+• Dynamic Task-Switching Summarization. We introduce a task-isolated memory mechanism that routes observations into per-task context stores. This structural isolation pre-vents cross-task context pollution and enables coherent, multi-perspective summaries under frequent task switch-ing. 
+
+• Comprehensive Dataset and Evaluation. We construct DesktopBench, a session-level lifelogging benchmark cu-rated from 2,572 raw GUI screenshots, comprising 320 com-positional multi-task and 100 interruption sessions. Paired with a reproducible metric suite spanning efficiency (VCC, TCS) and summary quality (KIR, BS-F1, G-Eval), it establishes an annotation-efficient evaluation protocol for instruction-free continuous desktop logging. 
+
+## 2 Related Work 2.1 Personal Activity Logging 
+
+Personal experience capture has long been studied in lifelogging [ 4,19 ]. Early systems such as MyLifeBits [ 2 ] and SenseCam [ 7] focused on continuous recording and retrieval, while newer work moves toward semantically readable personal narratives. This shift from raw capture to structured, language-mediated personal memory is especially important because logs become useful only when users can later search, skim, and reinterpret them at the level of daily activities and goals. AutoLife [ 25 ], for example, shows that LLMs can transform passive smartphone traces into structured daily journals without user input. At the same time, visual lifelogging remains inherently privacy-sensitive [ 1], and recent MLLM studies further highlight the risk of sending personal visual data to cloud services [ 8 ]. These concerns are even sharper for desktop logging, where screenshots may directly expose private documents, chats, and credentials. However, existing personal logging systems rely mainly on physical-world signals and lack the application-layer semantics needed for desktop activities. They are therefore poorly suited to task-level understanding of interleaved GUI workflows spanning multiple windows, applications, and goals. 
+
+## 2.2 Task-Oriented GUI Agents 
+
+Recent GUI systems show that multimodal models can move be-yond raw action detection toward semantic interface understand-ing. GUI-Narrator [ 23 ] generates natural-language descriptions of GUI actions, while task-oriented agents such as AutoDroid [ 22 ], AppAgent v2 [ 13 ], and UI-Hawk [ 26 ] improve instruction-driven execution through structured histories, retrieval, or temporal mod-eling. Related long-context multimodal systems such as MovieChat [ 21 ] and MA-LMM [ 5] likewise highlight the importance of tempo-ral memory. Yet these systems are designed primarily for execution or query-conditioned reasoning rather than instruction-free retro-spective logging. They usually assume explicit user goals, bounded trajectories, or global execution-centric memory. This assumption 2Preprint. Under review. becomes problematic in real desktop workflows, where users fre-quently switch among applications and goals [ 3, 24 ]. In such set-tings, irrelevant context can accumulate and degrade reasoning quality [ 15 , 20 ], motivating task-aware routing and isolated mem-ory rather than a single shared context. Overall, prior work leaves three gaps for our setting: desktop logging needs application-level task semantics, privacy-first on-device processing, and memory mechanisms that remain robust under frequent task switching. FOCAL targets these gaps as a multi-agent logging system for filtered on-device continuous activity logging and desktop summarization by combining pre-inference routing with task-isolated memory. 
+
+## 3 Method 3.1 System Overview 
+
+FOCAL is a multi-agent logging system for filtered on-device con-tinuous activity logging: it converts a continuous desktop inter-action stream into a task-organized session summary by moving task-aware control ahead of expensive visual reasoning. Here, an 
+
+agent denotes a module with restricted observations, outputs, and state access; the underlying LLM or VLM serves as the inference backbone of an agent rather than as an external tool. As illustrated in Figure 1, FOCAL comprises five agents with strictly separated responsibilities. Filter Agent acquires valid ac-tions, Brain Agent performs a one-shot metadata-only planning pass, Record Agent generates semantic descriptions only for sam-pled actions, Memory Agent owns task-scoped persistent state, and 
+
+Summary Agent produces the final task-organized session sum-mary. This separation is the central design principle of FOCAL: by deciding whether to inspect a screenshot and which task memory it should update before any VLM call, the system reduces unneces-sary on-device visual computation while preserving task-faithful context under frequent task switching. 
+
+## 3.2 Problem Formulation 
+
+We next formalize the input stream, the latent task structure, and the optimization target under the instruction-free on-device setting considered by FOCAL. 
+
+Given. We model a session as an ordered desktop interaction sequence generated within one continuous working context, con-sisting of 𝑁 actions: 
+
+S = {( 𝑚 𝑖 , 𝑣 𝑖 )} 𝑁 𝑖 =1 (1) where each action contains structured metadata 
+
+𝑚 𝑖 = (app 𝑖 , title 𝑖 ) (2) and a screenshot 𝑣 𝑖 ∈ R𝐻 ×𝑊 ×3. A session contains 𝐾 latent tasks ;each action is associated with a task id 𝑦 𝑖 ∈ [ 1, 𝐾 ]. Define the action-index set of task 𝑘 as 
+
+J𝑘 = {𝑖 ∈ [ 1, 𝑁 ] | 𝑦 𝑖 = 𝑘 }, 𝑇 𝑘 = {( 𝑚 𝑖 , 𝑣 𝑖 )} 𝑖 ∈ J 𝑘 (3) with partition constraints 
+
+> 𝐾
+
+Ø
+
+> 𝑘 =1
+
+J𝑘 = [1, 𝑁 ], J𝑗 ∩ J 𝑘 = ∅ ( 𝑗 ≠ 𝑘 ) (4) The sets {J 𝑘 } partition the stream, but each J𝑘 may be non-contiguous because users can suspend and resume tasks. The task count 𝐾 and assignments {𝑦 𝑖 }𝑁 𝑖 =1 are latent and never provided as input. 
+
+Assume. We assume that actions are strictly time-ordered, task assignments and task count are unknown during processing, and all interaction data remains on-device throughout the pipeline. 
+
+Objective. Under these conditions, the goal is to generate a task-organized session-level summary ˆΣ for session S, defined as the ordered concatenation of per-task summaries: 
+
+ˆΣ =
+
+> ˆ𝐾
+
+Ê
+
+> 𝑘 =1
+
+ˆ𝜎 𝑘 (5) where ˆ𝐾 is the number of tasks identified by the system, ˆ𝜎 𝑘 is the generated summary for task 𝑘 , and ⊕ denotes ordered concatena-tion. FOCAL jointly optimizes two objectives: 
+
+max 
+
+> ˆΣ
+
+Quality ( ˆΣ, Σ∗) and min Cost (S) (6) Here, Quality ( ˆΣ, Σ∗) measures summary fidelity to the ground truth 
+
+Σ∗, while Cost (S) measures the computation consumed to process session S. These objectives are coupled: higher fidelity often re-quires more VLM calls, whereas aggressive cost reduction risks missing important states. 
+
+Subject to. The key constraint is that FOCAL operates in an instruction-free regime: the input contains no user query, task la-bels, or task-boundary annotations. The Brain Agent plans only from metadata ( app and title ), deciding for each action both task routing and whether visual sampling is necessary. Task identities are therefore induced by the system rather than supplied as supervi-sion, distinguishing our setting from supervised task segmentation and query-conditioned video summarization. 
+
+## 3.3 Agent Definitions and Interface Boundaries 
+
+To make the decomposition precise, we distinguish agents from tools .In FOCAL, each agent is specified by what it may observe, what it may output, and what state it may access. Tools are explicit callable interfaces to external resources such as OS queries, screenshot capture, or memory APIs. Table 1 summarizes these boundaries. 
+
+## 3.4 FOCAL Processing Pipeline 
+
+We next describe how these restricted agents are composed into a single end-to-end processing loop. 
+
+Action Acquisition and Validation. At each step, Filter Agent queries foreground metadata and captures the corresponding screenshot. Invalid observations are discarded immediately; other-wise, a valid action (𝑚 𝑖 , 𝑣 𝑖 ) is emitted into the session stream. This stage ensures that downstream computation operates on a clean action sequence rather than raw desktop noise. 
+
+Session-level Planning. Once a session is formed, Brain Agent performs one metadata-only planning pass over the full ordered action list: 
+
+P = BrainLLM 
+
+
+
+{𝑚 𝑖 }𝑁 𝑖 =1
+
+
+
+, 𝑚 𝑖 = (app 𝑖 , title 𝑖 ) (7) 3Preprint. Under review. 
+
+Table 1: Interfaces of FOCAL’s five agents.                                                       
+
+> Agent Profile / Role Observation Output State Access Callable Interfaces Filter Front-end acquisition and validation module Raw desktop environment state at the current timestamp Valid action (𝑚 𝑖 , 𝑣 𝑖 )or dis-card decision No persistent semantic state Foreground metadata query; screenshot capture
+> Brain Session-level planner for task routing and adaptive sampling Full ordered metadata se-quence {𝑚 𝑖 }𝑁 𝑖 =1
+> Session plan Pand per-action decisions (𝑘 𝑖 , 𝑧 𝑖 , 𝑎 𝑖 )
+> Read-only metadata access; no screenshot or memory ac-cess None beyond its own model in-ference
+> Record Semantic recorder for sam-pled actions Current screenshot 𝑣 𝑖 , meta-data 𝑚 𝑖 , and task-local mem-ory M(𝑖 )
+> 𝑘 𝑖
+> Memory-grounded descrip-tion ˆ𝑑 𝑖
+> Read access to one task-local memory only No arbitrary external tools
+> Memory Stateful manager and sole owner of persistent cross-step task state Task initialization, read, and append requests Task memory snapshots and updated stores Exclusive read-write access to { M 𝑘 }𝐾 𝑘 =1
+> InitTask ,ReadTask ,Append-Task
+> Summary Session-end summarizer Finalized isolated stores
+> { M 𝑘 }ˆ𝐾 𝑘 =1
+> Per-task summaries {ˆ𝜎 𝑘 }
+> and session summary ˆΣ
+> Read-only access to finalized task memories None beyond its own model in-ference
+
+The resulting plan decouples control from perception. During se-quential execution, each action is resolved into 
+
+(𝑘 𝑖 , 𝑧 𝑖 , 𝑎 𝑖 ), 𝑖 = 1, . . . , 𝑁 (8) where 𝑘 𝑖 is the resolved task id, 𝑧 𝑖 indicates whether the action continues an existing task or initializes a new one, and 𝑎 𝑖 ∈ { 0, 1}
+
+indicates whether visual sampling is required. If no valid task match exists, Memory Agent initializes a new task store. Thus, task routing and sampling are decided before any VLM call. 
+
+Conditional Recording and Memory Update. Visual reasoning is then performed only on sampled actions. When 𝑎 𝑖 = 1, Record Agent receives the screenshot 𝑣 𝑖 , metadata 𝑚 𝑖 , and the current task-local memory M (𝑖 ) 
+
+> 𝑘 𝑖
+
+, and generates a memory-grounded semantic description: 
+
+ˆ𝑑 𝑖 = VLM (𝑣 𝑖 , 𝑚 𝑖 , M (𝑖 ) 
+
+> 𝑘 𝑖
+
+), if 𝑎 𝑖 = 1 (9) where M (𝑖 ) 
+
+> 𝑘 𝑖
+
+= { ˆ𝑑 𝑗 }𝑗 ∈ I 𝑘 𝑖 ,𝑗 <𝑖 is the set of previously generated de-scriptions for task 𝑘 𝑖 , and 
+
+I𝑘 = { 𝑗 ∈ [ 1, 𝑁 ] | 𝑘 𝑗 = 𝑘, 𝑎 𝑗 = 1} (10) denotes the sampled-action index set of task 𝑘 . The new description is not written directly by Record Agent; instead, Memory Agent appends it to the target store: 
+
+M (𝑖 +1) 
+
+> 𝑡
+
+=
+
+(
+
+M (𝑖 ) 
+
+> 𝑡
+
+∪ { ˆ𝑑 𝑖 } if 𝑡 = 𝑘 𝑖 , 𝑎 𝑖 = 1
+
+M (𝑖 ) 
+
+> 𝑡
+
+otherwise , ∀𝑡 ∈ [ 1, 𝐾 𝑖 ] (11) where 𝐾 𝑖 = {𝑘 𝑗 | 1 ≤ 𝑗 ≤ 𝑖 } is the number of active tasks after action 𝑖 . The key invariant is that each M𝑘 contains only evidence routed to task 𝑘 .
+
+Per-task Summary Generation. After the final action has been processed, Summary Agent reads the finalized task stores and gen-erates a structured summary for each task: 
+
+ˆΣ =
+
+> ˆ𝐾
+
+Ê
+
+> 𝑘 =1
+
+ˆ𝜎 𝑘 (12) where ˆ𝐾 is the number of tasks identified by the system and ⊕
+
+denotes ordered concatenation. Because summarization is deferred until the end of the session, each task summary is generated from the complete evidence accumulated for that task. 
+
+Table 2: Task family taxonomy of DesktopBench.                        
+
+> Family Description Prefix Application
+> Video Editing Timeline, effects, export AE Adobe After Effects PR Adobe Premiere Pro DV DaVinci Resolve CC CapCut Image Editing Asset processing PS Adobe Photoshop Generation AI multimedia creation RW Runway SD Stable Diffusion WebUI DALLE DALL ·EAI Other AI tools Slides Presentation authoring PPT Microsoft PowerPoint Reference Tutorials, asset browsing WEB Web browser YT YouTube VLC VLC Media Player
+
+## 4 DesktopBench Dataset Construction 
+
+Instruction-free desktop activity summarization requires session-level benchmarks that preserve cross-application workflows and task continuity under switching, which standard single-task GUI benchmarks do not provide. We reconstruct VideoGUI [14 ] into 
+
+DesktopBench , a benchmark for multi-task desktop activity log-ging. Following Table 2, we regroup its source tasks into five appli-cation families spanning editing, generation, slides, and reference activities. DesktopBench has two splits: DesktopBench-Multitask 
+
+for interleaved cross-application workflows and DesktopBench-Interruption for controlled 𝐴 →𝐵 →𝐴 timelines that test whether a method can preserve and resume task state after interruption. 
+
+## 4.1 Session Construction 
+
+Because VideoGUI was built for single-task automation, it lacks the session organization and metadata required for activity logging. We therefore augment each action with the foreground application name ( app ) and window title ( title ), while retaining the original task descriptions as semantic reference (Figure 2). 
+
+DesktopBench-Multitask (320 sessions). Sessions are assembled through template-based composition grounded in realistic creative workflows. We use 20 patterns spanning video-centric workflows such as video →ref →video and design-centric workflows such as 
+
+generation →image →slide . Each session contains at least two distinct application prefixes, and compatible subtasks may be reused to compose richer workflows. DesktopBench-Interruption (100 ses-sions). To evaluate robustness to context switching, we construct 4Preprint. Under review. 
+
+Figure 2: DesktopBench construction pipeline with Multi-task and Interruption splits. 
+
+an 𝐴 → 𝐵 → 𝐴 split in which a long-running creative task 𝐴 is interrupted by a short YouTube browsing task 𝐵 before resuming. This tests whether a model can preserve and recover the latent state of task 𝐴 without cross-task drift. 
+
+## 4.2 Ground-Truth Summary Construction 
+
+To obtain reference summaries independent of model-predicted segmentation, we construct ground truth from human-annotated task assignments {J ∗ 
+
+> 𝑘
+
+}𝐾 ∗ 
+
+> 𝑘 =1
+
+and the original task descriptions. GPT-5 [ 16 ] first produces frame-level visual descriptions, which are then aggregated within each ground-truth task into task-level reference summaries. This anchors references to annotated task identities rather than model-predicted ones, decoupling summarization fi-delity from segmentation accuracy and making wrong-task attribu-tion or cross-task leakage easier to expose during evaluation. 
+
+## 4.3 Dataset Statistics 
+
+DesktopBench is reconstructed from 2,572 screenshots and uses the 
+
+session as the evaluation unit. It contains 420 sessions in total: 320 in DesktopBench-Multitask and 100 in DesktopBench-Interruption. Multitask sessions contain 2–4 tasks, while Interruption sessions contain exactly two tasks under the 𝐴 →𝐵 →𝐴 structure. Table 3 summarizes the key statistics. The average session length is 17.3 actions for DesktopBench-Multitask and 16.5 for DesktopBench-Interruption. Because compatible source subtasks may be reused when composing workflows, these counts measure instantiated actions with multiplicity rather than unique screenshots. Figure 3 visualizes the two splits. 
+
+Table 3: Dataset statistics of DesktopBench.         
+
+> Statistic Multitask Interruption
+> Number of sessions 320 100 Average session length (actions) 17.3 16.5 Task count per session 2–4 2
+
+## 5 Experiment 5.1 Baselines 
+
+We compare FOCAL against two baselines, each designed to ablate a core component of the proposed pipeline. 
+
+Naive LLM Agent. This baseline invokes the VLM on every ac-tion in the session to produce a context-free visual description, without any sampling filter or task memory. All descriptions are concatenated chronologically and passed to an LLM that gener-ates a single session-level summary with task boundary awareness. By removing both adaptive sampling and task-isolated memory, this baseline provides a direct reference for the efficiency–quality trade-off. 
+
+FOCAL-GM (Global Memory). FOCAL-GM retains the Brain Agent and its adaptive sampling mechanism, but replaces task-isolated memory with one global memory pool shared across all tasks. When the VLM generates a description, it retrieves context from this shared pool rather than from a task-specific store. The rest of the pipeline—task attribution and sampling decisions—remains identical to FOCAL. This baseline isolates the contribution of the task-isolation mechanism while holding the sampling strategy constant. We do not compare against existing personal logging systems such as AutoLife [ 25 ] or EgoLog [ 6], as these systems operate on fundamentally different input modalities (smartphone sensor traces and wearable signals, respectively) and assume a single continu-ous activity rather than interleaved multi-task desktop workflows. Adapting them to the instruction-free, multi-task GUI stream set-ting considered here would require non-trivial re-engineering that goes beyond fair baseline comparison; our work instead targets a previously unaddressed problem regime. We likewise do not include rule-based or heuristic task-segmentation baselines (e.g., window-change triggers or application-prefix matching), as the heteroge-neous and context-dependent nature of desktop metadata where the same application prefix can span semantically unrelated tasks and a single task can span multiple applications makes it impossible to define a unified segmentation rule that generalizes across the full diversity of sessions in DesktopBench. The two ablation baselines above are therefore designed to isolate the specific contributions of adaptive sampling and task-isolated memory within a controlled pipeline, which is the primary evaluation objective of this work. 
+
+## 5.2 Evaluation Metrics 
+
+We evaluate FOCAL along two complementary dimensions: com-putational efficiency and summary quality. 
+
+5.2.1 Computational Efficiency. 
+
+VLM Call Count (VCC).. VCC measures the average number of VLM invocations per session over 𝑆 sessions, directly quantifying 5Preprint. Under review. 0 20 40 60                                               
+
+> Task count
+> DALLE
+> SD
+> VLC
+> WEB
+> YT
+> AI
+> PR
+> DV
+> CC
+> PS
+> PPT
+> RW
+> AE
+> 1
+> 8
+> 12
+> 12
+> 13
+> 32
+> 38
+> 44
+> 46
+> 47
+> 52
+> 63
+> 67
+> (a)
+> 010 20 30
+> Session count
+> ai image slide
+> slide ref image
+> video ai
+> ref image slide
+> video ref
+> ref video
+> ai ref video
+> ref video ai
+> ref video video
+> video ref video
+> 16
+> 17
+> 17
+> 18
+> 21
+> 22
+> 23
+> 24
+> 26
+> 35
+> (b)
+> Ref Video
+> Edit
+> AI Image
+> Edit
+> Slides
+> Next task
+> Ref
+> Video
+> Edit AI
+> Image
+> Edit Slides
+> Current task
+> 0141 951 24
+> 56 37 52 00
+> 23 13 024 9
+> 11 00055
+> 17 0870
+> (c)
+> 010 20
+> Session count
+> AI
+> PR
+> SD
+> CC
+> DV
+> VLC
+> WEB
+> RW
+> AE
+> PS
+> PPT
+> 2
+> 3
+> 3
+> 4
+> 4
+> 7
+> 10
+> 12
+> 16
+> 16
+> 23
+> (d)
+> A-pre YouTube A-post
+> Session segment
+> 2
+> 4
+> 6
+> 8
+> 10
+> 12
+> 14
+> 16
+> 18
+> Actions / task
+> (e)
+
+Figure 3: DesktopBench statistics. (a) Task prefix counts (Multi-task). (b) Session pattern distribution. (c) Task-type transitions. (d) Interrupted task distribution. (e) Actions per segment (Interruption). 
+
+the efficiency gain from adaptive sampling: VCC = 1
+
+𝑆 
+
+𝑆 ∑︁ 
+
+𝑠 =1ˆ𝐾 ∑︁ 
+
+𝑘 =1
+
+|I 𝑘 | (13) where I𝑘 = {𝑖 ∈ [ 1, 𝑁 ] | 𝑘 𝑖 = 𝑘, 𝑎 𝑖 = 1} denotes the set of frames assigned to predicted task 𝑘 and selected for VLM processing, and 
+
+ˆ𝐾 is the total number of predicted tasks at the end of session 𝑠 .
+
+Token Consumption per Session (TCS).. TCS captures the total token budget consumed by all model calls when processing one session: TCS = 𝜏 brain + 𝜏 record + 𝜏 sum (14) where 𝜏 brain , 𝜏 record , and 𝜏 sum denote the cumulative token consump-tion of the Brain Agent, Record Agent, and Summary Agent over the entire session, respectively. 
+
+5.2.2 Summary Quality. 
+
+Key Information Recall (KIR).. KIR assesses whether the key in-formation from each ground-truth task is preserved in the semanti-cally matched predicted summaries. For each GT task 𝑘 ∈ [ 1, 𝐾 ∗], a judge model identifies the set of semantically matched predictions 
+
+A ( 𝑘 ) ⊆ { ˆ𝜎 1, . . . , ˆ𝜎 ˆ𝐾 }. Every GT key point then falls into one of three categories: correctly recalled in a matched summary ( 𝑐 ), at-tributed to a wrong task ( 𝑤 ), or missing entirely ( 𝑚 ). KIR aggregates these counts as 
+
+KIR = 𝑐 𝑐 + 𝜆𝑤 + 𝑚 (15) where 𝜆 controls the penalty for wrong-task attribution. We set 
+
+𝜆 = 2, which guarantees KIR ∈ [0, 1] and penalizes cross-task leakage more heavily than outright omission. 
+
+Task Count Accuracy (Task Acc). Task Acc measures the fraction of sessions for which the predicted number of tasks exactly matches the ground truth: 
+
+Task Acc = 1
+
+𝑆 
+
+𝑆 ∑︁ 
+
+𝑖 =1
+
+1
+
+ ˆ𝐾 𝑖 = 𝐾 ∗
+
+𝑖 
+
+
+
+, (16) where ˆ𝐾 𝑖 and 𝐾 ∗
+
+𝑖 denote the predicted and ground-truth task counts for session 𝑖 , and 1(·) is the indicator function. 
+
+BERTScore F1 (BS-F1). BS-F1 measures the semantic similarity between a generated summary and the ground truth via contextual token embeddings from a pre-trained language model, providing robustness to surface-level paraphrase variation: BS-F1 = 2 · BS-P · BS-R BS-P + BS-R (17) Naive              
+
+> FOCAL-GM
+> FOCAL
+> 45.2k | VCC 17.3
+> 21.3k | VCC 4.3
+> 17.9k | VCC 4.8
+> (a)
+> TCS 60% VCC 72%
+> 0k 10k 20k 30k 40k 50k
+> Tokens / Session
+> Naive
+> FOCAL-GM
+> FOCAL
+> 45.2k | VCC 16.5
+> 21.6k | VCC 4.3
+> 17.4k | VCC 4.4
+> (b)
+> TCS 61% VCC 73%
+> Brain VLM Summary
+
+Figure 4: Token efficiency on the Multi-task and Interruption splits. 
+
+where BS-P and BS-R are BERTScore precision and recall computed over token-level contextual embeddings between ˆΣ and Σ∗.
+
+G-Eval. Following OpenAI [16] , we employ GPT-5 as a judge to score each generated summary on five dimensions: Accuracy (factual consistency with the interaction trace), Coverage (complete-ness of key task information), Conciseness (absence of redundant content), Consistency (internal logical coherence), and Clarity (read-ability and fluency). The overall G-Eval score is the mean across dimensions: G-Eval = 15∑︁ 𝑑 ∈ D 
+
+score 𝑑 ( ˆΣ) (18) where D contains five dimensions—Accuracy, Coverage, Concise-ness, Consistency, and Clarity—and each score lies on a 1–5 scale. G-Eval complements BS-F1 by detecting logical errors and halluci-nated content that embedding-based metrics cannot capture. 
+
+## 6 Results 
+
+All experiments are conducted on a MacBook with an Apple M4 chip and 16 GB unified memory, reflecting the resource-constrained on-device setting that FOCAL targets. The language model used throughout is qwen3:8b , a compact 8-billion-parameter model cho-sen to validate that the proposed pipeline can achieve competitive performance without relying on large-scale cloud-hosted models. 6Preprint. Under review. 
+
+Table 4: Token efficiency on the Multi-task and Interruption splits. 
+
+Multi-task Interruption Method VCC TCS ↓ Brain Tok. ↓ VLM Tok. ↓ Sum. Tok. ↓ VCC TCS ↓ Brain Tok. ↓ VLM Tok. ↓ Sum. Tok. ↓
+
+Naive LLM Agent 17.3 45,240 - 42,583 2,657 16.5 45,178 - 40,775 4,403 FOCAL-GM 4.3 21,260 3,605 15,670 1,986 4.3 21,557 4,340 15,666 1,551 FOCAL 4.8 17,913 3,744 12,873 1,296 4.4 17,408 4,410 11,592 1,406 
+
+## 6.1 Token Efficiency 
+
+Table 4 presents the computational efficiency of FOCAL relative to both baselines. On the multi-task dataset, FOCAL reduces VCC by 72.3% (17.3 →4.8 calls/session) and TCS by 60.4% (45,240 →17,913 tokens/session) versus the naive baseline, while cutting VLM to-kens by 69.8%. Compared with FOCAL-GM, FOCAL further low-ers TCS by 15.7%, showing that task-isolated memory suppresses redundant cross-task context without increasing sampling cost. On the interruption dataset, FOCAL maintains similar efficiency (VCC 4.4, TCS 17,408), indicating stable overhead under 𝐴 →𝐵 →𝐴 
+
+task switching; Figure 4 shows the token breakdown. 
+
+Table 5: Ablation of the Brain Agent and memory strategy on the multi-task split.                                      
+
+> Brain Memory TCS ↓BS-F1 ↑Task Acc ↑KIR ↑G-Eval ↑
+> w/o No Memory 45,420 0.866 0.72 0.38 2.96 Global Memory 47,625 0.869 0.79 0.66 3.47 w/ No Memory 18,759 0.854 0.68 0.36 2.87 Global Memory 21,261 0.855 0.68 0.42 3.41 Task-Isolated (FOCAL) 17,913 0.857 0.69 0.61 4.16
+
+## 6.2 Summary Quality 
+
+Table 6 reports summary quality across four metrics. On the multi-task dataset, FOCAL achieves KIR 0.61 and G-Eval 4.16, improving over the naive baseline by +0.23 and +1.20 respectively, and over FOCAL-GM by +0.19 and +0.75—gains that arise entirely from task-isolated memory preventing cross-task context pollution. No-tably, the naive baseline achieves the highest BS-F1 (0.866) despite the lowest KIR and G-Eval, exposing a fundamental limitation of embedding-based overlap metrics in multi-task settings: a summary that mixes content across tasks can still exhibit high token-level sim-ilarity to the concatenated ground truth while violating task-level semantic boundaries. KIR and G-Eval are therefore more faithful indicators of actionable desktop logs. On the interruption dataset, the naive baseline collapses to Task Acc 0.03 under 𝐴 →𝐵 →𝐴 switching, whereas FOCAL maintains Task Acc 0.81, KIR 0.80, and G-Eval 4.12, confirming robust task attribution under stream fragmentation. Figure 5 visualizes these comparisons across both datasets. 
+
+## 6.3 Ablation Study: Agent Component 
+
+Table 5 reports five configurations that progressively add the Brain Agent and memory isolation on the multi-task dataset, revealing two complementary contributions. The Brain Agent drives the main efficiency gain: removing it (rows 1 vs. 3) raises TCS from 18,759 to 45,420 ( +58 .7% ), confirming that one-shot metadata planning suppresses redundant VLM invo-cations. However, sampling alone does not improve quality: without MT       
+
+> Task Acc
+> MT
+> KIR
+> MT
+> G-Eval
+> INT
+> Task Acc
+> INT
+> KIR
+> INT
+> G-Eval
+> 0.2 0.4 0.6 0.8 1.0
+> Naive LLM Agent FOCAL-GM FOCAL (Ours)
+
+Figure 5: Summary quality on the Multi-task and Interrup-tion splits. No Brain    
+
+> No Mem.
+> No Brain
+> Global
+> Brain
+> No Mem.
+> Brain
+> Global
+> FOCAL
+> 0k
+> 10k
+> 20k
+> 30k
+> 40k
+> 50k
+> TCS
+> 45.4k 47.6k
+> 18.8k 21.3k 17.9k
+
+(a)    
+
+> 0.4
+> 0.6
+> 0.8
+> Score
+> 0.69
+> 0.61
+> 4.16
+> TCS Task Acc KIR G-Eval/5
+
+Figure 6: Ablation of the Brain Agent and memory strategy on the multi-task split. 
+
+memory, KIR and G-Eval slightly decrease (0.38 →0.36, 2.96 →2.87) because discarded frames remove useful evidence. Memory isolation provides the key quality recovery. Progressing from no memory to global to task-isolated (rows 3 →4→5), KIR rises from 0.36 to 0.42 to 0.61 and G-Eval from 2.87 to 3.41 to 4.16, while TCS remains stable. The global →isolated transition is es-pecially informative: the +0.19 KIR and +0.75 G-Eval gains come entirely from eliminating cross-task contamination, with no change in sampling strategy. Row 2’s highest BS-F1 (0.869) again shows that embedding-based overlap is insensitive to task-boundary vio-lations, making KIR and G-Eval the more reliable quality indicators. Figure 6 visualizes this monotonic trajectory. 7Preprint. Under review. 
+
+Figure 7: Case study of Session 258. FOCAL recovers three task spans, while the naive baseline over-segments the workflow. Table 6: Summary quality on the Multi-task and Interruption splits.                                          
+
+> Multi-task Interruption Method BS-F1 ↑Task Acc ↑KIR ↑G-Eval ↑BS-F1 ↑Task Acc ↑KIR ↑G-Eval ↑
+> Naive LLM Agent 0.866 0.72 0.38 2.96 0.855 0.03 0.53 2.92 FOCAL-GM 0.855 0.68 0.42 3.41 0.852 0.80 0.30 2.45 FOCAL 0.857 0.69 0.61 4.16 0.854 0.81 0.80 4.12
+
+## 6.4 Case Study 
+
+To provide qualitative evidence for the quantitative improvements reported above, we examine one representative multi-task session and compare how the desktop stream is organized into task-level spans. Figure 7 provides a visual overview of Session 258, which spans three coarse tasks: downloading an image from the web, editing it in Photoshop, and preparing slides in PowerPoint. FOCAL cor-rectly recovers these three task-level spans from the raw activity stream, whereas the naive baseline fragments the same workflow into shorter, semantically shallower segments that fail to capture the compositional structure of the session. This example is repre-sentative because it includes both cross-application transitions and a return to an earlier objective, two patterns that frequently occur in real desktop work. The visual comparison shows a clear structural difference. Ground truth and FOCAL both preserve three coherent task spans, whereas the naive baseline breaks the same stream into many short segments. Once this fragmentation occurs, semantically related actions are no longer grouped under a stable task context, weakening task-level composition and making later summaries less faithful. This case study illustrates why task-isolated memory matters in continuous desktop logging. By routing evidence into task-scoped context before summary generation, FOCAL preserves higher-level workflow structure across application switches instead of letting brief interruptions overwrite the active narrative. This qualitative pattern matches the gains in KIR and G-Eval reported in Table 6, showing that better task organization leads directly to more faithful session summaries. Notably, FOCAL does not simply equate every interface transition with a task boundary: it preserves semantic continuity when the user returns to an unfinished objective after a short detour, which is precisely the failure mode that harms naive global summarization. 
+
+## 7 Conclusion 
+
+We present FOCAL, a privacy-first, on-device multi-agent logging system for desktop activity summarization that instantiates filtered on-device continuous activity logging through metadata-guided filtering and task-isolated memory. Experiments show that FOCAL makes desktop logging both efficient and semantically reliable: on multi-task sessions it reduces total token cost by 60.4% versus a naive baseline while improving KIR from 0.38 to 0.61 and G-Eval from 2.96 to 4.16, and it remains robust under frequent task switching. FOCAL therefore provides a practical foundation for continuous, resource-aware, and task-structured desktop logging. More broadly, the results suggest that moving task-aware control ahead of expensive visual reasoning is a viable design principle for privacy-sensitive personal computing systems. Current evidence is still limited to one hardware profile (Apple M4, 16 GB) and one local model configuration ( qwen3:8b ). Future work will extend evaluation to more model scales and hardware settings, especially smaller local models with stronger structured instruction following. We also plan to study longer con-tinuous sessions together with latency and energy measurements to better characterize real on-device deployment costs. Another promising direction is to enrich the system from retrospective log-ging to lightweight assistance, such as task resumption, progress tracking, and privacy-preserving personal memory retrieval. 8Preprint. Under review. 
+
+## References 
+
+[1] Md Sadek Ferdous, Soumyadeb Chowdhury, and Joemon M. Jose. 2017. Analysing privacy in visual lifelogging. Pervasive and Mobile Computing 40 (2017), 430–449. doi:10.1016/j.pmcj.2017.03.003 [2] Jim Gemmell, Gordon Bell, Roger Lueder, Steven Drucker, and Curtis Wong. 2002. MyLifeBits: fulfilling the Memex vision. In Proceedings of the tenth ACM international conference on Multimedia . Association for Computing Machinery, New York, NY, USA, 235–238. doi:10.1145/641007.641053 [3] Matt Gottsacker, Yahya Hmaiti, Mykola Maslych, Gerd Bruder, Joseph J LaViola, and Gregory F Welch. 2025. XR-First Design for Productivity: A Conceptual Framework for Enabling Efficient Task Switching in XR. In 2025 IEEE International Symposium on Mixed and Augmented Reality Adjunct (ISMAR-Adjunct) . IEEE, 524– 529. [4] Cathal Gurrin, Alan F Smeaton, and Aiden R Doherty. 2014. LifeLogging: Personal Big Data. Foundations and TrendsÂő in Information Retrieval 8, 1 (2014), 1–125. [5] Bo He, Hengduo Li, Young Kyun Jang, Menglin Jia, Xuefei Cao, Ashish Shah, Abhinav Shrivastava, and Ser-Nam Lim. 2024. Ma-lmm: Memory-augmented large multimodal model for long-term video understanding. In Proceedings of the IEEE/CVF conference on computer vision and pattern recognition . IEEE, Seattle, WA, USA, 13504–13514. [6] Lixing He, Bufang Yang, Di Duan, Zhenyu Yan, and Guoliang Xing. 2025. EgoLog: Ego-Centric Fine-Grained Daily Log with Ubiquitous Wearables. CoRR 
+
+abs/2504.02624 (2025). doi:10.48550/arXiv.2504.02624 [7] Steve Hodges, Lyndsay Williams, Emma Berry, Shahram Izadi, James Srinivasan, Alex Butler, Gavin Smyth, Narinder Kapur, and Ken Wood. 2006. SenseCam: A retrospective memory aid. In International conference on ubiquitous computing (Lecture Notes in Computer Science, Vol. 4206) . Springer, Springer, Orange County, CA, USA, 177–193. doi:10.1007/11853565_11 [8] Xiaofei Hui, Qian Wu, Haoxuan Qu, Majid Mirmehdi, Hossein Rahmani, and Jun Liu. 2026. When Visual Privacy Protection Meets Multimodal Large Language Models. International Journal of Computer Vision 134 (2026), 167. doi:10.1007/ s11263-026-02761-y [9] Mukul Khanna, Ram Ramrakhya, Gunjan Chhablani, Sriram Yenamandra, Theophile Gervet, Matthew Chang, Zsolt Kira, Devendra Singh Chaplot, Dhruv Batra, and Roozbeh Mottaghi. 2024. Goat-bench: A benchmark for multi-modal lifelong navigation. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition . IEEE, Seattle, WA, USA, 16373–16383. [10] Minkuk Kim, Hyeon Bae Kim, Jinyoung Moon, Jinwoo Choi, and Seong Tae Kim. 2024. Do you remember? dense video captioning with cross-modal memory retrieval. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition . IEEE, Seattle, WA, USA, 13894–13904. [11] Ian Li, Anind Dey, and Jodi Forlizzi. 2010. A stage-based model of personal informatics systems. In Proceedings of the SIGCHI conference on human factors in computing systems . Association for Computing Machinery, New York, NY, USA, 557–566. doi:10.1145/1753326.1753409 [12] Yanwei Li, Chengyao Wang, and Jiaya Jia. 2024. Llama-vid: An image is worth 2 tokens in large language models. In European Conference on Computer Vision .Springer, Springer, Milan, Italy, 323–340. [13] Yanda Li, Chi Zhang, Wenjia Jiang, Wanqi Yang, Bin Fu, Pei Cheng, Xin Chen, Ling Chen, and Yunchao Wei. 2024. Appagent v2: Advanced agent for flexible mobile interactions. CoRR abs/2408.11824 (2024). doi:10.48550/arXiv.2408.11824 [14] Kevin Qinghong Lin, Linjie Li, Difei Gao, Qinchen Wu, Mingyi Yan, Zhengyuan Yang, Lijuan Wang, and Mike Zheng Shou. 2024. VideoGUI: A Benchmark for GUI Automation from Instructional Videos. In Advances in Neural Information Processing Systems , Vol. 37. https://proceedings.neurips.cc/ paper_files/paper/2024/hash/0fa4e4715c2d876d5ba7bb04f6f7f75f-Abstract-Datasets_and_Benchmarks_Track.html [15] Nelson F Liu, Kevin Lin, John Hewitt, Ashwin Paranjape, Michele Bevilacqua, Fabio Petroni, and Percy Liang. 2024. Lost in the middle: How language models use long contexts. Transactions of the association for computational linguistics 12 (2024), 157–173. [16] OpenAI. 2026. GPT-5. OpenAI Platform Documentation. https://platform.openai. com/docs/models/gpt-5 Accessed: 2026-03-30. [17] Rui Qian, Xiaoyi Dong, Pan Zhang, Yuhang Zang, Shuangrui Ding, Dahua Lin, and Jiaqi Wang. 2024. Streaming long video understanding with large language models. Advances in Neural Information Processing Systems 37 (2024), 119336– 119360. [18] Jielin Qiu, Jiacheng Zhu, William Han, Aditesh Kumar, Karthik Mittal, Claire Jin, Zhengyuan Yang, Linjie Li, Jianfeng Wang, Ding Zhao, et al . 2024. Mmsum: A dataset for multimodal summarization and thumbnail generation of videos. In 
+
+Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition .IEEE, Seattle, WA, USA, 21909–21921. [19] Abigail J Sellen and Steve Whittaker. 2010. Beyond total capture: a constructive critique of lifelogging. Commun. ACM 53, 5 (2010), 70–77. [20] Freda Shi, Xinyun Chen, Kanishka Misra, Nathan Scales, David Dohan, Ed H Chi, Nathanael Schärli, and Denny Zhou. 2023. Large language models can be easily distracted by irrelevant context. In International Conference on Machine Learning , Vol. 202. PMLR, PMLR, Honolulu, Hawaii, USA, 31210–31227. https: //proceedings.mlr.press/v202/shi23a.html [21] Enxin Song, Wenhao Chai, Guanhong Wang, Yucheng Zhang, Haoyang Zhou, Feiyang Wu, Haozhe Chi, Xun Guo, Tian Ye, Yanting Zhang, et al . 2024. Moviechat: From dense token to sparse memory for long video understanding. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition . IEEE, Seattle, WA, USA, 18221–18232. [22] Hao Wen, Yuanchun Li, Guohong Liu, Shanhui Zhao, Tao Yu, Toby Jia-Jun Li, Shiqi Jiang, Yunhao Liu, Yaqin Zhang, and Yunxin Liu. 2024. Autodroid: Llm-powered task automation in android. In Proceedings of the 30th annual international confer-ence on Mobile computing and networking . Association for Computing Machinery, Melbourne, VIC, Australia, 543–557. doi:10.1145/3636534.3649379 [23] Qinchen Wu, Difei Gao, Kevin Qinghong Lin, Zhuoyu Wu, and Mike Zheng Shou. 2025. GUI-Narrator: Detecting and Captioning Computer GUI Actions. In 
+
+Proceedings of the 33rd ACM International Conference on Multimedia .[24] Tianbao Xie, Danyang Zhang, Jixuan Chen, Xiaochuan Li, Siheng Zhao, Ruisheng Cao, Toh J Hua, Zhoujun Cheng, Dongchan Shin, Fangyu Lei, et al . 2024. Os-world: Benchmarking multimodal agents for open-ended tasks in real computer environments. Advances in Neural Information Processing Systems 37 (2024), 52040–52094. [25] Huatao Xu, Zilin Zeng, Panrong Tong, Mo Li, and Mani B Srivastava. 2025. Autolife: Automatic life journaling with smartphones and llms. Proceedings of the ACM on Interactive, Mobile, Wearable and Ubiquitous Technologies 9, 4 (2025), 1–29. [26] Jiwen Zhang, Ya-Qi Yu, Minghui Liao, Wentao Li, Jihao Wu, and Zhongyu Wei. 2025. UI-Hawk: Unleashing the Screen Stream Understanding for Mobile GUI Agents. In Proceedings of the 2025 Conference on Empirical Methods in Natural Language Processing . Association for Computational Linguistics, Suzhou, China, 18217–18236. doi:10.18653/v1/2025.emnlp-main.1008 [27] Bo Zou, Chao Yang, Yu Qiao, Chengbin Quan, and Youjian Zhao. 2024. Language-aware visual semantic distillation for video question answering. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition . IEEE, Seattle, WA, USA, 27113–27123. 
+
+9

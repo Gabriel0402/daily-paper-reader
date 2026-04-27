@@ -1,0 +1,1848 @@
+Title: Safety-Aware AoI Scheduling for LEO Satellite-Assisted Autonomous Driving
+
+URL Source: https://arxiv.org/pdf/2604.17281v1
+
+Published Time: Tue, 21 Apr 2026 01:29:19 GMT
+
+Number of Pages: 15
+
+Markdown Content:
+> 1
+
+# Safety-Aware AoI Scheduling for LEO Satellite-Assisted Autonomous Driving 
+
+Kangkang Sun, Member, IEEE, Junyi He, Member, IEEE, Juntong Liu, Xiuzhen Chen, Member, IEEE, Jianhua Li, Senior Member, IEEE, Minyi Guo, Fellow, IEEE 
+
+Abstract —Autonomous platoons traversing infrastructure gaps increasingly depend on LEO satellite backhaul for safety-critical updates, yet no existing framework jointly addresses compound Doppler from simultaneous satellite and vehicle motion, sub-slot handover outages that exceed collision-alert deadlines, and heterogeneous freshness requirements across three vehicular priority classes. The core challenge is a timescale mismatch :coarse control slots hide sub-slot outages, which makes both AoI spike analysis and safety verification ill-posed. Ping-pong handover oscillations further compound AoI cost in a way that purely reactive schedulers cannot mitigate. We address these challenges through a unified framework that couples a two-timescale AoI model with tiered time-average safety constraints enforced by virtual queues. A closed-form ping-pong AoI en-velope reveals that cumulative penalty grows quadratically in oscillation length, analytically justifying oscillation suppression as the highest-leverage safety mechanism. The resulting drift-plus-penalty template is instantiated as SafeScale-MATD3 with proactive handover timing and multi-task dual-critic MARL. A key finding is that suppressing brief but repeated ping-pong oscillations yields larger safety returns than shortening any single outage, and that tick-level AoI accounting is a necessary condition for verifiable collision-alert guarantees under LEO handovers. Simulations show that SafeScale-MATD3 is the only method satisfying the strict 1% collision-alert violation budget, reducing violation rate by 4 to 5.5 times versus baselines, while achieving 35% lower collision-alert AoI and strict Pareto dominance on the energy and freshness tradeoff. 
+
+Index Terms —Age of Information, LEO satellite networks, handover scheduling, safety constraints, multi-agent reinforce-ment learning. 
+
+I. I NTRODUCTION 
+
+# AUTONOMOUS driving safety depends on timely ex-change of perception and intent. In remote highways and infrastructure gaps, satellite backhaul is often the only wide-area link [1]–[4]. Low Earth orbit (LEO) constellations such as Starlink offer global coverage and low propagation delay, yet a fundamental tension persists: safety-critical vehicular traffic demands sub-second information freshness, while LEO 
+
+Kangkang Sun, Juntong Liu, Jianhua Li, Xiuzhen Chen and Minyi Guo are with the Shanghai Key Laboratory of Integrated Administra-tion Technologies for Information Security, School of Computer Sci-ence, Shanghai Jiao Tong University, Shanghai 200240, China (e-mail: szpsunkk@sjtu.edu.cn; ljttt0824@sjtu.edu.cn; lijh888@sjtu.edu.cn; xzchen@sjtu.edu.cn; guo-my@cs.sjtu.edu.cn). Junyi He is School of Science and Engineering, The Chinese Uni-versity of Hong Kong, Shenzhen, Guangdong, China (e-mail: juny-ihe@link.cuhk.edu.cn). 
+
+Corresponding author: Jianhua Li .This work has been submitted to the IEEE for possible publication. Copyright may be transferred without notice, after which this version may no longer be accessible. 
+
+handovers impose repeated link interruptions that can outlast the very deadlines they must serve. 
+
+The Age of Information (AoI) [5], defined as the elapsed time since the last successfully received update was generated, captures information staleness in ways that throughput or delay alone cannot. In platoon-based autonomous driving, this distinction is safety-critical: collision alerts require near-instant freshness for emergency braking, platoon control messages demand tighter timeliness for string stability [6], and map updates tolerate substantially longer staleness. These three pri-ority classes carry fundamentally different violation tolerances, yet no existing LEO AoI framework formulates or enforces them jointly. Three structural gaps prevent prior work from meeting these requirements simultaneously. There are three gaps that prevent prior work from meet-ing these requirements simultaneously: Gap 1: dual-dynamic channel modeling is absent. All existing LEO AoI works, including multi-hop relay analysis [7]–[9], DPP-based down-link scheduling [10]–[12], and SAGIN joint optimization [13]– [15], assume static ground users and model only satellite-side Doppler. When both the satellite and the vehicle move simul-taneously, a compound Doppler shift arises that invalidates quasi-static channel assumptions and collapses coherence time to a small fraction of any scheduling slot. As we derive in Section III-B, this distinguishes LEO-AV systems structurally from all prior work. Vehicular AoI studies [6], [16], [17] address vehicle dynamics but operate over terrestrial links with negligible handover cost, leaving the compound Doppler problem entirely unaddressed. Gap 2, timescale inconsistency corrupts AoI spike modeling. Prior LEO AoI work uses coarse control slots whose duration is much longer than a typical handover outage [10], [13]. Because outages are shorter than one slot, any slot-granularity floor operation maps the outage to zero, yet a continuous slot-fraction surrogate remains positive and misleading. Mixing these two representations inflates spike estimates and leaves sub-slot safety checks ill-defined [18]. Without a finer tracking tick aligned to actual outage duration, no scheduler can produce verifiable safety guarantees for millisecond-grade freshness requirements. Gap 3, safety-critical multi-priority AoI constraints are unformu-lated. No prior LEO AoI work jointly maps heterogeneous vehicular safety budgets, from tight collision-alert tolerances to permissive map-update tolerances, into enforceable time-average constraints with handover-aware online control. Ex-isting LEO AoI schedulers [10], [13] minimize average AoI without priority differentiation, while vehicular schedulers [6], [16] capture multi-priority structure but ignore LEO handover 
+
+> arXiv:2604.17281v1 [cs.NI] 19 Apr 2026 2
+
+dynamics entirely. This orthogonal blind spot means that even a single handover outage already pushes collision-alert AoI beyond the safety threshold, a violation that no purely reactive scheduler can prevent, regardless of its inter-handover optimal-ity. The three gaps above motivate the following questions:  
+
+> •
+
+Q1: (Gaps 1 & 2, Sec. III): How should AoI be modeled to 
+
+simultaneously capture sub-slot outage durations, multi-priority safety thresholds, and coarse control slots, with-out timescale inconsistency?  
+
+> •
+
+Q2: (Gaps 1 & 2, Sec. V): How does cumulative AoI cost scale with the length of ping-pong handover sequences, and why is suppressing oscillations more valuable than shortening individual outages?  
+
+> •
+
+Q3: (Gap 3, Sec. III-E): How can time-average AoI viola-tion budgets be enforced online with provable guarantees, without per-slot distributional assumptions?  
+
+> •
+
+Q4: (Gaps 1 to 3, Sec. VI): How should this multi-timescale, safety-constrained scheduling problem be solved efficiently in a multi-platoon, multi-satellite set-ting? 
+
+We address the four questions through a unified frame-work combining a two-timescale AoI model, handover spike analysis, drift-plus-penalty (DPP) virtual queue control, and a new multi-agent reinforcement learning algorithm, SafeScale-MATD3. The main contributions are as follows.  
+
+> •
+
+Two-timescale AoI model with compound Doppler (Q1). 
+
+Existing LEO AoI models use slot-level granularity that maps sub-slot handover outages to zero, which makes safety verification ill-posed. We resolve this by introduc-ing a fine-grained AoI accounting tick nested inside a coarser control slot, ensuring that both outage lengths and safety thresholds resolve to non-zero integers. A com-pound Doppler analysis further reveals that satellite mo-tion dominates coherence-time variation, enabling TLE-based orbital prediction as a low-dimensional channel predictor. This two-timescale structure is a prerequisite 
+
+for all subsequent safety results.  
+
+> •
+
+Quadratic ping-pong spike envelope (Q2). Quantifying the AoI cost of consecutive handovers is analytically challenging because each outage elevates the baseline for the next, creating a compounding effect invisible to per-outage analysis. We derive a closed-form envelope showing that cumulative AoI penalty grows quadratically 
+
+in ping-pong sequence length, a counter-intuitive result implying that a burst of k=3 consecutive handovers is 
+
+6× costlier than three isolated ones. This insight shifts the design priority from shortening individual outages to suppressing oscillation sequences, and analytically justi-fies the discretionary handover budget in our formulation.  
+
+> •
+
+Tiered safety enforcement via virtual queues (Q3). En-forcing heterogeneous freshness budgets, 1% for collision alerts, 5% for platoon control, and 20% for map updates, online is difficult because the AoI distribution under time-varying handovers lacks a tractable closed form. We map the three budgets to stabilizable virtual queues and prove that strong stability implies time-average violation com-pliance without distributional assumptions ; only bounded TABLE I: Positioning vs. related work (qualitative).                                           
+
+> Ref. Compound Doppler HO model Safety budget Multi-pri. MARL Two-scale
+> [7] N/A coarse N/A N/A N/A N/A [10] sat. only N/A N/A N/A DPP slot [13] sat. only yes N/A N/A DQN slot [18] N/A yes N/A N/A MPC N/A [6] N/A N/A N/A yes TD3 slot
+> Ours yes yes yes yes TD3 tick+slot
+> Compound Doppler: “sat. only” means only satellite-side Doppler is modeled. Safety budget: explicit AoI safety-violation constraints. Two-scale: “tick+slot” denotes sub-slot AoI accounting plus slot-level decision control.
+
+per-slot increments and a Slater-feasible baseline suffice. The virtual-queue backlog serves as a runtime-observable tightness signal that the policy exploits for anticipatory control.  
+
+> •
+
+SafeScale-MATD3, a structurally safe multi-agent sched-uler (Q4). Instantiating the DPP template as a practical MARL algorithm requires reconciling cooperative inter-ference management with priority-specific safety enforce-ment, a multi-objective challenge that reward shaping alone cannot resolve. Our key design insight is that each virtual queue maps to a dedicated critic module, making safety enforcement structurally embedded rather than reward-engineered. Evaluation shows that SafeScale-MATD3 is the only method satisfying the strict 1% collision-alert budget, reducing the violation rate by 4×
+
+to 5.5× versus all baselines while achieving a 35% lower collision-alert AoI and strict Pareto dominance on the energy and freshness tradeoff. II. R ELATED WORK 
+
+This paper sits at the intersection of LEO-satellite AoI analysis and vehicular AoI scheduling, two research lines that have largely progressed in isolation. We organize the review along these two lines: Section II-A surveys AoI optimization in LEO satellite networks, and Section II-B reviews AoI scheduling in vehicular networks. 
+
+A. AoI in LEO Satellite Networks 
+
+LEO-AoI studies focus on relay-chain freshness and single-satellite scheduling but do not model mobile users or handover-induced spike costs. Chiariotti et al. [7] derived tight hypoexponential AoI bounds for multi-hop LEO relay chains under FCFS/OPF/HAF policies, providing a phase-segmented decomposition framework. However, they assume static topology and do not model handover. Dai et al. [10] proposed Lyapunov DPP-based AoI-aware downlink schedul-ing with angular beamforming under Shadowed-Rician fad-ing. Their setting remains single-satellite/multi-user without handover modeling, heterogeneous safety budgets, or priority-specific constraints. Lang et al. [13] combined diffusion-augmented DQN with handover-frequency minimization in HAP-assisted SAGIN, representing a nearby AoI baseline with mobility-aware handover control. Their setting still assumes static ground users and lacks multi-priority safety budgeting. Park et al. [18] measured Starlink handover outages (outage duration consistent with LEO handover measurements) and proposed joint pruned MPC for video QoE under handover dy-namics. LEO-AoI studies model orbital/channel dynamics but 3
+
+generally assume stationary terminals. None jointly captures compound vehicle and satellite Doppler, sub-slot handover spike analysis, and priority-differentiated safety constraints (Table I, first three columns). In short, existing LEO-AoI work does not yet supply a modeling stack that is simultaneously mobile-terminal aware, handover spike faithful, and safety budget oriented; the present paper targets exactly that stack. 
+
+B. AoI in Vehicular Networks 
+
+Vehicular-AoI studies address multi-priority freshness and MARL-based scheduling but operate over terrestrial links with negligible satellite handover cost. Parvini et al. [6] intro-duced a global and local dual-critic TD3 architecture for pla-toon C-V2X AoI scheduling, showing that task-decomposed critics reduce gradient conflict across flows. Their formula-tion operates over terrestrial sidelinks with negligible han-dover cost. Zhang et al. [16] analyzed multi-priority queues (HPD >DENM >CAM) in C-V2X Mode 4 with NOMA, re-porting substantial AoI gains for high-priority messages via hybrid-action DRL. Their priority classification motivates our message hierarchy but assumes fixed terrestrial coverage. Azizi et al. [17] proposed MA-TD3 for energy-efficient AoI optimization in VLC-V2X and showed rapid convergence, supporting TD3-style multi-agent control for mixed objec-tives. In mobility and handover management, bandit-based handover thresholding [19] addresses the ping-pong versus late-handover trade-off under extreme mobility. Our proac-tive TLE-based module (Section VI-G) complements such threshold tuning with queue-informed timing. Prediction-based integrated satellite and terrestrial association with connection-change penalties [20] shares the spirit of using orbital pre-diction to reduce handover cost. We focus on AoI spike quantification and multi-priority safety enforcement rather than throughput-optimal association alone. Separately, game-theoretic satellite resource management (surveys [2], [21], coalition games [22], [23]) studies cooperative spectrum/beam allocation, but does not model AoI evolution with safety constraints, and it is complementary to this work. In summary, the vehicular AoI line provides multi-priority MARL machin-ery but leaves open how freshness metrics and coordination survive once LEO handovers and sub-slot AoI evolution enter the picture (Table I, handover and two-scale columns). III. S YSTEM MODEL , T WO -T IMESCALE DESIGN , AND 
+
+PROBLEM FORMULATION 
+
+This section specifies the LEO-assisted platoon scenario and formulates the joint optimization problem. In plain terms, platoon leaders maintain satellite links while followers share updates over short-range V2V, handover outages occur in the hundred-millisecond range, and three message classes differ sharply in allowable staleness. We organize this section as follows: Section III-A introduces the two-timescale structure; Section III-B derives the compound Doppler model; Sec-tion III-C formalizes handover and tick-level AoI evolution; Section III-D completes power and end-to-end AoI accounting; Section III-E states the final constrained optimization. 
+
+Fig. 1: System overview of LEO satellite-assisted autonomous vehicle platoon communication under the two-timescale AoI framework. Three foundational modeling choices jointly determine the analytical architecture, each necessitated by one of the gaps in Section I. Choice 1 (Gap 2): the two-timescale structure ( τs,
+
+τac ) resolves the floor-approximation inconsistency. Choice 2 (Gap 1): compound Doppler analysis establishes satellite dominance and motivates TLE prediction as scheduler state. 
+
+Choice 3 (Gap 3): discretionary/forced handover splitting ensures handover-budget feasibility by construction. These three choices map directly to the three structural features of the LEO-platoon scenario in Fig. 1: compound Doppler dynamics, mandatory handover outages that exceed collision-alert deadlines, and order-of-magnitude deadline differences across message classes. The following subsections formalize each feature. Fig. 1 illustrates the complete system scenario. A fleet of P autonomous vehicle platoons traverses a remote highway segment without terrestrial cellular infrastructure. Each platoon is led by a Platoon Leader (PL) maintaining a satellite uplink to the LEO constellation; up to Nj −1
+
+followers receive safety-critical updates through intra-platoon V2V Mode 4 links. 
+
+A. Two-Timescale Rationale and Network Architecture 
+
+In this subsection, we resolve the time-scale inconsistency. Three operational timescales must be simultaneously resolved: (i) the per-class safety freshness thresholds ∆safe 
+
+> v,m
+
+; (ii) the handover outage duration τho [18], which is shorter than a control slot yet long relative to safety ticks; and (iii) the control/RL slot τs matching the DPP literature [10], [13]. Because τho < τ s, the slot-granularity floor maps every outage to zero, yet the continuous surrogate μτ /τ s is positive and misleading. We introduce a fine-grained AoI accounting tick τac along-side the decision slot τs, chosen so that safety thresholds 
+
+nsafe  
+
+> v,m
+
+= ∆safe 
+
+> v,m
+
+/τ ac and outage lengths nho = ⌊τho /τ ac ⌋
+
+are non-zero integers. The floor expectation relative error 
+
+|⌊ τ /τ ac ⌋ − τ /τ ac |/n ho is then bounded and explicit. AoI state and safety checks evolve at τac -resolution; satellite associa-tion, scheduling, and RL actions occur at τs-resolution. We adopt a Walker-Delta model α [24]: Ntotal /N p/F at altitude 4
+
+Fig. 2: Two-timescale AoI framework (Proposition 1). 
+
+HL = 550 km. The m-th satellite position at slot t is 
+
+stm = as
+
+
+
+cos ψtm cos Ω m − sin ψtm sin Ω m cos α
+
+cos ψtm sin Ω m + sin ψtm cos Ω m cos α
+
+sin ψtm sin α
+
+ , (1) where ψtm = Φ m +ωt +f0, as = RE +HL, ω = pGM E /a 3
+
+> s
+
+,and Ωm is the RAAN. 
+
+Proposition 1 (Tick-size selection criterion) . Let nsafe 1 =∆safe ,min /τ ac be the minimum-class safety threshold in ticks, 
+
+nho = ⌊τho ,min /τ ac ⌋ the minimum handover-outage length in ticks, and Nac = τs/τ ac the number of AoI ticks per decision slot. A sufficient design rule that guarantees nsafe 1 ≥ 2 and 
+
+nho ≥ 1 is 
+
+τac ≤ min(∆ safe ,min , τ ho ,min )2 . (2) 
+
+The factor of 2 is sufficient but not necessary: nho ≥ 1
+
+requires only τac ≤ τho ,min , and nsafe 1 ≥ 2 requires only 
+
+τac ≤ ∆safe ,min /2. The joint criterion with the factor-2 de-nominator simultaneously ensures both with a single inequality and provides a one-tick resolution margin against rounding. Here τho ,min denotes the minimum handover outage duration; because actual outage durations τ (t)ho are random, we interpret 
+
+τho ,min as the support lower bound of their distribution (i.e., 
+
+τ (t)ho ≥ τho ,min almost surely), consistent with the statistical characterization in [18]. The specific value of τac = 20 ms is fixed to satisfy (2) while balancing computational cost and resolution margin. Proof. Since τ (t)ho ≥ τho ,min almost surely, nho =
+
+⌊τ (t)ho /τ ac ⌋ ≥ ⌊ τho ,min /τ ac ⌋ ≥ 1 whenever τac ≤ τho ,min ,which is implied by (2). Similarly, nsafe 1 = ∆ safe ,min /τ ac ≥ 2
+
+whenever τac ≤ ∆safe ,min /2, also implied by (2). Taking 
+
+τac ≤ min(∆ safe ,min , τ ho ,min )/2 satisfies both conditions simultaneously. Fig. 2 illustrates the nested two-timescale structure that underpins the entire framework. At the outer level, RL deci-sions are made once per slot τs with full satellite association, power, and priority control. At the inner level, AoI state A(t,n )
+
+> v
+
+and safety virtual queues Zv,m evolve at every tick τac ,capturing sub-slot events that a coarse slot model would miss. In particular, the handover outage phase (red ticks) maps to a non-zero integer nho = ⌊τho /τ ac ⌋ ≥ 1, and the collision-alert threshold resolves to nsafe  
+
+> v, 1
+
+≥ 2, both guaranteed by the design criterion in Eq. (2). This separation ensures that safety violations are detected within the tick at which they occur, rather than being averaged away at the slot boundary. Decision slots T = {1, 2, . . . , T } have duration τs. Each slot contains 
+
+Nac = τs/τ ac AoI ticks. The system comprises:  
+
+> •
+
+LEO constellation: K = {1, . . . , K } satellites in low Earth orbit. Visible set K(t) ⊆ K updates deterministi-cally per TLE/SGP4.  
+
+> •
+
+Vehicle platoons: P platoons, each with one Platoon Leader (PL) and Nj −1 followers. Let V = {v1, . . . , v Nv }
+
+denote PLs with Nv = P . PLs maintain the satellite uplink and followers receive V2V CAM over Mode 4.  
+
+> •
+
+Message classes: m ∈ M = {1, 2, 3}: collision alerts (HPD-type), platoon control (DENM-type), map updates (CAM-type). 
+
+B. Dual-Dynamic Doppler and Channel Model 
+
+With the two-timescale structure in place, we now character-ize the channel dynamics that determine per-tick transmission success. The key distinction from all prior LEO-AoI work is that both the satellite and the vehicle move simultaneously, producing a compound Doppler shift that collapses coherence time well below a single AoI tick. 
+
+Lemma 1 (Dual-dynamic Doppler and coherence time) . Let 
+
+θsat (t) ∈ [0 ◦, 90 ◦] be the satellite elevation angle and ψveh (t)
+
+the angle between the vehicle velocity vector and the satellite– vehicle link. The compound Doppler shift is 
+
+f total  
+
+> D
+
+(t) = fc
+
+c
+
+vsat sin θsat (t) − vveh cos ψveh (t), (3) 
+
+and the channel coherence time is 
+
+Tc(t) ≈ 0.423 
+
+|f total  
+
+> D
+
+(t)| . (4) 
+
+Because vsat ≫ vveh , we have f total  
+
+> D
+
+≈ f sat  
+
+> D
+
+and Tc is governed by satellite geometry. The resulting Tc is far shorter than both τs and τac (verified in simulation), so the channel undergoes many independent fading realizations within one AoI tick. 
+
+Corollary 1 (Doppler dominance and nonstationarity index) .
+
+Define the Doppler ratio (valid for sin θsat > 0): 
+
+ρD ≜ f veh 
+
+> D
+
+f sat 
+
+> D
+
+≤ vveh 
+
+vsat sin θsat 
+
+. (5) 
+
+Under the elevation mask θsat ≥ θmin > 0 (Section III-C), 
+
+ρD ≪ 1: satellite motion dominates Doppler while vehicle speed mainly affects the effective update rate λeff (v). The nonstationarity index NSI( τ ) ≜ τ /T c satisfies NSI( τac ) ≫ 1
+
+and NSI( τs) ≫ 1, quantifying strong nonstationarity at both timescales. 
+
+Satellite Doppler dominance has two direct design conse-quences: (i) TLE/SGP4 orbital predictions serve as a low-dimensional channel predictor because coherence-time trends track satellite geometry; (ii) since Tc ≪ τac , each tick averages 5
+
+over many independent fading draws, motivating diffusion-based latent augmentation (Section VI-F) to reduce critic variance. Let Lv,k (t) denote the large-scale path gain from satellite k
+
+to vehicle v at slot t, ρv,k (t, n ) the small-scale fading coef-ficient at tick n, and a(θ, ϕ ) the UPA steering vector. The composite channel is 
+
+hv,k (t, n ) = 
+
+q
+
+Lv,k (t) ρv,k (t, n ) a(θv,k , ϕ v,k ) ej2πf total   
+
+> D(t)·nτ ac
+
+,
+
+(6) where the exponential captures residual Doppler after bulk pre-compensation [10], and |ρv,k (t, n )| follows a Shadowed-Rician distribution with light-shadowing parameters. The large-scale gain uses an NTN-style decomposition: 
+
+Ploss ,v,k = Floss (dv,k , f c) + SF v,k + Lzenith (fc)sin θv,k 
+
+,Lv,k (t) = P −1loss ,v,k .
+
+(7) 
+
+Assumption 1 (Shadowed-Rician fading) . |ρv,k (t, n )| follows a Shadowed-Rician distribution with light-shadowing param-eters, consistent with LEO NTN channel measurements. 
+
+Assumption 2 (Independent tick-level fading) . Fading coef-ficients ρv,k (t, n ) are independent across ticks n. This is justified by Tc ≪ τac (Lemma 1): the channel traverses many coherence intervals per tick, making inter-tick correlation 
+
+O(Tc/τ ac ) ≪ 1 negligible. 
+
+Assumption 3 (Deterministic V2V one-hop delay) . V2V Mode-4 intra-platoon delay is modeled as a deterministic one-hop latency dominated by the 20 ms AoI tick, consistent with C-V2X sidelink specifications. Let γth be the minimum SNR for successful decoding. The per-tick SINR under inter-PL interference is 
+
+γv,k (n) = Pv |wHv hv,k (t, n )|2
+
+σ2 + Iv (t, n ) ,Iv (t, n ) ≜ X 
+
+> v′̸=v
+
+Pv′ |wHv′ hv′,k (t, n )|2, (8) where n ∈ {1, . . . , N ac }. A tick is declared successful if 
+
+γv,k (n) ≥ γth . Under Assumption 2, Proposition 3 later yields a tractable closed-form expected AoI increment. Practical LEO terminals implement bulk Doppler pre-compensation from ephemeris data. Three residual effects persist: (i) pre-compensation updates at intervals > T c leave intra-update phase rotation; (ii) TLE ephemeris errors [18] induce residual Doppler non-negligible relative to the vehicle component; (iii) vehicle Doppler is typically uncompensated in broadcast downlink. Under these conditions T residual  
+
+> c
+
+≪ τac ,so NSI( τac ) ≫ 1 continues to hold. 
+
+C. Handover Model and AoI Evolution 
+
+The channel model above governs per-tick transmission success; link availability is additionally determined by satellite visibility and handover dynamics. We present the model in four progressive steps: visibility and handover classification, tick-level AoI evolution, slot-level summary, and safety thresh-old mapping. 
+
+1) Visibility and Handover Classification: Satellite k is visible to PL v at slot t if its elevation exceeds a minimum mask: 
+
+θv,k (t) ≥ θmin , (9) where θv,k (t) is computed from TLE/SGP4 geometry. The predicted visibility window is 
+
+W kv (t) = sup {∆t : θv,k (t + τ ) ≥ θmin , ∀τ ∈ [0 , ∆t]}. (10) 
+
+Definition 1 (Discretionary vs. forced handover) . A forced handover occurs when the serving satellite exits the visible set, i.e., kv (t−1) /∈ K (t). A discretionary handover occurs when kv (t−1) ∈ K (t) but the scheduler proactively switches to a different satellite. The binary handover indicator and its decomposition are 
+
+Hv (t) = 1{kv (t)̸ = kv (t−1) } = Hforced  
+
+> v
+
+(t) + Hdisc  
+
+> v
+
+(t). (11) 
+
+2) Tick-Level AoI Evolution: Let δ(t,n ) 
+
+> v
+
+∈ { 0, 1} indicate whether PL v is scheduled at tick n of slot t. During a connected slot ( Hv (t)=0 ), the priority action βtv,m fixes 
+
+δ(t,n ) 
+
+> v
+
+= βtv,m for all n. During a handover slot ( Hv (t)=1 ), 
+
+δ(t,n ) 
+
+> v
+
+= 0 for the first n(t)ho = ⌊τ (t)ho /τ ac ⌋ ≥ 1 outage ticks (positivity guaranteed by (2)), and may become 1 afterward if reconnection succeeds. The AoI evolves at every tick as 
+
+A(t,n +1)  
+
+> v,m
+
+=
+
+(
+
+1, successful update ,A(t,n ) 
+
+> v,m
+
++ 1 , otherwise. (12) The “otherwise” branch covers two distinct causes— deterministic outage failure ( n ≤ n(t)ho ) and stochastic trans-mission failure ( γv,k (n) < γ th under Assumption 1)—both producing a unit AoI increment. This distinction is preserved in the stochastic analysis of Proposition 3. For a connected slot, the per-tick and slot-level success probabilities are 
+
+pv,k (n) = Pr( γv,k (n) ≥ γth ),Psucc ,v (t) = 1 −
+
+> Nac
+
+Y
+
+> n=1
+
+ 1 − δ(t,n ) 
+
+> v
+
+pv,k (n). (13) 
+
+3) Slot-Level AoI Summary: The tick-level law (12) serves as the ground truth for safety checking via (20). For the DPP drift analysis (Lemma 2), we also need a coarser slot-level summary. 
+
+Assumption 4 (Slot-summary approximation) . When at least one tick succeeds in a connected slot, the slot-end AoI is approximated as At+1  
+
+> v,m
+
+= 1 (best-case reset). This is optimistic for the connected phase but conservative for the DPP drift bound, which uses only the worst-case increment Nac .Under this approximation, the slot-end AoI is 
+
+At+1  
+
+> v,m
+
+=
+
+(
+
+1, Hv (t)=0 , ∃n : δ(t,n ) 
+
+> v
+
+=1 , γ v,k (n)≥γth ,Atv,m + Nac , otherwise (including Hv (t)=1 ),
+
+(14) and the expected per-slot AoI change under a connected slot is 
+
+E[∆ A | Hv (t)=0] = Nac −Psucc ,v (t) Nac +Atv,m −1, (15) 6
+
+which explicitly links tick-level fading success to slot-level drift. 
+
+4) Safety Thresholds in AoI Ticks: Safety deadlines are mapped to integer tick counts following [16]: 
+
+nsafe  
+
+> v,m
+
+=
+
+$ ∆safe 
+
+> v,m
+
+τac 
+
+%
+
+, m ∈ { 1, 2, 3}. (16) Under the tick model, n(t)ho is an exact integer with floor error at most one tick—small relative to nsafe  
+
+> v, 1
+
+by the design rule (2) (see Remark 2). Safety is checked at every tick: a violation occurs whenever A(t,n ) 
+
+> v,m
+
+> n safe 
+
+> v,m
+
+.
+
+D. Power Accounting and End-to-End AoI 
+
+The AoI evolution law above governs freshness at the PL level. We now complete the system model with slot-level power accounting and follower end-to-end AoI. Slot-level transmit indicator. Let δv (t) ∈ { 0, 1} be one if PL v is scheduled for satellite data transmission in slot t (so radiated power Pv applies to payload traffic), and zero if only handover signaling or idle behavior occurs. Thus δv (t) = 1 whenever 
+
+max n δ(t,n ) 
+
+> v
+
+= 1 for that slot, linking (17) to the tick-level scheduling indicators in Section III-C2. 
+
+Ptot (t) = X
+
+> v∈V
+
+δv (t)Pv + X
+
+> v∈V
+
+Hv (t)Pho , (17) where Pho is handover signaling power. Only PLs maintain the satellite uplink. Follower f (v) 
+
+> j
+
+in platoon v receives updates via V2V Mode 4 intra-platoon [6]. The end-to-end AoI at follower f at tick n is: 
+
+A(t,n ) 
+
+> f,m
+
+= A(t,n ) 
+
+> v,m
+
++ D(f )v2v , (18) where D(f )v2v is the integer number of AoI ticks spent from PL transmission until follower f receives the CAM, modeled as one-hop Mode 4 delay (Assumption 3). This additive model is exact when the PL broadcasts every tick and follower reception delay is deterministic; it slightly overestimates AoI when the PL withholds transmission during the D(f )v2v window. The two-timescale evolution law (12) and the discre-tionary/forced handover split prepare the problem formulation in Section III-E: the former provides exact integer outage counts needed for the safety constraint, while the latter en-sures the handover budget is always feasible by construction. Section V then derives exact spike bounds that analytically support the constraints in that problem. 
+
+E. Joint Optimization Problem 
+
+Having established the two-timescale physical model, we now formulate the joint optimization problem that captures four coupled requirements whose necessity follows from the gap analysis in Section I. Requirement 1: multi-priority weighted AoI minimization with w1 > w 2 > w 3 > 0 to distinguish safety-critical and non-critical flows. Requirement 2: time-average safety enforcement via (19b) rather than per-slot chance constraints. Requirement 3: discretionary-only handover budgeting (19c) to preserve feasibility under forced geometry-driven reassociation. Requirement 4: explicit two-timescale coupling over (t, n ), which makes the control non-separable per slot and motivates DPP-guided MARL. Now, we formulate the joint optimization problem. Prob-lem (19) is non-convex due to discrete scheduling and han-dover variables, temporally coupled by long-run constraints, and multi-timescale through (t, n ) and virtual queues. Given fixed discrete decisions, the continuous power variable enters rates in a concave (log-rate) form, while the beamformer is fixed by the closed-form MRT rule (31) rather than a non-convex max min program. The overall policy optimization remains non-separable per slot, which motivates DPP-guided MARL. 
+
+min  
+
+> π
+
+lim  
+
+> T→∞
+
+1
+
+T · Nac  
+
+> T−1
+
+X
+
+> t=0
+> Nac
+
+X
+
+> n=1
+
+X
+
+> v∈V
+
+X
+
+> m∈M
+
+wm A(t,n ) 
+
+> v,m
+
+(19a) s.t. lim  
+
+> T→∞
+
+1
+
+T · Nac 
+
+X
+
+> t,n
+
+1A(t,n ) 
+
+> v,m
+
+> n safe 
+
+> v,m
+
+ ≤ ϵm, ∀v, m, 
+
+(19b) 
+
+lim  
+
+> T→∞
+
+1
+
+T
+
+X
+
+> t
+
+X
+
+> v
+
+Hdisc  
+
+> v
+
+(t) ≤ N disc ho , (19c) 
+
+lim  
+
+> T→∞
+
+1
+
+T
+
+X
+
+> t
+
+Ptot (t) ≤ Pmax , (19d) 
+
+Rtv,k ≥ Rmin ,m ∀v, m, t, (19e) 
+
+kv (t) ∈ K (t), ∀v, t. (19f) Priority weights wm (w1 > w 2 > w 3 > 0) and violation tolerances ϵm ∈ {0.01 , 0.05 , 0.20 } for m ∈ {1, 2, 3} are given. Constraint (19c) limits the average rate of discretionary 
+
+handovers only. The degenerate policy “never switch dis-cretionarily” achieves P 
+
+> v
+
+Hdisc  
+
+> v
+
+(t) = 0 ≤ N disc ho , so the constraint is always feasible. Forced handovers are excluded from the budget and are handled by re-associating to the best available satellite. Constraint (19b) is a time-average violation frequency (empirical tick fraction with A(t,n ) 
+
+> v,m
+
+> n safe 
+
+> v,m
+
+), not a per-tick chance constraint P (A(t,n ) 
+
+> v,m
+
+> n safe 
+
+> v,m
+
+) ≤ ϵm. The latter would typically require a stationary distribution for the AoI process, which is difficult to characterize under time-varying handovers. Virtual queue (20) accumulates violation deficit when A(τ ) 
+
+> v,m
+
+> nsafe  
+
+> v,m
+
+and drains at rate ϵm, strong stability yields the long-run bound of Theorem 1 for ergodic policies, while Zv,m provides a runtime-observable tightness signal in (30). IV. S AFETY CONSTRAINT VIA VIRTUAL QUEUES AND 
+
+DPP T EMPLATE 
+
+This section establishes the online enforcement mechanism for the three tiered safety budgets in Problem (19). The key result is that no distributional assumption on the AoI process is needed, only bounded per-slot increments and a Slater-feasible baseline policy suffice. We first define safety virtual queues (Theorem 1) and show that strong stability implies time-average violation compliance without requiring a closed-form AoI distribution. We then derive the drift-plus-penalty template (Lemma 2) that decomposes the long-run constrained 7
+
+problem into per-slot decisions, producing the control skeleton that Section VI instantiates as SafeScale-MATD3. 
+
+Theorem 1 (Safety Virtual Queue Equivalence) . Define the safety virtual queue: 
+
+Zv,m (ℓ+1) = max 
+
+n
+
+Zv,m (ℓ) + 1A(ℓ) 
+
+> v,m
+
+> n safe 
+
+> v,m
+
+ − ϵm, 0
+
+o
+
+, (20) 
+
+where ℓ ∈ Z≥0 indexes AoI ticks globally (distinct from the coherence-time Tc(t) and the tick duration τac = τac ). Under the following conditions: 
+
+(C1) (Slater / strictly feasible averages). There exists a sta-tionary randomized policy π⋆ and δ > 0 such that 
+
+Eπ⋆ [1[A(ℓ) 
+
+> v,m
+
+> n safe 
+
+> v,m
+
+]] ≤ ϵm − δ for all (v, m ).
+
+(C2) (Bounded slot aggregates). Per-slot increments of Zv,m 
+
+are uniformly bounded: aggregating (20) over Nac ticks yields |Zt+1  
+
+> v,m
+
+− Ztv,m | ≤ Nac (binary arrivals with max -projection). 
+
+(C3) (Ergodicity). The controlled AoI process has well-defined long-run Ces` aro averages : for each (v, m ),
+
+> 1
+> T
+
+PT −1 
+
+> t=0
+
+E[Vv,m (t)] converges as T → ∞ , e.g. when the joint (AoI, queue, channel) chain is ergodic under π⋆
+
+and the controlled policy satisfies a uniform-integrability condition. If Zv,m (ℓ) is strongly stable ( lim ℓ→∞ E[Zv,m (ℓ)] /ℓ = 0 ), then the time-average violation frequency satisfies 
+
+lim sup  
+
+> T→∞
+
+1
+
+T N ac  
+
+> T−1
+
+X
+
+> t=0
+
+E[Vv,m (t)] ≤ ϵm.
+
+Under the additional mixing condition in (C3), the time average converges almost surely to the same limit by the ergodic theorem for uniformly bounded sequences. Proof. The argument is the standard reflected-queue Lyapunov proof. Aggregate (20) over one slot to obtain Zt+1  
+
+> v,m
+
+− Ztv,m ≤
+
+Vv,m (t) − Nac ϵm with 0 ≤ Vv,m (t) ≤ Nac . Squaring and taking conditional expectation yields a one-slot drift inequality with bounded constant BZ :
+
+E(Zt+1 
+
+> v,m
+
+)2 − (Ztv,m )2 | F t
+
+ ≤ BZ +2 Ztv,m (Vv,m (t) − Nac ϵm) .
+
+Summing over slots and using strong stability (E[Zv,m (ℓ)] /ℓ → 0) gives lim sup T →∞ 1
+
+> T
+
+P 
+
+> t
+
+E[Vv,m (t)] ≤
+
+Nac ϵm. The almost-sure statement follows from (C2) and (C3) by ergodic arguments. The virtual queue Zv,m operates like a credit account: each tick in which AoI exceeds the safety threshold makes a unit withdrawal, while the budget rate ϵm provides a guaranteed deposit. Strong stability ( E[Zv,m (τ )] /τ → 0) is the require-ment that withdrawals never permanently outpace deposits, i.e., the account never becomes permanently overdrawn. This is equivalent to the time-average violation frequency staying below ϵm, which is the safety constraint (19b). The result re-quires no closed form for the AoI distribution under handovers; only bounded increments (C2) and a slack-generating baseline (C1) are needed. Theorem 1 replaces hard per-slot probabilistic feasibility with a runtime-observable backlog Zv,m that the policy can use as a tightness signal in its state vector (30). Virtual queues differ from per-slot chance constraints in three ways: (i) no explicit stationary AoI distribution is required beyond ergodic operation; (ii) Zv,m (t) is runtime observable and serves as a direct tightness signal in state/action updates; and (iii) the penalty weight V gives an explicit AoI constraint tradeoff between objective minimization and queue draining speed. Proposition 2 below verifies that the Slater condition holds under the adopted channel parameters. 
+
+Proposition 2 (Slater feasibility under SafeScale-MATD3) .
+
+Let fforced ≜ lim T →∞ 1
+
+> T
+
+P
+
+> t
+
+P 
+
+> v
+
+Hforced  
+
+> v
+
+(t) be the long-run forced-handover rate. Under Assumptions 1 and 3 and the parameter regime fforced ≤ (ϵm − δ)Nac /μ n for some δ > 0,Condition (C1) of Theorem 1 holds for all three priority classes m ∈ { 1, 2, 3}. Under bounded increments in (C2), 
+
+ϵ-greedy exploration yields well-defined Ces` aro averages for the controlled process. 
+
+For m=3 (ϵ3 = 0 .20 ), a connected-phase baseline policy easily achieves slack because the typical violation rate is well below 20%. For m=1 (ϵ1 = 0 .01 ), the sufficient condition becomes fforced ≤ 0.005 · Nac /μ n. Under measured Starlink handover statistics [18] ( μn ≈ 2 to 5 ticks, forced rate ≈ 1
+
+per 60 to 100 slots), this holds with δ ≈ 0.005 . Proactive timing (Section VI-G) and discretionary budgeting (19c) keep forced-handover exposure within this bound. 
+
+Lemma 2 (Drift-plus-penalty template bound) . Let L(t) = 
+
+> 12
+
+
+
+Q2 
+
+> P
+
+(t) + Q2 
+
+> H
+
+(t) + P 
+
+> v,m
+
+Z2
+
+> v,m
+
+(t)
+
+
+
+. For any admissible control policy at slot t, let Vv,m (t) ≜ PNac  
+
+> n=1
+
+1[A(t,n ) 
+
+> v,m
+
+>nsafe 
+
+> v,m
+
+] ∈ { 0, 1, . . . , N ac } be the per-slot violation count (the same quantity as in the proof of Theorem 1). There exists a finite constant B (Appendix) such that 
+
+E[L(t+1) − L(t) | F t] + V E[Θ( t) | F t]
+
+≤ B + QP (t) Ptot (t) − Pmax 
+
+ + QH (t)
+
+X 
+
+> v
+
+Hdisc  
+
+> v
+
+(t) − N disc ho 
+
+
+
++ X
+
+> v,m
+
+Zv,m (t)( Vv,m (t) − Nac ϵm) + V Θ( t), (21) 
+
+where Θ( t) is the per-slot contribution to the objective in 
+
+(19a) . Minimizing the RHS yields the online control rule. The safety term Zv,m (t) Vv,m (t)−Nac ϵm
+
+ penalizes slots in which the tick violation count exceeds its time-average budget Nac ϵm
+
+(equivalently, Vv,m (t)/N ac > ϵ m). 
+
+A valid bounded-drift constant is 
+
+B = 12
+
+h
+
+(∆ max  
+
+> P
+
+)2 + (∆ max  
+
+> H
+
+)2 + X
+
+> v,m
+
+ Nac (1 − ϵm)2i
+
+, (22) with ∆max  
+
+> P
+
+≜ sup t |Ptot (t) − Pmax | and ∆max  
+
+> H
+
+≜
+
+sup t
+
+P 
+
+> v
+
+Hdisc  
+
+> v
+
+(t) − N disc ho under bounded actions. 
+
+Proof. This is the standard DPP drift expansion. Square each queue update in (23), aggregate the safety queue over Nac 
+
+ticks using Vv,m (t), sum across queues, and take conditional expectations. Bounded one-slot increments yield a finite con-stant B (explicit form in (22)), and rearranging gives (21); equivalently, 
+
+∆( t) + V Θ( t) ≤ B + X
+
+> q
+
+Qq (t)∆ q (t) + V Θ( t),8
+
+where q ∈ { P, H, (v, m )} indexes all virtual queues. 
+
+Remark 1 (Policy-dependence of B). The constant B in (21) (derived explicitly in the Appendix) depends on the per-slot increment bounds ∆max  
+
+> P
+
+≜ sup t |Ptot (t) − Pmax | and ∆max  
+
+> H
+
+,which are determined by the policy class rather than by system parameters alone. During MARL training, exploration noise may transiently violate these bounds; in practice, we clip power actions to [0 , P max ] and handover indicators to {0, 1},which ensures ∆max  
+
+> P
+
+≤ Pmax and ∆max  
+
+> H
+
+≤ |V| uniformly throughout training, keeping B finite and consistent. Theorem 1 is enforced online at the AoI-tick level through the update law (20). This module is policy-agnostic and exposes a runtime tightness signal via Zv,m for the scheduler. Mean-rate stability under strict feasibility follows directly from Theorem 1 via the standard Foster-Lyapunov argument for reflected queues. Problem (19) is non-separable per slot. Lemma 2 then provides the DPP template that Section VI instantiates as the SafeScale-MATD3 policy. The full virtual queue set for DPP: 
+
+QP (t + 1) = max {QP (t) + Ptot (t) − Pmax , 0},QH (t + 1) = max 
+
+n
+
+QH (t) + X
+
+> v
+
+Hdisc  
+
+> v
+
+(t) − N disc ho , 0
+
+o
+
+,Zv,m (τ + 1) = max {Zv,m (τ ) + 1[A(τ ) 
+
+> v,m
+
+> n safe 
+
+> v,m
+
+] − ϵm, 0}.
+
+(23) With the DPP template and virtual queues in place, two analytical quantities remain open: the drift constant B required by Lemma 2, and the worst-case AoI cost incurred by ping-pong handover sequences. The next section derives closed-form bounds for both. V. H ANDOVER AOI S PIKE ANALYSIS UNDER DUAL 
+
+DYNAMICS 
+
+This section derives the closed-form handover spike bounds that are required by the DPP template of Section III-E and later exploited by the scheduler in Section VI. The main result is Theorem 2: the cumulative AoI penalty of a ping-pong sequence grows quadratically with oscillation length, making oscillation suppression the highest-leverage lever for safety compliance and directly answering Q2. We proceed in two steps: Section V-A decomposes long-run AoI into connected and handover phases, and Section V-B quantifies how ping-pong oscillations amplify the handover component. These bounds supply the drift constant B needed by Lemma 2 and analytically justify the handover budget constraint (19c). Two quantities in Problem (19) remain open: the drift constant B in Lemma 2 and the analytical justification for the handover budget (19c). This section derives closed-form spike bounds that determine both. The DPP construction re-quires uniform per-slot AoI increment bounds that simulation estimates cannot supply; the tick model from Section III-C enables exact integer-arithmetic analysis. 
+
+A. Phase-Segmented Decomposition 
+
+Following Chiariotti et al. [7], we decompose the long-term average AoI as 
+
+¯Atotal  
+
+> v,m
+
+= Tconn 
+
+Ttotal 
+
+¯A(conn)  
+
+> v,m
+
++ Tho 
+
+Ttotal 
+
+¯A(ho)  
+
+> v,m
+
+, (24) where ¯A(conn)  
+
+> v,m
+
+denotes the connected-phase long-run average AoI under the hypoexponential approximation of [7]. 
+
+B. Closed-Form AoI Spike 
+
+The decomposition (24) isolates ¯A(ho)  
+
+> v,m
+
+as the dominant term for safety-critical traffic. Theorem 2 quantifies how ping-pong oscillation amplifies this cost. 
+
+Definition 2 (Ping-Pong Handover Sequence) . Vehicle v expe-riences a ping-pong sequence of length k at slots {t1, . . . , t k}
+
+if Hv (ti) = 1 ∀i and kv (ti) = kv (ti−2) ∀i ≥ 2 (oscillation between two satellites under greedy MRSS [18]). 
+
+Theorem 2 (Worst-case handover-slot AoI spike envelope) .
+
+Consider vehicle v with slot-start AoI a0 = At0 
+
+> v,m
+
+be-fore a ping-pong sequence of k consecutive handover slots 
+
+t0+1 , . . . , t 0+k. Assume the conservative case that no suc-cessful update occurs in any tick of these slots (equivalently, the “otherwise” branch of (12) applies every tick, matching the slot summary (14) with increment Nac per handover slot). Then the end-of-slot AoI is deterministic: 
+
+At0+kv,m = a0 + k N ac , (25) 
+
+Var At0+kv,m 
+
+ = 0 . (26) 
+
+The expected cumulative slot-end AoI (same hypothesis) is 
+
+E
+
+" kX
+
+> i=1
+
+At0+iv,m 
+
+#
+
+= k a 0 + k(k + 1) 2 Nac , (27) 
+
+which scales quadratically in k.Proof. Under the hypothesis, each handover slot adds exactly 
+
+Nac ticks to AoI by (14), so At0+iv,m = At0+i−1 
+
+> v,m
+
++ Nac for i =1, . . . , k . Unrolling gives (25), and the variance is zero because the trajectory is deterministic. Summing At0+iv,m = a0 + iN ac 
+
+over i = 1 , . . . , k yields (27). The simplicity is deliberate: Lemma 2 needs a uniform worst-case per-slot AoI increment for the drift constant B. This conservative envelope supplies that bound, while Proposition 3 gives a tighter stochastic characterization when reconnection statistics are available. The O(k2) scaling in (27) has a crisp operational inter-pretation: each handover slot not only incurs its own outage cost but also elevates the baseline from which the next slot’s cost is measured. This compounding means that a burst of 
+
+k=3 consecutive handover slots is 6× costlier in cumulative AoI than three isolated single-slot outages, a ratio that grows linearly with k. Consequently, suppressing consecutive han-dover bursts via constraint (19c) yields disproportionate safety returns compared to reducing per-outage duration, directly answering Q2. The DPP objective implication follows directly from (27) after weighting by {wm}.9
+
+Remark 2 (Floor approximation error quantification) . The out-age tick n(i)ho = ⌊τ (i)ho /τ ac ⌋ incurs error ei = τ (i)ho /τ ac − n(i)ho ∈
+
+[0 , 1) , i.e., at most one tick. The maximum relative error per outage is 1/n safe  
+
+> v, 1
+
+, bounded by (2), and the aggregate relative error decreases over longer outage spans. 
+
+Corollary 2 (Safety design criterion) . Assume n(t)ho ≥ nsafe  
+
+> v, 1
+
+,i.e., the mandatory outage length in ticks is at least as large as the collision-alert safety threshold. Under the adopted parameters ( τac = 20 ms, τho ,min ≈ 225 ms, so nho =
+
+⌊225 /20 ⌋ = 11 ; and nsafe  
+
+> v, 1
+
+= 5), this condition holds with margin. Then during the mandatory outage phase of a single handover, AoI rises by nho ≥ nsafe  
+
+> v, 1
+
+ticks before any reconnection attempt, necessarily violating the collision-alert safety threshold. Thus purely reactive scheduling cannot keep 
+
+m=1 fresh during that outage window, regardless of inter-handover behavior. Under the stronger conservative slot model of Theorem 2, one slot adds Nac = 50 ≫ nsafe  
+
+> v, 1
+
+= 5 ticks. Proactive timing (Section VI-G) and discretionary handover control (19c) remain necessary to limit exposure to these windows and to consecutive handover sequences. 
+
+Corollary 2 shows that purely reactive scheduling cannot maintain m=1 feasibility during outage windows, necessitat-ing both proactive timing and discretionary budgeting. The conservative envelope of Theorem 2 can be tightened when reconnection statistics are available. When post-outage recon-nection succeeds with nonzero probability, the conservative Theorem 2 envelope can be tightened. Theorem 2 assumed the worst case (no successful update in any tick of the handover slot). We now relax this by conditioning on independent post-outage reconnection outcomes, using ∆A ≜ At+1  
+
+> v,m
+
+− Atv,m as defined in (15). 
+
+Proposition 3 (Upper bound on expected increment over one handover slot) . Let ps(n) denote the per-tick reconnection success probability for ticks n > n (t)ho within slot t, given 
+
+Hv (t) = 1 . Under Assumption 2, 
+
+E[∆ A | Hv (t) = 1] = n(t)ho +( Nac −n(t)ho )
+
+> Nac
+
+Y 
+
+> n=n(t)ho +1
+
+ 1−ps(n).
+
+(28) 
+
+For constant ps(n) ≡ ps:
+
+E[∆ A | Hv (t) = 1] = n(t)ho + ( Nac − n(t)ho )(1 − ps) Nac −n(t)ho .
+
+(29) 
+
+Proof. The outage contributes exactly n(t)ho increments. The all-fail post-outage event has probability Q
+
+> n>n (t)ho
+
+(1 − ps(n)) 
+
+under Assumption 2. Assigning full post-outage increment to that event yields the stated upper bound, with the constant-ps
+
+form obtained directly. The bound assigns the full post-outage increment Nac −n(t)ho 
+
+to the all-fail event and zero to success events (which reset AoI to 1). The bound is tight when ps → 0 and loose when reconnection is reliable; it converges to Theorem 2’s conservative envelope as ps → 0. Theorem 2 and Corollary 2 analytically ground constraints (19c) in Problem (19). Sec-tion VI instantiates both mechanisms in SafeScale-MATD3. VI. O NLINE MULTI -T IMESCALE SCHEDULING :SAFE SCALE -MATD3 This section instantiates the DPP control skeleton of Sec-tion III-E as a fully specified multi-agent algorithm, SafeScale-MATD3. Lemma 2 reduces Problem (19) to per-slot mini-mization of the DPP right-hand side; the key design insight is that each of the three virtual queues maps to a dedicated policy module, making safety enforcement structurally embed-ded rather than reward-engineered. We organize the section in functional blocks. Section VI-A presents the four gap-linked modules and their analytical necessity. Sections VI-B to VI-D specify MDP components (state, action, reward). Sections VI-E and VI-F detail the learning architecture (dual critics and diffusion augmentation). Section VI-G presents TLE-based proactive handover timing, and Section VI-H inte-grates all components and states the complexity bound. 
+
+A. Architecture: Gap-Linked Modules 
+
+SafeScale-MATD3 comprises four modules whose joint ne-cessity is supported by Sections III and V: STE and DLPG for fast channel dynamics, TLE-based proactive handover timing, tick-level inner-loop AoI and safety updates, and global-local critics aligned with priority-specific queues. For readability, the gap-to-module mapping is: Gap 1 to STE and DLPG, 
+
+Gap 2 to tick-level AoI and queue updates ((12), (23)), and 
+
+Gap 3 to proactive timing plus queue-aware critics ((39), (35)). Single-stream MRT (31) closes the beamformer given P tv
+
+and instantaneous CSI, so the actor optimizes power without a nested non-convex beam search. Inter-PL interference is shaped through the global critic (34). Fig. 3 visualizes how the proposed method closes the loop between dual-timescale dynamics and safety-aware learning. On the left, the environ-ment block nests slot-level decision epochs and tick-level han-dover transients, explicitly showing the AoI sawtooth and per-priority queue evolution during outage and recovery periods. The middle pipeline (STE + DLPG + actor) transforms raw state into a richer embedding so that a single policy can jointly select serving satellite, schedule priority weights, set transmit power, and trigger proactive handover timing. On the right, gradient signals from the global critic and the three local critics are aggregated to update the actor, balancing cooperative inter-ference mitigation against priority-specific safety objectives. Most importantly, the dashed feedback path from Zv,m to 
+
+stv operationalizes constraint-tightness awareness: once queue backlogs increase, the policy is immediately steered toward safer actions before hard violations accumulate. 
+
+B. State Space Design 
+
+Each component of the state vector maps to a specific term on the RHS of (21):                   
+
+> stv=cSt, c Ut, h tv,k , I t−1
+> v, ζ rv, T rv,(Atv,m )3
+> m=1 ,(Ztv,m )3
+> m=1
+> |{z }
+> AoI+safety
+> , W tv,ˆht+1
+> v,k ′
+> |{z }
+> prediction
+> .
+> (30)
+
+where W tv is the TLE-predicted remaining visibility window and ˆht+1  
+
+> v,k ′
+
+is the predicted channel quality of the best candidate satellite. Including Zv,m (t) directly in the state, rather than 10 Local 
+
+> states
+> Local
+> actions
+> Local
+> actions
+> Local
+> rewards
+> 𝐀 W
+> Collision Alert
+> (m=1)
+> 𝐀 3=1.0
+> Local Task
+> Critic
+> 𝐀 𝐀 ,1
+> Local Task
+> Critic
+> 𝐀 𝐀 ,2
+> Platoon Control
+> (m=2)
+> 𝐀 3=1.0
+> Local Task
+> Critic
+> 𝐀 𝐀 ,3
+> Map Update
+> (m=3)
+
+Fig. 3: SafeScale-MATD3 method overview under dual dynamics. only in reward penalties, exposes proximity to constraint instability and enables anticipatory decisions before violations accumulate, connecting Theorem 1 to online policy behavior. 
+
+C. Action Space and Beamforming 
+
+Discrete DRL actions: satellite selection ltv , priority scheduling βtv,m ∈ {0, 1} (from [6], extended to m ∈{1, 2, 3}), handover timing Hopt  
+
+> v
+
+(t) (new). 
+
+Continuous DRL action: transmit power P tv ∈ [0 , P max ].Given fixed discrete decisions (ltv , β tv,m , P tv ) from the pol-icy, each PL v serves one stream to satellite kv (t). The rate-maximizing beamformer is maximum ratio transmission: 
+
+w⋆v = pP tv
+
+htv,k 
+
+∥htv,k ∥ , (31) which is closed form and requires no inner iteration. The resulting per-vehicle rate is Rtv = log 2(1 + P tv ∥htv,k ∥2/σ 2).Each PL transmits one stream per tick; inter-PL interference is managed through the global cooperative reward (34) rather than coordinated beamforming. 
+
+D. Reward Design 
+
+The reward structure decomposes into a task-generic local template and a global interference term. For priority class m ∈{1, 2}:
+
+rℓv,m = − κ1Atv,m + κ2G(Rtv,k − Rmin ,m )
+
+− κ3,m max(0 , A tv,m − nsafe 
+
+> v,m
+
+)2 − κ4F{ P tv }, (32) where G(x) = max(0 , x ) and F{ P tv } = P tv /P max . We use 
+
+(κ3,1, κ 3,2) = (2 .0, 1.0) , κ1 = 1 .0, κ2 = 0 .5, κ4 = 0 .1.The predictive timing bonus is 
+
+rpred  
+
+> v
+
+= κ5 1[Atv, 1 sent before HO ] 1[W tv < T pre ], (33) with κ5 = 0 .3 and Tpre = 3 s. 
+
+Global reward (interference, from [6] Eq. (16)): 
+
+rgt = − 1
+
+Nv
+
+X
+
+> v′∈V
+
+X
+
+> k
+
+log 10 {Itv′ [k]}. (34) Total local reward: rℓv = rℓv, 1 + rℓv, 2 + rpred  
+
+> v
+
+.
+
+E. Dual-Critic Multi-Task Policy Gradient 
+
+The policy gradient extends the dual-critic update to three task critics [6]: 
+
+∇θv Jv = Es,a ∼D 
+
+∇θv πv ∇av Qgψ1 (s, a )| {z }
+
+> global cooperative critic
+
++
+
+> 3
+
+X
+
+> m=1
+
+Esv ,a v ∼D 
+
+∇θv πv ∇av Qℓ,m ϕv,m (sv , a v )| {z }
+
+> task-decomposed local critics
+
+. (35) Local critics use per-task targets yℓv,m = rℓv,m +
+
+γQ ℓ,m ϕ′
+
+> v,m
+
+(s′ 
+
+> v
+
+, a ′ 
+
+> v
+
+); global twin critics use TD3 clipped targets 
+
+yg = rgt + γ min i=1 ,2 Qgψ′
+
+> i
+
+(s′, a ′).
+
+F. State Encoding: STE and DLPG 
+
+State Transformer Encoder (STE): tokenized states are processed by a two-layer transformer with multi-head self-attention: 
+
+˜X(l) 
+
+> v
+
+= X(l−1)  
+
+> v
+
++ MHA( X(l−1)  
+
+> v
+
+), (36) 
+
+X(l) 
+
+> v
+
+= ˜X(l) 
+
+> v
+
++ FFN( ˜X(l) 
+
+> v
+
+), (37) 
+
+DLPG augmentation: conditioned reverse diffusion pro-duces an augmented latent: 
+
+zm−1 = 1
+
+√1 − βm
+
+
+
+zm − βm
+
+√1 − ¯αm
+
+ϵθ (zm, m | htv , a tv )
+
+
+
++ σmw, 
+
+(38) 
+
+where ¯αm = Qmi=1 (1 − βi), σm = √βm, and w ∼ N (0 , I ).The augmented latent ˜htv = Concat( htv , ˆz0) is fed to ac-tor/critics for robustness under fast fading. 11 
+
+Algorithm 1 TLE-Based Proactive Handover Timing 
+
+Require: stv , Ztv, 1, TLE/SGP4 data, horizon F , weight κsafe 
+
+Ensure: Hopt  
+
+> v
+
+(t), target k′ 
+
+> v
+> 1:
+
+Update candidate set K(t) and windows {W kv (t)}k∈K (t) 
+
+> 2:
+
+cost min ← ∞ , k′ 
+
+> v
+
+← kv (t−1) , Hopt  
+
+> v
+
+← 0 
+
+> 3:
+
+for each k′ ∈ K (t) do  
+
+> 4:
+
+for H = 0 to min( F, W k′ 
+
+> v
+
+(t)) do  
+
+> 5:
+
+Compute ˆps = Pr( γ ≥ γth | ˆγv,k ′ ) under Assumption 1 using TLE-predicted mean SNR ˆγv,k ′ ; apply ˆps uniformly across post-outage ticks  
+
+> 6:
+
+Predict ˆAv, 1(H, k ′) by forward-simulating (12) with 
+
+ps(n) = ˆ ps 
+
+> 7:
+
+Estimate ˆpviol  
+
+> v, 1
+
+(H, k ′) from (Ztv, 1, H, n safe  
+
+> v, 1
+
+) 
+
+> 8:
+
+cost ← ˆAv, 1(H, k ′) + κsafe ˆpviol  
+
+> v, 1
+
+(H, k ′) 
+
+> 9:
+
+if cost < cost min then  
+
+> 10:
+
+cost min ← cost , k′ 
+
+> v
+
+← k′, Hopt  
+
+> v
+
+← H 
+
+> 11:
+
+end if  
+
+> 12:
+
+end for  
+
+> 13:
+
+end for  
+
+> 14:
+
+Classify Hopt  
+
+> v
+
+(t) as discretionary/forced via Definition 1  
+
+> 15:
+
+return Hopt  
+
+> v
+
+(t), k′
+
+> v
+
+G. TLE-Based Proactive Handover Module 
+
+In this subsection H ∈ { 0, 1, . . . , F } is the integer schedul-ing horizon (slots to wait before executing a handover), distinct from the binary handover indicator Hv (t) ∈ { 0, 1} used in Section III and the orbital altitude HL = 550 km. Context disambiguates these throughout, but readers should note the in-tentional overloading. Corollary 2 establishes proactive timing as necessary for m=1 feasibility. The module operationalizes this via a look-ahead objective: 
+
+Hopt  
+
+> v
+
+(t) = arg min  
+
+> k′∈K (t),H ∈[0 ,F ]
+
+h ˆAv, 1(H, k ′) + κsafe ˆpviol  
+
+> v, 1
+
+(H, k ′)
+
+i
+
+,
+
+(39) 
+
+ˆpviol  
+
+> v, 1
+
+(H, k ′) := σsig 
+
+ Ztv, 1 + μn − HN ac ϵ1
+
+Zscale 
+
+
+
+, σsig (x) = 11 + e−x ,
+
+(40) 
+
+where ˆAv, 1(H, k ′) is the AoI predicted under handover to k′ at horizon H using TLE-predicted throughput ˆCv,k ′ , and ˆpviol  
+
+> v, 1
+
+is the estimated violation probability from the virtual queue state 
+
+Zv, 1(t). Here H denotes the number of slots to wait before executing the handover (i.e., the scheduling horizon), not the number of handovers. Exactly one handover outage occurs, contributing μn expected ticks of violation; the queue drains at rate Nac ϵ1 per slot over the H-slot waiting window. Hence the numerator is Ztv, 1 + μn − HN ac ϵ1. The horizon search is bounded by visibility prediction to avoid unplanned forced outages. 
+
+H. Integrated Training Procedure 
+
+Algorithm 2 integrates proactive handover search and MARL policy optimization. Each slot alternates five phases: state encoding, proactive handover search, actor-critic action selection with MRT beamforming, tick-level evolution using (12) and (23), and mini-batch updates. Per-slot complexity is: 
+
+O Nv (|kSTE |+M |kDLPG |+3 |kℓ|+|kg |)+O(Nv ·Nac ) (41) 
+
+Algorithm 2 SafeScale-MATD3: Integrated Training 
+
+Require: Policy/critic parameters, queue budgets, TLE data  
+
+> 1:
+
+Initialize queues, actor-critic networks, replay buffer, and en-coders  
+
+> 2:
+
+for episode = 1 to Neps do  
+
+> 3:
+
+Reset environment state  
+
+> 4:
+
+for slot t = 1 to T do  
+
+> 5:
+
+Update visibility and predicted channels via SGP4/TLE  
+
+> 6:
+
+// Phase 1: state encoding  
+
+> 7:
+
+Encode states with STE and DLPG  
+
+> 8:
+
+// Phase 2: proactive handover search  
+
+> 9:
+
+for each v ∈ V do  
+
+> 10:
+
+(Hopt  
+
+> v
+
+, k ′ 
+
+> v
+
+) ← Algorithm 1 (stv , Z tv, 1) 
+
+> 11:
+
+end for  
+
+> 12:
+
+// Phase 3: actor-critic action and MRT  
+
+> 13:
+
+for each v ∈ V do  
+
+> 14:
+
+Select atv = ( ltv , β tv,m , H opt  
+
+> v
+
+, P tv ) by ϵ-greedy on Qg +P 
+
+> m
+
+Qℓ,m  
+
+> 15:
+
+Compute MRT beamformer via (31) and execute action  
+
+> 16:
+
+end for  
+
+> 17:
+
+// Phase 4: tick-level dynamics and safety  
+
+> 18:
+
+for tick n = 1 to Nac do  
+
+> 19:
+
+Update AoI and safety queues via (12), (23)  
+
+> 20:
+
+end for  
+
+> 21:
+
+Store transitions and observed rewards in D 
+
+> 22:
+
+// Phase 5: critic-actor updates  
+
+> 23:
+
+if |D| > B then  
+
+> 24:
+
+Update global/local critics and actors via (35)  
+
+> 25:
+
+Soft-update target networks  
+
+> 26:
+
+end if  
+
+> 27:
+
+end for  
+
+> 28:
+
+end for 
+
+for the tick loop, where |k·| denote network parameter counts. MRT (31) adds O(Nv NxNy ) FLOPs per slot for channel-vector normalization, without an iterative inner loop [6]. Wall-clock training and per-slot inference timings are hardware-dependent and omitted in this version. VII. S IMULATION RESULTS 
+
+This section evaluates SafeScale-MATD3 through three progressively deepening investigations. Part I validates the three core theoretical contributions: quadratic ping-pong AoI scaling, necessity of tick-level resolution, and virtual-queue safety compliance. Part II benchmarks the proposed method against representative baselines in convergence, per-priority AoI, energy and AoI tradeoff, and handover behavior. Part III examines robustness through module ablation and envi-ronmental sensitivity sweeps. Three key findings emerge: (i) SafeScale-MATD3 is the only method satisfying the strict 
+
+ϵ1=0 .01 collision-alert budget, (ii) removing the virtual queue module causes the largest degradation (about 4.6× violation increase), and (iii) safety compliance requires handover peri-ods of at least roughly 12 s under the evaluated setting. 
+
+A. Simulation Setup and Baselines 
+
+Table II lists all parameters with source citations. Each experiment is repeated over 5 independent random seeds; figures report mean ± 95% confidence interval unless stated otherwise. The unified environment implements the tick-level AoI law (12) for all methods to ensure fair comparison: every 12 
+
+TABLE II: Simulation Parameters                                                                      
+
+> Parameter Value Parameter Value
+> Constellation model Walker-Delta Altitude HL(km) 550 Visible satellites |K (t)|≈10 Min. elevation θmin (◦)25 Platoons P5Vehicles/platoon Nj6Vehicle speed (km/h) 36 to 54 Intra-platoon gap (m) 5, 15, 25, 35 Carrier frequency fc(GHz) 1.67 UPA size 4×4
+> SR params {m, b, Ω}{10 ,0.126 ,1.29 }Pmax (dBm) 40 Bandwidth (MHz) 10 Subchannels K3HO delay μτ(ms) 225 HO delay std στ(ms) 25 HO period (s) ≈15 Decision slot τs(s) 1AoI tick τac (ms) 20 Ticks/slot Nac 50
+> nsafe
+> v, 1/nsafe
+> v, 2/nsafe
+> v, 35 / 10 / 50 ϵ1/ϵ2/ϵ30.01 / 0.05 / 0.20 Priority weights w1/w 2/w 35.0 / 2.0 / 0.5 Episodes Neps 5000
+
+baseline experiences identical handover outages, Shadowed-Rician fading, and compound Doppler dynamics regardless of whether its own design accounts for them. The code is available at github 1.Six baselines are selected to span the state-of-the-art across three dimensions: LEO-AoI optimization, vehicular multi-agent scheduling, and LEO handover management (Table I). 1) DD3QN-AS [13]: Diffusion-augmented dueling double DQN with STE encoder for joint AoI and handover optimization in HAP-assisted SAGIN. 2) Mod-MADDPG [6]: Global and local dual-critic TD3 with task decomposition for platoon C-V2X AoI scheduling. 3) AMDT [10]: Lyapunov DPP-based AoI-aware multi-user downlink scheduling for LEO with angular beam-forming under Shadowed-Rician fading. 4) ILCHO [24]: QMIX-based MARL for intelligent conditional handover in Walker-Delta LEO mega-constellations. 5) MVT [24]: Maximum Visible Time handover, a non-learning baseline that stays with the current satellite until forced, then switches to the satellite with the longest remaining visible time. 6) Round-Robin [5]: Cyclic scheduling across platoons and priority classes without learning or AoI feedback. Serves as the performance lower bound. All baselines are adapted to the identical two-timescale tick environment: AoI is tracked at τac -resolution, handover outages consume nho ticks, and safety violations are evaluated at every tick for all methods. This ensures that performance differences reflect algorithmic capability rather than environ-mental mismatch. 
+
+B. Part I: Validation of Theoretical Results 
+
+This subsection validates the three core theoretical contri-butions, namely the quadratic ping-pong AoI scaling (Theo-rem 2), the necessity of tick-level resolution (Proposition 1), and the virtual-queue safety guarantee (Theorem 1), through controlled simulation experiments. 
+
+1) Quadratic Growth of Ping-Pong AoI Cost (Theorem 2): 
+
+Fig. 4a validates Theorem 2 by measuring cumulative AoI cost under controlled ping-pong sequences of length k ∈{1, . . . , 7}. We inject consecutive oscillating handovers be-tween two satellites under the greedy MRSS criterion (Def-inition 2) and record the resulting cumulative slot-end AoI. 
+
+> 1https://github.com/szpsunkk/SafeScale-MATD3
+
+TABLE III: Empirical Safety Violation Rates (mean over 3 seeds). Bold : satisfies ϵm.                           
+
+> Method m=1 (ϵ1≤0.01 )m=2 (ϵ2≤0.05 )m=3 (ϵ3≤0.20 )
+> SafeScale-MATD3 0.0099 0.0094 0.0000
+> DD3QN-AS 0.0454 0.0072 0.0000
+> Mod-MADDPG 0.0410 0.0063 0.0000
+> AMDT 0.0518 0.0073 0.0000
+> ILCHO 0.0546 0.0088 0.0000
+> MVT 0.0520 0.0074 0.0000
+> Round-Robin 0.0525 0.0074 0.0000
+
+The simulation markers closely follow the theoretical quadratic bound C(k) = k a 0+k(k+1) Nac /2 from (27). The superlinear growth has a crisp operational implication: a burst of k=3 con-secutive handover slots is 6× costlier in cumulative AoI than three isolated single-slot outages. This ratio grows linearly with k, making oscillation suppression via constraint (19c) the highest-leverage mechanism for safety compliance, directly answering Q2. 
+
+2) Necessity of Tick-Level Resolution (Proposition 1and Gap 2): Fig. 4b demonstrates the necessity of the two-timescale design by sweeping Nac ∈{20 , 30 , 40 , 50 , 60 , 70 , 80 , 90 , 100 } while keeping the physical handover dynamics unchanged. As Nac decreases (coarser ticks relative to outage duration), the m=1 violation rate degrades monotonically because fewer ticks are available to detect and react to intra-slot outage events. At Nac =50 
+
+(the adopted operating point), the violation rate remains near the ϵ1=0 .01 budget, confirming that the tick-size selection criterion (2) provides adequate resolution. Conversely, increasing Nac beyond 70 yields diminishing safety returns at the cost of higher computational overhead, suggesting the adopted τac =20 ms balances resolution and efficiency. 
+
+3) Virtual Queue Safety Compliance (Theorem 1): Fig. 4c and Table III jointly validate the virtual-queue enforcement mechanism. SafeScale-MATD3 achieves m=1 violation rate of 0.0099, satisfying the ϵ1=0 .01 budget. All baselines exceed this budget by factors of 4× to 5.5×, with violation rates ranging from 0.0410 (Mod-MADDPG) to 0.0546 (ILCHO). For the less stringent budgets ϵ2=0 .05 and ϵ3=0 .20 , all meth-ods achieve compliance, consistent with the observation that lower-priority classes have substantially more safety margin. This result is consistent with the queue-stability interpretation of Theorem 1: the virtual queue Zv, 1 for collision alerts maintains strong stability under the proposed policy, whereas baselines lacking explicit queue-driven safety enforcement allow the queue backlog to grow, implying persistent violation overshoot. 
+
+C. Part II: Performance Benchmarking against Baselines 
+
+With the theoretical foundations validated, we now com-pare SafeScale-MATD3 against six representative baselines in terms of training convergence, per-priority AoI performance, and handover behavior. 
+
+1) Training Convergence: Fig. 5 reports two conver-gence metrics across 300 training episodes. Two observations emerge. First , SafeScale-MATD3 converges to a substantially higher steady-state reward than all baselines (Fig. 5a), with 13 1 2 3 4 5 6 7
+
+> Ping-pong sequence length k
+> 0
+> 200
+> 400
+> 600
+> 800
+> 1000
+> 1200
+> 1400
+> Cumulative AoI increment
+> Theorem-2 O(k²) trend Simulation
+
+(a) Quadratic AoI spike growth. 20 30 40 50 60 70 80 90 100  
+
+> N_ac (ticks/slot)
+> 0.008 0.010 0.012 0.014 0.016 0.018 0.020 0.022
+> Viol. Rate
+> N_ac (ticks/slot)
+> Viol. m=1 =0.01
+> AoI m=1 1.22 1.23 1.24 1.25 1.26 1.27 1.28
+> Avg AoI (ticks)
+
+(b) Tick resolution sensitivity. m=1 m=2 m=3         
+
+> 0.000
+> 0.025
+> 0.050
+> 0.075
+> 0.100
+> 0.125
+> 0.150
+> 0.175
+> 0.200
+> Violation Rate
+> 1=0.01
+> 2=0.05
+> 3=0.2
+> 00000000SafeScale-MATD3 MA-TD3 DD3QN-AS Mod-MADDPG ILCHO MVT Round-Robin AMDT
+
+(c) Safety violation compliance. 
+
+Fig. 4: Validation of the three theoretical contributions (mean ± 95% CI across 3 seeds). 0 50 100 150 200 250 300 
+
+> Episode
+> 800
+> 600
+> 400
+> 200
+> 0
+> 200
+> Reward
+> SafeScale-MATD3 MA-TD3 DD3QN-AS Mod-MADDPG ILCHO MVT Round-Robin AMDT
+
+(a) Cumulative training reward. 0 50 100 150 200 250 300  
+
+> Episode
+> 1.9
+> 2.0
+> 2.1
+> 2.2
+> 2.3
+> 2.4
+> Time-Average AoI (ticks)
+> SafeScale-MATD3 MA-TD3 DD3QN-AS Mod-MADDPG ILCHO MVT Round-Robin AMDT
+
+(b) Average AoI. 
+
+Fig. 5: Training convergence over 300 episodes (mean ± 95% CI across 3 seeds, smoothed with a 10-episode window). the gap attributable to the joint benefit of proactive handover timing and virtual-queue-driven safety enforcement. Second ,the m=1 AoI trajectory (Fig. 5b) reveals that the proposed method reaches ≈1.24 ticks within 100 episodes, whereas even the best baseline (Mod-MADDPG) plateaus at ≈1.9 ticks, a 35% reduction that directly translates to improved collision-alert freshness. 
+
+2) Per-Priority AoI Performance and Handover Decom-position: Fig. 6 presents three complementary performance dimensions. We discuss each in turn. 
+
+a) Per-priority AoI (Fig. 6a).: SafeScale-MATD3 achieves the lowest AoI across all three priority classes. For 
+
+m=1 (collision alert), the average AoI is 1.24 ticks with a normalized ratio of 1.24 /5 = 0.249 , meaning the system operates at only 25% of the safety threshold, a substantial margin for emergency braking scenarios. The m=2 AoI (2.36 ticks, normalized 0.236) benefits from the dedicated local critic Qℓ, 2
+
+ϕv, 2 , which provides priority-aligned gradients without cross-task interference. For m=3 (map updates), the performance gap across methods narrows because the 
+
+ϵ3=0 .20 budget is easily satisfied even by Round-Robin. 
+
+b) Energy and AoI tradeoff (Fig. 6b).: By sweeping the power-penalty weight κ4 ∈ { 0.01 , 0.05 , 0.1, 0.2, 0.5}, we trace the Pareto frontier between average normalized power and weighted AoI. SafeScale-MATD3’s frontier strictly dominates all baselines: at any given AoI level, the proposed method uses less power, and at any given power budget, it achieves lower AoI. The dominance arises because proactive handover timing TABLE IV: Ablation Study: Collision-Alert ( m=1 ) Violation Rate and Average AoI (mean over 3 seeds). 
+
+Variant m=1 Viol. Rate Avg. m=1 AoI (ticks) SafeScale-MATD3 (full) 0.0100 1.2406 
+
+w/o proactive HO 0.0102 1.2902 w/o safety VQs ( Zv,m ) 0.0457 1.9359 w/o task decomposition 0.0281 1.2395 w/o DLPG 0.0100 1.2406 w/o STE 0.0181 1.4399 
+
+avoids the high-power retransmissions that baselines require after forced outages, and MRT beamforming (31) concentrates energy along the strongest channel direction. 
+
+c) End-to-end AoI across platoon positions (Fig. 6c).: 
+
+Follower AoI grows linearly with intra-platoon gap, consistent with the additive model (18) where D(f )v2v increases with V2V propagation distance. SafeScale-MATD3 maintains the lowest end-to-end AoI at all positions (1.49 ticks at 5 m gap to 2.99 ticks at 35 m gap), remaining well below nsafe 
+
+v, 1 =5 ticks even for the worst-case platoon-edge vehicle. The gap over baselines widens at larger distances because the proposed method minimizes PL-level AoI more aggressively, leaving more headroom for V2V delay accumulation. 
+
+D. Part III: Robustness and Design Insights 
+
+This subsection examines the robustness of SafeScale-MATD3 through ablation studies, environmental sensitivity sweeps, and module-level contribution analysis to provide actionable design insights. 
+
+1) Ablation of Algorithmic Modules: Table IV presents a systematic ablation removing one module at a time from the full SafeScale-MATD3 framework. Five variants are evaluated: 
+
+a) Safety virtual queues are indispensable.: Removing 
+
+Zv,m from the state vector and reward structure causes the largest degradation: the m=1 violation rate jumps to 0.0457 (4.6× the budget), and the average AoI increases to 1.94 ticks (56% degradation). Without the queue-driven tightness signal, the policy loses its ability to anticipate constraint violations and instead relies on post-hoc reward penalties, which are insufficient for the strict ϵ1=0 .01 budget. This confirms the central claim of Section IV: virtual queues provide a struc-turally different and essential enforcement mechanism. 14 m=1 (n=5) m=2 (n=10) m=3 (n=50) Wtd. Avg.  
+
+> 0.0
+> 0.1
+> 0.2
+> 0.3
+> 0.4
+> 0.5
+> Normalised AoI  (AoI / n_safe)
+> violates =0.01
+> SafeScale-MATD3 MA-TD3 DD3QN-AS Mod-MADDPG ILCHO MVT Round-Robin AMDT
+
+(a) Per-priority AoI. 0.30    
+
+> 0.40
+> 0.50
+> 0.60
+> 0.70
+> 0.80
+> Avg Normalised Power
+> 2.000
+> 2.025
+> 2.050
+> 2.075
+> 2.100
+> 2.125
+> 2.150
+> 2.175
+> 2.200
+> Avg AoI (ticks, all priorities)
+> SafeScale-MATD3 MA-TD3 DD3QN-AS Mod-MADDPG ILCHO MVT Round-Robin AMDT
+> 0.6 0.8 1.0
+> 2.0
+> 2.1
+> SafeScale extends to P=0.97
+
+(b) Energy and AoI Pareto frontier. 5 10 15 20 25 30 35  
+
+> Follower distance from PL (m)
+> 1.5
+> 2.0
+> 2.5
+> 3.0
+> 3.5
+> End-to-End AoI, m=1 (ticks)
+> SafeScale-MATD3 DD3QN-AS MA-TD3 Round-Robin
+
+(c) End-to-end AoI vs. gap. 
+
+Fig. 6: Performance benchmarking across three complementary dimensions (mean ± 95% CI across 3 seeds). 100 150 200 250 300 350 
+
+> HO delay (ms)
+> 0.006 0.008 0.010 0.012 0.014 0.016
+> Viol. Rate
+> HO delay (ms)
+> Viol. m=1 =0.01
+> AoI m=1 1.22 1.24 1.26 1.28 1.30 1.32
+> Avg AoI (ticks)
+
+(a) Handover delay μτ .5 10 15 20 25 30  
+
+> HO period (s)
+> 0.008 0.010 0.012 0.014 0.016 0.018 0.020
+> Viol. Rate
+> HO period (s)
+> Viol. m=1 =0.01
+> AoI m=1 1.21 1.22 1.23 1.24 1.25 1.26 1.27 1.28
+> Avg AoI (ticks)
+
+(b) Handover period. 
+
+Fig. 7: Sensitivity to environmental handover dynamics (mean 
+
+± 95% CI, 3 seeds). 
+
+b) Task decomposition prevents cross-priority gradient conflict.: Replacing the three local critics with a single aggregated critic raises the violation rate to 0.0281 ( 2.8×
+
+budget) while leaving AoI nearly unchanged (1.24 ticks). This indicates that the single critic achieves similar freshness opti-mization but fails to enforce priority-specific safety, consistent with the gradient conflict analysis in [6]. 
+
+c) STE encoding captures relational structure.: Remov-ing the State Transformer Encoder increases both violation rate (0.0181) and AoI (1.44 ticks), suggesting that the multi-head self-attention mechanism in (36) to (37) captures inter-satellite and inter-platoon dependencies that flat concatenation misses. 
+
+d) DLPG impact is scenario-dependent.: Under the eval-uated Shadowed-Rician parameters ( m=10 , light shadowing), removing DLPG has no measurable effect on either met-ric. This is expected: when the fading distribution is well-conditioned, the base STE encoding already provides sufficient robustness. DLPG’s value is expected to increase under heavy shadowing or urban canyon scenarios where the fading tail is heavier. 
+
+e) Proactive handover provides marginal but consistent gains.: Removing the TLE-based proactive module (Algo-rithm 1) slightly increases both violation rate (0.0102) and AoI (1.29 ticks). The modest impact is explained by the relatively long handover period ( ≈15 s) in the default setting, which limits forced-handover exposure. As shown in the sensitivity analysis below, the proactive module becomes critical when handover frequency increases. 
+
+2) Sensitivity to Environmental Parameters: Fig. 7a and Fig. 7b sweep two key environmental parameters that directly affect handover-induced safety violations. 
+
+a) Handover delay (Fig. 7a).: Fig. 7a sweeps the mean handover delay μτ ∈ [100 , 375] ms. The violation rate grows approximately linearly with μτ because each additional mil-lisecond maps directly to additional AoI ticks. The critical observation is that compliance ( ≤ ϵ1) holds for μτ ≤ 250 ms, beyond which nho ≥ nsafe 
+
+v, 1 and intra-outage violations become structurally inevitable per Corollary 2. Meanwhile, the average AoI remains relatively stable (1.22 to 1.32 ticks), confirming that the frequency of violations, not the average freshness, is the binding safety metric. 
+
+b) Handover period (Fig. 7b).: Fig. 7b sweeps the han-dover period from 5 s to 30 s. At a 5 s period the violation rate reaches 0.0197 ( ≈ 2× the budget), because the forced-handover exposure exceeds the Slater feasibility bound of Proposition 2. The system requires periods ≥ 12 s for ϵ1 com-pliance under the adopted parameters, providing an actionable constellation-design guideline. VIII. C ONCLUSION 
+
+This work identifies timescale mismatch as the fundamental bottleneck for safety-critical AoI in LEO-assisted autonomous driving. We address it with a unified framework combining a two-timescale AoI model, closed-form ping-pong spike analysis, virtual-queue safety enforcement, and SafeScale-MATD3. Three takeaways are central. First, sub-slot tick-level accounting is necessary to faithfully represent handover outages. Second, ping-pong oscillations are disproportionately harmful: cumulative AoI cost grows quadratically with oscil-lation length (Theorem 2), making oscillation suppression the highest-leverage safety mechanism. Third, tiered safety bud-gets can be enforced online via virtual queues and DPP control without assuming a closed-form AoI distribution. SafeScale-MATD3 is the only method satisfying the strict 1% collision-alert budget, reducing violation rate by 4× to 5.5× versus baselines while achieving 35% lower collision-alert AoI and strict Pareto dominance on the energy and freshness tradeoff. Future work includes uncertainty-aware TLE prediction, trace-driven Starlink validation, stochastic V2V delay modeling, and cooperative multi-satellite scheduling via distributed RL. 15 
+
+REFERENCES [1] H. Al-Hraishawi, H. Chougrani, S. Kisseleff, E. Lagunas, and S. Chatzinotas, “A survey on nongeostationary satellite systems: The communication perspective,” IEEE Communications Surveys & Tutori-als , vol. 25, no. 1, pp. 101–132, 2022. [2] W. Jiang, H. Han, M. He, and W. Gu, “When game theory meets satellite communication networks: A survey,” Computer Communications , vol. 217, pp. 208–229, 2024. [3] M. Wang, A. Nardin, R. Ma, R. Wang, F. Dovis, R. Garello, and G. Liu, “Integrated communication and navigation based on leo satellite networks: A survey,” IEEE Internet of Things Journal , 2025. [4] L. Wang, J. Li, M. Dai, and H. Zhang, “Low-earth-orbit satellite assisted edge computing for vehicular networks: A task priority-based delay minimization approach,” IEEE Internet of Things Journal , 2025. [5] R. D. Yates, Y. Sun, D. R. Brown, S. K. Kaul, E. Modiano, and S. Ulukus, “Age of information: An introduction and survey,” IEEE Journal on Selected Areas in Communications , vol. 39, no. 5, pp. 1183– 1210, 2021. [6] M. Parvini, M. R. Javan, N. Mokari, B. Abbasi, and E. A. Jorswieck, “Aoi-aware resource allocation for platoon-based c-v2x networks via multi-agent multi-task reinforcement learning,” IEEE Transactions on Vehicular Technology , vol. 72, no. 8, pp. 9880–9896, 2023. [7] F. Chiariotti, O. Vikhrova, B. Soret, and P. Popovski, “Information freshness of updates sent over leo satellite multi-hop networks,” arXiv preprint arXiv:2007.05449 , 2020. [8] B. Soret, S. Ravikanti, and P. Popovski, “Latency and timeliness in multi-hop satellite networks,” in ICC 2020-2020 IEEE International Conference on Communications (ICC) . IEEE, 2020, pp. 1–6. [9] O. Vikhrova, F. Chiariotti, B. Soret, G. Araniti, A. Molinaro, and P. Popovski, “Age of information in multi-hop networks with priorities,” in GLOBECOM 2020-2020 IEEE Global Communications Conference .IEEE, 2020, pp. 1–6. [10] Y. Dai, M. Lin, X. Wu, X. Liu, and P. K. Upadhyay, “Aoi-aware multi-user downlink transmission scheme for leo satellite systems,” IEEE Wireless Communications Letters , 2025. [11] C. Lei, S. Wu, Y. Yang, J. Xue, D. Chen, P. Duan, and Q. Zhang, “Joint partitioning, allocation, and transmission optimization for fed-erated learning in satellite constellations via multi-task marl,” IEEE Transactions on Mobile Computing , 2025. [12] J. Jiao, H. Hong, Y. Wang, S. Wu, R. Lu, and Q. Zhang, “Age-optimal downlink noma resource allocation for satellite-based iot network,” IEEE Transactions on Vehicular Technology , vol. 72, no. 9, pp. 11 575–11 589, 2023. [13] Z. Lang, G. Liu, G. Sun, J. Li, J. Wang, W. Yuan, D. Niyato, and D. I. Kim, “Joint aoi and handover optimization in space-air-ground integrated network,” IEEE Transactions on Mobile Computing , 2026. [14] G. Zhang, X. Wei, X. Tan, Z. Han, and G. Zhang, “Aoi minimization based on deep reinforcement learning and matching game for iot information collection in sagin,” IEEE Transactions on Communications ,vol. 73, no. 8, pp. 5950–5964, 2025. [15] C. Huang, R. Li, and J. Wang, “Task scheduling in space-air-ground uniformly integrated networks with ripple effects,” IEEE Transactions on Mobile Computing , 2025. [16] Z. Zhang, Q. Wu, P. Fan, N. Cheng, W. Chen, and K. B. Letaief, “Drl-based optimization for aoi and energy consumption in c-v2x enabled iov,” IEEE Transactions on Green Communications and Networking ,2025. [17] M. Azizi, F. Zeinali, M. R. Mili, and S. Shokrollahi, “Efficient aoi-aware resource management in vlc-v2x networks via multi-agent rl mechanism,” IEEE Transactions on Vehicular Technology , vol. 73, no. 9, pp. 14 009–14 014, 2024. [18] K. Park, Z. He, C. Luo, Y. Xu, L. Qiu, C. Ge, M. Muaz, and Y. Yang, “Joint optimization of handoff and video rate in leo satellite networks,” 
+
+arXiv preprint arXiv:2504.04586 , 2025. [19] L. Sun, J. Hou, and T. Shu, “Optimal handover policy for mmwave cellular networks: A multi-armed bandit approach,” in Proc. IEEE Global Commun. Conf. (GLOBECOM) , Waikoloa, HI, USA, 2019, pp. 1–6. [20] Q. Chen, J. Wu, S. Fu, Y. Liu, and C.-Q. Dai, “Dynamic handover in satellite-terrestrial integrated networks,” in Proc. IEEE Wireless Commun. Netw. Conf. (WCNC) , Seoul, Korea, 2020, pp. 1–6. [21] N. C. Luong, Z. Sui, D. Van Le, J. Cao, B. Ma, N. D. Hai, R. Zhang, V. Van Quang, D. Niyato, and S. Feng, “Incentive mechanism design for resource management in satellite networks: A comprehensive survey,” 
+
+IEEE Internet of Things Journal , vol. 13, no. 3, pp. 3938–3964, 2025. [22] K. Kondo, N. Kamiyama, and S. Miyata, “Coalition among multiple providers of leo satellite networks,” in 2025 IEEE 31st International Symposium on Local and Metropolitan Area Networks (LANMAN) .IEEE, 2025, pp. 1–6. [23] W. Li, J. Wu, Y. Chen, L. Jia, L. Sun, Q. Chen, J. Yan, and N. Qi, “A coalition formation game-based beam scheduling method for leo satellites in mega hybrid constellations,” IEEE Transactions on Wireless Communications , 2026. [24] M. Choi, M. Park, J. Kim, and J.-M. Chung, “Intelligent handover scheme for improved 6g ntn leo satellite network performance,” IEEE Transactions on Mobile Computing , 2025.
