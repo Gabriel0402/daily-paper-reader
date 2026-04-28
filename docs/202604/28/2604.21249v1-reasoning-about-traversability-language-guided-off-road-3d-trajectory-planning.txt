@@ -1,0 +1,418 @@
+Title: Reasoning About Traversability: Language-Guided Off-Road 3D Trajectory Planning
+
+URL Source: https://arxiv.org/pdf/2604.21249v1
+
+Published Time: Fri, 24 Apr 2026 00:24:44 GMT
+
+Number of Pages: 10
+
+Markdown Content:
+# Reasoning About Traversability: Language-Guided Off-Road 3D Trajectory Planning 
+
+## Byounggun Park Soonmin Hwang ∗
+
+## Department of Automotive Engineering, Hanyang University, Seoul, Republic of Korea 
+
+## okharry1@hanyang.ac.kr, soonminh@hanyang.ac.kr 
+
+# Abstract 
+
+While Vision-Language Models (VLMs) enable high-level semantic reasoning for end-to-end autonomous driving, particularly in unstructured environments, ex-isting off-road datasets suffer from language annota-tions that are weakly aligned with vehicle actions and terrain geometry. To address this misalignment, we pro-pose a language refinement framework that restructures annotations into action-aligned pairs, enabling a VLM to generate refined scene descriptions and 3D future trajectories directly from a single image. To further encourage terrain-aware planning, we introduce a pref-erence optimization strategy that constructs geometry-aware hard negatives and explicitly penalizes trajecto-ries inconsistent with local elevation profiles. Further-more, we propose off-road-specific metrics to quantify traversability compliance and elevation consistency, ad-dressing the limitations of conventional on-road eval-uation. Experiments on the ORAD-3D benchmark demonstrate that our approach reduces average trajec-tory error from 1.01m to 0.97m, improves traversability compliance from 0.621 to 0.644, and decreases elevation inconsistency from 0.428 to 0.322, highlighting the ef-ficacy of action-aligned supervision and terrain-aware optimization for robust off-road driving. 
+
+Keywords: Off-Road Autonomous Driving, Vision– Language Models, Trajectory Prediction, Language-Guided Planning, Terrain-Aware Navigation, Multi-modal Data Refinement 
+
+# 1 Introduction 
+
+As driving environments become more diverse and un-structured, purely data-driven end-to-end models face challenges in reasoning about complex scenes, long-horizon decision-making, and rare or unseen situa-tions [3]. To address these challenges, the research com-munity is increasingly adopting Vision-Language Mod-els (VLMs) [21], which combine strong visual under-standing with the high-level semantic and reasoning ca-pabilities inherited from large language models [5]. By leveraging language as an intermediate reasoning space, VLM-based driving systems have shown promising re-sults in interpreting complex scenes, following high-level instructions, and improving robustness in corner cases [29]. 
+
+> ∗Corresponding author: soonminh@hanyang.ac.kr
+
+While VLM-based approaches have achieved substan-tial progress on established urban driving datasets such as nuScenes [2] and OpenScenes [6], their direct appli-cability to off-road environments remains limited. Suc-cess on these urban datasets largely relies on strong environmental priors—such as lane markings, traffic signals, and well-defined road boundaries—that sim-plify both perception and planning. In contrast, off-road driving environments lack such explicit structures. As illustrated in Fig. 1, vehicles must instead rea-son about traversability, terrain geometry, obstacles, and surface conditions under severe visual ambiguity. Consequently, decision-making in off-road scenarios de-pends heavily on semantic reasoning and fine-grained alignment between perception, language, and motion, making it a particularly challenging and compelling do-main for language-grounded planning. However, we observe that naively attaching natu-ral language descriptions to existing off-road data pro-vides limited benefit for trajectory planning. This weakness is evident in the top row of Fig. 1, where a model trained with original annotations generates generic scene descriptions (e.g., focusing on "dirt road" and "clear weather") that fail to capture specific vehicle actions or terrain geometry, leading to inconsistent tra-jectories. This weak alignment between language and action limits the model’s ability to learn fine-grained motion behaviors, a limitation also noted in recent stud-ies like Alpamayo [31], which highlighted the necessity of action-aligned language supervision for effective plan-ning. In this work, we argue that the effectiveness of lan-guage in off-road driving critically depends on how lan-guage supervision is constructed and aligned with mo-tion. Rather than relying on coarse or generic descrip-tions, we propose a data refinement framework that systematically restructures off-road driving data into language–action pairs explicitly grounded in vehicle tra-jectories and terrain geometry. Building upon this re-fined dataset (see Fig. 1, bottom row), we introduce a language-model-based trajectory generation approach, where the model reasons over visual observations and structured language representations to directly predict feasible off-road trajectories. Furthermore, we observe that conventional planning metrics, primarily designed for urban driving, are insuf-ficient for evaluating off-road performance. In off-road environments, strict point-wise agreement with a single ground-truth trajectory is often neither necessary nor 1
+
+> arXiv:2604.21249v1 [cs.RO] 23 Apr 2026
+
+[Original] The image shows a dirt road in a rural area, surrounded by a forest of tall trees . The weather appears to be clear 
+
+and sunny. The road is made of compacted dirt , which is relatively flat and smooth, making it passable for vehicles. 
+
+However, the road may be slightly bumpy in some areas, and drivers should exercise caution while driving on it. 
+
+[Refined] The vehicle travels across a wide dirt clearing, executing a sharp left turn to navigate around a large bus and a 
+
+dark container building positioned directly ahead. The path begins with a strong leftward curve to avoid these stationary 
+
+obstacles and then continues with a steady leftward diagonal. 
+
+> Trajectory Planning
+> (Original Annotation)
+> Trajectory Planning
+> (Refined Annotation)
+> Ground Truth
+> m
+
+Figure 1: Qualitative comparison between SFT and Refined SFT. Refined language annotations are better aligned with trajectory geometry, resulting in more consistent motion and fewer failures. desirable, as multiple trajectories may be equally valid depending on terrain structure. Instead, effective evalu-ation should capture whether predicted trajectories fol-low plausible traversable regions and reflect consistent terrain geometry. In particular, off-road driving crit-ically depends on correctly modeling terrain elevation trends, such as uphill and downhill motions, which are largely ignored by conventional planar metrics. There-fore, we propose off-road-specific evaluation metrics and a training strategy that emphasize terrain awareness, drivable-region alignment, and consistency with terrain elevation profiles, in addition to traditional spatial ac-curacy. In summary, our contributions are threefold: 
+
+• We identify limitations in existing language-annotated off-road datasets and propose an effi-cient refinement strategy that aligns language su-pervision with vehicle motion and terrain geome-try. 
+
+• We propose an off-road-specific, language-grounded training framework that generates 3D trajectories by jointly reasoning over vi-sual observations, terrain geometry, and vehicle actions. 
+
+• We show that conventional evaluation protocols used in urban driving are inadequate for off-road scenarios and introduce terrain-aware metrics that assess traversability and elevation consistency for more reliable off-road planning evaluation. 
+
+# 2 Related Work 
+
+## 2.1 Off-Road Path Planning 
+
+Off-road path planning presents significant challenges due to unstructured terrain and the absence of explicit road structures [32]. Traditional approaches primarily rely on geometric and kinematic constraints [14, 16, 23, 27]. Search-based methods, such as Hybrid A* and its variants, incorporate vehicle dynamics and terrain data for feasibility [8]. Simultaneously, sampling-based algo-rithms like RRT*, T-RRT, and PRM have proven ef-fective in addressing risk-awareness and computational efficiency in uncertain environments [7, 18, 19, 37]. To further enhance adaptability and multi-objective optimization, bio-inspired algorithms (GA, ACO) and learning-based techniques have been explored [17, 33, 38]. Approaches utilizing Deep Reinforcement Learn-ing (DRL) and Imitation Learning demonstrate im-proved performance in complex scenarios by balancing traversability and smoothness [17, 39]. Despite these advancements, conventional methods often rely on hand-crafted cost functions, explicit maps, or limited generalization capabilities [30]. They fre-quently struggle with severe visual ambiguity and un-seen terrain variations [9], motivating the shift toward end-to-end paradigms that leverage richer semantic un-derstanding. 
+
+## 2.2 End-to-End Autonomous Driving 
+
+End-to-end autonomous driving has achieved substan-tial progress by unifying perception, prediction, and planning within a single learning-based architecture [3]. Representative works, such as UniAD [15], adopt a planning-oriented design that jointly reasons over visual 2features and motion forecasting to produce driving tra-jectories. While these approaches demonstrate strong performance in structured environments with clear lane topologies, they often struggle with generalization in open-world scenarios [11, 22]. Purely data-driven im-itation learning methods tend to learn statistical cor-relations rather than causal reasoning [10], leading to failures in unstructured scenes involving long-horizon decision-making and rare, ambiguous events [26]. To bridge this gap, recent research increasingly in-tegrates Large Language Models (LLMs) and Vision-Language Models (VLMs) to endow driving systems with high-level semantic reasoning. Early efforts uti-lized VLMs primarily as auxiliary components or su-pervision sources [25]. However, loosely coupled archi-tectures often face latency issues and information loss between the reasoning and control modules. This limitation has led to the emergence of Vision-Language-Action (VLA) models, which unify percep-tion, reasoning, and low-level control into a single trans-former backbone. Inspired by robotics foundation mod-els like RT-2 [40], VLA approaches in driving discretize continuous trajectories into action tokens. This allows the model to treat motion planning as an autoregressive generation task, effectively leveraging the world knowl-edge and logical capabilities of pre-trained LLMs. Re-cent agentic methods, such as LLaDA [20] and LaMPi-lot [24], further extend this paradigm by emphasizing closed-loop reasoning, instruction following, and adap-tive policy adjustments in response to dynamic environ-ments. Building on this VLA-inspired philosophy, our work employs language-model-style generation for motion outputs. By integrating refined, action-aligned lan-guage supervision, we aim to enhance the system’s abil-ity to navigate complex, unstructured off-road terrain where geometric priors are insufficient. 
+
+# 3 Method 
+
+To bridge the gap between high-level visual understand-ing and low-level geometric control in off-road environ-ments, we propose an end-to-end vision-language archi-tecture. As illustrated in Fig. 2, our framework builds upon a pre-trained Multimodal Large Language Model (MLLM) backbone. To efficiently adapt the model to the domain of off-road driving while preserving its gen-eralization capabilities, we employed Low-Rank Adap-tation (LoRA) on the linear layers of the decoder for fine-tuning [13]. The model processes a single front-view image along with a system instruction. It then operates in a uni-fied autoregressive manner, generating a structured out-put sequence: first, a trajectory-aware scene description 
+
+that reasons about the terrain traversability and geom-etry, followed explicitly by future trajectory tokens rep-resenting 3D waypoints. This “reasoning-before-acting” design encourages the model to ground its motion pre-dictions in the linguistic understanding of the scene. Front view image 
+
+> Reasoning Token
+
+Qwen3-VL-2B  
+
+> Text Tokenizer Vision Encoder
+> Action Token
+> System Prompt
+> You are an off-road driving
+> assistant. You have access to
+> the front-view camera image.
+> Generate future trajectory ...
+> LORA
+
+Figure 2: Overview of our proposed architecture. The model leverages a pre-trained Vision-Language Model (VLM) backbone with a trainable LoRA adapter to ef-ficiently learn off-road driving capabilities. Inputs  
+
+> Front-view
+> Image
+> Initial
+> Language
+> Annotation
+> Stage 1
+> Joint
+> Inspectation
+> Stage 2
+> Scene-based
+> Normalization
+> Refinements
+> Auxiliary Cues
+> Trajectory Z Elevation
+
+Figure 3: Overview of the Language Annotation Refine-ment Process. Initial scene-level annotations are refined using auxiliary cues, including future XY trajectories and Z-axis elevation profiles. The refinement consists of two stages: (1) joint inspection of visual, linguistic, and geometric information, and (2) scene-based normaliza-tion that aligns directional and elevation-related expres-sions through comparison with similar driving scenes. 
+
+## 3.1 Language Annotation Refinement 
+
+Existing off-road language annotations are typically scene-descriptive, focusing on visual appearance rather than being explicitly aligned with vehicle actions or ter-rain geometry. As a result, naively attaching such lan-guage to off-road driving data provides weak supervi-sion for trajectory learning. To address this limitation, we propose a structured language annotation refine-ment pipeline that transforms scene-level descriptions into terrain-aligned language, while preserving a single front-view image input at inference time. Inspired by the CoC dataset construction in Alpamayo-R1 [31], which highlights the importance of capturing both driving decisions and environmental context, our refinement process integrates visual ob-servations with geometric ground truth at annotation time. As illustrated in Fig. 3, the pipeline consists of 3two explicit stages: joint inspection and scene-based normalization. Following prior works [1, 35] that lever-age large language models to generate or refine super-vision for language-based datasets, our refined annota-tions are generated using Gemini-3-Flash-Preview, fol-lowed by human verification to ensure correctness and consistency. 
+
+Stage 1: Joint Inspection. For each frame, the refinement process begins with a joint inspection of the front-view image and the initial language annota-tion together with auxiliary visualizations derived from ground-truth trajectories. These auxiliary cues, shown in the top panel of Fig. 3, include an XY-plane trajec-tory plot that reveals the relative motion direction, and a terrain elevation profile along the future trajectory that exposes vertical trends such as uphill or downhill motion. Importantly, these auxiliary cues are used only during annotation refinement and are not provided to the model during training or inference. 
+
+Stage 2: Scene-based Normalization. Beyond generic language rewriting or data augmentation, our refinement process explicitly addresses the fact that driving-related concepts are inherently scene-relative .As illustrated in the “Scene-based Normalization” mod-ule of Fig. 3, directional and elevation-related expres-sions must be interpreted relative to local scene geome-try and motion context. For example, what constitutes a “sharp turn” or a “steep slope” varies significantly across different off-road terrains. To normalize such scene-dependent language, Gemini-3-Flash-Preview generates candidate refined descriptions by comparing the current trajectory against retrieved auxiliary visualizations from other scenes with similar horizontal motion patterns (e.g., comparable curvature and turning severity) and elevation profiles. This retrieval-based comparison enables relative interpretation of motion and elevation cues, rather than absolute or scene-agnostic descrip-tions. This scene-based normalization mechanism distinguishes our approach from prior language-guided refinement techniques and is critical for aligning language with trajectory geometry in unstructured off-road settings. 
+
+## 3.2 Language-Guided Trajectory Gen-eration 
+
+Using the refined language annotations described in Sec. 3.1, we train a vision-language model to gener-ate future off-road trajectories conditioned on a single front-view camera image. The training is conducted in a supervised manner, where ground-truth language anno-tations and corresponding ego trajectories are available for each sample. Given an observation ot at time t, the model autore-gressively generates an output sequence consisting of two components: a refined scene description followed by an explicit ego trajectory. The target sequence is defined as 
+
+yt = [w1, . . . , w K , ⟨trajectory ⟩, (x1, y 1, z 1), . . . , (xN , y N , z N )],
+
+(1) where {wi} denote language tokens encoding scene con-text, terrain properties, and driving direction, and 
+
+{(xi, y i, z i)}Ni=1 represent the future ego trajectory as a sequence of 3D waypoints in the ego-centric coordinate frame. We represent the trajectory as a sequence of action tokens, which are treated identically to language tokens during autoregressive generation, similar to prior em-bodied approaches such as RT-2 [40]. As a result, the generated tokens directly represent the planned vehicle motion, capturing both horizontal direction and verti-cal elevation change. By generating the trajectory con-ditioned on refined language, the model is encouraged to ground motion prediction in scene-relative semantic cues. Model training follows a standard supervised fine-tuning paradigm based on autoregressive maximum likelihood estimation. Let θ denote the model parame-ters. The optimization objective is 
+
+L(θ) = −
+
+> |yt|
+
+∑
+
+> i=1
+
+log pθ
+
+(yt,i | ot, y t,<i 
+
+), (2) where yt,i denotes the i-th token in the output sequence. This objective jointly supervises language generation and trajectory planning, enabling the model to learn off-road motion generation directly from refined, action-aligned language annotations. 
+
+## 3.3 Preference Optimization with Geometry-Aware Hard Negatives 
+
+While the model trained in Sec. 3.2 learns to gener-ate trajectories from refined language–trajectory pairs via supervised learning, off-road planning demands stronger alignment with terrain feasibility, particularly along the vertical axis. Elevation changes such as up-hill, downhill, and uneven ground directly affect driv-ability, and these factors are explicitly encoded as priors in our refined language annotations. To further trans-fer these priors into trajectory generation, we employ Odds Ratio Preference Optimization (ORPO) [12] with a geometry-aware hard negative mining strategy. As illustrated in Fig. 4, we construct preference data by pairing each prompt with a chosen completion and a rejected completion. The prompt consists of the same single front-view camera image and instruction used during supervised training. For a frame at time t, the chosen completion (green box in Fig. 4) is formed by concatenating the refined scene description St with the ground-truth trajectory τ + 
+
+> t
+
+. The rejected completion (red box in Fig. 4) keeps the same St but replaces the trajectory with a mismatched trajectory τ − 
+
+> t
+
+retrieved from the same off-road scene :
+
+y+ 
+
+> t
+
+= [St ∥ ⟨ trajectory ⟩ ∥ τ +
+
+> t
+
+], (3) 
+
+y− 
+
+> t
+
+= [St ∥ ⟨ trajectory ⟩ ∥ τ −
+
+> t
+
+]. (4) 4Anchor 
+
+> Input Image
+> Ground Truth
+> Trajectory
+> Trajectory
+> Pool
+> Geometry-aware
+> Selection Policy
+
+Retrieval Process 
+
+> Similar XY
+> Different Z
+> Hard
+> Negative
+
+Preference Pair  
+
+> Chosen
+> Completion ( 𝒚 ା)
+> Rejected
+> Completion ( 𝒚 ି)
+
+# +
+
+# + 
+
+> Refined
+> Text ( 𝑆 ௧)
+> Refined
+> Text ( 𝑆 ௧)
+> Ground Truth
+> (𝑡 ା)
+> Rejected
+> (𝑡 ି)
+
+Figure 4: Illustration of geometry-aware hard negative mining for preference optimization. To create preference pairs for ORPO, we retrieve a “rejected” trajectory ( τ −) from the same scene . We employ a discrepancy-aware scoring function that maximizes the elevation difference ( ∆z ) while minimizing the planar deviation ( ∆xy ) with respect to the ground-truth trajectory ( τ +). This produces hard negatives that are spatially deceptive in the XY plane but exhibit contradictory vertical behaviors. By sampling negatives from the same scene, the pref-erence signal focuses entirely on fine-grained trajectory quality within a consistent visual context, rather than obvious background mismatches. To construct informative hard negatives, we scan the scene-local trajectory pool, as shown in the central module of Fig. 4. We retain only frames with non-empty refined language and trajectories containing at least two valid 3D waypoints. Crucially, we aim to find negatives that are “deceptive”: they should follow a similar path to the ground truth in the horizontal (XY) plane but exhibit incorrect behavior in the vertical (Z) axis. To achieve this, we employ a discrepancy-aware scoring function S(τ, τ +) that penalizes XY deviation while rewarding Z deviation: 
+
+S(τ, τ +) = 1
+
+N
+
+> N
+
+∑
+
+> i=1
+
+|zi −z+ 
+
+> i
+
+|− λgeo · 1
+
+N
+
+> N
+
+∑
+
+> i=1
+
+∥pxy,i −p+
+
+> xy,i
+
+∥2,
+
+(5) where pxy denotes the 2D position vector, and λgeo is a balancing coefficient. We select the candidate with the highest score as the rejected trajectory τ −. This strat-egy forces the model to attend to visual cues related to terrain geometry—such as texture gradients and vanish-ing point—rather than relying solely on road curvature. Given a preference pair (y+ 
+
+> t
+
+, y − 
+
+> t
+
+), we optimize the model using the ORPO [12] objective. Unlike standard preference alignment methods that require a reference model, ORPO incorporates an odds ratio penalty di-rectly into the supervised loss. Let πθ denote the policy parameterized by θ. The odds of generating a comple-tion y given input x are defined as 
+
+odds θ (y | x) = πθ (y | x)1 − πθ (y | x) . (6) The final loss function is formulated as 
+
+LORPO (θ) = LSFT + λORPO Lodds , (7) where LSFT is the negative log-likelihood of the cho-sen label, and Lodds maximizes the log-odds ratio gap between the chosen and rejected completions: 
+
+Lodds = − log σ(log odds θ (y+ 
+
+> t
+
+| xt)−log odds θ (y− 
+
+> t
+
+| xt)).
+
+(8) Here, xt denotes the shared prompt, σ(·) is the sigmoid function, and λORPO is a hyperparameter weighing the preference signal. This objective explicitly penalizes trajectories that violate terrain-aware priors encoded in the refined language, while reinforcing trajectories consistent with both horizontal motion and terrain ele-vation trends. 
+
+## 3.4 Off-Road Evaluation Metrics 
+
+In off-road driving scenarios, multiple trajectories may be feasible, and the primary requirement is navigat-ing through free-space while respecting terrain geome-try. We therefore evaluate predicted trajectories along two independent axes: (i) a traversability-based met-ric measuring adherence to navigable regions, and (ii) a vertical trend metric measuring consistency with terrain elevation. Both metrics avoid direct geometric match-ing to a single ground-truth (GT) trajectory. 
+
+Traversability Compliance Score. To assess how well the trajectory respects the drivable area, we com-pute the clearance ci from each waypoint to the nearest non-traversable region based directly on the ground-truth occupancy labels. To emphasize failures in criti-cal regions, we focus on the subset of lowest clearance values (e.g., top-K closest encounters) and define a vi-olation score as 
+
+Risk = 1
+
+|C| 
+
+∑
+
+> c∈C
+
+exp( −αc ), (9) where C denotes the selected set of lowest clearance val-ues and α controls the sensitivity to obstacle proximity. Based on this risk measure, we compute a base compli-ance score: 
+
+Sbase = clip(1 − Risk , 0, 1) . (10) 5To strictly penalize trajectories that traverse into in-feasible terrain, we additionally compute a length-weighted violation ratio for a set of strict clearance thresholds D = {d1, . . . , d K }. Let rbad (d) denote the fraction of the trajectory length violating threshold d,defined as 
+
+rbad (d) = 
+
+∑  
+
+> i: seg ibad
+
+∥pi+1 − pi∥xy 
+
+∑ 
+
+> i
+
+∥pi+1 − pi∥xy 
+
+, (11) where a segment i between consecutive waypoints pi
+
+and pi+1 is marked bad if either endpoint has clearance below d or lies on a non-traversable region. We define a compliance penalty as 
+
+P = max 
+
+(
+
+0, 1 − λ · 1
+
+|D| 
+
+∑
+
+> d∈D
+
+rbad (d)
+
+)
+
+, (12) where λ determines the penalty severity. The final traversability compliance score is given by 
+
+Strav = Sbase · P, (13) where higher values indicate better adherence to traversable regions. 
+
+Elevation Consistency Metric. To evaluate eleva-tion reasoning, we compare the predicted and ground-truth (GT) height profiles along the overlapped traveled distance parameterized by the XY arc-length s. After optional mean-centering, we compute the following er-ror terms: 
+
+MSE z , RMSE z , MSE dz , (14) where MSE dz measures the discrepancy between eleva-tion slopes dz ds and captures differences in local ascent and descent behavior. Since these error terms have dif-ferent numerical scales, we introduce weighting coeffi-cients to balance their contributions when aggregating them into a single score. The final elevation consistency metric (lower is better) is defined as 
+
+Sz = w1 MSE z + w2 RMSE z + w3 MSE dz , (15) where w1, w2, and w3 are positive scalar weights that normalize the relative scales of each term. These weights are fixed across all experiments to ensure fair comparison between different models. Together, the traversability compliance score Strav 
+
+(higher is better) and the elevation consistency score Sz
+
+(lower is better) assess whether a predicted trajectory remains within feasible terrain boundaries and faith-fully follows the underlying ground geometry. 
+
+# 4 Experiments 
+
+We evaluate the proposed language refinement and preference optimization strategies on the ORAD-3D dataset [4]. Our experiments focus on verifying the importance of trajectory-aligned language supervision and assessing off-road planning performance under both standard planar metrics and terrain-aware evaluation metrics. 
+
+## 4.1 Datasets and Evaluation Metrics 
+
+Dataset. All experiments are conducted on the ORAD-3D dataset [4]. Unlike most existing off-road datasets designed primarily for perception or SLAM tasks, to the best of our knowledge, ORAD-3D is the only publicly available benchmark that jointly pro-vides synchronized front-view images and ego-centric 3D trajectories paired with natural language annota-tions, which are essential for enabling semantic reason-ing in unstructured environments. We follow the official split protocol, using 100 scenes for training (39,489 im-ages), 15 scenes for validation (5,717 images), and 29 scenes for testing (12,164 images). 
+
+Evaluation Metrics. We evaluate trajectory plan-ning using standard planar metrics—L2 displacement errors at 1s, 2s, and 3s horizons, along with average error and failure rate—which are widely adopted in benchmarks like nuScenes [2] for assessing horizontal trajectory quality. However, these metrics do not cap-ture terrain feasibility or elevation consistency criti-cal to off-road environments. Therefore, we primar-ily rely on our proposed terrain-aware off-road met-rics: Traversability Compliance and Elevation Consis-tency . Since prior off-road works have not explicitly addressed the challenge of generating XYZ trajecto-ries from a single front-view image, we compare our approach against recent state-of-the-art open vision-language models adapted to this task. 
+
+## 4.2 Implementation Details 
+
+Training Setup. Our fine-tuning base model is 
+
+Qwen3-VL-2B [36]. We apply Low-Rank Adaptation (LoRA) adapters with a rank of 32 to the linear lay-ers of the decoder. Fine-tuning is performed on four NVIDIA H100 GPUs for 5 epochs, with a global batch size of 32 and a learning rate of 1.0 × 10 −4.
+
+Trajectory Generation for Baselines and Our Model. To maximize the performance of open models and enable a fair comparison, we adopt an in-context demonstration strategy for all VLM baselines. Specifi-cally, we provide three image–trajectory pairs sampled from the training set as in-context examples, which ex-plicitly specify the expected trajectory format and gen-eration pattern. While providing these pairs, we au-tomatically selected left, right and straight trajectory pairs so that the models can understand how to gener-ate future trajectory. Test-time trajectories are then generated under the same prompt. This design en-courages baselines to produce well-formed trajectories, rather than being limited by naive or underspecified prompting. In contrast, our model is explicitly fine-tuned for trajectory generation using refined language–trajectory pairs. As a result, it does not require any in-context ex-amples during inference. The model takes only a single front-view image as input and directly outputs reason-ing and the predicted trajectory, reflecting its stronger alignment with the off-road trajectory planning task. We set the off-road metric parameters to α = 3 and 6Table 1: VLM-based path planning results on ORAD-3D under standard planar metrics.                                
+
+> Method L2 (m) ↓Failure 1s 2s 3s Avg. Rate (%) ↓
+> Qwen2.5-VL 1.95 2.21 2.90 2.35 82.55 OpenEMMA [34] 1.73 1.92 2.75 2.13 57.56 LightEMMA [28] 1.72 1.88 2.63 2.08 55.63 SFT (raw lang.) 0.92 0.95 1.15 1.01 6.67 Refined SFT (ours) 0.88 0.91 1.13 0.97 6.05
+
+Table 2: Comparison under the proposed off-road met-rics. Higher is better for Traversability Compliance; lower is better for Elevation Consistency.                      
+
+> Model Traversability Elevation Compliance ↑Consistency ↓
+> Terrain-aware ORPO (ours) 0.644 0.322 Refined SFT (ours) 0.621 0.428 Gemini-3-Flash-Preview 0.589 0.639 GPT-4o 0.538 0.559 LLaMA-4-Scout 0.253 0.707 Qwen3-VL-8B-Instruct 0.452 0.647 Qwen3-VL-32B-Instruct 0.503 0.575 Qwen3-VL-2B-Instruct 0.152 0.676
+
+K = 20 for traversability risk, and keep the elevation consistency weights fixed at (w1, w 2, w 3) = (5 , 1, 10) 
+
+across all experiments. 
+
+## 4.3 Results 
+
+We present experimental results to analyze (i) the effect of trajectory-aligned language refinement on off-road trajectory planning, and (ii) the benefit of terrain-aware preference optimization for improving both planar fea-sibility and vertical consistency. 
+
+Effect of Language Refinement. We first evaluate the impact of language refinement by comparing super-vised fine-tuning with raw language annotations (SFT) against fine-tuning with refined language annotations (Refined SFT), using identical model architecture and training settings. Quantitative results under standard planar metrics are reported in Table 1. Refined SFT substantially outperforms both raw-language SFT and recent VLM-based baselines across all horizons, reducing average L2 error and failure rate by a large margin. These im-provements indicate that refined annotations provide more effective supervision for trajectory generation, even when evaluated using conventional on-road–style metrics. Figure 1 provides qualitative evidence supporting this trend. With raw annotations, the generated trajecto-ries often lack clear directional intent and exhibit in-consistent curvature, reflecting the weak alignment be-tween generic scene descriptions and vehicle motion. In contrast, refined annotations explicitly encode action-relevant cues such as turning direction and obstacle avoidance. As a result, the model generates trajectories that follow coherent motion patterns and more closely match the ground-truth geometry. Notably, the refined language descriptions themselves also become more di-rectional and action-oriented, demonstrating that the refinement process improves both trajectory planning and language–motion alignment. Together, these results confirm that naive language supervision is insufficient for off-road trajectory learn-ing, and that action- and terrain-aligned language re-finement plays a critical role in improving planning per-formance. 
+
+Effect of Terrain-Aware Optimization. While re-fined language supervision significantly improves pla-nar trajectory accuracy, off-road driving further re-quires consistency with terrain geometry, particularly along the vertical axis. To assess this aspect, we evaluate models using the proposed off-road metrics: Traversability Compliance and Elevation Consistency. As shown in Table 2, Refined SFT already improves traversability compared to open-source VLM baselines, indicating that trajectory-aligned language helps the model stay within feasible regions. However, Terrain-aware ORPO achieves additional gains, yielding the highest Traversability Compliance and the lowest Ele-vation Consistency error among all evaluated methods. Figure 5 qualitatively illustrates these improvements. When trained with the same refined language data, Terrain-aware ORPO produces trajectories that more faithfully follow both the horizontal path structure and the vertical terrain profile. In particular, the elevation plots shown as relative height changes ( z − z0) reveal that Terrain-aware ORPO captures coherent uphill and downhill trends, as well as local undulations, whereas Refined SFT often exhibits smoothed or inconsistent elevation behavior. These differences are also reflected in the generated language descriptions, where Terrain-aware ORPO produces more detailed and accurate ac-counts of elevation changes, such as initial climbs fol-lowed by minor rises and falls. Finally, comparisons with recent open-source vi-sion–language models under the proposed off-road met-rics further highlight the advantage of our approach. Despite their strong general reasoning capabilities, these models struggle to produce trajectories that are both traversable and elevation-consistent. In con-trast, Terrain-aware ORPO consistently achieves supe-rior performance, demonstrating that preference opti-mization with terrain-aware hard negatives effectively transfers elevation priors into trajectory generation. Overall, these results show that refined language su-pervision establishes a strong foundation for off-road trajectory planning, while terrain-aware preference op-timization further enhances robustness by explicitly en-forcing consistency with terrain geometry. Together, they enable more reliable and terrain-aware off-road planning than existing VLM-based approaches. 
+
+# 5 Conclusion 
+
+This work highlights the critical role of aligning lan-guage supervision with terrain geometry for effective 7[Refined] The vehicle follows a sharp right turn across an open, dark dirt road through a rural field. The trajectory curves 
+
+strongly to the right to stay on the established path, avoiding the grassy verges and wooden fence posts situated to the left. 
+
+The terrain is characterized by a consistent uphill elevation profile .
+
+[Terrain-aware ORPO] The vehicle follows a dark, compacted dirt road that curves strongly to the right through an open 
+
+grassland. The trajectory begins with a sharp rightward bend to follow the established track, avoiding the grassy verges 
+
+and a small puddle on the left. The terrain is undulating and bumpy , characterized by an initial uphill climb followed by a 
+
+series of minor rises and falls as the path continues forward .
+
+> Terrain-aware ORPO
+> Trajectory Planning
+> (Refined Annotation)
+> Ground Truth
+> m
+
+Figure 5: Qualitative comparison between Refined SFT and Terrain-aware ORPO. Top-left shows the input front-view image. The top-right panels visualize the predicted trajectories in the XY plane, while the bottom panel shows the corresponding elevation profiles plotted as relative height changes ( z − z0) along the traveled distance. Compared to Refined SFT, Terrain-aware ORPO produces trajectories that not only remain within traversable regions but also better capture elevation trends, such as uphill motion and local undulations, consistent with the underlying terrain geometry. off-road trajectory planning . We proposed a lan-guage refinement framework and a retrieval-based pref-erence optimization strategy to overcome the limita-tions of existing datasets, which often lack spatial preci-sion. Furthermore, we introduced new evaluation met-rics specifically designed to assess off-road traversability and safety. Our approach demonstrates superior per-formance on the ORAD-3D benchmark compared to state-of-the-art VLMs, particularly in challenging ter-rain conditions. These results validate the importance of our terrain-aware alignment and evaluation proto-cols. Moving forward, we plan to incorporate multi-view temporal inputs and richer terrain representations to enable fully closed-loop off-road autonomy. 
+
+# References 
+
+[1] Hidehisa Arai, Keita Miwa, Kento Sasaki, Kohei Watanabe, Yu Yamaguchi, Shunsuke Aoki, and Issei Yamamoto. Covla: Comprehensive vision-language-action dataset for autonomous driving. In 2025 IEEE/CVF Winter Conference on Appli-cations of Computer Vision (WACV) , pages 1933– 1943. IEEE, 2025. [2] Holger Caesar, Varun Bankiti, Alex H. Lang, Sourabh Vora, Venice Erin Liong, Qiang Xu, Anush Krishnan, Yu Pan, Giancarlo Baldan, and Oscar Beijbom. nuscenes: A multimodal dataset for autonomous driving. In CVPR , 2020. [3] Li Chen, Peng Wu, Kashyap Chitta, Bernhard Jaeger, Andreas Geiger, and Hongyang Li. End-to-end autonomous driving: Challenges and fron-tiers. IEEE Transactions on Pattern Analysis and Machine Intelligence , June 2023. URL https: //ieeexplore.ieee.org/document/10614862/ .[4] Min Chen, Jilin Mei, Heng Zhai, Shuai Wang, Tong Sun, Fanjie Kong, Haoyang Li, Fangyuan Mao, Fuyang Liu, Shuo Wang, Yiming Nie, Qi Zhu, Liang Xiao, Dawei Zhao, and Yu Hu. Advancing off-road autonomous driving: The large-scale orad-3d dataset and comprehensive benchmarks. arXiv preprint , 2025. [5] Xuesong Chen, Linjiang Huang, Tao Ma, Rongyao Fang, Shaoshuai Shi, and Hongsheng Li. Solve: Synergy of language-vision and end-to-end net-works for autonomous driving. 2025 IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) , May 2025. URL https: //ieeexplore.ieee.org/document/11094576/ .[6] OpenScene Contributors. Openscene: The largest up-to-date 3d occupancy prediction benchmark in autonomous driving. https://github.com/ OpenDriveLab/OpenScene , 2023. [7] Didier Devaurs, T. Siméon, and Juan Cortés. Op-timal path planning in complex cost spaces with sampling-based algorithms. IEEE Transactions on 
+
+8Automation Science and Engineering , April 2016. URL https://ieeexplore.ieee.org/document/ 7305826/ .[8] D. Dolgov. Practical search techniques in path planning for autonomous driv-ing. January 2008. URL https: //www.semanticscholar.org/paper/ 62a7cf939e24bf542958489ea75bb7551f16e43f .[9] Jean-Michel Fortin, Olivier Gamache, William Fecteau, Effie Daum, William Larriv’ee-Hardy, Franccois Pomerleau, and Philippe Giguère. Uav-assisted self-supervised terrain awareness for off-road navigation. ArXiv , September 2024. URL 
+
+https://arxiv.org/abs/2409.18253 .[10] P. D. Haan, Dinesh Jayaraman, and S. Levine. Causal confusion in imitation learning. Neu-ral Inf Process Syst , May 2019. URL 
+
+https://www.semanticscholar.org/paper/ c441a7e9b1c7ecf54f583cd61e896faa10b60358 .[11] Marcel Hallgarten, Julian Zapata, Martin Stoll, Katrin Renz, and Andreas Zell. Can vehicle motion planning generalize to realistic long-tail scenarios? 
+
+2024 IEEE/RSJ International Conference on In-telligent Robots and Systems (IROS) , April 2024. URL https://ieeexplore.ieee.org/document/ 10803052/ .[12] Jiwoo Hong, Noah Lee, and James Thorne. Orpo: Monolithic preference optimization without refer-ence model. In EMNLP , 2024. [13] Edward J Hu, Yelong Shen, Phillip Wallis, Zeyuan Allen-Zhu, Yuanzhi Li, Shean Wang, Lu Wang, Weizhu Chen, et al. Lora: Low-rank adaptation of large language models. ICLR , 1(2):3, 2022. [14] Jiaming Hu, Yuhui Hu, Chao Lu, Jian-wei Gong, and Huiyan Chen. Integrated path planning for unmanned differential steering vehicles in off-road environment with 3d terrains and obstacles. IEEE Transactions on Intelligent Transportation Sys-tems , February 2021. URL https://ieeexplore. ieee.org/document/9345385/ .[15] Yi Hu, Jiazhi Yang, Li Chen, Keyu Li, Chong-hao Sima, Xizhou Zhu, Siqi Chai, Senyao Du, Tianwei Lin, Wen Wang, Lewei Lu, Xiaosong Jia, Qiang Liu, Jifeng Dai, Yu Qiao, and Hongyang Li. Planning-oriented autonomous driving. 2023 IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) , December 2022. URL https://ieeexplore.ieee.org/document/ 10205112/ .[16] C Hua, R Niu, B Yu, X Zheng, R Bai, and S Zhang. A global path planning method for unmanned ground vehicles in off-road environments based on mobility prediction. Machines , January 2022. URL 
+
+https://www.mdpi.com/2075-1702/10/5/375 .[17] Guo-Yong Huang, Xiaofang Yuan, Zhi-xiao Liu, Wei Tan, Xiru Wu, and Yaonan Wang. Deep reinforcement learning-based multi-objective path planning on the off-road terrain environment for ground vehicles. ArXiv , May 2023. URL https: //arxiv.org/abs/2305.13783 .[18] J. Jeon, S. Karaman, and Emilio Frazzoli. Any-time computation of time-optimal off-road vehicle maneuvers using the rrt*. IEEE Conference on De-cision and Control and European Control Confer-ence , December 2011. URL https://ieeexplore. ieee.org/document/6161521/ .[19] S. Karaman and Emilio Frazzoli. Sampling-based algorithms for optimal motion planning. The Inter-national Journal of Robotics Research , May 2011. URL http://arxiv.org/abs/1105.1186 .[20] Boyi Li, Yue Wang, Jiageng Mao, Boris Ivanovic, Sushant Veer, Karen Leung, and Marco Pavone. Driving everywhere with large language model pol-icy adaptation. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , pages 14948–14957, 2024. [21] Jing Li, Jingyuan Li, Guo Yang, Lie Yang, Haozhuang Chi, and Lichao Yang. Applications of large language models and multimodal large mod-els in autonomous driving: A comprehensive re-view. Drones , March 2025. URL https://www. mdpi.com/2504-446X/9/4/238 .[22] Bencheng Liao, Shaoyu Chen, Haoran Yin, Bo Jiang, Cheng Wang, Sixu Yan, Xinbang Zhang, Xiangyu Li, Ying Zhang, Qian Zhang, and Xing-gang Wang. Diffusiondrive: Truncated diffu-sion model for end-to-end autonomous driving. 
+
+2025 IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) , November 2024. URL https://ieeexplore.ieee.org/document/ 11094573/ .[23] R. Linker and Tamir Blass. Optimal path plan-ning for car-like off-road vehicles. 2008 IEEE Con-ference on Robotics, Automation and Mechatron-ics , November 2008. URL https://ieeexplore. ieee.org/document/4681360/ .[24] Yunsheng Ma, Can Cui, Xu Cao, Wenqian Ye, Peiran Liu, Juanwu Lu, Amr Abdelraouf, Rohit Gupta, Kyungtae Han, Aniket Bera, et al. Lampi-lot: An open benchmark dataset for autonomous driving with language model programs. In Proceed-ings of the IEEE/CVF conference on computer vi-sion and pattern recognition , pages 15141–15151, 2024. [25] Sriram Narayanan, T. Maniar, Jayaganesh Kalyanasundaram, Vineet Gandhi, Brojeshwar Bhowmick, and K. Krishna. Talk to the vehi-cle: Language conditioned autonomous naviga-tion of self driving cars. 2019 IEEE/RSJ In-ternational Conference on Intelligent Robots and 
+
+9Systems (IROS) , November 2019. URL https: //ieeexplore.ieee.org/document/8967929/ .[26] Cynthia Ochoa, Hanbit Oh, Yuhwan Kwon, Y. Do-mae, and Takamitsu Matsubara. Ispil: Interac-tive sub-goal-planning imitation learning for long-horizon tasks with diverse goals. IEEE Access , Jan-uary 2024. URL https://ieeexplore.ieee.org/ document/10811934/ .[27] Timothy Overbye and S. Saripalli. Path optimiza-tion for ground vehicles in off-road terrain. 2021 IEEE International Conference on Robotics and Automation (ICRA) , January 2021. URL https: //ieeexplore.ieee.org/document/9561291/ .[28] Zhijie Qiao, Haowei Li, Zhong Cao, and Henry X. Liu. Lightemma: Lightweight end-to-end mul-timodal model for autonomous driving. arXiv preprint arXiv:2505.00284 , 2025. URL https: //arxiv.org/abs/2505.00284 .[29] Xiaoyu Tian, Junru Gu, Bailin Li, Yicheng Liu, Chenxu Hu, Yang Wang, Kun Zhan, Peng Jia, Xi-anpeng Lang, and Hang Zhao. Drivevlm: The con-vergence of autonomous driving and large vision-language models. ArXiv , February 2024. URL 
+
+https://arxiv.org/abs/2402.12289 .[30] Kasi Vishwanath, P. Sujit, and S. Saripalli. Camel: Learning cost-maps made easy for off-road driving. September 2022. URL 
+
+https://www.semanticscholar.org/paper/ 80a519d1f7839bc4c56c7d753f8f41e6d29bb6fc .[31] Yan Wang, Wenjie Luo, Junjie Bai, Yulong Cao, Tong Che, Ke Chen, Yuxiao Chen, Jenna Dia-mond, Yifan Ding, Wenhao Ding, et al. Alpamayo-r1: Bridging reasoning and action prediction for generalizable autonomous driving in the long tail. 
+
+arXiv preprint arXiv:2511.00088 , 2025. [32] L Wijayathunga, A Rassau, and D Chai. Chal-lenges and solutions for autonomous ground robot scene understanding and navigation in unstruc-tured outdoor environments: A review. Applied Sciences , January 2023. URL https://www.mdpi. com/2076-3417/13/17/9877 .[33] Yan Xiaodong, Chang Tianqing, Chu Kaixuan, Zhao Liyang, and Zhang Jie. Off road path planning based on hybrid artificial potential field and ant colony algorithm. 2022 International Conference on Innovations and Development of Information Technologies and Robotics (IDITR) ,May 2022. URL https://ieeexplore.ieee.org/ document/9796489/ .[34] Shuo Xing, Chengyuan Qian, Yuping Wang, Hongyuan Hua, Kexin Tian, Yang Zhou, and Zhengzhong Tu. Openemma: Open-source mul-timodal model for end-to-end autonomous driving. In Proceedings of the Winter Conference on Ap-plications of Computer Vision , pages 1001–1009, 2025. [35] Zhenhua Xu, Yujia Zhang, Enze Xie, Zhen Zhao, Yong Guo, Kwan-Yee K Wong, Zhenguo Li, and Hengshuang Zhao. Drivegpt4: Interpretable end-to-end autonomous driving via large language model. IEEE Robotics and Automation Letters ,2024. [36] An Yang, Anfeng Li, Baosong Yang, Beichen Zhang, Binyuan Hui, Bo Zheng, Bowen Yu, Chang Gao, Chengen Huang, Chenxu Lv, et al. Qwen3 technical report. arXiv preprint arXiv:2505.09388 ,2025. [37] Jianhua Yin, Zhen Hu, Z. Mourelatos, D. Gor-sich, Amandeep Singh, and Seth Tau. Effi-cient reliability-based path planning of off-road au-tonomous ground vehicles through the coupling of surrogate modeling and rrt*. IEEE Transac-tions on Intelligent Transportation Systems , De-cember 2023. URL https://ieeexplore.ieee. org/document/10194466/ .[38] DF Yépez-Ponce and W Montalvo. Route opti-mization for ugvs: A systematic analysis of appli-cations, algorithms and challenges. Applied Sci-ences , January 2025. URL https://www.mdpi. com/2076-3417/15/12/6477 .[39] Zeyu Zhu, Nan Li, Ruoyu Sun, Huijing Zhao, and Donghao Xu. Off-road autonomous vehi-cles traversability analysis and trajectory plan-ning based on deep inverse reinforcement learning. 
+
+2020 IEEE Intelligent Vehicles Symposium (IV) ,September 2019. URL https://ieeexplore. ieee.org/document/9304721/ .[40] Brianna Zitkovich, Tianhe Yu, Sichun Xu, Peng Xu, Ted Xiao, Fei Xia, Jialin Wu, Paul Wohlhart, Stefan Welker, Ayzaan Wahid, et al. Rt-2: Vision-language-action models transfer web knowledge to robotic control. In Conference on Robot Learning ,pages 2165–2183. PMLR, 2023. 10

@@ -1,0 +1,1390 @@
+Title: Automated LTL Specification Generation from Industrial Aerospace Requirements
+
+URL Source: https://arxiv.org/pdf/2604.21715v1
+
+Published Time: Fri, 24 Apr 2026 00:59:09 GMT
+
+Number of Pages: 20
+
+Markdown Content:
+# Automated LTL Specification Generation from Industrial Aerospace Requirements 
+
+Zhi Ma 1, Xiao Liang 1, Cheng Wen 2,⋆ , Rui Chen 3,4, Bin Gu 3,⋆ ,Shengchao Qin 1,2, Cong Tian 1, and Mengfei Yang 4 
+
+> 1
+
+School of Computer Science and Technology, Xidian University, Xi’an, China  
+
+> 2
+
+Guangzhou Institute of Technology, Xidian University, Guangzhou, China  
+
+> 3
+
+Beijing Institute of Control Engineering, Beijing, China  
+
+> 4
+
+China Academy of Space Technology, Beijing, China  
+
+> 5
+
+Beijing Sunwise Information Technology Ltd, China 
+
+Abstract. In the development and verification of safety-critical aero-space software, Linear Temporal Logic (LTL) has been widely used to specify complex system properties derived from requirements. However, a significant gap remains in industrial practice: translating natural lan-guage (NL) requirements into formal LTL properties is a labor-intensive and error-prone process that requires rare expertise in both aerospace control engineering and formal methods. While recent NL-to-LTL tools (e.g. , NL2SPEC, NL2TL, NL2LTL) are capable of automating parts of this process, they often fail on real requirement documents in industrial settings, due to complex domain terminology or implicit temporal and logical structure. To address these challenges, we present AeroReq2LTL ,a framework that automates LTL property generation for aerospace re-quirements using large language models (LLMs), with two key indus-trial innovations: (i) a data dictionary that normalizes technical jargon into precise atomic propositions; and (ii) a template-based requirement language that makes temporal cues and logical relations explicit before translation. On a real aerospace dataset, AeroReq2LTL achieves 85% precision and 88% recall in LTL generation, and its outputs can be di-rectly consumed by existing verification tools. 
+
+1 Introduction 
+
+Software verification for safety-critical aerospace control software must provide strong and auditable assurance under tight engineering constraints, including frequent requirement changes, limited verification expertise, and strict expecta-tions on evidence quality. In such settings, formal methods are often adopted because they can offer mathematically grounded guarantees beyond what tradi-tional testing can typically provide. Within this domain, Linear Temporal Logic (LTL) [1] has emerged as the preferred formal specification language for express-ing complex system properties. Because aerospace software is inherently reac-tive—interacting continuously with an environment over time—its correctness  
+
+> ⋆
+
+Corresponding authors: Cheng Wen and Bin Gu. mazhi@xidian.edu.cn, wencheng@xidian.edu.cn.  
+
+> arXiv:2604.21715v1 [cs.SE] 21 Apr 2026 2Ma, Liang, Wen, Chen, Gu, Qin, Tian, Yang Meng-Fei
+
+depends not only on functional behavior but also on precise temporal proper-ties [2]. LTL provides the mathematical rigor necessary to express critical safety invariants and liveness conditions [3], which are widely supported by existing model checkers and runtime verification tools. Despite these advantages, the industrial adoption of formal methods is im-peded by the formalization bottleneck: the manual translation of natural-language (NL) requirements into precise LTL properties. This process is labor-intensive and error-prone, requiring rare expertise in both aerospace control engineering and formal logic. Furthermore, recent research exploring Large Language Mod-els (LLMs) [4,5,6,7] for this task ( e.g. , NL2SPEC [8], NL2TL [9], NL2LTL [10]) has highlighted a fundamental limitation: while these tools succeed on synthetic benchmarks, they often fail on real industrial documents (as shown in our mo-tivating example and experiments under the industrial setting). The core challenge lies in the heterogeneous nature of industrial requirements. In practice, aerospace requirement documents contain highly specialized jargon, ambiguous abbreviations [11], and implicit temporal and logical structures that are not explicitly stated in the text. Consequently, existing tools often produce incorrect or incomplete specifications, limiting their applicability in practice. To address these challenges, we present AeroReq2LTL , a systematic en-gineering framework designed to automate the generation of LTL specifications from industrial aerospace requirements. AeroReq2LTL leverages the reasoning capabilities of LLMs but enhances them through two key industrial innovations: 
+
+– SpaceKG : A domain-specific data dictionary that automatically ingests en-gineering artifacts (such as interface tables) to resolve technical jargon into precise, code-level atomic propositions. 
+
+– SpaceRDL : A structured template language that guides LLMs to uncover im-plicit temporal keywords and logical relations within the context of aerospace control logic. Designed for seamless toolchain integration, AeroReq2LTL facilitates a di-rect connection with the subsequent verification tool to support batch processing and iterative feedback loops. The framework was evaluated using 79 production requirements from real-world spacecraft control systems. Experimental results demonstrate that AeroReq2LTL achieves 85% precision and 88% recall, sub-stantially reducing manual formalization effort and establishing a practical, au-tomated pathway for rigorous software assurance within the aerospace industry. 
+
+2 Background and Motivation 
+
+2.1 The complexity of Industrial Requirements 
+
+In academic research, the task of translating natural language to Linear Tempo-ral Logic (LTL) is often simplified to mapping short, isolated sentences. Ta-ble 1 presents six representative examples adopted in prior work, including NL2LTL [10], NL2SPEC [8], and NL2TL [9]. In these examples, the correspon-dence between natural language statements and LTL specifications is explicit and largely unambiguous, rendering the translation task relatively straightforward. Automated LTL Generation for Aerospace Systems 3
+
+Table 1: Examples of Natural Language and Corresponding LTL Specifications                                
+
+> Natural Language LTL Specification
+> [9] Once red, the light cannot become green next. G(red →X¬green )
+> [9] Once the light is red, it must remain red until it turns yellow. G(red →red Uyellow )
+> [8] If a holds then c is true until b. a→(cUb)
+> [8] If b holds, next c holds until a holds or always c holds. b→X(( cUa)∨Gc)
+> [10] Navigate to the green room while avoiding landmark 1. (Fgreen )∧G(¬landmark 1 )
+> [10] Swing by landmark 1 before ending up in the red room. F(landmark 1 ∧(Fred ))
+
+However, industrial requirements are fundamentally different, as illustrated by the example simplified from the ACS-LEOS 6 in Fig. 1(a). They are not merely free-form prose but heterogeneous engineering artifacts characterized by three distinct layers of complexity: (1) Multiple types of context : A single functional requirement ( e.g. , Req13 ) cannot be parsed in isolation. Its meaning is bound to the Interface Description , which specifies port-level information such as signal names, data types, initial values, and valid ranges, as well as the Invocation Con-dition , which specifies the 128 ms control cycle. (2) Domain-Specific Semantics: Technical terminologies often act as placeholders for complex logic. In Req13 ,the phrase “absolute values of the angular rates on all axes are less than 0.15 °/s” is an empirical condition for spacecraft stability. Without the domain knowledge found in the interface port explanations, an automated tool cannot map this intent to the correct variable, dwCount . (3) Implicit Temporal Logic: Industrial requirements often omit explicit temporal operators, for example, in Req13 , the term "switches from...to" implies a state transition that must occur at the next time step ( X) once a sustaining condition is met. 
+
+2.2 Limitations of General-Purpose LLMs 
+
+While LLMs like GPT-4 possess powerful reasoning capabilities, the generated LTL specifications are often unsatisfactory [12,13]. As shown in Fig. 1(b), al-though the model attempts to incorporate all relevant information in the re-quirement ( Req13 ), the generated LTL specification deviates substantially from the intended semantics. This mismatch stems primarily from three primary rea-sons. (1) Contextual Blindness to Engineering Artifacts. LLMs struggle to con-nect natural-language requirements with their associated Interface Descriptions. This results in “grounding errors,” where the model cannot link a requirement to the actual system ports or data types defined in the document’s tables. (2) 
+
+Insufficient Understanding of Domain-specific Terminology. Industrial require-ment statements frequently embed long technical expressions that domain ex-perts interpret as single semantic units. Lacking domain knowledge, LLMs tend to fragment such expressions into multiple isolated noun phrases, yielding atomic  
+
+> 6
+
+The Attitude Control Software for Low Earth Orbit Satellites (ACS-LEOS) is re-sponsible for processing sensor data from sunlight and infrared instruments, manag-ing transitions among multiple operating modes, and executing attitude adjustment tasks such as three-axis stabilization, spin stabilization, and sun-pointing control. 4 Ma, Liang, Wen, Chen, Gu, Qin, Tian, Yang Meng-Fei Requirement Identifier: XX -FREQ5 
+
+Module Name:  Work Mode Switch 
+
+Invocation Condition:  Called Every 128ms 
+
+Function Logic Description: 
+
+Req12: The spacecraft's initial work mode is rate damp. 
+
+Req13: If the absolute values of the angular rates on all axes are less than 0.15° /s continuously for 44.8s or if the rate 
+
+damp mode lasts for 128s, the work mode of spacecraft switches from rate damp to pitch search. 
+
+Req14: If the sun is not detected within 720s of continuous operation, the work mode switches from pitch search to roll 
+
+search. 
+
+Req15: If the sun is still not detected after 800s of continuous operation, the work mode switches from roll search 
+
+back to pitch search. 
+
+Req16: …… 
+
+Interface Description: 
+
+Port 
+
+01 
+
+Variable Name 
+
+flagSP 
+
+Explanation 
+
+Data Types  Initial Value  Value Range 
+
+Unit8_t  0x00  TRUE:0xEB FALSE:0x00 
+
+Determine whether the sun is detected. TRUE if the Sun is detected; FALSE if the Sun is not detected. 
+
+Port 
+
+01 
+
+Variable Name 
+
+flagSP 
+
+Explanation 
+
+Data Types Initial Value Value Range 
+
+Unit8_t 0x00 TRUE:0xEB FALSE:0x00 
+
+Determine whether the sun is detected. TRUE if the Sun is detected; FALSE if the Sun is not detected. 
+
+………… 
+
+Port 
+
+02 
+
+Variable Name 
+
+dwCount 
+
+Explanation 
+
+Data Types  Initial Value  Value Range 
+
+Uint32_t  0x00  \
+
+The time indicates that the spacecraft is stable, using timetick as the basic unit. 
+
+Port 
+
+02 
+
+Variable Name 
+
+dwCount 
+
+Explanation 
+
+Data Types Initial Value Value Range 
+
+Uint32_t  0x00 \
+
+The time indicates that the spacecraft is stable, using timetick as the basic unit. 
+
+Port 
+
+01 
+
+Variable Name 
+
+flagSP 
+
+Explanation 
+
+Data Types Initial Value Value Range 
+
+Unit8_t 0x00 TRUE:0xEB FALSE:0x00 
+
+Determine whether the sun is detected. TRUE if the Sun is detected; FALSE if the Sun is not detected. 
+
+………… 
+
+Port 
+
+02 
+
+Variable Name 
+
+dwCount 
+
+Explanation 
+
+Data Types Initial Value Value Range 
+
+Uint32_t  0x00 \
+
+The time indicates that the spacecraft is stable, using timetick as the basic unit. 
+
+Req13.  ①If the absolute values of 
+
+theangular rates on all  axes are less than 
+
+0.15° /s continuously for 44.8s  or  ②if 
+
+therate damping mode lasts for 128s, 
+
+thework mode of spacecraft  ③switches 
+
+fromrate damp  to  ④pitch search .14 828 4. (( )) )(| | 0.15 | | 0.15 | | 0.15 hSwitc ToPitchS ( aRateDamp) e rch    
+
+> sxyzs
+
+G FF
+
+    → ④①②14 828 4. (( )) )(| | 0.15 | | 0.15 | | 0.15 hSwitc ToPitchS ( aRateDamp) e rch    
+
+> sxyzs
+
+G FF
+
+    → ④①②4
+
+12 
+
+((( 
+
+)) ( )) 
+
+4
+
+8
+
+.8 
+
+ratedampTime 
+
+G d
+
+s
+
+uworkmode rat t
+
+o
+
+dwCo 
+
+w rkmode pitchsear 
+
+e a n
+
+ch X
+
+p sm  
+
+→ =
+
+= 
+
+
+
+=
+
+②
+
+①③
+
+④4
+
+12 
+
+((( 
+
+)) ( )) 
+
+4
+
+8
+
+.8 
+
+ratedampTime 
+
+G d
+
+s
+
+uworkmode rat t
+
+o
+
+dwCo 
+
+w rkmode pitchsear 
+
+e a n
+
+ch X
+
+p sm  
+
+→ =
+
+= 
+
+
+
+=
+
+②
+
+①③
+
+④
+
+Requirement Identifier: XX -FREQ5 
+
+Module Name:  Work Mode Switch 
+
+Invocation Condition:  Called Every 128ms 
+
+Function Logic Description: 
+
+Req12: The spacecraft's initial work mode is rate damp. 
+
+Req13: If the absolute values of the angular rates on all axes are less than 0.15° /s continuously for 44.8s or if the rate 
+
+damp mode lasts for 128s, the work mode of spacecraft switches from rate damp to pitch search. 
+
+Req14: If the sun is not detected within 720s of continuous operation, the work mode switches from pitch search to roll 
+
+search. 
+
+Req15: If the sun is still not detected after 800s of continuous operation, the work mode switches from roll search 
+
+back to pitch search. 
+
+Req16: …… 
+
+Interface Description: 
+
+Port 
+
+01 
+
+Variable Name 
+
+flagSP 
+
+Explanation 
+
+Data Types  Initial Value  Value Range 
+
+Unit8_t  0x00  TRUE:0xEB FALSE:0x00 
+
+Determine whether the sun is detected. TRUE if the Sun is detected; FALSE if the Sun is not detected. 
+
+Port 
+
+01 
+
+Variable Name 
+
+flagSP 
+
+Explanation 
+
+Data Types Initial Value Value Range 
+
+Unit8_t 0x00 TRUE:0xEB FALSE:0x00 
+
+Determine whether the sun is detected. TRUE if the Sun is detected; FALSE if the Sun is not detected. 
+
+………… 
+
+Port 
+
+02 
+
+Variable Name 
+
+dwCount 
+
+Explanation 
+
+Data Types  Initial Value  Value Range 
+
+Uint32_t  0x00  \
+
+The time indicates that the spacecraft is stable, using timetick as the basic unit. 
+
+Port 
+
+02 
+
+Variable Name 
+
+dwCount 
+
+Explanation 
+
+Data Types Initial Value Value Range 
+
+Uint32_t  0x00 \
+
+The time indicates that the spacecraft is stable, using timetick as the basic unit. 
+
+Port 
+
+01 
+
+Variable Name 
+
+flagSP 
+
+Explanation 
+
+Data Types Initial Value Value Range 
+
+Unit8_t 0x00 TRUE:0xEB FALSE:0x00 
+
+Determine whether the sun is detected. TRUE if the Sun is detected; FALSE if the Sun is not detected. 
+
+………… 
+
+Port 
+
+02 
+
+Variable Name 
+
+dwCount 
+
+Explanation 
+
+Data Types Initial Value Value Range 
+
+Uint32_t  0x00 \
+
+The time indicates that the spacecraft is stable, using timetick as the basic unit. 
+
+Req13.  ①If the absolute values of 
+
+theangular rates on all  axes are less than 
+
+0.15° /s continuously for 44.8s  or  ②if 
+
+therate damping mode lasts for 128s, 
+
+thework mode of spacecraft  ③switches 
+
+fromrate damp  to  ④pitch search .14 828 4. (( )) )(| | 0.15 | | 0.15 | | 0.15 hSwitc ToPitchS ( aRateDamp) e rch    
+
+> sxyzs
+
+G FF
+
+    → ④①②14 828 4. (( )) )(| | 0.15 | | 0.15 | | 0.15 hSwitc ToPitchS ( aRateDamp) e rch    
+
+> sxyzs
+
+G FF
+
+    → ④①②4
+
+12 
+
+((( 
+
+)) ( )) 
+
+4
+
+8
+
+.8 
+
+ratedampTime 
+
+G d
+
+s
+
+uworkmode rat t
+
+o
+
+dwCo 
+
+w rkmode pitchsear 
+
+e a n
+
+ch X
+
+p sm  
+
+→ =
+
+= 
+
+
+
+=
+
+②
+
+①③
+
+④4
+
+12 
+
+((( 
+
+)) ( )) 
+
+4
+
+8
+
+.8 
+
+ratedampTime 
+
+G d
+
+s
+
+uworkmode rat t
+
+o
+
+dwCo 
+
+w rkmode pitchsear 
+
+e a n
+
+ch X
+
+p sm  
+
+→ =
+
+= 
+
+
+
+=
+
+②
+
+①③
+
+④
+
+(a) The requirement description for the Mode Switch Function Module of ACS-LEOS. Requirement Identifier: XX -FREQ5 
+
+Module Name:  Work Mode Switch 
+
+Invocation Condition:  Called Every 128ms 
+
+Function Logic Description: 
+
+Req12: The spacecraft's initial work mode is rate damp. 
+
+Req13: If the absolute values of the angular rates on all axes are less than 0.15° /s continuously for 44.8s or if the rate 
+
+damp mode lasts for 128s, the work mode of spacecraft switches from rate damp to pitch search. 
+
+Req14: If the sun is not detected within 720s of continuous operation, the work mode switches from pitch search to roll 
+
+search. 
+
+Req15: If the sun is still not detected after 800s of continuous operation, the work mode switches from roll search 
+
+back to pitch search. 
+
+Req16: …… 
+
+Interface Description: 
+
+Port 
+
+01 
+
+Variable Name 
+
+flagSP 
+
+Explanation 
+
+Data Types  Initial Value  Value Range 
+
+Unit8_t  0x00  TRUE:0xEB FALSE:0x00 
+
+Determine whether the sun is detected. TRUE if the Sun is detected; FALSE if the Sun is not detected. 
+
+Port 
+
+01 
+
+Variable Name 
+
+flagSP 
+
+Explanation 
+
+Data Types Initial Value Value Range 
+
+Unit8_t 0x00 TRUE:0xEB FALSE:0x00 
+
+Determine whether the sun is detected. TRUE if the Sun is detected; FALSE if the Sun is not detected. 
+
+………… 
+
+Port 
+
+02 
+
+Variable Name 
+
+dwCount 
+
+Explanation 
+
+Data Types  Initial Value  Value Range 
+
+Uint32_t  0x00  \
+
+The time indicates that the spacecraft is stable, using timetick as the basic unit. 
+
+Port 
+
+02 
+
+Variable Name 
+
+dwCount 
+
+Explanation 
+
+Data Types Initial Value Value Range 
+
+Uint32_t  0x00 \
+
+The time indicates that the spacecraft is stable, using timetick as the basic unit. 
+
+Port 
+
+01 
+
+Variable Name 
+
+flagSP 
+
+Explanation 
+
+Data Types Initial Value Value Range 
+
+Unit8_t 0x00 TRUE:0xEB FALSE:0x00 
+
+Determine whether the sun is detected. TRUE if the Sun is detected; FALSE if the Sun is not detected. 
+
+………… 
+
+Port 
+
+02 
+
+Variable Name 
+
+dwCount 
+
+Explanation 
+
+Data Types Initial Value Value Range 
+
+Uint32_t  0x00 \
+
+The time indicates that the spacecraft is stable, using timetick as the basic unit. 
+
+Req13.  ①If the absolute values of 
+
+theangular rates on all  axes are less than 
+
+0.15° /s continuously for 44.8s  or  ②if 
+
+therate damping mode lasts for 128s, 
+
+thework mode of spacecraft  ③switches 
+
+fromrate damp  to  ④pitch search .14 828 4. (( )) )(| | 0.15 | | 0.15 | | 0.15 hSwitc ToPitchS ( aRateDamp) e rch    
+
+> sxyzs
+
+G FF
+
+    → ④①②14 828 4. (( )) )(| | 0.15 | | 0.15 | | 0.15 hSwitc ToPitchS ( aRateDamp) e rch    
+
+> sxyzs
+
+G FF
+
+    → ④①②4
+
+12 
+
+((( 
+
+)) ( )) 
+
+4
+
+8
+
+.8 
+
+ratedampTime 
+
+G d
+
+s
+
+uworkmode rat t
+
+o
+
+dwCo 
+
+w rkmode pitchsear 
+
+e a n
+
+ch X
+
+p sm  
+
+→ =
+
+= 
+
+
+
+=
+
+②
+
+①③
+
+④4
+
+12 
+
+((( 
+
+)) ( )) 
+
+4
+
+8
+
+.8 
+
+ratedampTime 
+
+G d
+
+s
+
+uworkmode rat t
+
+o
+
+dwCo 
+
+w rkmode pitchsear 
+
+e a n
+
+ch X
+
+p sm  
+
+→ =
+
+= 
+
+
+
+=
+
+②
+
+①③
+
+④
+
+Requirement Identifier: XX -FREQ5 
+
+Module Name:  Work Mode Switch 
+
+Invocation Condition:  Called Every 128ms 
+
+Function Logic Description: 
+
+Req12: The spacecraft's initial work mode is rate damp. 
+
+Req13: If the absolute values of the angular rates on all axes are less than 0.15° /s continuously for 44.8s or if the rate 
+
+damp mode lasts for 128s, the work mode of spacecraft switches from rate damp to pitch search. 
+
+Req14: If the sun is not detected within 720s of continuous operation, the work mode switches from pitch search to roll 
+
+search. 
+
+Req15: If the sun is still not detected after 800s of continuous operation, the work mode switches from roll search 
+
+back to pitch search. 
+
+Req16: …… 
+
+Interface Description: 
+
+Port 
+
+01 
+
+Variable Name 
+
+flagSP 
+
+Explanation 
+
+Data Types  Initial Value  Value Range 
+
+Unit8_t  0x00  TRUE:0xEB FALSE:0x00 
+
+Determine whether the sun is detected. TRUE if the Sun is detected; FALSE if the Sun is not detected. 
+
+Port 
+
+01 
+
+Variable Name 
+
+flagSP 
+
+Explanation 
+
+Data Types Initial Value Value Range 
+
+Unit8_t 0x00 TRUE:0xEB FALSE:0x00 
+
+Determine whether the sun is detected. TRUE if the Sun is detected; FALSE if the Sun is not detected. 
+
+………… 
+
+Port 
+
+02 
+
+Variable Name 
+
+dwCount 
+
+Explanation 
+
+Data Types  Initial Value  Value Range 
+
+Uint32_t  0x00  \
+
+The time indicates that the spacecraft is stable, using timetick as the basic unit. 
+
+Port 
+
+02 
+
+Variable Name 
+
+dwCount 
+
+Explanation 
+
+Data Types Initial Value Value Range 
+
+Uint32_t  0x00 \
+
+The time indicates that the spacecraft is stable, using timetick as the basic unit. 
+
+Port 
+
+01 
+
+Variable Name 
+
+flagSP 
+
+Explanation 
+
+Data Types Initial Value Value Range 
+
+Unit8_t 0x00 TRUE:0xEB FALSE:0x00 
+
+Determine whether the sun is detected. TRUE if the Sun is detected; FALSE if the Sun is not detected. 
+
+………… 
+
+Port 
+
+02 
+
+Variable Name 
+
+dwCount 
+
+Explanation 
+
+Data Types Initial Value Value Range 
+
+Uint32_t  0x00 \
+
+The time indicates that the spacecraft is stable, using timetick as the basic unit. 
+
+Req13.  ①If the absolute values of 
+
+theangular rates on all  axes are less than 
+
+0.15° /s continuously for 44.8s  or  ②if 
+
+therate damping mode lasts for 128s, 
+
+thework mode of spacecraft  ③switches 
+
+fromrate damp  to  ④pitch search .14 828 4. (( )) )(| | 0.15 | | 0.15 | | 0.15 hSwitc ToPitchS ( aRateDamp) e rch    
+
+> sxyzs
+
+G FF
+
+    → ④①②14 828 4. (( )) )(| | 0.15 | | 0.15 | | 0.15 hSwitc ToPitchS ( aRateDamp) e rch    
+
+> sxyzs
+
+G FF
+
+    → ④①②4
+
+12 
+
+((( 
+
+)) ( )) 
+
+4
+
+8
+
+.8 
+
+ratedampTime 
+
+G d
+
+s
+
+uworkmode rat t
+
+o
+
+dwCo 
+
+w rkmode pitchsear 
+
+e a n
+
+ch X
+
+p sm  
+
+→ =
+
+= 
+
+
+
+=
+
+②
+
+①③
+
+④4
+
+12 
+
+((( 
+
+)) ( )) 
+
+4
+
+8
+
+.8 
+
+ratedampTime 
+
+G d
+
+s
+
+uworkmode rat t
+
+o
+
+dwCo 
+
+w rkmode pitchsear 
+
+e a n
+
+ch X
+
+p sm  
+
+→ =
+
+= 
+
+
+
+=
+
+②
+
+①③
+
+④
+
+(b) Misalignment of LLM-Generated LTL with Industrial Requirements. 
+
+Fig. 1: The complexity and accuracy in NL requirement and its specification. propositions that are semantically meaningless and difficult to maintain ( e.g. , ①
+
+in Req13 , shown in Fig. 1(b)). (3) Incomplete Modeling of Implicit Temporal Constraints. Industrial requirements often rely on implicit premises that are not explicitly marked by temporal keywords. In Req13 , the fragment ③, “ switches from rate damp, ” specifies a prerequisite mode that an LLM may fail to place on the left-hand side of a logical implication. Furthermore, LLMs frequently omit essential temporal operators like X (Next), which are necessary to indicate that a mode transition occurs in the subsequent control cycle. It should be noted that, while the X operator is often considered semantically unpredictable in general asynchronous systems, it is fully safe and deterministic in aerospace supervisory control software with fixed, strictly scheduled execution cycles, where X precisely captures the state update in the immediate next cycle. These omissions lead to specifications that are syntactically valid yet semantically misaligned with the intended aerospace control logic. 
+
+2.3 The Necessity of Domain-Integrated Formalization 
+
+The limitations of general-purpose LLMs underscore a fundamental reality: in the aerospace domain, the ground truth of a requirement is not contained within Automated LTL Generation for Aerospace Systems 5Data Dictionary        
+
+> SpaceKG
+> Templated Natural Language SpaceRDL
+> Prompt Project
+> Rewrite NL to TNL
+> Target Stream
+> Knowledge Stream
+> Information Extractor
+> ②NLtoTNL Rewriting
+> TNL
+> Requirement Document Base on the Rule
+> Translate TNL to LTL
+> ③TNLtoLTL Converting
+> Formal Specification
+> Formal
+> Verification
+> ①Dual-stream context reconstructing
+
+Fig. 2: Workflow of AeroReq2LTL .the text alone, but is distributed across heterogeneous engineering artifacts. To bridge this gap, a framework must perform multi-source information synthesis, which motivates our two-pronged approach: 
+
+– Semantic Grounding via SpaceKG : To prevent the fragmentation of tech-nical terms, the formalization process is grounded in a domain-specific data dictionary. By ingesting the Interface Description, SpaceKG maps complex empirical constraints to precise, code-level atomic propositions. This ensures generated predicates are semantically consistent with actual system signals. 
+
+– Structural Disambiguation via SpaceRDL : To resolve the absence of explicit temporal keywords, SpaceRDL provides structured semantic templates that regularize the LLM’s reasoning. These templates force implicit premises into an explicit intermediate format. This transforms ambiguous prose into a con-strained logical structure that faithfully captures intended control laws. By integrating SpaceKG and SpaceRDL , the formalization process shifts from a fragile "black-box" translation into a controllable engineering activity. 
+
+3 The AeroReq2LTL Framework 
+
+3.1 Overall Workflow 
+
+As illustrated in Fig. 2, the AeroReq2LTL architecture operates in three con-secutive stages, specifically addressing the challenges of contextual blindness to engineering artifacts , insufficient understanding of domain-specific terminology ,
+
+incomplete modeling of implicit temporal constraints identified in Section 2.2. 
+
+Phase ➀: Dual-stream Context Reconstructing. To address the issue of contextual blindness—where requirements are misinterpreted when analyzed as isolated sentences— AeroReq2LTL begins by processing the raw PDF doc-ument through a dual-stream extraction strategy. Using a layout-aware infor-mation extractor to parse complex industrial artifacts 7, the framework extracts two complementary information streams from the requirement document:  
+
+> 7
+
+We utilize the open-source PDFplumber toolkit to robustly handle complex industrial layouts. 6 Ma, Liang, Wen, Chen, Gu, Qin, Tian, Yang Meng-Fei 
+
+– Target Stream (Requirement Paragraphs): Instead of fragmented sentences, the framework extracts requirement statements as complete functional para-graphs. This preservation of paragraph structure allows LLMs to perceive the broader functional logic and explicit invocation conditions ( e.g. , control cy-cles). Providing this textual context is essential for LLMs to perform accurate subsequent temporal reasoning. 
+
+– Knowledge Stream (Interface Artifacts): Simultaneously, AeroReq2LTL har-vests technical metadata from the Interface Description tables associated with each module. By extracting signal names, data types, and operational ranges, this stream provides the structured “ground truth” necessary for the subse-quent construction of the SpaceKG data dictionary. This ensures that lin-guistic expressions are grounded in actual engineering constraints. 
+
+Phase ➁: NL-to-TNL Rewriting. In the second stage, the framework transitions from open-ended natural language to Templated Natural Language 
+
+(TNL). Here, LLMs’ functions not as a stochastic generator, but as a semantic parser guided by two domain-specific components: 
+
+– Grounding via SpaceKG : To prevent terminology fragmentation, the previ-ously extracted target and knowledge stream are ingested into SpaceKG .Through a pipeline of BERT-based classification and expert-defined map-ping, complex domain terms are normalized into precise, code-level Atomic Paradigms .
+
+– Structuring via SpaceRDL : To recover implicit temporal constraints, LLMs instantiate semantic structures defined by SpaceRDL . By forcing require-ments into predefined slots—such as workmode , condition , timing , action 
+
+—the framework makes hidden premises and temporal operators ( e.g. , X for next-cycle transitions) explicit within the TNL representation. 
+
+Phase ➂: TNL-to-LTL Converting. The final stage eliminates infer-ence stochasticity by replacing probabilistic LLMs generation with deterministic translation rules. Since the TNL is already structurally consistent and seman-tically grounded, the framework applies fixed mapping logic to convert TNL constructs into syntactically valid LTL specifications. This two-step process (NL 
+
+→ TNL → LTL) ensures that the final formal properties are syntactically valid and mathematically aligned with the intended aerospace control laws. 
+
+3.2 SpaceKG : Domain Grounding for Aerospace Requirements 
+
+SpaceKG serves as the foundational semantic grounding layer of AeroReq2LTL ,specifically designed to mitigate the terminology fragmentation of industrial doc-umentation. In aerospace requirements, complex engineering predicates—such as “angular rates < 0.15 ◦/s ”—are frequently misinterpreted by text-only LLMs as isolated noun phrases. SpaceKG resolves this by normalizing such expressions into unambiguous Atomic Paradigms that link natural language intent directly to system signals. 
+
+Knowledge Source and Construction. SpaceKG is constructed from the Interface Description sections identified during the context reconstruction Automated LTL Generation for Aerospace Systems 7Original Req Statements TNL Statements        
+
+> If the sun is detected...
+> If the absolute values of the angular rates on all axes are less than 0.15°/s continuously for 44.8s...
+> If sunlight is not available...
+> If (flagSP =TRUE) ...
+> If (dwCount <= 44.8s)...
+> If (flagSP=FALSE) ...
+> Domain Term Abbreviations or Alternate names Variable names Actual values Mapping Condition
+
+SpaceKG      
+
+> sunlight flagSP FALSE
+> sun flagSP TRUE
+> absolute ...0.15°/s 44.8 dwCount
+
+Fig. 3: Examples of requirement statements, corresponding SpaceKG entries, and normalized atomic paradigms used in templated natural language (TNL). phase. Unlike external ontologies, it derives knowledge from the same engineer-ing artifacts that connect requirements to implementation, ensuring that the formalization is grounded in the exact variable definitions used in the software implementation. The construction pipeline proceeds in three steps: 
+
+– Data Retrieval: Harvesting variable names, data types, and explanatory se-mantics from interface tables. 
+
+– Intelligent Classification: Utilizing a BERT-based terminology extractor to categorize entities into domain terms, variables, or concrete values. 
+
+– Expert Mapping: Collaborating with domain experts to map complex em-pirical conditions ( e.g. , “ angular rates < 0.15 ◦/s ”) into standardized atomic expressions ( e.g. , dwCount ). In practice, variable names are combined with their associated value con-straints to form atomic paradigms suitable for formal reasoning. For example, the empirical constraint “ the absolute values of the angular rates on all axes are less than 0.15 ◦/s continuously for 44.8s ” is normalized into the atomic expres-sion “ dwCount > 44 .8s”, which preserves the engineering intent while eliminat-ing linguistic redundancy. Figure 3 illustrates representative examples of original requirement statements, corresponding SpaceKG entries, and the resulting nor-malized expressions. 
+
+Formal Definition. Formally, SpaceKG is defined as a labeled graph SpaceKG 
+
+(V , E), where V is the set of nodes representing domain entities and E ⊆ V ×V
+
+is the set of edges representing semantic relationships among them. Each node 
+
+v ∈ V is mapped to a semantic class via a function τ : V → C. The entity classes include domain terms ( cdt ), abbreviations or alternate names ( can ), pro-gram variable names ( cvn ), and concrete values ( cnv ). The values in cnv encom-pass not only booleans, integers, and floating-point numbers, but also predefined operational modes such as “ RDSM ”, indicating the rate-damp work mode. Edges in SpaceKG are labeled by relationship types r ∈ R and mapped to pairs of entity classes via a function ρ : R → C × C. Two primary relationship types are defined. The first, ra (assignment/conditional relation), explicitly cap-tures the logical or arithmetic constraints between program variables and their specific concrete values ; for example, mapping the informal condition “ sun is 8 Ma, Liang, Wen, Chen, Gu, Qin, Tian, Yang Meng-Fei 
+
+not detected ” to the rigorous boolean evaluation “ flagSP = FALSE ”. The sec-ond, rm (semantic mapping relation), defines the semantic equivalences between formal program variables and various informal domain terms or aliases found in the text ; for instance, establishing that both natural language terms “ sun ”and “ sunlight ” semantically refer to the same underlying variable flagSP . The second, rm, captures semantic mappings between program variables and domain terms or their aliases; for example, both “ sun ” and “ sunlight ” map to the variable 
+
+flagSP . Notably, in the aerospace domain, a domain term may correspond to a complete sentence rather than a single noun phrase, reflecting the complexity of engineering conventions in industrial requirement documents. 
+
+3.3 SpaceRDL and TNL: Explicitizing Implicit Temporal Semantics 
+
+The second core contribution of AeroReq2LTL is SpaceRDL , a structured re-quirement description language designed to make implicit temporal and logical assumptions explicit in aerospace control requirements. As discussed in Section 2, industrial aerospace requirements frequently rely on domain conventions—such as control cycles, physical constraints, and work-mode transitions—without ex-plicitly stating temporal operators, which leads to ambiguity in automated for-malization. 
+
+SpaceRDL is derived from an empirical analysis of real aerospace control re-quirement documents. Although requirement statements exhibit diverse surface forms, their underlying semantics consistently reflect the structured and mode-driven nature of spacecraft control systems. This observation suggests that the apparent linguistic diversity of requirements can be systematically constrained by an explicit semantic structure aligned with the operational logic of aerospace control software. Accordingly, SpaceRDL provides a domain-driven semantic scaffold upon which heterogeneous natural-language requirements can be nor-malized and analyzed. 
+
+SpaceRDL Schema. Based on the above observation, SpaceRDL defines a fixed set of semantic fields that explicitly capture the core elements of aerospace control logic: 
+
+SpaceRDL = {workmode , condition , component ∗, SHALL ∗, timing ∗, action ∗}
+
+Fields marked with an asterisk are mandatory. The modal verb SHALL* is immutable and enforces declarative requirement expressions. The component* 
+
+field specifies the executor of the control action, while the optional workmode field constrains the operational scope under which the requirement applies; if omit-ted, the requirement is interpreted as globally applicable across all work modes. The timing* field explicitly encodes temporal intent using a predefined set of keywords such as immediately , next , eventually , always , and until , which corre-spond to standard LTL operators. The condition field captures either trigger or sustaining semantics and supports logical composition through conjunctions and disjunctions. Finally, the action* field specifies the concrete operational behavior, state transition, or command execution that the target component is Automated LTL Generation for Aerospace Systems 9
+
+Table 2: Representative SpaceRDL requirement templates and example TNL instantiations abstracted from aerospace industrial requirements.                                                                                 
+
+> No. Type Requirement Templates and TNL Statements
+> 1State Component shall always satisfy if ( input_state &condition ) then next output_state .Change ‘Communicator’ shall always satisfy if ( ‘signal_lost’ &‘mission_phase’ ) then next ‘backup’ .2Bound In work_mode , the component shall always satisfy bounds .Check In ‘pitch_search mode’ , the ‘gyroscope’ shall always satisfy ‘roll_target_velocity = 0’ .3Work Mode Upon ( input_work_mode &condition )component shall at the next timepoint satisfy output_work_mode .Change Upon ( ‘pitch_search’ &‘sun_not_found’ )‘Spacecraft’ shall at the next timepoint satisfy ‘roll_search’ .4Command Upon command the component shall timing satisfy action .Process Upon ‘command_opcode = 29’ the software shall ‘immediately’ satisfy ‘retract_landing_gear_command’ .5State In work mode the component shall immediately satisfy if condition then response .Response In roll_hold mode the ‘Spacecraft’ shall immediately satisfy if ‘roll_angle_up’ then ‘roll_hold’ .6State The component shall maintain state unless condition .Maintenance The ‘alarm system’ shall maintain ‘active’ unless ‘system_disabled’ .7. . . . . . . . . . . . . . . . . .
+
+mandated to perform once the associated conditions and temporal constraints are satisfied. By enforcing these structural constraints, SpaceRDL prevents im-plicit temporal premises from being silently omitted during formalization. 
+
+Templated Natural Language (TNL) . Instantiating the fields of Spac-eRDL yields TNL, an intermediate representation that preserves human read-ability while making control semantics explicit and structured. Rather than treating requirements as free-form text, TNL constrains each requirement to conform to a predefined semantic template derived from SpaceRDL .Empirical analysis further shows that the majority of aerospace industrial requirements can be categorized into a limited number of recurring semantic patterns. These patterns correspond to fundamental control behaviors—such as state transitions, work-mode switches, boundary enforcement, command pro-cessing, and conditional responses—and form the basis of a compact template library. Representative SpaceRDL templates and example TNL instantiations are summarized in Table 2. By enforcing this template-based structure, TNL serves as a semantic con-tract between informal natural-language requirements and subsequent formal LTL specifications, substantially reducing ambiguity caused by implicit tempo-ral assumptions and heterogeneous phrasing. 
+
+4 Evaluation 
+
+The goal of our evaluation is to assess whether AeroReq2LTL can practi-cally and reliably automate LTL specification generation from real industrial aerospace requirements. Accordingly, our evaluation is organized around a real industrial case study, supported by quantitative analysis and targeted ablation experiments. 10 Ma, Liang, Wen, Chen, Gu, Qin, Tian, Yang Meng-Fei 
+
+4.1 Industrial Case and Dataset Construction 
+
+Our evaluation is conducted on the Attitude Control Software for Low Earth Orbit Satellites (ACS-LEOS), a production aerospace control system developed under strict safety and reliability constraints [14]. ACS-LEOS is responsible for processing sensor data from sunlight and infrared instruments, managing transitions among multiple operating modes, and executing attitude adjustment tasks such as three-axis stabilization, spin stabilization, and sun-pointing con-trol [15,16]. We randomly selected nine control software engineering packages from the ACS-LEOS system as experimental subjects. Each package contains a complete set of requirement documents and the corresponding implementation code. Among them, the most recent package, the Sun Search Control Software 
+
+(SSCS), was chosen as the primary evaluation object. SSCS is a critical au-tonomous control program that enables a satellite to automatically search for and point toward the Sun when its attitude is unknown or abnormal, thereby restoring solar power supply and ensuring survivability. As a representative high-reliability autonomous control system, SSCS activates different control modes in a staged manner, with explicit temporal dependencies and state-triggering con-ditions between stages. These characteristics make temporal logic particularly suitable for formally specifying its requirements. 
+
+Construction of SpaceKG . The remaining eight historical engineering packages were used to construct the initial SpaceKG . We first applied the In-formation Extractor of AeroReq2LTL to the requirement documents of these packages, resulting in the extraction of 427 requirement statements and 635 domain-specific terms from interface description tables. A BERT-based termi-nology extractor was then employed to identify and classify domain entities using deep semantic features, including variables, system states, and operating modes. At this stage, the focus was on capturing stable aerospace concepts and commonly used abbreviations ( e.g. , mapping “rate damping” to RDSM ). In addition, aerospace engineers were involved to manually review and re-fine the automatically generated mappings between domain terms and atomic paradigms, particularly for interface variables with similar names but distinct semantics ( e.g. , flagSP versus flagSPS ). The validated results were consolidated into the knowledge base for subsequent SSCS requirement analysis. The resulting initial version of SpaceKG contains 407 predefined entity types. Finally, to mitigate subtle terminology variations across different engineer-ing documents, SpaceKG incorporates an evolution mechanism. When process-ing new SSCS requirement documents, AeroReq2LTL activates an on-the-fly import module to handle project-specific primitives. In cases where the same domain term corresponds to different variable names, project-local artifacts are prioritized. Through this mechanism, AeroReq2LTL dynamically updates 
+
+SpaceKG , ensuring that complex empirical conditions (e.g., stability thresh-olds) are consistently mapped to the actual system ports defined in the current task document. 
+
+Establishing Ground Truth. The SSCS requirement document spans 38 pages and contains 79 production requirements across seven functional modules. Automated LTL Generation for Aerospace Systems 11 
+
+Table 3: Effectiveness of AeroReq2LTL                                                                             
+
+> Methods Correct Missing Wrong Spurious Precision Recall SimPro + DeepSeek 15 061 30.19 0.20
+> SimPro + GPT-3.5 12 064 30.15 0.16
+> SimPro + GPT-4o 27 049 10.35 0.36
+> NL2LTL + DeepSeek 21 055 00.28 0.28
+> NL2LTL + GPT-3.5 18 058 00.24 0.24
+> NL2LTL + GPT-4o 37 039 00.49 0.49
+> NL2SPEC + DeepSeek 23 053 00.30 0.30
+> NL2SPEC + GPT-3.5 23 053 00.30 0.30
+> NL2SPEC + GPT-4o 46 030 00.61 0.61
+> AeroReq2LTL + DeepSeek 64 012 30.81 0.84
+> AeroReq2LTL + GPT-3.5 59 017 30.75 0.78
+> AeroReq2LTL + GPT-4o 67 0930.85 0.88
+> SimPro means direct translation using LLMs with a zero-shot prompt.
+
+To establish the ground-truth for evaluation, a panel of aerospace and formal methods experts manually formalized the 79 SSCS requirements. Of these, 76 were successfully translated into LTL, while three were excluded as high-level architectural summaries that do not contain temporal logic and cannot be trans-lated into LTL. Each expert independently performed the translation, followed by a cross-review and discussion phase to finalize the reference LTL specifications used for scoring. 
+
+4.2 Evaluation Setup 
+
+We implemented AeroReq2LTL as an automation-assisted toolchain that pro-cesses raw PDF requirement documents and produces LTL specifications en-riched with structured metadata ( e.g. , module and component scope). The tool provides user interfaces for inspecting and correcting intermediate artifacts (ex-tracted requirements, TNL, and generated LTL), supporting industrial and man-ual traceability. 
+
+Baselines. We compare AeroReq2LTL against several baseline methods across two dimensions: model backend and generation strategy. For model back-ends, we choose three representative large language models: GPT-3.5, GPT-4o [17], and DeepSeek-V3 [18]. For generation strategies, we consider three meth-ods representing the current landscape of NL-to-LTL translation. (1) SimPro means direct translation using LLMs to assess the baseline "out-of-the-box" rea-soning of LLMs; (2) NL2LTL [10]: a Python package developed by IBM Research that uses LLMs to translate NL instructions into LTL formulas. (3) NL2SPEC [8] adopts a template-guided prompting approach that builds LTL expressions in stages, emphasizing interpretability and semantic traceability. Following common practice for fairness, we do not require baselines to adopt 
+
+SpaceKG naming conventions; if a baseline identifies the correct atomic propo-sition scope and temporal structure, the result is considered correct. 12 Ma, Liang, Wen, Chen, Gu, Qin, Tian, Yang Meng-Fei 
+
+Table 4: Ablation Study of SpaceKG and SpaceRDL Using GPT-4o.                           
+
+> Components Correct Missing Wrong Spurious Precision Recall
+> AeroReq2LTL 67 0930.85 0.88 w/o SpaceKG 53 023 10.69 0.70 w/o SpaceRDL 41 035 30.52 0.54
+
+Evaluation Metrics. We report precision and recall using statistical cor-rectness criteria. Each requirement is classified into one of four outcomes: Cor-rect , Wrong , Missing , or Spurious . A generated LTL property is counted as cor-rect only if it matches the intended logical and temporal semantics; minor op-erator differences ( e.g. , X vs. F ) are considered wrong due to their significant impact on verification outcomes. If a requirement does not describe any checkable temporal behavior and therefore should not yield an LTL specification, then er-roneously producing output is considered spurious . Conversely, if a requirement is expected to yield an LTL specification but the method fails to produce one, the outcome is classified as Missing .
+
+4.3 Evaluation Result Effectiveness. Table 3 summarizes end-to-end performance on the SSCS case study. Overall, AeroReq2LTL consistently outperforms baseline methods un-der real industrial document complexity. AeroReq2LTL + GPT-4o performs best with a precision of 85% and a recall of 88%. Across backends, AeroReq2LTL 
+
+attains 85%, 75%, and 81% precision (GPT-4o, GPT-3.5, DeepSeek-V3 respec-tively), showing that the framework generalizes beyond a single model while benefiting from stronger LLM reasoning. In contrast, baseline methods degrade substantially under industrial docu-ment complexity. A key reason is that industrial aerospace requirements cannot be interpreted as standalone sentences: correct formalization requires grounding technical jargon and numeric constraints to interface variables, and recovering temporal/logical structure that is often implicit. SimPro and NL2SPEC strug-gle primarily because they treat requirements as isolated text, failing to resolve the technical jargon and implicit dependencies defined in the document’s in-terface description. While NL2LTL and NL2SPEC avoid Spurious outputs by being more conservative, AeroReq2LTL ’s proactive two-stage rewriting pro-cess (NL →TNL →LTL) exposes implicit conditions and timing intent in TNL, and then applies deterministic translation rules. This design improves coverage while preserving precision, with only a small increase in spurious outputs on highly generalized, non-checkable statements. 
+
+Ablation Study. We conducted ablation studies to quantify the necessity of SpaceKG and SpaceRDL in the formalization pipeline and to analyze the underlying causes of performance degradation when each component is removed, as shown in Table 4. Automated LTL Generation for Aerospace Systems 13 Precision Recall F1 Score 
+
+> 0.5
+> 0.6
+> 0.7
+> 0.8
+> 0.9
+> 1.0
+> Expressions
+> Variable Names
+> Actual Values
+
+Fig. 4: Accuracy of SpaceKG .State                                                          
+
+> Change
+> Bound
+> Check
+> Work-Mode
+> Change
+> Command
+> Process
+> State
+> Respond
+> State
+> Maintenance
+> Mode
+> Invariant
+> Non
+> sequential
+> Prediction
+> State
+> Change
+> Bound
+> Check
+> Work-Mode
+> Change
+> Command
+> Process
+> State
+> Respond
+> State
+> Maintenance
+> Mode
+> Invariant
+> Non
+> sequential
+> Ground Truth
+> 31 0500000
+> 018 000000
+> 00600000
+> 00050000
+> 00007000
+> 00000300
+> 00000010
+> 00030000
+> 0
+> 5
+> 10
+> 15
+> 20
+> 25
+> 30
+
+Fig. 5: Accuracy of SpaceRDL .As shown in the results, removing SpaceKG causes precision and recall to drop to 69% and 70%, respectively. The primary errors are grounding failures, where domain-specific terms are either fragmented into semantically meaningless propositions or mapped to incorrect yet plausible variables, such as confusing 
+
+flagSP with flagSPS . To better understand these failures, we further analyze the extraction accuracy of SpaceKG on the 79 SSCS requirements in Fig. 4. The extracted domain terms, variables, and expressions all demonstrate F1 scores exceeding 0.8, proving SpaceKG ’s critical role in preventing grounding errors through effective terminology identification and normalization. Subsequently, removing SpaceRDL leads to a more severe performance degra-dation, with precision and recall dropping to 52% and 54%, respectively. These errors mostly stem from incorrect temporal structuring, including missing pre-requisites on the left-hand side of implications and the incorrect placement or omission of temporal operators such as X. A confusion matrix further ana-lyzes the model’s ability to select appropriate semantic templates for require-ment statements, as shown in Fig. 5. While AeroReq2LTL correctly classifies 71 statements, several State-Transition requirements are misclassified as Work-Mode-Change , and non-checkable requirements tend to be forcibly assigned a template. These misclassifications directly account for the temporal-structure er-rors observed in the ablation results. These findings confirm that both SpaceKG 
+
+and SpaceRDL are essential to the accuracy and reliability of AeroReq2LTL .
+
+4.4 End-to-end Case Study and Toolchain Integration 
+
+To demonstrate practical usability, we present a detailed walkthrough using 
+
+Req39 from the SSCS Mode Switch module. (Req39 ). In the event that the BeiDou signal is unavailable for a duration exceeding 12.8s while operating in inertial navigation mode, the navigation com-puter is required to initiate an immediate transition to the star tracker system. 
+
+Step 1: Context Reconstruction and Knowledge Grounding. The workflow begins by jointly reconstructing textual and engineering context from 14 Ma, Liang, Wen, Chen, Gu, Qin, Tian, Yang Meng-Fei 
+
+the SSCS requirement document. The Information Extractor identifies the re-quirement paragraph of Req39 as the Target Stream , while simultaneously ex-tracting the associated Interface Description table as the Knowledge Stream .Based on this information, AeroReq2LTL determines that the BeiDou signal availability is represented by the boolean variable flagBD , the duration timer cor-responds to the floating-point variable deTCount , and the star tracker system sta-tus is denoted by flagSTS . Based on this project-local evidence, AeroReq2LTL 
+
+performs a just-in-time delta refresh of SpaceKG , augmenting its domain-level knowledge ( e.g. , mapping “inertial navigation mode” to subMode = INM )with SSCS-specific signal grounding. This step is essential for industrial cor-rectness. Without ingesting interface definitions, a text-only approach cannot associate phrases such as “duration exceeding 12.8s” with the specific runtime variable deTCount , resulting in an underspecified or unverifiable property. 
+
+Step 2: Semantic Rewriting (NL → TNL). With the project-adapted 
+
+SpaceKG in place, AeroReq2LTL invokes the LLM-based semantic rewriter to transform the original natural-language requirement into a structured inter-mediate representation. During this process, domain phrases are deterministi-cally grounded: “BeiDou signal is unavailable” is mapped to flagBD = FALSE ,and “duration exceeding 12.8s” is resolved as the numeric constraint deTCount > 12.8 . Meanwhile, guided by SpaceRDL templates, the rewriter identifies the op-erational context (“inertial navigation mode”) and the implicit timing keyword “immediate”. These elements trigger a State–Response template instantiation, yielding the following templated natural language specification: 
+
+TNL39: In ( subMode =INM ), the navigation computer shall immediately satisfy if ( flagBD =FALSE & deTCount > 12.8 )then ( flagSTS =TRUE ). 
+
+Step 3: Deterministic Formal Synthesis (TNL → LTL). In the third stage, the instantiated semantic structure ( TNL39 ) is passed to the deterministic synthesis engine. To ensure rigorous formalization, AeroReq2LTL avoids prob-abilistic NL-to-LTL generation; instead, it applies formally defined SpaceRDL 
+
+translation rules that map each TNL field to its corresponding LTL construct , thereby eliminating semantic ambiguity. In particular, the keyword “imme-diately” is interpreted as a concurrent state implication rather than a future eventuality, and thus no F (Eventually) operator is introduced. The resulting formal specification is: 
+
+LTL39: G(( subMode = INM ∧ flagBD = FALSE ∧ deTCount > 12.8 )
+
+→ (flagSTS = TRUE )) 
+
+For comparison, a representative text-only baseline such as NL2SPEC ab-stracts domain predicates into uninterpreted symbols and models the response using a future operator. For instance, the original condition “the BeiDou signal is unavailable for a duration exceeding 12.8s” is reduced to a symbolic atom (e.g., a), while the response “initiate an immediate transition” is formalized as Automated LTL Generation for Aerospace Systems 15 
+
+Table 5: Verification results of Generated LTL specifications using TRACE.          
+
+> Sun Search Control System Module Name LTL properties
+> Remote Control Command Processing 17/17
+> Gyroscope Data Processing 13/15
+> Attitude Determination 10/12
+> Control Calculation 5/5
+> Mode Switch 6/6
+> Fault Handling 8/8
+> Thruster Output 4/4
+> Total 63/67
+
+an eventuality, yielding a specification of the form G(( a ∧ b) → F c ). This formu-lation omits the concrete timing threshold ( > 12 .8s) and weakens the immediacy constraint by deferring the response to an unspecified future point, rendering the resulting property unsuitable for direct verification in a control-critical setting. 
+
+Step 4: Direct Toolchain Integration and Verification. The final step evaluates whether the generated LTL specifications can be directly consumed by an existing industrial verification toolchain. The synthesized property LTL39 ,together with other correctly generated specifications, is used as drop-in input to the TRACE [19] framework for trace-based runtime verification 8. TRACE takes LTL formulas as input and performs symbolic execution using KLEE [20,21] to generate execution paths, while GDB [22] is employed to collect concrete execu-tion traces, which are subsequently checked against the temporal properties. 
+
+SSCS Verification Results. In the SSCS evaluation, AeroReq2LTL is applied to 76 industrial requirements without manual intervention, of which 67 are correctly translated into LTL. As summarized in Table 5, the downstream TRACE [19] toolchain successfully verifies 63 of these 67 properties across diverse functional modules. These results demonstrate that AeroReq2LTL produces syntactically valid and semantically precise specifications that are immediately usable by existing verification tools, effectively completing the end-to-end work-flow from natural-language requirements to executable software verification. 
+
+4.5 Discussion on Scalability and Performance 
+
+While the current evaluation demonstrates the effectiveness of AeroReq2LTL 
+
+on the 79 production requirements of the SSCS module, scaling this approach to the full set of requirements typically found in safety-critical aerospace platforms   
+
+> 8TRACE, developed by the Eindhoven University of Technology in the Netherlands, is an automated verification tool that takes LTL formulas as input and utilizes trace-based runtime verification technology to analyze system behavior by checking the execution traces of the system. 16 Ma, Liang, Wen, Chen, Gu, Qin, Tian, Yang Meng-Fei
+
+presents a distinct engineering challenge in and of itself. Complete systems often comprise over 1,000 behavioral requirements, alongside correspondingly massive and complex interface description documents. In such large-scale industrial scenarios, the performance and scalability of the automated toolchain become critical considerations. The primary computational overheads in AeroReq2LTL stem from the dynamic construction of SpaceKG 
+
+and the LLM inference latency. To effectively process thousands of requirements, the layout-aware information extraction and SpaceKG entity normalization must be highly optimized. This could be achieved through incremental knowledge base updates—selectively parsing modified interface tables rather than perform-ing full-document re-ingestion. Furthermore, while AeroReq2LTL currently supports batch processing for downstream verification tools like TRACE, the LLM-based NL-to-TNL rewriting phase will necessitate advanced parallel pro-cessing and modularized semantic parsing. Addressing these performance bottle-necks and ensuring that generation times remain practical for continuous integra-tion and iterative engineering feedback loops constitute an important direction for scaling AeroReq2LTL to broader, system-level aerospace projects. 
+
+5 Related Work 
+
+Recent works explore translating natural language requirements into Linear Temporal Logic using Large Language Models [23,8,9,10,24,25]. While effective on carefully constructed benchmarks, these approaches often fail in industrial settings such as robotics [26,27], multi-agent systems [28], and software verifica-tion [29]. Our analysis of these industrial failures reveals three recurring patterns: 
+
+1. Contextual blindness to engineering artifacts . Industrial specifications dis-tribute state-transition logic across long documents. In telecommunications stan-dards such as 3GPP [30], related conditions may appear in distant sections or appendices, making global consistency difficult for LLMs to maintain. As a result, extracted state machines are often fragmented. This challenge under-scores the fundamental principle of the "Triptych" approach proposed by Dines Bjørner [31], which asserts that a rigorous domain description is a mandatory prerequisite for any requirements prescription [32]. Without an explicit domain model to provide the necessary context, requirements become isolated and prone to misinterpretation. Wu et al. [33] address this problem through an iterative, business-logic-driven framework that reconstructs implicit requirements by re-peatedly aligning partial specifications with system-level objectives. 
+
+2. Insufficient understanding of domain-specific terminology [34,35,36]. In legal texts, LLMs frequently confuse obligation and permission, mistranslating 
+
+shall or ignoring unless clauses [35]. Similar issues arise in hardware and pro-tocol specifications, where global state-machine semantics in standards such as Arm are often misinterpreted [34,30]. Such terminological ambiguity often stems from the lack of a formal domain ontology, a gap that Bjørner suggests filling with domain engineering to capture the intrinsic properties of the application environment [37]. Surveys further report frequent errors in temporal seman-Automated LTL Generation for Aerospace Systems 17 
+
+tics [38,39], such as treating stable as a static predicate rather than a clocked condition in SystemVerilog Assertions. Huang et al. [40] mitigate these issues via layered semantic analysis that incrementally extracts atomic propositions, mode constraints, and timing information. 
+
+3. Incomplete modeling of implicit temporal constraints [41]. Sequence-to-sequence models struggle with nested conditions, recursive triggers, and mode-dependent logic [23]. Flat translations fail to capture hierarchical temporal struc-ture, and text-based metrics such as BLEU are insufficient, as small operator changes ( e.g. , F vs. G) can drastically alter semantics [41,23]. Trajectory-based benchmarks like VLTL-Bench reveal poor semantic equivalence despite high tex-tual similarity [41]. Consequently, recent work emphasizes structured and veri-fiable methods, including logic-aware decoding [23], interactive guidance [8,42], conformal guarantees [43], and intermediate semantic representations [40,33]. 
+
+6 Conclusions 
+
+This paper presents AeroReq2LTL , an automated framework for extracting LTL specifications from aerospace requirement documents. By utilizing a large language model along with domain-specific knowledge and standardized tem-plates, the framework improves the accuracy of temporal relationship extrac-tion. AeroReq2LTL integrates seamlessly with existing verification tools like TRACE and CPAchecker and is already being applied in real aerospace soft-ware projects. Experimental results and case studies demonstrate its effective-ness, while ablation experiments highlight the challenges in rewriting natural language into templated forms. Future work will focus on three directions to further improve the framework’s generalizability and reliability. First, since SpaceKG is constructed from com-mon engineering artifacts (e.g., interface description tables) rather than domain-specific hardcoding, the toolchain is inherently extensible beyond aerospace. We will apply it to other safety-critical domains with similar documentation stan-dards, such as automotive and medical systems. Second, beyond control-related state transitions and work-mode logic, we will expand AeroReq2LTL to sup-port a wider range of specifications, including functional, safety, and security requirements. Finally, we will further enrich and formalize the SpaceKG model by systematically encoding domain invariants into its core structure, thereby strengthening the rigor and validity of the automated verification process. 
+
+Acknowledgements 
+
+This work was supported in part by the National Natural Science Foundation of China (Nos. 62192730, 62192734, 62192735, 62302375, 62472339), the China Postdoctoral Science Foundation funded project (No. 2023M723736), the Basic Research Foundation of Shenzhen City (No. JCYJ20250604184202003), and the CCF-Huawei Populus Grove Fund (No. CCF-HuaweiFM202507). 18 Ma, Liang, Wen, Chen, Gu, Qin, Tian, Yang Meng-Fei 
+
+References 
+
+1. Kristin Y Rozier. Linear temporal logic symbolic model checking. Computer Sci-ence Review , 5(2):163–203, 2011. 2. Shmuel Merhav. Aerospace sensor systems and applications . Springer Science & Business Media, 1998. 3. Andreas Bauer, Martin Leucker, and Christian Schallhart. Runtime verification for ltl and tltl. ACM Transactions on Software Engineering and Methodology (TOSEM) , 20(4):1–64, 2011. 4. Shervin Minaee, Tomas Mikolov, Narjes Nikzad, Meysam Chenaghlu, Richard Socher, Xavier Amatriain, and Jianfeng Gao. Large language models: A survey. 
+
+arXiv preprint arXiv:2402.06196 , 2024. 5. Humza Naveed, Asad Ullah Khan, Shi Qiu, Muhammad Saqib, Saeed Anwar, Muhammad Usman, Naveed Akhtar, Nick Barnes, and Ajmal Mian. A comprehen-sive overview of large language models. ACM Transactions on Intelligent Systems and Technology , 16(5):1–72, 2025. 6. Cheng Wen, Yuandao Cai, Bin Zhang, Jie Su, Zhiwu Xu, Dugang Liu, Shengchao Qin, Zhong Ming, and Tian Cong. Automatically inspecting thousands of static bug warnings with large language model: How far are we? ACM Transactions on Knowledge Discovery from Data , 18(7):1–34, 2024. 7. Jie Su, Liansai Deng, Cheng Wen, Shengchao Qin, and Cong Tian. Cfstra: En-hancing configurable program analysis through llm-driven strategy selection based on code features. In International Symposium on Theoretical Aspects of Software Engineering , pages 374–391. Springer, 2024. 8. Matthias Cosler, Christopher Hahn, Daniel Mendoza, Frederik Schmitt, and Car-oline Trippel. nl2spec: Interactively translating unstructured natural language to temporal logics with large language models. In Proceedings of the 35th Interna-tional Conference on Computer Aided Verification , volume 13965 of Lecture Notes in Computer Science , pages 383–396, Paris, France, 2023. Springer. 9. Yongchao Chen, Rujul Gandhi, Yang Zhang, and Chuchu Fan. Nl2tl: Transforming natural languages to temporal logics using large language models. In Proceedings of the Conference on Empirical Methods in Natural Language Processing , pages 15880–15903, Singapore, 2023. Association for Computational Linguistics. 10. Francesco Fuggitti and Tathagata Chakraborti. Nl2ltl - a python package for con-verting natural language (nl) instructions to linear temporal logic (ltl) formulas. In 
+
+Proceedings of the 37th AAAI Conference on Artificial Intelligence, the 35th Con-ference on Innovative Applications of Artificial Intelligence, the 13th Symposium on Educational Advances in Artificial Intelligence , pages 16428–16430, Washing-ton, DC, USA, 2023. AAAI Press. 11. Joshua Ian Bernstein. Design methods in the aerospace industry: looking for ev-idence of set-based practices . PhD thesis, Massachusetts Institute of Technology, 1998. 12. Jialun Cao, Yaojie Lu, Meiziniu Li, Haoyang Ma, Haokun Li, Mengda He, Cheng Wen, Le Sun, Hongyu Zhang, Shengchao Qin, et al. From informal to formal– incorporating and evaluating llms on natural language requirements to verifiable formal proofs. In Proceedings of the 63rd Annual Meeting of the Association for Computational Linguistics (Volume 1: Long Papers) , pages 26984–27003, 2025. 13. Cheng Wen, Jialun Cao, Jie Su, Zhiwu Xu, Shengchao Qin, Mengda He, Haokun Li, Shing-Chi Cheung, and Cong Tian. Enchanting program specification synthesis by large language models using static analysis and program verification. In Interna-tional Conference on Computer Aided Verification , pages 302–328. Springer, 2024. Automated LTL Generation for Aerospace Systems 19 14. Zhi Ma, Cheng Wen, Bin Yu, and Jie Su. Integrating ensemble learning and large language models for efficient formal verification of ip-based aerospace systems. 
+
+Information Fusion , 125:103466, 2026. 15. Shaolin Zhang, HongJin Liu, Zhi Ma, Xiao Liang, and Cheng Wen. Formal verifica-tion of aerospace software ip components: A multi-tool case study. In Proceedings of the 2026 6th International Conference on Computer Network Security and Soft-ware Engineering , pages 1–9, 2026. 16. Zhi Ma, Cheng Wen, Jie Su, Ming Zhao, Bin Yu, Xu Lu, and Cong Tian. To-wards practical requirement analysis and verification: A case study on software ip components in aerospace embedded systems. arXiv preprint arXiv:2404.00795 ,2024. 17. OpenAI. Gpt-4o technical report. https://openai.com/index/gpt-4o , 2024. Ac-cessed: May 2025. 18. Shuai Zhang, Haisen Zhao, et al. Deepseek-vl: Scaling vision-language models with vision token learner. arXiv preprint arXiv:2405.07927 , 2024. 19. Martijn Hendriks, Marc Geilen, Amir Reza Baghban Behrouzian, Twan Basten, Hadi Alizadeh Ara, and Dip Goswami. Checking metric temporal logic with trace. 
+
+2016 16th International Conference on Application of Concurrency to System De-sign (ACSD) , pages 19–24, 2016. 20. Cristian Cadar, Daniel Dunbar, Dawson R Engler, et al. Klee: Unassisted and automatic generation of high-coverage tests for complex systems programs. In 
+
+OSDI , volume 8, pages 209–224, 2008. 21. Cristian Cadar and Martin Nowack. Klee symbolic execution engine in 2019. In-ternational Journal on Software Tools for Technology Transfer , 23:867–870, 2021. 22. Jo Van Hoey. Program analysis with a debugger: Gdb. In Beginning x64 Assembly Programming: From Novice to AVX Professional , pages 21–33. Springer, 2019. 23. William English, Dominic Simon, Sumit Kumar Jha, and Rickard Ewetz. Grammar-forced translation of natural language to temporal logic using llms. In 
+
+International Conference on Machine Learning , 2025. 24. Jason Xinyu Liu, Ziyi Yang, Benjamin Schornstein, Sam Liang, Ifrah Idrees, Ste-fanie Tellex, and Ankit Shah. Lang2ltl: Translating natural language commands to temporal specification with large language models. In Workshop on Language and Robotics at CoRL 2022 , 2022. 25. Yilongfei Xu, Jincao Feng, and Weikai Miao. Learning from failures: Translation of natural language requirements into linear temporal logic with large language mod-els. In 2024 IEEE 24th International Conference on Software Quality, Reliability and Security (QRS) , pages 204–215. IEEE, 2024. 26. Jason Xinyu Liu, Ziyi Yang, Benjamin Schornstein, Sam Liang, Ifrah Idrees, Ste-fanie Tellex, and Ankit Shah. Lang2ltl: Translating natural language commands to temporal specification with large language models. In Workshop on Language and Robotics at CoRL 2022 , 2022. 27. Jason Xinyu Liu, Ankit Shah, George Dimitri Konidaris, Stefanie Tellex, and David Paulius. Lang2ltl-2: Grounding spatiotemporal navigation commands using large language and vision-language models. 2024 IEEE/RSJ International Conference on Intelligent Robots and Systems (IROS) , pages 2325–2332, 2024. 28. Shaojun Xu, Xusheng Luo, Yutong Huang, Letian Leng, Ruixuan Liu, and Changliu Liu. Nl2hltl2plan: Scaling up natural language understanding for multi-robots through hierarchical temporal logic task specifications. IEEE Robotics and Automation Letters , 10:10482–10489, 2024. 20 Ma, Liang, Wen, Chen, Gu, Qin, Tian, Yang Meng-Fei 29. Theo X. Olausson, Jeevana Priya Inala, Chenglong Wang, Jianfeng Gao, and Ar-mando Solar-Lezama. Demystifying gpt self-repair for code generation. ArXiv ,abs/2306.09896, 2023. 30. Miao Zhang, Runhan Feng, Hongbo Tang, Yu Zhao, Jie Yang, Hang Qiu, and Qi Liu. Automated extraction of protocol state machines from 3gpp specifications with domain-informed prompts and llm ensembles. ArXiv , abs/2510.14348, 2025. 31. Dines Bjøner. Software Engineering 3: Domains, requirements, and software design .Springer, 2006. 32. Dines Bjørner. From domain descriptions to requirements prescriptions. 33. Zhujun Wu, Xiaohong Chen, Zhi Jin, Ming Hu, and Dongming Jin. Unlocking the silent needs: Business-logic-driven iterative requirements auto-completion. In 2026 IEEE/ACM 48th International Conference on Software Engineering (ICSE ’26) ,page 12, 2026. 34. Yu-An Shih, Annie Lin, Aarti Gupta, and Sharad Malik. Flag: Formal and llm-assisted sva generation for formal specifications of on-chip communication proto-cols. ArXiv , abs/2504.17226, 2025. 35. Regan Meloche, Daniel Amyot, and John Mylopoulos. Towards legal contract for-malization with controlled natural language templates. In 2023 IEEE 31st Inter-national Requirements Engineering Conference (RE) , pages 317–322. IEEE, 2023. 36. Zhi Ma, Cheng Wen, Zhexin Su, Xiao Liang, Cong Tian, Shengchao Qin, and Mengfei Yang. Bridging natural language and formal specification–automated translation of software requirements to ltl via hierarchical semantics decomposition using llms. arXiv preprint arXiv:2512.17334 , 2025. 37. Dines Bjørner. Domain engineering: A software engineering discipline in need of research. In International Conference on Current Trends in Theory and Practice of Computer Science , pages 1–17. Springer, 2000. 38. Na Wu, Yifan Li, Hongyang Yang, Hao Chen, Shouyi Dai, and Chenghao Hao. Survey of machine learning for software-assisted hardware design verification: Past, present, and prospect. ACM Transactions on Design Automation of Electronic Systems , 2024. 39. Meisam Abdollahi, S. Faegheh Yeganli, Mohammad Baharloo, and Amirali Bani-asadi. Hardware design and verification with large language models: A scoping review, challenges, and open issues. Electronics , 2024. 40. Yike Huang, Ming Hu, Xiaohong Chen, Zhi Jin, and Shuyuan Xiao. Modeling like peeling an onion: Layerwise analysis-driven automatic behavioral model genera-tion. In 2026 IEEE/ACM 48th International Conference on Software Engineering (ICSE ’26) , page 12, 2026. 41. William English, Chase Walker, Dominic Simon, Sumit Kumar Jha, and Rickard Ewetz. Verifiable natural language to linear temporal logic translation: A bench-mark dataset and evaluation suite. ArXiv , abs/2507.00877, 2025. 42. Daniel Mendoza, Christopher Hahn, and Caroline Trippel. Translating natural language to temporal logics with large language models and model checkers. 2024 Formal Methods in Computer-Aided Design (FMCAD) , pages 1–11, 2024. 43. Jun Wang, David Smith Sundarsingh, Jyotirmoy V. Deshmukh, and Yiannis Kan-taros. Conformalnl2ltl: Translating natural language instructions into temporal logic formulas with conformal correctness guarantees. ArXiv , abs/2504.21022, 2025.
