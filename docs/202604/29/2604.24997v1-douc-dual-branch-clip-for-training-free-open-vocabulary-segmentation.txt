@@ -1,0 +1,234 @@
+Title: DouC: Dual-Branch CLIP for Training-Free Open-Vocabulary Segmentation
+
+URL Source: https://arxiv.org/pdf/2604.24997v1
+
+Published Time: Wed, 29 Apr 2026 00:13:26 GMT
+
+Number of Pages: 10
+
+Markdown Content:
+# DouC: Dual-Branch CLIP for Training-Free Open-Vocabulary Segmentation 
+
+Mohamad Zamini * 1 Diksha Shukla * 1 
+
+# Abstract 
+
+Open-vocabulary semantic segmentation requires assigning pixel-level semantic labels while sup-porting an open and unrestricted set of categories. Training-free CLIP-based approaches preserve strong zero-shot generalization but typically rely on a single inference mechanism, limiting their ability to jointly address unreliable local tokens and insufficient spatial coherence. We propose 
+
+DouC , a training-free dual-branch CLIP frame-work that decomposes dense prediction into two complementary components. OG-CLIP improves patch-level reliability via lightweight, inference-time token gating, while FADE-CLIP injects ex-ternal structural priors through proxy attention guided by frozen vision foundation models. The two branches are fused at the logit level, enabling local token reliability and structure-aware patch interactions to jointly influence final predictions, with optional instance-aware correction applied as post-processing. DouC introduces no additional learnable parameters, requires no retraining, and preserves CLIP’s zero-shot generalization. Ex-tensive experiments across eight benchmarks and multiple CLIP backbones demonstrate that DouC consistently outperforms prior training-free meth-ods and scales favorably with model capacity. 
+
+# 1. Introduction 
+
+Open-vocabulary semantic segmentation (OVSS) aims to assign pixel-level semantic labels while supporting an open and potentially unbounded set of categories (Bai et al., 2025) (Lan et al., 2024b). Unlike conventional semantic segmen-tation, OVSS must generalize beyond a fixed label space, making it substantially more challenging. Vision–language models (VLMs), most notably CLIP (Radford et al., 2021), have demonstrated strong zero-shot generalization by learn-ing aligned image–text representations from large-scale web    
+
+> *Equal contribution 1Department of Electrical Engineering and Computer Science, University of Wyoming, Laramie, WY, USA. Correspondence to: Mohamad Zamini <mzamini@uwyo.edu >,Diksha Shukla <dshukla@uwyo.edu >.
+> Preprint. April 29, 2026.
+
+data (Li et al., 2023). This capability has made CLIP a natu-ral foundation for OVSS. However, CLIP is pretrained for global image–text alignment rather than dense localization, leading to noisy and spatially inconsistent patch-level repre-sentations (Lan et al., 2024b; Chi et al., 2025). Additionally, semantic errors introduced at intermediate layers tend to propagate through the network, ultimately corrupting final segmentation logits (Jin et al., 2025). Building on this insight, exiting CLIP-based OVSS ap-proaches broadly fall into two paradigms. Finetuning-based methods adapt CLIP to dense prediction tasks using labeled data, often achieving strong performance but at the cost of additional training, task-specific supervision, and de-graded generalization (Cha et al., 2023; Wang et al., 2024b; Wysocza ´nska et al., 2024). In contrast, training-free meth-ods preserve CLIP’s pretrained representations and rely on architectural or inference-time modifications to enable dense prediction (Lan et al., 2024a; Wang et al., 2024a; Lan et al., 2024b; Zhang et al., 2025). These methods are attractive due to their efficiency, modularity, and robustness across datasets and class vocabularies. Most existing training-free approaches focus on modifying CLIP’s attention mechanisms to improve spatial coherence. Some suppress unreliable tokens by filtering attention out-liers (Jin et al., 2025; Chi et al., 2025), while others replace or reweight query–key interactions using self-self or proxy attention (Lan et al., 2024a; Wang et al., 2024a; Lan et al., 2024b). While these strategies improve intermediate repre-sentations, they suffer from two key limitations. First, outlier suppression alone is insufficient: removing unreliable tokens prevents attention over-activation but does not actively strengthen semantic regions or improve class discrimination. Second, intermediate attention refinement is weakly coupled to final predictions. Enhancing attention maps does not guarantee improved segmentation, since sub-sequent operations may override or dilute these refinements (Chi et al., 2025). As a result, improvements at the represen-tation level do not always translate into better outputs. Separately, feedback-driven approaches have shown that out-put predictions contain valuable semantic structure that can be leveraged to refine intermediate representations (Zhang et al., 2025). By measuring semantic similarity between patch-level predictions and feeding this information back 1
+
+> arXiv:2604.24997v1 [cs.CV] 27 Apr 2026 DouC: Dual-Branch CLIP for Training-Free Open-Vocabulary Segmentation
+
+into attention, these methods improve consistency between internal representations and final outputs. However, such approaches operate on a single branch and remain sensitive to prediction noise, especially in cluttered scenes or under domain shift. These observations motivates us combining complementary inductive biases, rather than relying on a single modification to CLIP. We propose DouC , a dual-branch, training-free CLIP frame-work for open-vocabulary semantic segmentation. DouC decomposes dense prediction into two parallel but comple-mentary branches. The OG-CLIP branch operates directly on OpenAI CLIP features and incorporates lightweight, inference-time token reliability gating to suppress unreli-able patch tokens, improving local feature stability with-out modifying the backbone (Jin et al., 2025). The FADE-CLIP branch augments CLIP with feedback-driven semantic adaptation, leveraging DINO (Zhang et al., 2022) to inject output-derived semantic structure back into intermediate representations (Zhang et al., 2025). The two branches produce dense logit maps that are fused at the logit level, ensuring that both local reliability and global semantic coherence directly influence the final pre-diction. Importantly, DouC is training-free, introduces no additional learnable parameters, and preserves CLIP’s orig-inal generalization capability. To further enhance spatial consistency, DouC integrates instance-level mask correction using off-the-shelf mask generators (Kirillov et al., 2023; Cheng et al., 2022; Kerssies et al., 2025), enabling post-hoc refinement of object boundaries while leaving the core model representations unchanged. 
+
+# 2. Related Work 
+
+OVSS extends traditional segmentation by requiring gen-eralization to unseen or arbitrary class labels (Bai et al., 2025; Lan et al., 2024b). Recent approaches leverage vi-sion–language alignment for zero-shot semantic understand-ing at the pixel level (Wang et al., 2024a; Lan et al., 2024a). Several methods finetune CLIP or CLIP-derived models for segmentation tasks, often incorporating pixel-level supervi-sion or auxiliary segmentation heads (Wysocza ´nska et al., 2024; Cha et al., 2023; Wang et al., 2024b). While effective, finetuning compromises CLIP’s pretrained generalization and requires additional labeled data and compute, limiting scalability. Training-free methods aim to adapt CLIP to dense predic-tion without modifying its parameters. Prior works improve localization by modifying attention mechanisms, suppress-ing outlier tokens, or replacing query–key attention with alternative formulations such as self-self or proxy attention (Lan et al., 2024a; Wang et al., 2024a; Lan et al., 2024b; Chi et al., 2025). These methods improve spatial coherence but primarily operate on intermediate representations and do not explicitly leverage output-level semantic structure. More recent approaches explore feedback mechanisms that incorporate output predictions back into intermediate atten-tion, enforcing consistency between internal representations and final outputs (Zhang et al., 2025). While effective, these methods typically operate on a single branch and remain sensitive to noisy predictions in complex scenes. DouC differs from prior work by explicitly integrating two complementary training-free mechanisms—token reliability gating and feedback-driven semantic adaptation—within a unified dual-branch framework. Rather than intervening in a single attention pathway, DouC fuses local token reliability and global semantic coherence directly at the logit level, enabling robust and scalable open-vocabulary segmentation without retraining. In practice, training-free OVSS benefits from three comple-mentary priors: • Token reliability priors within CLIP (e.g., outlier suppression or reliability gating), which mitigate the influence of spurious or noisy tokens. • External visual priors (e.g., DINO features or attention-based saliency), which provide geometry-and structure-aware cues for patch interactions. • Instance-aware constraints (e.g., SAM2 masks), which enforce spatial consistency within object-like regions and correct local label noise. DouC unifies these priors in a two-branch architecture with logit-level fusion, allowing each signal to contribute inde-pendently while remaining fully training-free. 
+
+# 3. Preliminaries and Motivation 
+
+Let an image be I ∈ R3×H×W and the set of query strings be {qj }Qj=1 , where each query qj is mapped to a dataset class index via a fixed mapping π(j) ∈ { 1, . . . , C }. We seek dense per-query logits L ∈ RQ×H×W and, per-class logits Lcls ∈ RC×H×W .CLIP uses a Vision Transformer (ViT) image encoder that embeds an image into a sequence of tokens. The image is partitioned into L patches, each embedded into Rv , and a learnable class token is prepended: 
+
+X0 = [ xcls , x1, . . . , xL] ∈ R(L+1) ×v . (1) A positional embedding is added, and the sequence is pro-cessed by a stack of transformer blocks. Each block contains multi-head self-attention (MHSA) and a feed-forward net-work (FFN). For a generic block input X, the projected 2DouC: Dual-Branch CLIP for Training-Free Open-Vocabulary Segmentation  
+
+> Figure 1. Our Proposed archtiecture
+
+queries/keys/values are 
+
+Q = XWQ, K = XWK , V = XWV , (2) and the attention weights are 
+
+A = Softmax 
+
+ QK ⊤
+
+√v
+
+
+
+, Attn( X) = AV . (3) Dense patch features are obtained by discarding the CLS token and reshaping the patch tokens back into a 2D grid. Given each query string qj , we build a set of prompts and encode them with the CLIP text encoder. Let tj ∈ Rd be the normalized mean embedding of the prompt ensemble for query qj . Stacking yields 
+
+T = [ t1; . . . ; tQ] ∈ RQ×d. (4) If Q̸ = C (e.g., synonyms per class), we later collapse query logits to class logits using the known mapping π.Let Z ∈ RL×d be the normalized dense patch features in the shared vision–language space. The per-patch query logits are computed by cosine similarity: 
+
+Y ∈ RL×Q = ZT ⊤. (5) Reshaping Y to the spatial grid gives logits L ∈ RQ×h×w
+
+at patch resolution, which are upsampled to H × W as needed. 
+
+3.1. Two-Branch Hybrid OVSS 
+
+While CLIP provides strong zero-shot alignment between images and text, its vision encoder is optimized for global recognition and does not explicitly enforce spatial coherence at the patch level. As a result, directly repurposing CLIP for dense prediction leads to two complementary failure modes: (i) patch features that are semantically aligned but spatially noisy, and ( ii ) spatially coherent groupings that are weakly aligned with language. To address these limitations in a training-free manner, we design a two-branch architecture that disentangles semantic alignment from spatial structur-ing and recombines them at the logit level. Given an input image I, we compute two dense query-logit maps: • OG-CLIP branch. This branch preserves the original OpenAI CLIP (Radford et al., 2021) vision–language alignment and produces dense logits Log ∈ RQ×H×W
+
+from CLIP patch embeddings. However, dense CLIP features are often dominated by background or low-saliency patches. To mitigate this effect, we introduce a token purification mechanism within the CLIP visual transformer that softly down-weights unreliable patch tokens based on their feature magnitude. The purifica-tion is applied in a residual, layer-selective manner and does not modify CLIP’s training objective or parame-ters. This stabilizes dense predictions while retaining CLIP’s strong language alignment. • FADE-CLIP branch. This branch explicitly injects spatial structure into CLIP by replacing the final self-attention aggregation with a proxy affinity derived from a frozen external vision foundation model, specifically a DINO ViT (Caron et al., 2021). DINO patch features induce an affinity matrix that reconstructs the value vectors of the final CLIP transformer block, yielding spatially coherent dense embeddings prior to projec-tion into the shared vision–language space. When in-stance masks are available, the proxy affinity is fur-ther constrained to operate only within individual in-stance regions, preventing inter-object feature bleeding. The resulting dense logits Lfade ∈ RQ×H×W exhibit strong object-level consistency while remaining fully training-free. The two branches address complementary deficiencies: OG-CLIP emphasizes semantic alignment but lacks spatial regu-larity, whereas FADE-CLIP enforces spatial coherence but relies on external structure. We therefore fuse their predic-tions linearly: 
+
+Lfused = αfade Lfade + αog Log , (6) where αfade and αog balance spatial consistency against language fidelity. Finally, to recover global semantic context that may be diluted in dense prediction, we inject a global CLS prior computed from the OG-CLIP image embedding: 
+
+Lfused ← Lfused + λcls lcls [: , N one, N one ], (7) where lcls ∈ RQ denotes query logits obtained from the global image representation. Final predictions are obtained by applying a softmax over queries, collapsing synonymous queries to classes when Q̸ = C, followed by an arg max 
+
+over classes. 3DouC: Dual-Branch CLIP for Training-Free Open-Vocabulary Segmentation 
+
+3.2. FADE-CLIP Branch: DINO-Guided Proxy Attention 
+
+The FADE-CLIP branch introduces a training-free mech-anism that injects dense external visual structure into the CLIP vision transformer by reconstructing patch-level fea-tures in the final transformer block using DINO-guided proxy attention. The method preserves the original CLIP architecture and parameters, modifying only the inference-time behavior of the last attention block. 
+
+External dense features from DINO. Given an input image ˜I, we extract last-layer patch features from a frozen DINO vision transformer and reshape them into a spatial grid: 
+
+E ∈ RHf Wf ×Cf . (8) These features, derived from the final DINO attention rep-resentations, encode fine-grained semantic and spatial rela-tionships between image regions and serve as an external structural prior for guiding CLIP patch interactions. 
+
+DINO-guided proxy affinity. We construct a patch-to-patch affinity matrix using normalized dot products between DINO features: 
+
+sij =
+
+ ei
+
+∥ei∥2
+
+, ej
+
+∥ej ∥2
+
+
+
+, (9) where ei denotes the DINO feature at spatial location i. The affinities are scaled by a temperature parameter τ and nor-malized via a row-wise softmax to obtain a proxy attention matrix: 
+
+Aproxy = Softmax( τ S). (10) 
+
+Instance-aware affinity masking. When instance seg-mentation masks are available, the proxy affinities are gated to permit attention only between patches belonging to the same instance. This constraint is applied directly to the affin-ity matrix prior to normalization, preventing inter-instance feature leakage while preserving the underlying attention formulation. 
+
+Value reconstruction in CLIP space. Instead of modify-ing CLIP queries or keys, we extract the value projections from the final CLIP attention block and interpolate them to the DINO feature resolution. We then replace the original self-attention aggregation with a DINO-guided reconstruc-tion: 
+
+Vproxy = Aproxy V, (11) where V denotes the CLIP value embeddings. This opera-tion injects DINO-driven spatial structure while preserving the CLIP embedding space and its language alignment. 
+
+Token reassembly and projection. The reconstructed patch tokens are concatenated with the original CLIP class token and passed through the standard CLIP post-processing head (LayerNorm followed by a linear projection). The resulting dense visual embeddings are used to compute open-vocabulary segmentation logits via dot products with text embeddings. By applying DINO-guided proxy attention exclusively to the value stream of the final CLIP transformer block, FADE-CLIP enhances spatial coherence and object-level consis-tency while retaining the semantic alignment and zero-shot generalization properties of CLIP. 
+
+3.3. OG-CLIP Branch: Dense Similarity with Outlier-Gated CLIP 
+
+The OG-CLIP branch leverages dense patch-level visual features and open-vocabulary similarity scores derived from the original OpenAI CLIP model. To mitigate the influence of background-dominated or unreliable patch tokens, we introduce a lightweight, training-free outlier-gating mod-ule that operates directly within the CLIP visual backbone at intermediate transformer layers. In the final model, this module is instantiated using an ℓ2-based token reliability cri-terion, while alternative strategies are evaluated in ablation for completeness. 
+
+ℓ2-based token reliability. Let zi ∈ RC denote the fea-ture vector of patch token i extracted from an intermediate layer of the CLIP vision transformer. We quantify token reliability using its ℓ2 norm, 
+
+si = ∥zi∥2, (12) which serves as a simple and stable proxy for feature saliency. Under CLIP’s contrastive training objective, fea-ture magnitude correlates with semantic activation strength, causing object-centric patches to exhibit stronger responses than background regions. 
+
+Soft outlier gating. The raw scores {si} are mapped to soft gating weights wi ∈ (0 , 1) via a normalized, temperature-controlled transformation. Rather than hard pruning, we apply a residual-style attenuation to each patch token: 
+
+ˆzi = (1 − α) zi + α w i zi, (13) where α ∈ [0 , 1] controls the strength of suppression. This formulation preserves the original feature direction while adaptively modulating token magnitude, enabling gradual down-weighting of unreliable patches without disrupting the transformer structure or CLIP’s vision–language alignment. The gated features are then used directly for dense similarity computation with text embeddings. 4DouC: Dual-Branch CLIP for Training-Free Open-Vocabulary Segmentation                                                                                                                                                                                                                                                   
+
+> Table 1. Comparison of training-free open-vocabulary semantic segmentation methods across different OpenAI CLIP backbones. All results are mIoU (%). CorrCLIP and our architecture uses SAM2 (Caron et al., 2021) for benchmarking.
+> Model Venue with background without background Avg
+> VOC21 C60 Object VOC20 C59 Stuff ADE City
+> ViT-B Backbone
+> SCLIP (Wang et al., 2024a) ECCV’24 59.1 30.4 30.5 80.4 34.2 22.4 16.1 32.3 38.2 NACLIP (Hajimiri et al., 2025) WACV’25 58.9 32.2 33.2 79.7 35.2 23.3 17.4 35.5 39.5 SFP (Jin et al., 2025) ICCV’25 63.9 37.2 37.9 84.5 39.9 26.4 20.8 41.1 44 FSA (Chi et al., 2025) ICCV’25 63.7 36.1 38.0 82.3 39.9 27.0 20.5 38.8 43.3 Trident (Shi et al., 2025) ICCV’25 67.1 38.6 41.1 84.5 42.2 28.3 21.9 42.9 45.8 DIH-CLIP (Duan et al., 2025) ICCV’25 64.2 36 37.4 84.9 39.7 26.7 19.6 40.2 43.6 CDAM (Kang et al., 2025) ICLR’25 58.7 30.6 35.2 --24.8 17.2 23.7 -CASS (Kim et al., 2025) CVPR’25 65.8 36.7 37.8 87.8 40.2 26.7 20.4 39.4 44.4 CorrCLIP (Zhang et al., 2025) ICCV’25 72 41.1 40.7 87.8 46.4 30.5 23.4 42.0 48 Ours –72.2 41.2 43.8 88 45.2 31.1 23.7 45.3 48.8 ViT-L Backbone
+> ProxyCLIP (Lan et al., 2024b) ECCV’24 60.6 34.5 39.2 83.2 37.7 25.6 22.6 40.1 42.9 FreeDA (Barsellotti et al., 2024) ECCV’24 55.4 38.3 37.4 87.9 43.5 28.8 23.2 36.7 43.9 SC-CLIP (Bai et al., 2025) TIP’25 65.0 36.9 40.5 88.3 40.6 26.9 21.7 41.3 45.2 FSA (Chi et al., 2025) ICCV’25 61.8 34.9 40.2 84.1 38.1 25.9 22.9 41.2 43.6 CLIPer (Sun et al., 2025) ICCV’25 69.8 38.0 43.3 90.0 43.6 28.7 24.4 41.6 47.3 ResCLIP (Yang et al., 2025) CVPR’25 54.1 30.9 32.5 85.5 34.5 23.4 18.2 33.7 39.1 CorrCLIP (Zhang et al., 2025) ICCV’25 71.2 41.6 45.7 90.7 46.1 30.8 26.7 46.3 49.9 Ours –73.1 42.8 47.2 90.8 47.7 33.1 27.8 47.2 51.2 ViT-H Backbone
+> ProxyCLIP (Lan et al., 2024b) ECCV’24 65.0 35.4 38.6 83.3 39.6 26.8 24.2 42 44.4 FSA (Chi et al., 2025) ICCV’25 67.9 36.3 40.2 85.7 40.5 27.3 24.5 43.6 45.8 Trident (Shi et al., 2025) ICCV’25 70.8 40.1 42.2 88.7 44.3 28.6 26.7 47.6 48.6 CorrCLIP (Zhang et al., 2025) ICCV’25 75.5 41.7 48.1 91.4 46.9 32.1 28.1 47.3 51.4 Ours –74.3 43.3 47.8 92.3 48.6 33.4 29.8 50.1 52.4
+
+# 4. Experiments 
+
+4.1. Implementation Details 
+
+We evaluate our approach against a diverse set of strong training-free open-vocabulary semantic segmentation base-lines. Specifically, we consider CLIP (Radford et al., 2021) with ViT-B/16 and ViT-L/14 backbones, as well as Open-CLIP (Cherti et al., 2023) with a ViT-H/14 backbone. For fair comparison, DouC-CLIP is evaluated across multiple backbone scales to assess robustness under varying model capacities. For external affinity induction, we employ DINOv1 (Caron et al., 2021), DINOv2 (Oquab et al., 2023), and MAE (He et al., 2022), using DINOv1 as the default setting unless otherwise specified. For instance-guided correction, we con-sider Mask2Former (Cheng et al., 2022), EoMT (Kerssies et al., 2025), and SAM2 (Ravi et al., 2024), and adopt SAM2 as the baseline instance guidance mechanism in all main experiments. To further examine the impact of the underlying vision– language backbone, we evaluate our method across multiple CLIP-style pretraining variants, including DFN (Fang et al., 2023), MetaCLIP (Xu et al., 2023), LAION-CLIP (Cherti et al., 2023), and the original CLIP (Radford et al., 2021). 
+
+4.2. Comparison with State-of-the-Art Methods 
+
+Table 1 compares our method against representative training-free OVSS approaches across multiple benchmarks and CLIP backbone scales. All methods are evaluated under a unified, training-free protocol with identical visual back-bones and SAM2-based instance masks when applicable. We include recent and competitive baselines such as SFP, FSA, Trident, DIH-CLIP, and CorrCLIP. Across all backbone scales, our approach achieves the high-est average mIoU, demonstrating consistent gains over prior work. The improvements are particularly pronounced on large-scale and object-centric benchmarks such as Object ,
+
+Stuff , ADE20K , and Cityscapes , which require both fine-grained spatial coherence and robust semantic alignment. These results validate the complementary roles of OG-CLIP token reliability modeling and FADE-CLIP’s DINO-guided proxy attention in stabilizing dense predictions under clut-tered and high-variation scenes. These results highlight that explicitly decoupling seman-5DouC: Dual-Branch CLIP for Training-Free Open-Vocabulary Segmentation 
+
+tic reliability (OG-CLIP) from spatial structure injection (FADE-CLIP), and fusing them at the logit level, provides a more robust and scalable solution for training-free open-vocabulary semantic segmentation than prior single-branch or early-injection designs. 
+
+# 5. Ablation Study 
+
+5.1. Effect of Individual Branches 
+
+By default, the fusion weights αOG and αFADE are set to 0.5.To isolate the contribution of each component in our hybrid architecture, we evaluate the OG-CLIP and FADE-CLIP branches independently under identical settings, including the same backbone, text prompts, and inference protocol. Table 2 reports mIoU results across representative bench-marks.                                      
+
+> Table 2. Effect of individual branches evaluated independently. OG and FADE denote pure branches. OG →FADE and FADE →OG indicate asymmetric fusion with 75% contribution from the source branch and 25% from the target branch. All results are mIoU (%).
+> Dataset OG FADE OG →FADE FADE →OG
+> ADE20K 21.4 22.8 23.0 22.9 Cityscapes 44.9 43.3 43.6 38.5 Object 39.9 41.6 43.1 43.0 Stuff 28.9 30.1 30.7 30.4 C59 44.4 43.2 45.1 43.6 C60 39.0 39.5 40.8 40.1 VOC20 86.2 86.2 87.4 86.7 VOC21 70.4 68.1 70.9 70.4
+
+The OG-CLIP branch, which relies on dense CLIP patch embeddings with token reliability gating, performs strongly on datasets emphasizing global object presence and clean object boundaries. In particular, OG-CLIP achieves higher performance on Cityscapes , VOC21 , and C59 , where CLIP’s global semantic alignment and robust category recognition play a dominant role. These results indicate that token-level outlier gating effectively stabilizes dense predictions while preserving CLIP’s zero-shot recognition strength. The FADE-CLIP branch consistently outperforms OG-CLIP on datasets that require fine-grained spatial reasoning and object-level consistency. Notable improvements are ob-served on ADE20K , Object , Stuff , and C60 , reflecting the benefit of DINO-guided proxy attention in enforcing struc-tured patch aggregation. These gains highlight the impor-tance of external spatial priors for handling cluttered scenes and high intra-class variation. The asymmetric fusion results further clarify the comple-mentary roles of the two branches. OG →FADE consis-tently improves upon the pure OG-CLIP branch across most benchmarks, indicating that even a modest FADE contribu-tion provides effective spatial regularization. In contrast, FADE →OG yields smaller or inconsistent gains relative to pure FADE-CLIP, suggesting that FADE’s performance is driven primarily by its proxy-based aggregation and is less dependent on semantic correction from OG-CLIP. This asymmetric behavior underscores the complementary na-ture of the two mechanisms. This shows neither branch dominates across all benchmarks: OG-CLIP favors global semantic alignment, while FADE-CLIP excels at spatial regularization. This complementarity directly motivates our dual-branch design, which allows both mechanisms to oper-ate independently and be fused at the logit level, achieving consistently superior performance across diverse datasets. 
+
+5.2. Impact of External Vision Foundation Models 
+
+FADE-CLIP relies on an external vision foundation model (VFM) to induce proxy affinities that guide patch-level ag-gregation in the final CLIP transformer block. To study the role of this external structure, we evaluate FADE-CLIP using different VFMs, including DINO, DINOv2, MAE, as well as a No-VFM variant where the proxy attention mechanism is disabled in Table 3.                                      
+
+> Table 3. Impact of different external vision foundation models in FADE-CLIP. All results are mIoU (%).
+> Dataset DINO DINOv2 MAE No VFM
+> ADE20K 23.7 23.2 23.1 7.6 Cityscapes 45.3 42.7 44.0 33.6 Object 43.8 40.7 40.9 12.8 Stuff 31.1 30.5 29.9 11.8 C59 45.2 44.7 45.0 32.7 C60 41.2 39.9 40.3 22.3 VOC20 88.0 87.3 87.6 82.7 VOC21 72.2 69.6 71.5 54.1
+
+Removing the external VFM leads to a substantial perfor-mance degradation across all benchmarks, with particu-larly severe drops on dense and cluttered datasets such as 
+
+ADE20K , Object , and Stuff . This confirms that CLIP’s na-tive self-attention alone is insufficient to recover reliable spatial structure for dense prediction, and highlights the necessity of external guidance for patch-level aggregation. All three VFMs yield strong and consistent improvements over the No-VFM baseline, demonstrating that FADE-CLIP is not tied to a specific external model. DINO generally per-forms best on dense and object-centric benchmarks, reflect-ing its strong patch-level discriminability. MAE achieves competitive results, particularly on category-heavy datasets such as C59 and C60 , while DINOv2 exhibits notable gains on VOC21 , suggesting improved global context modeling. These differences indicate that FADE-CLIP can flexibly ex-ploit complementary inductive biases from different VFMs. Despite architectural differences among external VFMs, FADE-CLIP consistently benefits from external spatial struc-ture, underscoring the robustness of the proposed proxy at-6DouC: Dual-Branch CLIP for Training-Free Open-Vocabulary Segmentation  
+
+> Figure 2. Qualitative comparisons on multiple benchmarks. Rows correspond (top to bottom) to Cityscapes, ADE20K, and COCO-Object. Our method produces more coherent regions and cleaner object boundaries across diverse scenes.
+
+tention mechanism. This flexibility enables FADE-CLIP to leverage a wide range of pretrained vision models with-out retraining, while maintaining strong performance across diverse open-vocabulary segmentation benchmarks. 
+
+5.3. Effect of Instance Mask Generators 
+
+Instance-level correction plays a complementary role in our framework by enforcing region consistency after dense prediction. To evaluate its impact, we compare different mask generation strategies, including a generic Mask -based baseline, SAM, and EoMT, across multiple CLIP backbone scales. All results are reported in mIoU (%) and use identical backbones, prompts, and inference settings. Across all backbone scales and datasets, incorporating in-stance masks consistently improves segmentation perfor-mance over the baseline mask strategy. The gains are most pronounced on object-centric and cluttered bench-marks such as Object , Stuff , and Cityscapes , where enforc-ing region-level consistency reduces boundary noise and inter-instance confusion. Among the evaluated strategies, EoMT consistently achieves the strongest performance, followed by SAM, with both sig-nificantly outperforming the generic mask baseline. EoMT yields particularly large gains on datasets with complex ob-ject layouts and high intra-class variation, suggesting that higher-quality and more complete instance proposals better complement FADE-CLIP’s proxy attention and OG-CLIP’s semantic alignment. The benefit of stronger instance masks increases with back-bone capacity. As the CLIP backbone scales from ViT-B to ViT-H, the performance gap between EoMT and weaker mask generators widens, indicating that high-capacity vi-sual encoders are better able to exploit precise instance-level structure during map correction. 
+
+5.4. Qualitative Results 
+
+Figure 2 presents qualitative comparisons on representative images from Cityscapes , COCO-Object , and ADE20K , il-lustrating the visual behavior of our method under diverse scene layouts and object scales. Across all datasets, our ap-proach produces segmentation maps that are both spatially coherent and semantically consistent, complementing the quantitative gains reported in Section 4.2.                                                                                    
+
+> Table 4. Impact of different instance mask generators across CLIP backbones. All results are mIoU (%). Column headers denote benchmarks and are rotated for compactness. M2F denotes Mask2Former.
+> Mask
+> ADE
+> City
+> Object
+> Stuff
+> C59
+> C60
+> VOC20
+> VOC21
+> ViT-B Backbone
+> NoMask 21.1 40.0 37.8 27.9 35.6 33.8 83.3 61.9 M2F 21.8 41.1 46.5 32.2 45.5 40.9 86.7 72.7 SAM 23.7 45.3 43.8 31.1 45.2 41.2 88.0 72.2 EoMT 23.4 46.3 46.6 33.0 47.3 42.6 88.9 73.8 ViT-L Backbone
+> M2F 25.2 43.0 50.1 34.6 47.4 42.6 90.2 72.9 SAM 27.8 47.2 47.2 33.1 47.7 42.8 90.8 73.1 EoMT 27.7 48.2 50.5 35.2 49.6 44.3 92.0 74.3 ViT-H Backbone
+> M2F 27.2 45.4 50.8 35.3 48.7 43.4 91.4 74.2 SAM 29.8 50.1 47.8 33.4 48.6 43.3 92.3 74.3 EoMT 29.7 50.7 51.4 36.2 51.0 45.1 93.6 76.3
+
+On Cityscapes , which features structured outdoor scenes with strong geometry and thin objects, our method yields markedly cleaner road boundaries, improved vehicle sep-aration, and reduced background leakage into foreground regions. Compared to prior training-free methods, object 7DouC: Dual-Branch CLIP for Training-Free Open-Vocabulary Segmentation 
+
+contours (e.g., cars and sidewalks) are sharper and less frag-mented, reflecting the effectiveness of FADE-CLIP’s DINO-guided proxy attention in propagating structure-aware affini-ties across patches. On COCO , which contains cluttered scenes with overlap-ping objects and high intra-class variation, our method better preserves object integrity and suppresses spurious activa-tions on background textures. Notably, small and partially occluded objects are more consistently recovered, indicating that the OG-CLIP branch’s outlier-gated token modeling successfully attenuates noisy patch responses while retain-ing discriminative object cues. For ADE20K , characterized by complex indoor layouts and fine-grained semantic categories, our predictions exhibit improved region consistency and reduced semantic confu-sion between visually similar classes. Walls, furniture, and ceiling regions are more uniformly segmented, with fewer isolated misclassified patches. This behavior highlights the complementary roles of FADE-CLIP in enforcing spa-tial coherence and OG-CLIP in stabilizing dense similarity matching. 
+
+5.5. Effect of CLIP Pretraining Source 
+
+Table 5 analyzes the impact of different ViT-B CLIP pre-training sources on the proposed method. We evaluate four widely used CLIP variants—DFN, LAION, OpenAI, and MetaCLIP—under an identical inference pipeline and hy-perparameter setting, isolating the effect of the underlying pretraining data and objective.                                          
+
+> Table 5. Effect of CLIP ViT-B pretraining source on our method. All values are mIoU (%). Best and second-best are marked per row.
+> Dataset DFN LAION OpenAI MetaCLIP
+> ADE 28.0 27.2 27.2 26.5 City 49.9 47.0 45.3 48.8 Object 45.4 41.3 43.5 46.0
+> Stuff 34.1 32.0 31.1 33.2 C59 48.8 45.3 45.2 48.3 C60 43.8 40.4 41.2 43.6 VOC20 89.2 89.2 88.0 88.8 VOC21 72.9 70.3 71.3 73.5
+> Avg 51.5 49.1 50.6 51.1
+
+Overall, our method demonstrates strong robustness across pretraining sources, achieving competitive performance in all cases. Among them, DFN-pretrained CLIP consistently yields the highest average mIoU, achieving the best results on six out of eight datasets, including ADE20K, Cityscapes, COCO-Stuff, and the C59/C60 benchmarks. This suggests that higher-quality or more diverse pretraining distributions can further amplify the benefits of our inference-time en-hancements. These results indicate that our hybrid OG-CLIP and FADE-CLIP design is largely orthogonal to the choice of CLIP pretraining source. Rather than overfitting to a particular model variant, the method consistently improves dense pre-diction quality by stabilizing patch-level representations and injecting external structural priors. This robustness further underscores the practicality of the proposed approach for de-ployment with off-the-shelf CLIP models trained on diverse datasets. 
+
+# 6. Conclusion 
+
+We propose a simple, training-free hybrid framework for open-vocabulary semantic segmentation that combines two complementary CLIP-based inference mechanisms. The method integrates OG-CLIP, which stabilizes dense simi-larity matching via token-level outlier gating, with FADE-CLIP, which injects external structural priors through DINO-guided proxy attention applied at inference time. Operating entirely on frozen vision–language models and modifying only the final stages of the visual backbone, our approach preserves CLIP’s zero-shot generalization while substan-tially improving spatial coherence and object consistency. Extensive experiments across multiple benchmarks and CLIP backbone scales demonstrate consistent gains over prior training-free methods, with ablations confirming the complementary and synergistic roles of the two branches and robustness to different external feature models and mask generators. Qualitative results further corroborate these find-ings, showing sharper boundaries, reduced semantic leakage, and improved region consistency, highlighting the effective-ness of inference-time adaptation through principled reuse and alignment of representations already present in large vision–language models. 
+
+# Impact Statement 
+
+This paper presents work whose goal is to advance the field of Machine Learning. There are many potential societal consequences of our work, none which we feel must be specifically highlighted here. 
+
+# Acknowledgment 
+
+This work was supported in part by the AI-Seed Research Award from the Research and Economic Development Divi-sion at the University of Wyoming. 
+
+# References 
+
+Bai, S., Liu, Y., Han, Y., Zhang, H., Tang, Y., Zhou, J., and Lu, J. Self-calibrated clip for training-free open-vocabulary segmentation. IEEE Transactions on Image Processing , 2025. 8DouC: Dual-Branch CLIP for Training-Free Open-Vocabulary Segmentation 
+
+Barsellotti, L., Amoroso, R., Cornia, M., Baraldi, L., and Cucchiara, R. Training-free open-vocabulary segmen-tation with offline diffusion-augmented prototype gen-eration. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , pp. 3689– 3698, 2024. Caron, M., Touvron, H., Misra, I., J ´egou, H., Mairal, J., Bojanowski, P., and Joulin, A. Emerging properties in self-supervised vision transformers. In Proceedings of the IEEE/CVF international conference on computer vision ,pp. 9650–9660, 2021. Cha, J., Mun, J., and Roh, B. Learning to generate text-grounded mask for open-world semantic segmen-tation from only image-text pairs. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , pp. 11165–11174, 2023. Cheng, B., Misra, I., Schwing, A. G., Kirillov, A., and Gird-har, R. Masked-attention mask transformer for universal image segmentation. In Proceedings of the IEEE/CVF conference on computer vision and pattern recognition ,pp. 1290–1299, 2022. Cherti, M., Beaumont, R., Wightman, R., Wortsman, M., Ilharco, G., Gordon, C., Schuhmann, C., Schmidt, L., and Jitsev, J. Reproducible scaling laws for con-trastive language-image learning. In Proceedings of the IEEE/CVF conference on computer vision and pattern recognition , pp. 2818–2829, 2023. Chi, Z., Wu, Y., Gu, L., Liu, H., Wang, Z., Zhang, Y., Wang, Y., and Plataniotis, K. Plug-in feedback self-adaptive at-tention in clip for training-free open-vocabulary segmen-tation. In Proceedings of the IEEE/CVF International Conference on Computer Vision , pp. 22815–22825, 2025. Duan, S., Yang, X., and Wang, N. Dih-clip: Unleashing the diversity of multi-head self-attention for training-free open-vocabulary semantic segmentation. In Proceedings of the IEEE/CVF International Conference on Computer Vision , pp. 22794–22803, 2025. Fang, A., Jose, A. M., Jain, A., Schmidt, L., Toshev, A., and Shankar, V. Data filtering networks. arXiv preprint arXiv:2309.17425 , 2023. Hajimiri, S., Ayed, I. B., and Dolz, J. Pay attention to your neighbours: Training-free open-vocabulary semantic segmentation. In 2025 IEEE/CVF Winter Conference on Applications of Computer Vision (WACV) , pp. 5061–5071. IEEE, 2025. He, K., Chen, X., Xie, S., Li, Y., Doll ´ar, P., and Girshick, R. Masked autoencoders are scalable vision learners. In 
+
+Proceedings of the IEEE/CVF conference on computer vision and pattern recognition , pp. 16000–16009, 2022. Jin, S., Yu, S., Zhang, B., Sun, M., Dong, Y., and Xiao, J. Feature purification matters: Suppressing outlier propaga-tion for training-free open-vocabulary semantic segmen-tation. In Proceedings of the IEEE/CVF International Conference on Computer Vision , pp. 20291–20300, 2025. Kang, D. U., Kim, H., and Chun, S. Y. Class distribution-induced attention map for open-vocabulary semantic seg-mentations. In The Thirteenth International Conference on Learning Representations , 2025. Kerssies, T., Cavagnero, N., Hermans, A., Norouzi, N., Averta, G., Leibe, B., Dubbelman, G., and de Geus, D. Your vit is secretly an image segmentation model. In Pro-ceedings of the Computer Vision and Pattern Recognition Conference , pp. 25303–25313, 2025. Kim, C., Ju, D., Han, W., Yang, M.-H., and Hwang, S. J. Distilling spectral graph for object-context aware open-vocabulary semantic segmentation. In Proceedings of the Computer Vision and Pattern Recognition Conference , pp. 15033–15042, 2025. Kirillov, A., Mintun, E., Ravi, N., Mao, H., Rolland, C., Gustafson, L., Xiao, T., Whitehead, S., Berg, A. C., Lo, W.-Y., et al. Segment anything. In Proceedings of the IEEE/CVF international conference on computer vision ,pp. 4015–4026, 2023. Lan, M., Chen, C., Ke, Y., Wang, X., Feng, L., and Zhang, W. Clearclip: Decomposing clip representations for dense vision-language inference. In European Conference on Computer Vision , pp. 143–160. Springer, 2024a. Lan, M., Chen, C., Ke, Y., Wang, X., Feng, L., and Zhang, W. Proxyclip: Proxy attention improves clip for open-vocabulary segmentation. In European Conference on Computer Vision , pp. 70–88. Springer, 2024b. Langley, P. Crafting papers on machine learning. In Langley, P. (ed.), Proceedings of the 17th International Conference on Machine Learning (ICML 2000) , pp. 1207–1216, Stan-ford, CA, 2000. Morgan Kaufmann. Li, J., Li, D., Savarese, S., and Hoi, S. Blip-2: Bootstrapping language-image pre-training with frozen image encoders and large language models. In International conference on machine learning , pp. 19730–19742. PMLR, 2023. Oquab, M., Darcet, T., Moutakanni, T., Vo, H. V., Szafraniec, M., Khalidov, V., Fernandez, P., Haziza, D., Massa, F., El-Nouby, A., Howes, R., Huang, P.-Y., Xu, H., Sharma, V., Li, S.-W., Galuba, W., Rabbat, M., As-sran, M., Ballas, N., Synnaeve, G., Misra, I., Jegou, H., Mairal, J., Labatut, P., Joulin, A., and Bojanowski, P. Dinov2: Learning robust visual features without supervi-sion, 2023. 9DouC: Dual-Branch CLIP for Training-Free Open-Vocabulary Segmentation 
+
+Radford, A., Kim, J. W., Hallacy, C., Ramesh, A., Goh, G., Agarwal, S., Sastry, G., Askell, A., Mishkin, P., Clark, J., et al. Learning transferable visual models from natural language supervision. In International conference on machine learning , pp. 8748–8763. PmLR, 2021. Ravi, N., Gabeur, V., Hu, Y.-T., Hu, R., Ryali, C., Ma, T., Khedr, H., R ¨adle, R., Rolland, C., Gustafson, L., et al. Sam 2: Segment anything in images and videos. arXiv preprint arXiv:2408.00714 , 2024. Shi, Y., Dong, M., and Xu, C. Harnessing vision foundation models for high-performance, training-free open vocab-ulary segmentation. In Proceedings of the IEEE/CVF International Conference on Computer Vision , pp. 23487– 23497, 2025. Sun, L., Cao, J., Xie, J., Jiang, X., and Pang, Y. Cliper: Hierarchically improving spatial representation of clip for open-vocabulary semantic segmentation. In Proceedings of the IEEE/CVF International Conference on Computer Vision , pp. 23199–23209, 2025. Wang, F., Mei, J., and Yuille, A. Sclip: Rethinking self-attention for dense vision-language inference. In Eu-ropean Conference on Computer Vision , pp. 315–332. Springer, 2024a. Wang, H., Vasu, P. K. A., Faghri, F., Vemulapalli, R., Fara-jtabar, M., Mehta, S., Rastegari, M., Tuzel, O., and Pouransari, H. Sam-clip: Merging vision foundation models towards semantic and spatial understanding. In 
+
+Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , pp. 3635–3647, 2024b. Wysocza ´nska, M., Sim ´eoni, O., Ramamonjisoa, M., Bursuc, A., Trzci ´nski, T., and P ´erez, P. Clip-dinoiser: Teaching clip a few dino tricks for open-vocabulary semantic seg-mentation. In European Conference on Computer Vision ,pp. 320–337. Springer, 2024. Xu, H., Xie, S., Tan, X. E., Huang, P.-Y., Howes, R., Sharma, V., Li, S.-W., Ghosh, G., Zettlemoyer, L., and Feicht-enhofer, C. Demystifying clip data. arXiv preprint arXiv:2309.16671 , 2023. Yang, Y., Deng, J., Li, W., and Duan, L. Resclip: Residual attention for training-free dense vision-language infer-ence. In Proceedings of the Computer Vision and Pattern Recognition Conference , pp. 29968–29978, 2025. Zhang, D., Liu, F., and Tang, Q. Corrclip: Reconstructing patch correlations in clip for open-vocabulary semantic segmentation. In Proceedings of the IEEE/CVF Interna-tional Conference on Computer Vision , pp. 24677–24687, 2025. Zhang, H., Li, F., Liu, S., Zhang, L., Su, H., Zhu, J., Ni, L. M., and Shum, H.-Y. Dino: Detr with improved denois-ing anchor boxes for end-to-end object detection. arXiv preprint arXiv:2203.03605 , 2022. 10
