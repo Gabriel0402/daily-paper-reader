@@ -1,0 +1,2845 @@
+Title: Pessimism-Free Offline Learning in General-Sum Games via KL Regularization
+
+URL Source: https://arxiv.org/pdf/2605.00264v1
+
+Published Time: Mon, 04 May 2026 00:22:18 GMT
+
+Number of Pages: 24
+
+Markdown Content:
+# Pessimism-Free Offline Learning in General-Sum Games via KL Regularization 
+
+Claire Chen 
+
+The Division of Physics, Mathematics and Astronomy California Institute of Technology 
+
+clairechen@caltech.edu 
+
+Yuheng Zhang 
+
+Department of Computer Science University of Illinois Urbana-Champaign 
+
+yuhengz2@illinois.edu 
+
+## Abstract 
+
+Offline multi-agent reinforcement learning in general-sum settings is challenged by the distribution shift between logged datasets and target equilibrium policies. While standard methods rely on manual pessimistic penalties, we demonstrate that KL regularization suffices to stabilize learning and achieve equilibrium re-covery. We propose General-sum Anchored Nash Equilibrium (GANE), which recovers regularized Nash equilibria at an accelerated statistical rate of ˜O(1 /n ).For computational tractability, we develop General-sum Anchored Mirror Descent (GAMD), an iterative algorithm converging to a Coarse Correlated Equilibrium at the standard rate of ˜O(1 /√n+1 /T ). These results establish KL regularization as a standalone mechanism for pessimism-free offline learning that achieves equivalent or accelerated rates in multi-player general-sum games. 
+
+## 1 Introduction 
+
+Offline reinforcement learning (RL) provides a framework for developing decision-making policies from pre-collected datasets, making it suitable for applications where active exploration is restricted by safety or financial costs (Levine et al., 2020). While much of the offline literature has historically addressed single-agent optimization, many strategic environments involve interactions among multiple agents with distinct objectives. General-sum games offer a flexible model for these scenarios, capturing strategic complexities in economic markets, multi-agent coordination, and the alignment of large language models through collective human preferences (Ouyang et al., 2022; Ye et al., 2024). In this offline multi-agent setting, the learning objective is to recover an equilibrium policy using only fixed historical data. A central difficulty in offline general-sum games is distribution shift, which occurs when the learned strategy explores regions of the state-action space that are poorly represented in the logged dataset (Fujimoto et al., 2019; Zhang et al., 2023). Standard methodologies typically address this shift through the principle of explicit pessimism (Jin et al., 2021; Zhang et al., 2023). These approaches incorporate manually designed lower confidence bounds (LCB) or penalty terms to suppress the estimated values of actions that lack sufficient offline data support (Cui and Du, 2022b; Zhong et al., 2022). While theoretically sound, these pessimistic mechanisms often require the construction of complex uncertainty quantifiers over joint action spaces and intensive hyperparameter tuning to balance conservatism with performance (Cui and Du, 2022b; Zhang et al., 2023). 
+
+> Preprint.
+> arXiv:2605.00264v1 [cs.LG] 30 Apr 2026
+
+Recently, KL regularization with respect to a fixed reference policy has become a common objective for stabilizing multi-agent learning and enforcing behavioral constraints (Ouyang et al., 2022; Ye et al., 2024). While this framework has gained significant prominence in single-agent settings—for instance, in language model alignment through Reinforcement Learning from Human Feedback (RLHF) (Ouyang et al., 2022)—its application to multi-player general-sum settings remains relatively scarce. In existing literature that utilizes KL regularization within game-theoretic contexts, the regularization is typically treated solely as an anchor to a reference distribution, while distribution shift is handled by another separate, explicit pessimism mechanism such as lower confidence bounds (Ye et al., 2024).However, the capacity of KL regularization to act as a standalone, implicit pessimism mechanism that independently stabilizes learning against distribution shift in multi-player general-sum games remains unestablished. In this work, we establish that KL regularization serves as a standalone, pessimism-free mechanism to stabilize offline learning in general-sum games. To achieve this, we leverage the reference-anchored data coverage framework (Anonymous, 2026), which bypasses the conceptual circularity inherent in prior works by anchoring coverage requirements to a known reference policy rather than an unknown equilibrium. We first introduce General-sum Anchored Nash Equilibrium (GANE), a theoretical framework that recovers regularized Nash equilibria at an accelerated statistical rate of 
+
+˜O(1 /n ). Our analysis reveals that the independent product structure of Nash policies enables the exact cancellation of first-order estimation errors, allowing GANE to bypass the standard ˜O(1 /√n)
+
+bottleneck encountered in unregularized offline games (Zhang et al., 2023; Cui and Du, 2022b). Recognizing that computing a Nash equilibrium is often computationally intractable, we further develop General-sum Anchored Mirror Descent (GAMD), a decentralized iterative algorithm. We prove that GAMD recovers a Coarse Correlated Equilibrium at the standard rate of ˜O(1 /√n + 1 /T )
+
+for n samples and T iterations. Our primary contributions are summarized as follows: 1. Pessimism-Free Equilibrium Recovery : We establish that KL regularization serves as an effective alternative to explicit pessimism, allowing for equilibrium recovery in general-sum settings without the overhead of tuning confidence-based bonuses. 2. Accelerated Rates for Nash Equilibria : We prove that GANE achieves an ˜O(1 /n ) sta-tistical rate. This result demonstrates that the product structure of Nash equilibria can be leveraged to achieve higher statistical efficiency than previously established for unregularized general-sum offline learning. 3. Tractable Iterative Learning : We show that GAMD provides a computationally efficient path to recovering Coarse Correlated Equilibria, achieving the standard ˜O(1 /√n) statistical rate through simple, decentralized updates without relying on explicit pessimism. 
+
+Organization. The remainder of this paper is organized as follows. In Section 2, we formalize the m-player general-sum game, define the KL-regularized value functions, and establish the offline learning model. Section 3 reviews the landscape of concentrability assumptions in multi-agent systems and the reference-anchored coverage requirements. Section 4 introduces the GANE algorithm and presents the accelerated ˜O(1 /n ) statistical rate for Nash equilibria. In Section 5, we propose the iterative GAMD algorithm and characterize its optimization and sample complexity guarantees for recovering Coarse Correlated Equilibria. We review related work in Section 6, provide a broader discussion on future directions in Section 7, and conclude the paper in Section 8.                  
+
+> Paper NE Rate CCE Rate Optimization ( T)Pessimism
+> Cui and Du (2022a) ˜O(1 /√n)—Oracle Yes Zhang et al. (2023) ˜O(1 /√n)˜O(1 /√n)Oracle Yes
+> This Work ˜O(1/n)˜O(1/√n)˜O(1/T)No
+
+Table 1: Comparison of offline learning guarantees in multi-player general-sum games. We report statistical rates in terms of samples n and optimization convergence in terms of iterations T . Our work is the first to establish a fast ˜O(1 /n ) rate for Nash Equilibria and a computationally tractable solution for CCE without explicit pessimism. The “Oracle” labels denote a reliance on either black-box stage-game equilibrium solvers (Cui and Du, 2022a) or global optimization oracles over general function classes (Zhang et al., 2023). 22 Problem Formulation 
+
+We consider an m-player general-sum contextual bandit game defined by the tuple M =(N , X , {A i}mi=1 , {r⋆i }mi=1 , ρ ). Here, N = [ m] := {1, . . . , m } denotes the set of players, X is the context space, and Ai is the finite action space for player i. In each round, a context x ∼ ρ
+
+is sampled. All players simultaneously select actions ai ∈ A i, forming a joint action profile 
+
+a = ( a1, . . . , a m) ∈ A := Qmi=1 Ai. Each player i receives a deterministic reward r⋆i (x, a) ∈ [0 , 1] .A joint policy π : X → ∆( A) maps contexts to a distribution over joint actions. We denote the marginalized policy for player i as πi(· | x) and the joint policy of all other players as π−i(· | x).
+
+2.1 KL-Regularized Objectives 
+
+To address distribution shift without explicit pessimism, we utilize KL regularization relative to fixed reference policies πref = ( πref 1 , . . . , π ref  
+
+> m
+
+). For a regularization parameter η > 0, the Q-function for player i is 
+
+Qπi (x, a) := r⋆i (x, a).
+
+The KL-regularized value function V πi (x) is defined as: 
+
+V πi (x) = Ea∼π(·| x)[Qπi (x, a)] − η−1KL  πi(·| x) ∥ πref  
+
+> i
+
+(·| x). (1) Each player i seeks to maximize their own regularized value function. We define the best-response value against an opponent profile π−i as 
+
+V †,π −i 
+
+> i
+
+(x) := max 
+
+> π′
+> i
+
+V π′ 
+
+> i,π −i
+> i
+
+(x).
+
+We also denote Λη,m := exp( ηm ) as the joint anchoring constant measuring the density shift relative to the reference policy. 
+
+2.2 Target Equilibria 
+
+We analyze two equilibrium concepts in the regularized m-player game. Conceptually, an equilibrium represents a stable state where no player can unilaterally improve their own regularized value by changing their strategy, assuming all other players’ strategies remain fixed. The primary distinction between these concepts lies in the structural constraints placed on the joint policy and the resulting ability for players to coordinate. 
+
+Regularized Nash Equilibrium (NE). A joint policy π⋆ is a regularized NE if it is a product policy ,factorizing as π⋆(a | x) = Qmi=1 π⋆i (ai | x). This captures scenarios where players act completely independently. The equilibrium condition implies that no player i can increase their value by switching to a different independent strategy π′
+
+> i
+
+, given that opponents follow their respective marginal strategies π⋆
+
+> −i
+
+. For a learned product policy ˆπ = Q 
+
+> i
+
+ˆπi, we evaluate the NE Total Exploitability: 
+
+Gap NE (ˆ π) := 
+
+> m
+
+X
+
+> i=1
+
+Ex∼ρ
+
+h
+
+V †,ˆπ−i 
+
+> i
+
+(x) − V ˆπ1×···× ˆπm 
+
+> i
+
+(x)
+
+i
+
+.
+
+Regularized Coarse Correlated Equilibrium (CCE). A regularized CCE is a broader concept that allows the joint policy π⋆ to be any distribution in the simplex ∆( A), potentially incorporating correlations between players (e.g., through a shared latent signal). The stability condition here implies that a player cannot improve their expected return by choosing to deviate from the suggested joint distribution before observing their specific action. While every Nash Equilibrium is a CCE, a CCE allows for complex coordination that is forbidden in the NE setting. For a learned (possibly correlated) joint policy ¯π, we evaluate the CCE Total Exploitability: 
+
+Gap CCE (¯ π) := 
+
+> m
+
+X
+
+> i=1
+
+Ex∼ρ
+
+h
+
+V †,¯π−i 
+
+> i
+
+(x) − V ¯πi (x)
+
+i
+
+.
+
+While we focus on NE and CCE in this work, we consider the extension to Correlated Equilibrium (CE) a promising direction for future research. Our current analysis serves as a foundational 3demonstration of how KL regularization alone—without the need for explicit pessimism—suffices to establish both a fast ˜O(1 /n ) rate for Nash equilibria and a computationally tractable solution for CCE. By characterizing these two distinct regimes, we lay the groundwork for a broader regularized framework across the entire spectrum of game-theoretic equilibria. 
+
+2.3 Offline Learning Model 
+
+We consider the offline setting where the learner has access to a static dataset D = {(xτ , aτ , rτ )}nτ =1 
+
+consisting of n tuples. The observed rewards rτ = ( rτ, 1, . . . , r τ,m ) are noisy realizations of the true rewards rτ,i = r⋆i (xτ , aτ ) + ξτ,i , where ξτ,i is independent zero-mean 1-sub-Gaussian noise. We assume access to a function class Qi ⊂ (X × A → [0 , 1]) for each player. Following standard literature, we assume completeness , i.e., r⋆i ∈ Q i for all i ∈ N . For any estimated function ˆQi ∈ Q i,we define the point-wise regression error as Zi(x, a) := ˆQi(x, a) − r⋆i (x, a).
+
+## 3 Unilateral Data Coverage 
+
+Establishing sample-efficient recovery in offline multi-agent systems requires that the historical dataset D provides sufficient coverage of the state-action regions relevant to the target objective. In this section, we contrast the traditional unilateral concentrability assumption with the reference-anchored framework used in this work. 
+
+3.1 Standard Unilateral Concentrability and the Circularity Problem 
+
+The principle of unilateral concentrability is often employed to bypass the exponential scaling of joint action spaces in multi-agent environments (Cui and Du, 2022a,b). This principle requires the dataset only to support scenarios where a single agent deviates from a target strategy while all others remain stationary. 
+
+Assumption 3.1 (Classical Unilateral Concentrability (Cui and Du, 2022a)) . Let π∗ = ( π∗ 
+
+> 1
+
+, . . . , π ∗
+
+> m
+
+)
+
+be a target equilibrium policy. Let Πuni (π∗) := Smi=1 
+
+ Πi × { π∗−i} be the set of unilateral deviations from π∗. There exists a constant C∗ 
+
+> uni
+
+≥ 1 such that for any π′ ∈ Πuni (π∗):
+
+ρ(x)π′(a | x)
+
+μ(x, a) ∞
+
+≤ C∗
+
+> uni
+
+.
+
+While this assumption provides favorable scaling ( P |A i| rather than Q |A i|), it suffers from the 
+
+Curse of the Unknown Optimum . Because C∗ 
+
+> uni
+
+is anchored to an unknown optimal equilibrium π∗,the assumption is conceptually circular: one must already know the target equilibrium to determine if the data is sufficient to find it. This makes the condition difficult to verify or estimate in practical strategic settings. 
+
+3.2 The Reference-Anchored Unilateral Concentrability Framework 
+
+To resolve the circularity problem, we utilize the Reference-Anchored coverage framework recently proposed in Anonymous (2026). This condition shifts the theoretical burden from an unknown optimum to a fixed and known reference policy πref .
+
+Assumption 3.2 (Reference-Anchored Unilateral Concentrability (Anonymous, 2026)) . Let πref =(πref 1 , . . . , π ref  
+
+> m
+
+) be the fixed reference joint policy. We define the set of reference-anchored unilateral deviation policies Πref −uni as the union of profiles where one player deviates while all others adhere strictly to the reference policy: 
+
+Πref −uni := 
+
+> m
+
+[
+
+> i=1
+
+ Πi × { πref  
+
+> −i
+
+} .
+
+Let μ denote the joint distribution of the offline dataset D. We assume there exists a constant Cuni ≥ 1
+
+such that for any π′ ∈ Πref −uni :
+
+ρ(x)π′(a | x)
+
+μ(x, a) ∞
+
+≤ Cuni .
+
+4Algorithm 1 General-sum Anchored Nash Equilibrium (GANE)  
+
+> 1:
+
+Input: Offline dataset D, reference policies πref = ( πref 1 , . . . , π ref  
+
+> m
+
+), regularization parameter 
+
+η > 0, function classes {Q i}mi=1 . 
+
+> 2:
+
+for player i = 1 , . . . , m do  
+
+> 3:
+
+Empirical Q-Update: Estimate the Q-function via least-squares regression:  
+
+> 4:
+
+ˆQi ← argmin f ∈Q i
+
+Pnτ =1 (f (xτ , aτ ) − rτ,i )2. 
+
+> 5:
+
+end for  
+
+> 6:
+
+Equilibrium Computation: For every context x ∈ X , find a joint product policy ˆπ(a | x) = 
+
+Qmi=1 ˆπi(ai | x) that is a Regularized Nash Equilibrium of the empirical game { ˆQi(x, ·)}mi=1 .Namely, for all i ∈ [m] and all π′ 
+
+> i
+
+∈ ∆( Ai): 
+
+> 7:
+
+Ea∼ˆπ(·| x)[ ˆQi(x, a)] − η−1KL(ˆ πi(· | x) ∥ πref  
+
+> i
+
+(· | x)) 
+
+≥ Eai∼π′
+
+> i(·| x),a−i∼ˆπ−i(·| x)
+
+[ ˆQi(x, a)] − η−1KL( π′
+
+> i
+
+(· | x) ∥ πref  
+
+> i
+
+(· | x)) . 
+
+> 8:
+
+for player i = 1 , . . . , m do  
+
+> 9:
+
+Value Update: Update the empirical value function for Player i: 
+
+> 10:
+
+ˆVi(x) ← Ea∼ˆπ(·| x)[ ˆQi(x, a)] − η−1KL(ˆ πi(· | x) ∥ πref  
+
+> i
+
+(· | x)) . 
+
+> 11:
+
+end for  
+
+> 12:
+
+Output: The estimated regularized NE joint policy ˆπ.By anchoring to πref , this framework provides two critical advantages: (i) Verifiability, as πref is known to the learner and Cuni can be empirically estimated; and (ii) Pessimism-Free Stability, as anchoring to the reference policy via KL regularization allows the algorithm to handle distribution shift without explicit bonuses. 
+
+## 4 Pessimism-Free Nash Equilibria 
+
+Building on the regularized objective (1) , we investigate whether anchoring to a reference policy can independently mitigate the distribution shift inherent in offline multi-agent settings. We first introduce General-sum Anchored Nash Equilibrium (GANE), an algorithmic framework that leverages KL regularization to stabilize learning on the offline contextual bandit without the overhead of explicit pessimistic bonuses. GANE provides the foundational basis for our analysis, illustrating how the geometric properties of the regularizer interact with the structural properties of Nash equilibria. GANE operates via empirical risk minimization over the static offline dataset. For every player 
+
+i ∈ [m], the algorithm first constructs an empirical estimate of the reward Q-function, ˆQi, by solving a regularized least-squares regression problem over the dataset D using the function class Qi. Given these empirical Q-functions, GANE assumes access to a stage-game equilibrium oracle that outputs a joint product policy ˆπ(a | x) = Qmi=1 ˆπi(ai | x) forming an exact Regularized NE for the empirical game. Formally, ˆπ must satisfy the condition that no player i can unilaterally improve their regularized value by deviating to any arbitrary policy π′
+
+> i
+
+, assuming the other players marginalize over ˆπ−i.
+
+4.1 Error Decomposition and Best-Response Analysis 
+
+To analyze the suboptimality of the learned policy ˆπ, we decouple the optimization error from the statistical error induced by the finite offline dataset by pivoting through the empirical value functions 
+
+ˆV .
+
+Lemma 4.1 (Gap Decomposition) . For any learned joint policy ˆπ and any player i ∈ [m], the unilateral exploitability gap can be exactly decomposed as: 
+
+V †,ˆπ−i 
+
+> i
+
+(x) − V ˆπi (x) = 
+
+ ˆV †,ˆπ−i 
+
+> i
+
+(x) − ˆV ˆπi (x)
+
+| {z }
+
+> Term I: Optimization Gap
+
++
+
+
+
+V †,ˆπ−i 
+
+> i
+
+(x) − ˆV †,ˆπ−i 
+
+> i
+
+(x)
+
+| {z }
+
+> Term II: Best-Response Error
+
++
+
+ ˆV ˆπi (x) − V ˆπi (x)
+
+| {z }
+
+> Term III: On-Policy Error
+
+.
+
+The derivation follows algebraically by adding and subtracting the estimated values ˆV †,ˆπ−i 
+
+> i
+
+(x) and 
+
+ˆV ˆπi (x) to the true unilateral exploitability gap of Player i. In the GANE algorithm, since ˆπ is an exact 5Regularized NE of the empirical game, Term I vanishes identically. To characterize the evaluation errors (Terms II and III), we define the pointwise regression error as 
+
+Zi(x, a) := ˆQi(x, a) − r⋆i (x, a).
+
+4.2 Statistical Guarantees for GANE 
+
+Equipped with these analytical tools and the reference-anchored coverage condition (Assumption 3.2), we establish the primary statistical guarantee for GANE. 
+
+Theorem 4.2. Under Assumption 3.2, and assuming the reward functions are realizable within 
+
+{Q i}mi=1 , the estimated regularized NE joint policy ˆπ returned by GANE achieves a Total Exploitabil-ity bounded by: 
+
+Gap NE (ˆ π) ≤ eO
+
+ mηC uni Λη,m log |Q| 
+
+n
+
+
+
+.
+
+4.3 Proof Sketch of Theorem 4.2 
+
+The accelerated eO(1 /n ) statistical rate is made possible by a unique symmetry in evaluating product policies. We expand the mechanism below; the detailed proof is provided in Appendix A.1. 
+
+Term III evaluation. By expanding the value definitions, the on-policy evaluation error (Term III) evaluates exactly to the expected regression error under the joint policy: Term III i(x) = ˆV ˆπi (x) − V ˆπi (x) = Ea∼ˆπ(·| x)
+
+Zi(x, a).
+
+Term II evaluation. To bound the best-response error (Term II), we leverage the 1-smoothness of the log-partition function associated with the KL-regularizer (see Appendix A.1, Step 1). The difference between the true and empirical best-response values is bounded by the first-order Q-value difference plus a second-order penalty. As derived in Equation (2), this yields: Term II i(x) ≤ Eai∼ˆπ†  
+
+> i(·| x),a−i∼ˆπ−i(·| x)
+
+[−Z i(x, a)] + η
+
+2 Q†,ˆπ−i 
+
+> i
+
+(x, ·) − ¯Qi(x, ·) 2
+
+> ∞
+
+,
+
+where ¯Qi(x, a i) = Ea−i∼ˆπ−i [ ˆQi(x, a i, a−i)] is the marginalized empirical Q-function. 
+
+The Cancellation Mechanism. Crucially, because ˆπ is the empirical equilibrium, the learned marginalized policy ˆπi is identically the empirical best response ˆπ† 
+
+> i
+
+. Furthermore, since ˆπ is a product policy, its evaluation distribution matches the trajectory of the best-response error. By summing the two evaluation errors, the first-order linear terms exactly cancel out: Term II i(x) + Term III i(x) ≤ Ea∼ˆπ [−Z i] + Ea∼ˆπ [+ Zi] + η
+
+2 Q†,ˆπ−i 
+
+> i
+
+(x, ·) − ¯Qi(x, ·) 2
+
+> ∞
+
+= η
+
+2 Q†,ˆπ−i 
+
+> i
+
+(x, ·) − ¯Qi(x, ·) 2
+
+> ∞
+
+.
+
+This cancellation removes the standard ˜O(1 /√n) statistical bottleneck. The remaining suboptimality is bounded strictly by second-order squared error terms. These residuals are controlled by the strong convexity of the regularized objective, which, under the coverage of Assumption 3.2, yields the fast 
+
+eO(1 /n ) rate previously unestablished in general-sum settings. 
+
+## 5 Pessimism-Free Coarse Correlated Equilibria 
+
+While GANE establishes optimal statistical limits, Nash equilibrium computation is PPAD-complete (Daskalakis et al., 2009; Chen et al., 2009), making the recovery of an NE computationally intractable. This motivates targeting Coarse Correlated Equilibrium (CCE), which serves as a more tractable objective efficiently reachable via independent learning dynamics. To provide a scalable alternative, we propose General-sum Anchored Mirror Descent (GAMD). GAMD bypasses the need for an exact equilibrium oracle. Instead, for each context evaluated, it 6Algorithm 2 General-sum Anchored Mirror Descent (GAMD)  
+
+> 1:
+
+Input: Offline dataset D, reference policies πref = ( πref 1 , . . . , π ref  
+
+> m
+
+), regularization parameter 
+
+η > 0, function classes {Q i}mi=1 , number of iterations T . 
+
+> 2:
+
+for player i = 1 , . . . , m do  
+
+> 3:
+
+Empirical Q-Update: Estimate the Q-function via least-squares regression:  
+
+> 4:
+
+ˆQi ← argmin f ∈Q i
+
+Pnτ =1 (f (xτ , aτ ) − rτ,i )2. 
+
+> 5:
+
+end for  
+
+> 6:
+
+Initialize Policies: For all i ∈ [m], initialize π(1)  
+
+> i
+
+(· | x) = πref  
+
+> i
+
+(· | x) for all x ∈ X . 
+
+> 7:
+
+Self-Play Inner Loop:  
+
+> 8:
+
+for t = 1 , . . . , T do  
+
+> 9:
+
+for player i = 1 , . . . , m do  
+
+> 10:
+
+Compute Marginalized Q-value: Evaluate the expected Q-value given opponents’ current policies:  
+
+> 11:
+
+¯Q(t) 
+
+> i
+
+(x, a i) = Ea−i∼π(t) 
+
+> −i(·| x)
+
+ ˆQi(x, a i, a−i). 
+
+> 12:
+
+Mirror Descent Update: Update Player i’s policy via the closed-form exponentiated gradient: 
+
+π(t+1)  
+
+> i
+
+(ai | x) ∝  πref  
+
+> i
+
+(ai | x) 1
+
+> t
+
+
+
+π(t) 
+
+> i
+
+(ai | x)
+
+ t−1
+
+> t
+
+exp 
+
+ ηt ¯Q(t) 
+
+> i
+
+(x, a i)
+
+
+
+. 
+
+> 13:
+
+end for  
+
+> 14:
+
+end for  
+
+> 15:
+
+Time-Averaged Joint Policy: Define the output policy as the uniform mixture over T iterations:  
+
+> 16:
+
+¯π(a | x) = 1
+
+> T
+
+PTt=1 
+
+Qmi=1 π(t) 
+
+> i
+
+(ai | x). 
+
+> 17:
+
+for player i = 1 , . . . , m do  
+
+> 18:
+
+Value Update: Update the empirical value function using the time-averaged policy:  
+
+> 19:
+
+ˆVi(x) ← Ea∼¯π(·| x)
+
+ ˆQi(x, a) − η−1KL  ¯πi(· | x) ∥ πref  
+
+> i
+
+(· | x). 
+
+> 20:
+
+end for  
+
+> 21:
+
+Output: The learned time-averaged joint policy ¯π.simulates a repeated game for T iterations. In each iteration t ∈ [T ], every player independently updates their policy using a KL-regularized Mirror Descent step in response to the marginalized actions of the other players. This iterative sequence converges to a Coarse Correlated Equilibrium (CCE) of the empirical game. 
+
+5.1 Theoretical Guarantees of GAMD 
+
+To formalize the convergence of GAMD, we first bound the optimization error of the inner loop. Because the KL-divergence penalty transforms the update into a strongly concave objective, applying Mirror Descent yields an accelerated optimization rate. We specialize the standard convergence results of Online Convex Optimization (Shalev-Shwartz, 2025) to our setting of regularized payoff sequences, where the optimization is anchored to the fixed reference policy πref . We formalize it in the following lemma (proof provided in Appendix A.2): 
+
+Lemma 5.1 (OMD External Regret) . Let f (t)(π) = ⟨π, Q (t)⟩ − η−1KL( π ∥ πref ) be a sequence of objectives where ∥Q(t)∥∞ ≤ 1. Applying KL-regularized Online Mirror Descent with the decaying stepsize schedule γt = 1 /t as in Algorithm 2 yields an average external regret bounded by: 
+
+max 
+
+> π∈∆( A)
+
+1
+
+T
+
+> T
+
+X
+
+> t=1
+
+f (t)(π) − 1
+
+T
+
+> T
+
+X
+
+> t=1
+
+f (t)(π(t)) ≤ O 
+
+ η log TT
+
+
+
+.
+
+By combining this eO(1 /T ) optimization rate with the statistical error induced by finite offline samples, we establish the final suboptimality guarantee for GAMD. 
+
+Theorem 5.2 (Sample Complexity of GAMD) . Under Assumption 3.2, and assuming the reward functions are realizable within {Q i}mi=1 , the policy ¯π returned by GAMD achieves a CCE Total 
+
+7Exploitability bounded by: 
+
+E[Gap CCE (¯ π)] ≤ eO
+
+ mη T
+
+| {z }
+
+> Optimization Error
+
++ eO m
+
+r Λη,m Cuni log |Q| 
+
+n
+
+!| {z }
+
+> Statistical Correlation Residual
+
++ eO
+
+ 1
+
+n
+
+| {z }
+
+> Higher-Order Noise
+
+where Λη,m := exp( ηm ) is the joint density ratio shift. Consequently, for T ≥ √n, GAMD recovers a coarse correlated equilibrium at the standard eO(1 /√n) statistical rate. 
+
+5.2 Proof Sketch of Theorem 5.2 
+
+Using the decomposition from Lemma 4.1, Term I corresponds to the average external regret of the mirror descent updates across T iterations. By standard Online Convex Optimization, this optimization error decays at eO(mη/T ) (Lemma 5.1). For the statistical errors (Terms II and III), GAMD faces a fundamental structural barrier. The recovered time-averaged policy ¯π is a correlated joint mixture, meaning the independent product distribution differs from the actual joint policy: ¯π† 
+
+> i
+
+× ¯π−i̸ = ¯ π. Consequently, the linear regres-sion errors −Z i (from the best response) and +Zi (from on-policy evaluation) are integrated over mismatched distributions and do not algebraically cancel: Term II i(x) + Term III i(x) ≈ Ea∼(¯ π† 
+
+> i,¯π−i)
+
+[−Z i(x, a)] + Ea∼¯π [+ Zi(x, a)] ̸ = 0 .
+
+Without cancellation, we bound the absolute magnitude of these linear expectations using Cauchy-Schwarz, E[|Z i|] ≤ pE[Z2 
+
+> i
+
+]. This relates the linear terms back to the eO(1 /n ) in-sample squared regression error, yielding a ˜O(1 /√n) bound. Thus, the inherent correlation of the CCE forces the statistical evaluation error to dominate at the standard minimax rate of eO(1 /√n). Setting T ≥ √n
+
+balances the optimization and statistical errors. The complete proof is in Appendix A.3. 
+
+## 6 Related Work 
+
+Pessimism in Offline Reinforcement Learning. Offline reinforcement learning (RL) focuses on policy optimization from pre-collected datasets without the benefit of interactive exploration. The primary theoretical obstacle in this regime is distribution shift, wherein the target policy’s visitation frequency deviates from the logged behavior, inducing severe overestimation and extrapolation error (Levine et al., 2020). To counteract this bias, researchers utilize the principle of pessimism , which provides a robust framework for establishing sample-efficient guarantees by penalizing values in poorly explored state-action regions (Liu et al., 2020; Rashidinejad et al., 2021; Jin et al., 2021; Xie et al., 2021; Uehara and Sun, 2021; Zhan et al., 2022). These conservative strategies, often implemented via lower confidence bounds or conservative value iterations, have been proven minimax optimal under various single-policy concentrability settings (Li et al., 2024). In game-theoretic environments, the complexity of this shift is intensified by strategic interactions, requiring sufficient data coverage of unilateral deviations for each agent to ensure successful equilib-rium recovery (Cui and Du, 2022b). Consequently, the current literature on offline Markov games relies heavily on these pessimistic foundations to mitigate information gaps within the static logs (Cui and Du, 2022b; Zhong et al., 2022; Zhang et al., 2023). In contrast, our approach establishes that KL regularization suffices to stabilize learning without relying on such explicit pessimistic mechanisms. 
+
+Equilibrium Recovery in Multi-Agent Games. The transition from single-agent RL to multi-agent environments necessitates a shift from value optimality to equilibrium stability, targeting solution concepts such as Nash Equilibrium and Coarse Correlated Equilibrium (CCE) (Roughgarden, 2016; Cui and Du, 2022a,b). To recover these equilibria from fixed datasets, existing methodologies largely adapt the principle of pessimism to the game-theoretic setting, identifying minimax-optimal strategies through conservative value iteration and strategy-wise uncertainty bonuses (Zhong et al., 2022; Cui and Du, 2022a; Zhang et al., 2023; Yan et al., 2024). The theoretical validity of these pessimistic approaches is grounded in the notion of unilateral con-centrability —the requirement that the offline logs sufficiently cover any individual agent’s deviations 8from a target equilibrium (Cui and Du, 2022a). However, anchoring this coverage requirement to an unknown optimal equilibrium π∗ introduces a fundamental conceptual circularity, as the very policy required to define data sufficiency is the target of the learning process itself. Our work addresses this by anchoring the learning objective to a fixed and known reference policy πref (Anonymous, 2026), transforming the coverage requirement into a verifiable condition that remains grounded in the support of the offline data. 
+
+KL Regularization and Behavioral Anchoring. KL regularization relative to a fixed reference policy has emerged as a fundamental tool for enforcing behavioral constraints and incorporating prior knowledge into reinforcement learning frameworks (Xiong et al., 2023; Munos et al., 2024). By pe-nalizing deviations from an anchor distribution, such as a pre-trained model or human demonstrations, this mechanism effectively mitigates policy drift and stabilizes the resulting learning dynamics (Ye et al., 2024; Nayak et al., 2025). The most prominent application of this principle is found in the alignment of large language models through Reinforcement Learning from Human Feedback (RLHF), where a KL divergence penalty ensures the optimized model remains within the trusted region of the initial distribution (Ouyang et al., 2022; Rafailov et al., 2023). While regularized objectives have been extensively analyzed across both single-agent and multi-agent regimes (Xie et al., 2024; Zhao et al., 2025; Zhang et al., 2025a,b), current theoretical results typically suggest that regularization primarily serves as a numerical stabilizer, yielding sample complexity rates that mirror those of their unregularized counterparts (Ye et al., 2024). Consequently, the capacity of KL regularization to function as a standalone, implicit pessimism mechanism in offline general-sum games has remained unestablished. Our work bridges this gap by demonstrating that regularized KL anchoring suffices for stable equilibrium recovery without explicit bonuses. 
+
+Statistical Efficiency and Fast Rates. Most offline learning guarantees characterize the standard 
+
+eO(1 /√n) statistical rate (Jin et al., 2021; Shi et al., 2022). While recent investigations by Zhang et al. (2026) demonstrated that an accelerated eO(1 /n ) rate is achievable in two-player zero-sum games, those results rely on the minimax structure and skew-symmetry inherent to strictly competitive dynam-ics. In contrast, general-sum games are fundamentally more complex; whereas finding an equilibrium is already PPAD-complete in the two-player general-sum case (Chen et al., 2009), the multi-player set-ting remains equally intractable while introducing more complex strategic interactions (Papadimitriou, 1994; Daskalakis et al., 2009). We broaden this theoretical landscape in two directions. First, we establish that the fast eO(1 /n ) rate persists for Nash equilibria in general-sum games, proving that independence—rather than zero-sum symmetry—is the key driver of this acceleration. Second, for the computationally tractable CCE, we provide a pessimism-free framework that achieves the standard eO(1 /√n) rate. Together, these findings establish a tractable foundation for pessimism-free learning in multi-player general-sum games. 
+
+## 7 Discussion 
+
+While our work establishes KL regularization as a standalone, pessimism-free mechanism for equilib-rium learning in general-sum games, several promising directions for future research remain. First, extending this framework to multi-step Markov games is essential to address the accumulation of estimation errors across temporal horizons. Second, adapting our regularized dynamics to partially observable environments or extensive-form games would broaden applicability to real-world sys-tems involving hidden states and asymmetric information. Finally, enhancing robustness against misspecified reference policies—potentially via adaptive regularization schedules—is a key priority for maintaining reliability in highly non-stationary or adversarial strategic settings. 
+
+## 8 Conclusion 
+
+In this work, we have demonstrated that KL regularization serves as a robust and standalone mecha-nism for stabilizing offline multi-agent learning, effectively mitigating distribution shift without the need for explicit pessimistic penalties. By shifting the coverage requirement from unknown optimal policies to a fixed and known reference anchor, we established a verifiable theoretical framework 9that bypasses the conceptual circularity inherent in prior literature. We proposed GANE, which achieves an accelerated eO(1 /n ) statistical rate for Nash equilibria by leveraging the product structure of independent policies. Furthermore, we provided GAMD, a decentralized iterative framework that recovers Coarse Correlated Equilibria at the standard eO(1 /√n) rate without explicit pessimistic bonuses. Together, these results establish KL regularization as a tractable, pessimism-free alternative for establishing optimal statistical rates in offline game-theoretic learning. 10 References 
+
+Anonymous (2026). Fast rates in α-potential games via regularized mirror descent. Concurrent submission to NeurIPS 2026 . 2, 4, 9 Chen, X., Deng, X., and Teng, S.-H. (2009). Settling the complexity of computing two-player nash equilibria. Journal of the ACM (JACM) , 56(3):1–57. 6, 9 Cui, Q. and Du, S. S. (2022a). Provably efficient offline multi-agent reinforcement learning via strategy-wise bonus. Advances in Neural Information Processing Systems , 35:11739–11751. 2, 4, 8, 9 Cui, Q. and Du, S. S. (2022b). When are offline two-player zero-sum markov games solvable? 
+
+Advances in Neural Information Processing Systems , 35:25779–25791. 1, 2, 4, 8 Daskalakis, C., Goldberg, P. W., and Papadimitriou, C. H. (2009). The complexity of computing a nash equilibrium. Communications of the ACM , 52(2):89–97. 6, 9 Fujimoto, S., Meger, D., and Precup, D. (2019). Off-policy deep reinforcement learning without exploration. In Proceedings of the International Conference on Machine Learning . 1 Jin, Y., Yang, Z., and Wang, Z. (2021). Is pessimism provably efficient for offline rl? In International conference on machine learning , pages 5084–5096. PMLR. 1, 8, 9 Levine, S., Kumar, A., Tucker, G., and Fu, J. (2020). Offline reinforcement learning: Tutorial, review, and perspectives on open problems. ArXiv Preprint . 1, 8 Li, G., Shi, L., Chen, Y., Chi, Y., and Wei, Y. (2024). Settling the sample complexity of model-based offline reinforcement learning. The Annals of Statistics , 52(1):233–260. 8 Liu, Y., Swaminathan, A., Agarwal, A., and Brunskill, E. (2020). Provably good batch off-policy reinforcement learning without great exploration. Advances in neural information processing systems , 33:1264–1274. 8 Munos, R., Valko, M., Calandriello, D., Azar, M. G., Rowland, M., Guo, Z. D., Tang, Y., Geist, M., Mesnard, T., Fiegel, C., et al. (2024). Nash learning from human feedback. In Forty-first International Conference on Machine Learning . 9 Nayak, A., Yang, T., Yagan, O., Joshi, G., and Chi, Y. (2025). Achieving logarithmic regret in kl-regularized zero-sum markov games. arXiv preprint arXiv:2510.13060 . 9 Ouyang, L., Wu, J., Jiang, X., Almeida, D., Wainwright, C., Mishkin, P., Zhang, C., Agarwal, S., Slama, K., Ray, A., et al. (2022). Training language models to follow instructions with human feedback. In Advances in Neural Information Processing Systems . 1, 2, 9 Papadimitriou, C. H. (1994). On the complexity of the parity argument and other inefficient proofs of existence. Journal of Computer and system Sciences , 48(3):498–532. 9 Rafailov, R., Sharma, A., Mitchell, E., Manning, C. D., Ermon, S., and Finn, C. (2023). Direct preference optimization: Your language model is secretly a reward model. Advances in neural information processing systems , 36:53728–53741. 9 Rashidinejad, P., Zhu, B., Ma, C., Jiao, J., and Russell, S. (2021). Bridging offline reinforcement learning and imitation learning: A tale of pessimism. Advances in Neural Information Processing Systems , 34:11702–11716. 8 Roughgarden, T. (2016). Twenty lectures on algorithmic game theory . Cambridge University Press. 8 Shalev-Shwartz, S. (2025). Online learning and online convex optimization. Foundations and Trends® in Machine Learning , 4(2):107–194. 7 Shi, L., Li, G., Wei, Y., Chen, Y., and Chi, Y. (2022). Pessimistic q-learning for offline reinforcement learning: Towards optimal sample complexity. In International conference on machine learning ,pages 19967–20025. PMLR. 9 11 Uehara, M. and Sun, W. (2021). Pessimistic model-based offline reinforcement learning under partial coverage. arXiv preprint arXiv:2107.06226 . 8 Xie, T., Cheng, C.-A., Jiang, N., Mineiro, P., and Agarwal, A. (2021). Bellman-consistent pessimism for offline reinforcement learning. Advances in neural information processing systems , 34:6683– 6694. 8 Xie, T., Foster, D. J., Krishnamurthy, A., Rosset, C., Awadallah, A., and Rakhlin, A. (2024). Exploratory preference optimization: Harnessing implicit q*-approximation for sample-efficient rlhf. arXiv preprint arXiv:2405.21046 . 9 Xiong, W., Dong, H., Ye, C., Wang, Z., Zhong, H., Ji, H., Jiang, N., and Zhang, T. (2023). Iterative preference learning from human feedback: Bridging theory and practice for rlhf under kl-constraint. 
+
+arXiv preprint arXiv:2312.11456 . 9 Yan, Y., Li, G., Chen, Y., and Fan, J. (2024). Model-based reinforcement learning for offline zero-sum markov games. Operations research , 72(6):2430–2445. 8 Ye, C., Xiong, W., Zhang, Y., Jiang, N., and Zhang, T. (2024). Online iterative reinforcement learning from human feedback with general preference model. 1, 2, 9 Zhan, W., Huang, B., Huang, A., Jiang, N., and Lee, J. (2022). Offline reinforcement learning with realizability and single-policy concentrability. In Conference on Learning Theory , pages 2730–2775. PMLR. 8 Zhang, Y., Bai, Y., and Jiang, N. (2023). Offline learning in markov games with general function approximation. In International Conference on Machine Learning , pages 40804–40829. PMLR. 1, 2, 8 Zhang, Y., Chen, C., and Jiang, N. (2026). Beyond pessimism: Offline learning in kl-regularized games. arXiv preprint arXiv:2604.06738 . 9 Zhang, Y., Yu, D., Ge, T., Song, L., Zeng, Z., Mi, H., Jiang, N., and Yu, D. (2025a). Improving llm general preference alignment via optimistic online mirror descent. arXiv preprint arXiv:2502.16852 .9Zhang, Y., Yu, D., Peng, B., Song, L., Tian, Y., Huo, M., Jiang, N., Mi, H., and Yu, D. (2025b). Iterative nash policy optimization: Aligning LLMs with general preferences via no-regret learning. In The Thirteenth International Conference on Learning Representations . 9 Zhao, H., Ye, C., Xiong, W., Gu, Q., and Zhang, T. (2025). Logarithmic regret for online kl-regularized reinforcement learning. arXiv preprint arXiv:2502.07460 . 9 Zhong, H., Xiong, W., Tan, J., Wang, L., Zhang, T., Wang, Z., and Yang, Z. (2022). Pessimistic mini-max value iteration: Provably efficient equilibrium learning from offline datasets. In International Conference on Machine Learning , pages 27117–27142. PMLR. 1, 8 12 A Proof 
+
+A.1 Proof of Theorem 4.2 A.1.1 Decomposition of the Total Exploitability Gap 
+
+To bound the suboptimality of the learned joint policy ˆπ, we decompose the Nash Equilibrium gap into an empirical optimization error and statistical evaluation errors by pivoting through the estimated value functions ˆV and ˆQ.Recall the definition of the NE gap (Total Exploitability) for the learned policy ˆπ:
+
+Gap NE (ˆ π) = 
+
+> m
+
+X
+
+> i=1
+
+Ex∼ρ
+
+h
+
+V †,ˆπ−i 
+
+> i
+
+(x) − V ˆπi (x)
+
+i
+
+.
+
+We define the estimated best-response value for Player i under the empirical game evaluated by ˆQ as: 
+
+ˆV †,ˆπ−i 
+
+> i
+
+(x) := max 
+
+> π′
+> i
+
+ˆV π′ 
+
+> i,ˆπ−i
+> i
+
+(x).
+
+Here we restate Lemma 4.1: 
+
+Lemma 4.1 (Gap Decomposition) . For any learned joint policy ˆπ and any player i ∈ [m], the unilateral exploitability gap can be exactly decomposed as: 
+
+V †,ˆπ−i 
+
+> i
+
+(x) − V ˆπi (x) = 
+
+ ˆV †,ˆπ−i 
+
+> i
+
+(x) − ˆV ˆπi (x)
+
+| {z }
+
+> Term I: Optimization Gap
+
++
+
+
+
+V †,ˆπ−i 
+
+> i
+
+(x) − ˆV †,ˆπ−i 
+
+> i
+
+(x)
+
+| {z }
+
+> Term II: Best-Response Error
+
++
+
+ ˆV ˆπi (x) − V ˆπi (x)
+
+| {z }
+
+> Term III: On-Policy Error
+
+.
+
+Bounding the Decomposition Terms: This decomposition isolates the distinct sources of error, allowing us to bound the gap systematically: • Term I represents the empirical external regret of Player i operating strictly on the estimated game ˆQ. Because the joint policy ˆπ is obtained via an oracle exactly solving the empirical games, this term strictly corresponds to the optimization error and vanishes identically. • Term II and Term III represent the statistical evaluation errors. By applying algebraic expansions, these terms can be unrolled into the sum of regression errors over the con-textual distributions, respectively. These errors are precisely controlled by our Unilateral Concentrability assumption and converted into squared errors via the KL-divergence strong convexity. 
+
+A.1.2 Bounding the Statistical Error for the Idealized Algorithm 
+
+Let ˆπ be the joint policy returned by the idealized GANE algorithm (Algorithm 1). Because ˆπ is an exact regularized Nash Equilibrium of the estimated game ˆQ, no player can unilaterally improve their empirical value. Thus, for all i ∈ [m], the empirical optimization gap vanishes: Term I i = ˆV †,ˆπ−i 
+
+> i
+
+(x) − ˆV ˆπi (x) = 0 .
+
+Therefore, the total unilateral exploitability gap is bounded strictly by the statistical evaluation errors: 
+
+Gap NE (ˆ π) ≤
+
+> m
+
+X
+
+> i=1
+
+(Term II i + Term III i) ,
+
+where Term II i = V †,ˆπ−i 
+
+> i
+
+(x) − ˆV †,ˆπ−i 
+
+> i
+
+(x) and Term III i = ˆV ˆπi (x) − V ˆπi (x).Since ˆπ is an exact NE on the estimated values, the marginalized policy ˆπi is the empirical best response to ˆπ−i, implying ˆV †,ˆπ−i 
+
+> i
+
+= ˆV ˆπi . We analyze the sum of these evaluation errors by first bounding the local value difference of the best response. 13 Step 1: 1-Smoothness of the Log-Partition Function. Fix a context x. We define the value difference of the best response as ∆i(x) := V †,ˆπ−i 
+
+> i
+
+(x) − ˆV †,ˆπ−i 
+
+> i
+
+(x). For notational clarity, we define the marginalized empirical Q-function as ¯Qi(x, a i) := Ea−i∼ˆπ−i [ ˆQi(x, a i, a−i)] and the true best-response Q-value as Q†,ˆπ−i 
+
+> i
+
+(x, a i) := Ea−i∼ˆπ−i [r⋆i (x, a)] . Both the true best response and the empirical best response values can be expressed exactly via the log-partition function 
+
+Φ( θ) = log P 
+
+> a
+
+exp( θa). We define the natural parameters (logits) for the true and empirical best responses respectively: 
+
+θ† 
+
+> i
+
+(x, ·) := ηQ †,ˆπ−i 
+
+> i
+
+(x, ·) + log πref ,i (· | x),
+
+ˆθi(x, ·) := η ¯Qi(x, ·) + log πref ,i (· | x).
+
+The values are exactly V † 
+
+> i
+
+(x) = η−1Φ( θ† 
+
+> i
+
+) and ˆV † 
+
+> i
+
+(x) = η−1Φ( ˆθi). Because the log-partition function Φ is 1-smooth with respect to the ℓ∞-norm, its Bregman divergence (which corresponds to the KL divergence) is strictly bounded by the squared ℓ∞ distance: 
+
+Φ( θ†) − Φ( ˆθ) ≤ ⟨∇ Φ( ˆθ), θ † − ˆθ⟩ + 12 ∥θ† − ˆθ∥2
+
+> ∞
+
+.
+
+Crucially, the gradient map ∇Φ( ˆθ) yields exactly the probabilities of the empirical best response, which is the learned policy ˆπi. Dividing by η, we obtain the local value difference bound: 
+
+∆i(x) ≤ Eai∼ˆπi(·| x)
+
+h
+
+Q†,ˆπ−i 
+
+> i
+
+(x, a i) − ¯Qi(x, a i)
+
+i
+
++ η
+
+2 Q†,ˆπ−i 
+
+> i
+
+(x, ·) − ¯Qi(x, ·) 2
+
+> ∞
+
+. (2) 
+
+Proof. By definition, the local value difference is given by the scaled difference of the log-partition functions: 
+
+∆i(x) = V †,ˆπ−i 
+
+> i
+
+(x) − ˆV †,ˆπ−i 
+
+> i
+
+(x)= η−1Φ( θ† 
+
+> i
+
+(x, ·)) − η−1Φ( ˆθi(x, ·)) = η−1
+
+Φ( θ† 
+
+> i
+
+) − Φ( ˆθi)
+
+
+
+.
+
+Applying the 1-smoothness property of Φ to the term in the parentheses: 
+
+∆i(x) ≤ η−1
+
+
+
+⟨∇ Φ( ˆθi), θ † 
+
+> i
+
+− ˆθi⟩ + 12 ∥θ† 
+
+> i
+
+− ˆθi∥2
+
+> ∞
+
+
+
+. (3) We now evaluate the components of this upper bound. First, the gradient of the log-partition function 
+
+∇Φ( θ) yields the Softmax probabilities. Since ˆθi represents the logits of the empirical game, its Softmax is exactly the learned empirical policy: 
+
+∇Φ( ˆθi)ai = ˆ πi(ai|x).
+
+Second, we evaluate the difference in logits. By definition, θ† 
+
+> i
+
+(x, a i) = ηQ †,ˆπ−i 
+
+> i
+
+(x, a i) + log πref ,i (ai | x), and similarly for ˆθi. When we subtract them, the reference policy perfectly cancels out: 
+
+θ† 
+
+> i
+
+(x, a i) − ˆθi(x, a i) = 
+
+
+
+ηQ †,ˆπ−i 
+
+> i
+
+(x, a i) + log πref ,i (ai|x)
+
+
+
+−
+
+
+
+η ¯Qi(x, a i) + log πref ,i (ai|x)
+
+
+
+= η
+
+
+
+Q†,ˆπ−i 
+
+> i
+
+(x, a i) − ¯Qi(x, a i)
+
+
+
+.
+
+Substituting these evaluated components back into the inner product term of Equation (3): 
+
+⟨∇ Φ( ˆθi), θ † 
+
+> i
+
+− ˆθi⟩ = X
+
+> ai∈A i
+
+ˆπi(ai|x) · η
+
+
+
+Q†,ˆπ−i 
+
+> i
+
+(x, a i) − ¯Qi(x, a i)
+
+
+
+= ηEai∼ˆπi(·| x)
+
+h
+
+Q†,ˆπ−i 
+
+> i
+
+(x, a i) − ¯Qi(x, a i)
+
+i
+
+.
+
+14 Next, we substitute the logit difference into the squared ℓ∞ norm term: 
+
+12 ∥θ† 
+
+> i
+
+− ˆθi∥2 
+
+> ∞
+
+= 12 η
+
+
+
+Q†,ˆπ−i 
+
+> i
+
+(x, ·) − ¯Qi(x, ·)
+
+ 2
+
+> ∞
+
+= η2
+
+2 Q†,ˆπ−i 
+
+> i
+
+(x, ·) − ¯Qi(x, ·) 2
+
+> ∞
+
+.
+
+Finally, plugging these two terms back into Equation (3) and multiplying through by η−1:
+
+∆i(x) ≤ η−1
+
+"
+
+ηEai∼ˆπi(·| x)
+
+h
+
+Q†,ˆπ−i 
+
+> i
+
+(x, a i) − ¯Qi(x, a i)
+
+i
+
++ η2
+
+2 Q†,ˆπ−i 
+
+> i
+
+(x, ·) − ¯Qi(x, ·) 2
+
+> ∞
+
+#
+
+= Eai∼ˆπi(·| x)
+
+h
+
+Q†,ˆπ−i 
+
+> i
+
+(x, a i) − ¯Qi(x, a i)
+
+i
+
++ η
+
+2 Q†,ˆπ−i 
+
+> i
+
+(x, ·) − ¯Qi(x, ·) 2
+
+> ∞
+
+.
+
+Step 2: Evaluating Term II via the Pointwise Error Identity. We introduce the regression error for Player i:
+
+Zi(x, a) := ˆQi(x, a) − r⋆i (x, a).
+
+The Q-value difference expands algebraically as: 
+
+Q†,ˆπ−i 
+
+> i
+
+(x, a i) − ¯Qi(x, a i) = Ea−i∼ˆπ−i [−Z i(x, a)] . (4) To see (4) , recall the definitions for the true best-response Q-value, the estimated Q-value, and the regression error for Player i:
+
+Q†,ˆπ−i 
+
+> i
+
+(x, a i) = Ea−i∼ˆπ−i [r⋆i (x, a)] ,
+
+¯Qi(x, a i) = Ea−i∼ˆπ−i
+
+ ˆQi(x, a),
+
+Zi(x, a) := ˆQi(x, a) − r⋆i (x, a).
+
+By expanding the Q-value difference and applying direct substitution, we obtain: 
+
+Q†,ˆπ−i 
+
+> i
+
+(x, a i) − ¯Qi(x, a i)= Ea−i∼ˆπ−i [r⋆i (x, a)] − Ea−i∼ˆπ−i
+
+ ˆQi(x, a)
+
+= Ea−i∼ˆπ−i
+
+h
+
+r⋆i (x, a) − ˆQi(x, a)
+
+i
+
+Grouping the terms strictly isolates the exact definition of Zi:
+
+= Ea−i∼ˆπ−i
+
+h
+
+−  ˆQi(x, a) − r⋆i (x, a)i
+
+= Ea−i∼ˆπ−i [−Z i(x, a)] . (5) Recall that the Total Exploitability of the game is evaluated in expectation over the context distribution 
+
+x ∼ ρ. Therefore, to bound the total gap, we evaluate the expected value of our decomposition terms. For Player i, we define the pointwise value difference of the best response as ∆i(x) := V †,ˆπ−i 
+
+> i
+
+(x) −
+
+ˆV †,ˆπ−i 
+
+> i
+
+(x). By direct algebraic substitution, the linear Q-value difference is strictly equal to the negative regression error: 
+
+Q†,ˆπ−i 
+
+> i
+
+(x, a i) − ¯Qi(x, a i) = Ea−i∼ˆπ−i [−Z i(x, a)] .
+
+Taking the expectation over the context distribution x ∼ ρ, Term II is bounded by: 
+
+Ex∼ρ[Term II i(x)] ≤ Ex∼ρ, a∼(ˆ π†  
+
+> i,ˆπ−i)
+
+[−Z i(x, a)] + η
+
+2 Ex∼ρ
+
+
+
+Q†,ˆπ−i 
+
+> i
+
+(x, ·) − ¯Qi(x, ·) 2
+
+> ∞
+
+
+
+.
+
+15 Step 3: Evaluating Term III via Pointwise Error Identity. Next, we apply the similar algebraic derivation on Term III. 
+
+Ex∼ρ[Term III i(x)] = Ex∼ρ
+
+h ˆV ˆπi (x) − V ˆπi (x)
+
+i
+
+We define the local joint policy evaluation error as δi(x) := ˆV ˆπi (x) − V ˆπi (x). Expanding both value functions according to their definitions, the KL regularization terms exactly cancel out because both are evaluated under the identical policy ˆπ:
+
+δi(x) = 
+
+
+
+Ea∼ˆπ(·| x)
+
+ ˆQi(x, a) − Reg i(ˆ π)
+
+
+
+−
+
+
+
+Ea∼ˆπ(·| x)
+
+h
+
+r⋆i (x, a)
+
+i
+
+− Reg i(ˆ π)
+
+
+
+= Ea∼ˆπ(·| x)
+
+h ˆQi(x, a) − r⋆i (x, a)
+
+i
+
+Grouping the terms recovers the exact definition of the regression error Zi:
+
+= Ea∼ˆπ(·| x)
+
+"
+
+ˆQi(x, a) − r⋆i (x, a)
+
+| {z }
+
+> =Zi(x, a)
+
+#
+
+= Ea∼ˆπ(·| x) [Zi(x, a)] 
+
+We evaluate this identity in expectation over the context distribution x ∼ ρ:
+
+Ex∼ρ [δi(x)] = Ex∼ρ
+
+"
+
+Ea∼ˆπ(·| x)
+
+h
+
+Zi(x, a)
+
+i#
+
+= Ex∼ρ, a∼ˆπ(·| x) [Zi(x, a)] .
+
+Thus, taking the expectation over the context distribution, we obtain: 
+
+Ex∼ρ[Term III i(x)] = Ex∼ρ
+
+h ˆV ˆπi (x) − V ˆπi (x)
+
+i
+
+= Ex∼ρ, a∼ˆπ(·| x) [Zi(x, a)] .
+
+When adding the expected Term II and Term III, the linear evaluation errors −Z i and +Zi completely cancel out. This leaves the total expected gap bounded strictly by the squared errors: 
+
+Ex∼ρ
+
+Term II i(x) + Term III i(x) ≤ η
+
+2 Ex∼ρ
+
+
+
+Q†,ˆπ−i 
+
+> i
+
+(x, ·) − ¯Qi(x, ·) 2
+
+> ∞
+
+
+
+.
+
+Step 4: Unrolling the Linear Error and Cauchy-Schwarz. Taking the absolute value of the Q-value difference identity (5) and applying the triangle inequality yields the pointwise linear bound: 
+
+Q†,ˆπ−i 
+
+> i
+
+(x, ·) − ¯Qi(x, ·) ∞
+
+≤ max 
+
+> ai
+
+Ea−i∼ˆπ−i
+
+h
+
+|Z i(x, a)|
+
+i
+
+.
+
+Notice that taking the maximum over the action ai is equivalent to taking the supremum over all possible state-conditioned policies for Player i. Because the opponent’s policy remains fixed to ˆπ−i,this shifts the action evaluation distribution from the learned joint policy to a unilateral deviation distribution (π′
+
+> i
+
+, ˆπ−i). Thus, we can bound the point-wise error by taking the supremum over all such unilateral deviations: 
+
+Q†,ˆπ−i 
+
+> i
+
+(x, ·) − ¯Qi(x, ·) ∞ ≤ sup 
+
+> π′
+> i
+
+Ea∼(π′
+
+> i,ˆπ−i)
+
+|Z i(x, a)|,
+
+where the inner action ai is selected by the deviation policy π′
+
+> i
+
+.We now square both sides. Applying Jensen’s inequality for the inner expectation, we obtain: 
+
+Q†,ˆπ−i 
+
+> i
+
+(x, ·) − ¯Qi(x, ·) 2
+
+> ∞
+
+≤ sup 
+
+> π′
+> i
+
+Ea∼(π′
+
+> i,ˆπ−i)
+
+Zi(x, a)2 = max 
+
+> ai
+
+Ea−i∼ˆπ−i
+
+Zi(x, a)2.
+
+Substituting this squared unrolled error back into the sum of Term II and Term III bounds gives: 
+
+Ex∼ρ
+
+Term II i(x) + Term III i(x) ≤ η
+
+2 Ex∼ρ
+
+
+
+Q†,ˆπ−i 
+
+> i
+
+(x, ·) − ¯Qi(x, ·) 2
+
+> ∞
+
+
+
+≤ η
+
+2 Ex∼ρ
+
+
+
+max 
+
+> ai
+
+Ea−i∼ˆπ−i
+
+Zi(x, a)2
+
+. (6) 16 Lemma A.1 (Uniform Value Bound) . For any player i ∈ [m] and any fixed opponent joint policy 
+
+ν−i, the regularized best-response value function V †,ν −i 
+
+> i
+
+(x) = max πi V πi,ν −i 
+
+> i
+
+(x) satisfies: 
+
+0 ≤ V †,ν −i 
+
+> i
+
+(x) ≤ 1.
+
+Consequently, the uniform infinity norm is strictly bounded: V †,ν −i 
+
+> i∞
+
+≤ 1.Proof. For a fixed context x, the best-response value for Player i against ν−i can be written in its exact log-sum-exp form: 
+
+V †,ν −i 
+
+> i
+
+(x) = η−1 log X
+
+> ai∈A i
+
+πref ,i (ai|x) exp 
+
+
+
+ηQ †,ν −i 
+
+> i
+
+(x, a i)
+
+
+
+,
+
+where Q†,ν −i 
+
+> i
+
+(x, a i) = Ea−i∼ν−i [r⋆i (x, a)] . Using the bounds of the deterministic reward r⋆i ∈ [0 , 1] ,the Q-value is uniformly bounded by Q†,ν −i 
+
+> i
+
+(x, a i) ∈ [0 , 1] .Because the reference policy πref ,i (·| x) is a valid probability distribution that sums to 1, we apply the standard bounds of the log-sum-exp function: η−1 log P pj exp( ηq j ) ∈ [min qj , max qj ]. Therefore, the best-response value is strictly bounded by the minimum and maximum expected Q-values: 
+
+min 
+
+> ai
+
+Q†,ν −i 
+
+> i
+
+(x, a i) ≤ V †,ν −i 
+
+> i
+
+(x) ≤ max 
+
+> ai
+
+Q†,ν −i 
+
+> i
+
+(x, a i).
+
+Since all Q-values are bounded in [0 , 1] , we conclude that V †,ν −i 
+
+> i
+
+(x) ∈ [0 , 1] . This exact characteri-zation eliminates any dependence on the reference policy’s minimum probability mass, yielding the uniform bound V †,ν −i 
+
+> i∞
+
+≤ 1.To invoke our Reference-Anchored Unilateral Concentrability (Assumption 3.2), we shift the evalua-tion distribution of the opponents from the learned joint policy ˆπ−i to the fixed reference policy πref  
+
+> −i
+
+,while maintaining the arbitrary deviation policy π′ 
+
+> i
+
+for Player i.To bound the distribution shift, we utilize the first-order optimality of the regularized Nash Equilib-rium. For each opponent j̸ = i, the marginalized policy ˆπj is the unique maximizer of the regularized payoff, which implies the Gibbs form: 
+
+ˆπj (aj | x) = πref  
+
+> j
+
+(aj | x) exp  η ¯Qj (x, a j )P
+
+> a′
+> j
+
+πref  
+
+> j
+
+(a′ 
+
+> j
+
+| x) exp  η ¯Qj (x, a ′ 
+
+> j
+
+) ,
+
+where ¯Qj is the marginalized empirical Q-function. Since the empirical rewards are bounded in [0 , 1] ,
+
+∥ ¯Qj ∥∞ ≤ 1. We obtain the point-wise ratio for each action aj :
+
+ˆπj (aj | x)
+
+πref  
+
+> j
+
+(aj | x) = exp  η ¯Qj (x, a j )
+
+Ea′  
+
+> j∼πref
+> j
+
+exp  η ¯Qj (x, a ′ 
+
+> j
+
+) ≤ exp( η)1 = exp( η).
+
+Since the joint policy of the m − 1 opponents factorizes at each state, the joint density ratio is bounded by exp( η(m − 1)) . To unify our notation across proofs, we define a single global distribution shift constant bounding the density ratio of all m players: 
+
+Λη,m := exp( ηm ).
+
+Thus, the total action likelihood ratio for the m − 1 opponents is strictly bounded by Λη,m :
+
+ˆπ−i(a−i | x)
+
+πref  
+
+> −i
+
+(a−i | x) = Y 
+
+> j̸=i
+
+ˆπj (aj | x)
+
+πref  
+
+> j
+
+(aj | x) ≤ exp  η(m − 1)  ≤ Λη,m .
+
+To relate the expectations over different context-action distributions, we consider the likelihood ratio of a joint action a under the algorithm’s deviation policy (π′
+
+> i
+
+, ˆπ−i) versus the reference deviation policy (π′
+
+> i
+
+, π ref  
+
+> −i
+
+). Because the environment distribution ρ is identical for both, they cancel out in the ratio, leaving only the product of the marginalized opponent policy ratios. 17 Using this bound to perform a change of measure, we shift the evaluation from the algorithm’s trajectory to the covered unilateral deviation trajectory: 
+
+Ex∼ρ
+
+
+
+max 
+
+> ai
+
+Ea−i∼ˆπ−i
+
+Zi(x, a)2
+
+≤ Λη,m · Ex∼ρ
+
+
+
+max 
+
+> ai
+
+Ea−i∼πref 
+
+> −i
+
+Zi(x, a)2
+
+.
+
+To formalize the application of our data coverage assumption on this worst-case action, we explicitly construct the deviation policy that maximizes the expected squared error. Let ˜πi be the deterministic policy that greedily selects the error-maximizing action for Player i at each context: ˜πi(x) := argmax ai Ea−i∼πref  
+
+> −i
+
+[Zi(x, a i, a−i)2]. The resulting joint policy profile ˜π = (˜ πi, π ref  
+
+> −i
+
+) strictly belongs to the set of reference-anchored unilateral deviations Πref −uni .By substituting this maximizing policy, we convert the worst-case action into an expectation over the joint distribution ρ(x)˜ π(a|x). Applying Assumption 3.2, we shift the evaluation to the offline dataset distribution μ:
+
+Ex∼ρ
+
+
+
+max 
+
+> ai
+
+Ea−i∼πref 
+
+> −i
+
+Zi(x, a)2
+
+= Ex∼ρ, a∼˜π(·| x)
+
+Zi(x, a)2
+
+= E(x, a)∼μ
+
+ ρ(x)˜ π(a|x)
+
+μ(x, a) Zi(x, a)2
+
+
+
+≤ Cuni Eμ
+
+Zi(x, a)2.
+
+Combining this with the opponent distribution shift Λη,m , together with the previous bound we derived in (6), we obtain the fully shifted bound: 
+
+Ex∼ρ
+
+Term II i + Term III i
+
+ ≤ η
+
+2 Λη,m Cuni Eμ
+
+Z2
+
+> i
+
+.
+
+Using the standard fast-rate statistical guarantee for regularized least-squares regression, the expected in-sample squared regression error under the data distribution μ is bounded by the function class complexity |Q i| and the number of samples n with high probability: 
+
+Eμ
+
+Z2
+
+> i
+
+ ≤ O 
+
+ log( |Q i|/δ )
+
+n
+
+
+
+.
+
+By substituting this rate into our unrolled bound, we effectively resolve the expectation over μ by replacing it with its statistical upper limit. We conclude the final suboptimality gap for Player i:
+
+Ex∼ρ
+
+Term II i + Term III i
+
+ ≤ eO
+
+ ηΛη,m Cuni log |Q i|
+
+n
+
+
+
+.
+
+Final Bound on Total Exploitability. The Total Exploitability of the game is defined as the sum of the unilateral suboptimality across all m players. By summing the bound derived for Player i
+
+over the entire set N = [ m], and absorbing the distribution shift constant Λη,m = exp( ηm ) and the logarithmic terms into the eO notation, we obtain: 
+
+Gap NE (ˆ π) = 
+
+> m
+
+X
+
+> i=1
+
+Ex∼ρ
+
+h
+
+V †,ˆπ−i 
+
+> i
+
+(x) − V ˆπi (x)
+
+i
+
+≤
+
+> m
+
+X
+
+> i=1
+
+(Term II i + Term III i)
+
+≤ eO
+
+ mη Λη,m Cuni log |Q| 
+
+n
+
+
+
+.
+
+Substituting the bound Λη,m = exp( ηm ), the final statistical rate is: 
+
+Gap NE (ˆ π) ≤ eO
+
+ mηC uni exp( ηm ) log |Q| 
+
+n
+
+
+
+.
+
+This result establishes that Algorithm 1 (GANE) achieves a fast statistical rate of eO(1 /n ) in the 
+
+m-player general-sum offline setting. By operating in the Contextual Bandit setting, we completely eliminate the exponential horizon dependencies ( exp( H)) that artificially inflate pessimism-free RL bounds, explicitly highlighting the optimal statistical efficiency of product-policy equilibrium recovery. 18 A.2 Proof of Lemma 5.1 
+
+Proof. We drop player and context subscripts throughout and let π∗ ∈ argmax π∈∆( A)
+
+PTt=1 f (t)(π)
+
+denote an arbitrary comparator. Denote the cumulative objective by Ft(π) := Ptk=1 f (k)(π), with 
+
+F0 ≡ 0.
+
+Iterates as Follow-The-Leader. Unrolling the geometric-mean update in Algorithm 2 with ini-tialization π(1) = πref and decaying stepsize γt = 1/t yields the closed form π(t+1) (·) ∝
+
+πref (·) · exp   ηt
+
+Ptk=1 Q(k)(·), which is precisely the Follow-The-Leader (FTL) iterate on the cumulative objective, 
+
+π(t+1) = argmax 
+
+> π∈∆( A)
+
+Ft(π). (7) 
+
+Be-The-Leader. By induction on T , we show 
+
+> T
+
+X
+
+> t=1
+
+f (t)(π(t+1) ) ≥
+
+> T
+
+X
+
+> t=1
+
+f (t)(π∗). (8) The base case T = 1 is immediate since π(2) = argmax f (1) . For the inductive step, apply the hypothesis at T − 1 with comparator π(T +1) :
+
+> T
+
+X
+
+> t=1
+
+f (t)(π(t+1) ) =  
+
+> T−1
+
+X
+
+> t=1
+
+f (t)(π(t+1) ) + f (T )(π(T +1) ) ≥ FT −1(π(T +1) ) + f (T )(π(T +1) ) = FT (π(T +1) ) ≥ FT (π∗),
+
+where the final inequality uses π(T +1) = argmax FT . Rearranging (8) bounds the regret by the iterate stability: 
+
+> T
+
+X
+
+> t=1
+
+
+
+f (t)(π∗) − f (t)(π(t))
+
+
+
+≤
+
+> T
+
+X
+
+> t=1
+
+
+
+f (t)(π(t+1) ) − f (t)(π(t))
+
+
+
+. (9) 
+
+Strong-concavity lower bound. Pinsker’s inequality KL( p∥q) ≥ 12 ∥p−q∥21 shows that the negative entropy is 1-strongly convex with respect to ∥ · ∥ 1, so each f (t) is η−1-strongly concave and Ft
+
+is (t/η )-strongly concave. Applying strong concavity at the maximizers π(t) = argmax Ft−1 and 
+
+π(t+1) = argmax Ft gives 
+
+Ft−1(π(t)) − Ft−1(π(t+1) ) ≥ t−12η ∥π(t+1) − π(t)∥21,Ft(π(t+1) ) − Ft(π(t)) ≥ t 
+
+> 2η
+
+∥π(t+1) − π(t)∥21.
+
+Summing the two inequalities and using Ft − Ft−1 = f (t) yields the per-step stability lower bound 
+
+f (t)(π(t+1) ) − f (t)(π(t)) ≥ 2t−12η ∥π(t+1) − π(t)∥21. (10) 
+
+Hölder upper bound. The Gibbs form (7) gives log( π(t)/π ref ) = ηt−1
+
+Pt−1 
+
+> k=1
+
+Q(k) − log Zt−1 for 
+
+t ≥ 2, and log( π(1) /π ref ) = 0 for t = 1 . Substituting into ∇f (t)(π) = Q(t) − η−1(log( π/π ref ) + 1)
+
+and projecting onto the simplex tangent space (i.e., discarding components parallel to 1, which vanish against π(t+1) − π(t) since 1⊤(π(t+1) − π(t)) = 0 ), 
+
+⟨∇ f (t)(π(t)), π (t+1) − π(t)⟩ =
+
+D
+
+Q(t) − 1
+
+> t−1
+
+Pt−1 
+
+> k=1
+
+Q(k), π (t+1) − π(t)
+
+E
+
+,
+
+with the convention that the second term vanishes when t = 1 . Because each Q(k) ∈ [0 , 1] |A| , the centered gradient has ℓ∞-norm at most 1. Concavity of f (t) combined with Hölder’s inequality therefore gives 
+
+f (t)(π(t+1) ) − f (t)(π(t)) ≤ ⟨∇ f (t)(π(t)), π (t+1) − π(t)⟩ ≤ ∥ π(t+1) − π(t)∥1. (11) 19 Combining the bounds. Equations (10) and (11) imply ∥π(t+1) − π(t)∥1 ≤ 2η 
+
+> 2t−1
+
+, and substituting back into (11) gives the per-step stability bound f (t)(π(t+1) ) − f (t)(π(t)) ≤ 2η 
+
+> 2t−1
+
+. Summing and applying (9), 
+
+> T
+
+X
+
+> t=1
+
+
+
+f (t)(π∗) − f (t)(π(t))
+
+
+
+≤
+
+> T
+
+X
+
+> t=1
+
+2η
+
+2t − 1 ≤ 2η(1 + log T ).
+
+Dividing by T yields the claimed O  η log TT
+
+ bound. 
+
+A.3 Proof of Theorem 5.2 
+
+In this section, we provide the full sample complexity proof for General-sum Anchored Mirror Descent (GAMD, Algorithm 2). The algorithm outputs a time-averaged joint policy ¯π, where 
+
+¯π(a|x) = 1
+
+> T
+
+PTt=1 
+
+Qmi=1 π(t) 
+
+> i
+
+(ai|x) is a correlated joint distribution representing an approximate Coarse Correlated Equilibrium (CCE). We evaluate the convergence of the algorithm using the Total Exploitability Gap. For the learned policy ¯π, the expected gap is defined as the sum of the unilateral improvements available to all m
+
+players: 
+
+Gap CCE (¯ π) := 
+
+> m
+
+X
+
+> i=1
+
+Ex∼ρ
+
+h
+
+V †,¯π−i 
+
+> i
+
+(x) − V ¯πi (x)
+
+i
+
+.
+
+Step 1: Gap Decomposition via Estimated Values 
+
+To decouple the optimization error introduced by running a finite number of Mirror Descent steps 
+
+T from the statistical error caused by finite offline samples n, we pivot through the estimated value functions ˆV and ˆQ constructed by the algorithm. For each player i ∈ [m], we decompose their unilateral exploitability gap identically to Lemma 4.1: 
+
+V †,¯π−i 
+
+> i
+
+(x) − V ¯πi (x) = 
+
+ ˆV †,¯π−i 
+
+> i
+
+(x) − ˆV ¯πi (x)
+
+| {z }
+
+> Term I: Empirical Optimization Gap
+
++
+
+
+
+V †,¯π−i 
+
+> i
+
+(x) − ˆV †,¯π−i 
+
+> i
+
+(x)
+
+| {z }
+
+> Term II: Evaluation Error of Best Response
+
++
+
+ ˆV ¯πi (x) − V ¯πi (x)
+
+| {z }
+
+> Term III: Evaluation Error of Joint Policy
+
+.
+
+Step 2: Bounding the Optimization Error (Term I) 
+
+Term I represents the empirical CCE gap of the time-averaged policy ¯π on the estimated bandit defined by ˆQ. We formally bound this by connecting the exploitability of the average joint policy to the external regret of the independent Mirror Descent iterates. For any context x, we evaluate Player i’s empirical suboptimality against the time-averaged oppo-nents ¯π−i. For notational clarity, we define the marginalized empirical Q-function as ¯Qi(x, a i) := 
+
+Ea−i∼¯π−i [ ˆQi(x, a i, a−i)] . Because the estimated Q-function is linear in the opponents’ distribution, we have exact equality for the expected payoff: 
+
+¯Qi(x, a i) = 1
+
+T
+
+> T
+
+X
+
+> t=1
+
+¯Q(t) 
+
+> i
+
+(x, a i).
+
+Furthermore, by the convexity of the KL-divergence, the regularizer of the average policy is bounded by the average of the regularizers: 
+
+KL(¯ πi(·| x) ∥ πref  
+
+> i
+
+(·| x)) ≤ 1
+
+T
+
+> T
+
+X
+
+> t=1
+
+KL( π(t) 
+
+> i
+
+(·| x) ∥ πref  
+
+> i
+
+(·| x)) .
+
+20 Applying these two properties, the empirical CCE gap for Player i at context x is strictly bounded by their average external regret against the historical sequence of policies: 
+
+max 
+
+> πi
+
+ ¯Qi(x, π i) − η−1KL( πi∥πref  
+
+> i
+
+) −  ¯Qi(x, ¯πi) − η−1KL(¯ πi∥πref  
+
+> i
+
+)
+
+≤ max 
+
+> πi∈∆( Ai)
+
+1
+
+T
+
+> T
+
+X
+
+> t=1
+
+ ¯Q(t) 
+
+> i
+
+(x, π i) − η−1KL( πi∥πref  
+
+> i
+
+)
+
+| {z }  
+
+> := f(t)
+> i,x (πi)
+
+− 1
+
+T
+
+> T
+
+X
+
+> t=1
+
+ ¯Q(t) 
+
+> i
+
+(x, π (t) 
+
+> i
+
+) − η−1KL( π(t) 
+
+> i
+
+∥πref  
+
+> i
+
+)
+
+| {z }   
+
+> =f(t)
+> i,x (π(t)
+> i)
+
+.
+
+At each iteration t, Algorithm 2 independently updates the policies π(t) 
+
+> i
+
+via KL-regularized Online Mirror Descent (OMD) on the contextual objectives f (t) 
+
+> i,x
+
+. To bound the external regret of this update sequence, we rely on foundational results from the Online Convex Optimization (OCO) literature. While standard online learning algorithms typically suffer an ˜O(√T ) cumulative regret bound, the explicit presence of the KL-divergence penalty in our formulation strictly transforms the objective into a strongly concave function (when maximizing payoff). As established in classical OCO texts, applying no-regret learning to a strongly concave objective with the decaying stepsize schedule 
+
+γt = 1 /t matching the update in Algorithm 2 attains a cumulative regret of ˜O(log T ).By the standard online-to-offline reduction for normal-form games, the total empirical optimization gap is bounded by the expected context-wise average regret. Using Lemma 5.1: 
+
+Ex∼ρ[Term I i] ≤ Ex∼ρ
+
+"
+
+max 
+
+> πi
+
+1
+
+T
+
+> T
+
+X
+
+> t=1
+
+
+
+f (t) 
+
+> i,x
+
+(πi) − f (t) 
+
+> i,x
+
+(π(t) 
+
+> i
+
+)
+
+#
+
+≤ O 
+
+ η log TT
+
+
+
+= eO
+
+ ηT
+
+
+
+.
+
+Summing this optimization error over all m players yields a total empirical optimization gap that strictly decays at a fast rate of eO(1 /T ).
+
+Step 3: Unrolling the Statistical Errors (Terms II and III) 
+
+We now bound the statistical evaluation errors (Term II and Term III). We introduce the regression error for Player i evaluated under the algorithm’s estimated Q-functions: 
+
+Zi(x, a) := ˆQi(x, a) − r⋆i (x, a).
+
+Evaluating Term II (Best Response Error). For Term II, we evaluate the suboptimality of the estimated best response. Let ∆† 
+
+> i
+
+(x) := V †,¯π−i 
+
+> i
+
+(x) − ˆV †,¯π−i 
+
+> i
+
+(x). By applying the 1-smoothness of the log-partition function exactly as derived in the idealized proof (Equation 2), we obtain the local bound: 
+
+∆† 
+
+> i
+
+(x) ≤ Eai∼¯π† 
+
+> i(·| x)
+
+h
+
+Q†,¯π−i 
+
+> i
+
+(x, a i) − ¯Qi(x, a i)
+
+i
+
++ η
+
+2 Q†,¯π−i 
+
+> i
+
+(x, ·) − ¯Qi(x, ·) 2
+
+> ∞
+
+,
+
+where ¯π† 
+
+> i
+
+is the empirical best-response policy. By direct algebraic substitution, the linear Q-value difference is strictly equal to the negative regression error: 
+
+Q†,¯π−i 
+
+> i
+
+(x, a i) − ¯Qi(x, a i) = Ea−i∼¯π−i [−Z i(x, a)] .
+
+Taking the expectation over the context distribution x ∼ ρ, Term II is bounded by: 
+
+Ex∼ρ[Term II i(x)] ≤ Ex∼ρ, a∼(¯ π†  
+
+> i,¯π−i)
+
+[−Z i(x, a)] + η
+
+2 Ex∼ρ
+
+
+
+Q†,¯π−i 
+
+> i
+
+(x, ·) − ¯Qi(x, ·) 2
+
+> ∞
+
+
+
+.
+
+Evaluating Term III (Joint Policy Error). Term III measures the evaluation error of the algorithm’s joint policy: ˆV ¯πi (x) − V ¯πi (x). Because the identical policy ¯π is used for both the empirical and true values, the KL-regularization terms exactly cancel out. Direct substitution yields: 
+
+Ex∼ρ[Term III i(x)] = Ex∼ρ, a∼¯π [Zi(x, a)] .
+
+21 Step 4: The Distribution Mismatch and Absolute Errors 
+
+In the analysis of exact Nash Equilibria, the joint policy is a pure product distribution ( ˆπ = ˆ πi × ˆπ−i)and the learned policy is identically the best response ( ˆπi = ˆ π† 
+
+> i
+
+). This structural alignment causes the evaluation distributions to match perfectly, allowing the linear errors −Z i and +Zi to cancel entirely. However, the time-averaged policy ¯π produced by GAMD is a correlated joint distribution. Conse-quently, the independent product of the best response and the marginalized opponents is fundamentally mismatched from the actual correlated joint policy: 
+
+¯π† 
+
+> i
+
+(ai|x) × ¯π−i(a−i|x)̸ = ¯ π(a|x).
+
+Because the expectations for the linear regression errors are taken over different distributions, they do not cancel. To establish a rigorous upper bound, we must bound their absolute values. By the triangle inequality, we maintain the exact squared error term: Term II i(x) + Term III i(x) ≤ Ea∼(¯ π†  
+
+> i,¯π−i)
+
+[|Z i(x, a)|] + Ea∼¯π [|Z i(x, a)|]+ η
+
+2 Q†,¯π−i 
+
+> i
+
+(x, ·) − ¯Qi(x, ·) 2
+
+> ∞
+
+.
+
+Step 5: Bounding the L∞ Error and Applying Cauchy-Schwarz 
+
+To bridge the pointwise absolute errors to our least-squares statistical oracle, we apply Cauchy-Schwarz ( E[|X|] ≤ pE[X2]). For the squared Q-value difference, we must unroll the L∞ norm into the pointwise squared regression errors. Taking the absolute value of the Q-value difference identity yields: 
+
+Q†,¯π−i 
+
+> i
+
+(x, ·) − ¯Qi(x, ·) ∞
+
+≤ max 
+
+> ai
+
+Ea−i∼¯π−i
+
+h
+
+|Z i(x, a)|
+
+i
+
+.
+
+Squaring both sides and applying Jensen’s inequality for the inner expectation bounds the L∞ norm strictly by the expected squared regression error under a maximally adverse unilateral deviation: 
+
+Q†,¯π−i 
+
+> i
+
+(x, ·) − ¯Qi(x, ·) 2
+
+> ∞
+
+≤ max 
+
+> ai
+
+Ea−i∼¯π−i
+
+Zi(x, a)2.
+
+Summing the expectations over all players and applying Cauchy-Schwarz to the linear terms, we isolate the statistical gap strictly in terms of squared errors: 
+
+> m
+
+X
+
+> i=1
+
+Ex∼ρ[Term II i(x) + Term III i(x)] 
+
+≤
+
+> m
+
+X
+
+> i=1
+
+q
+
+Ex∼ρ, a∼(¯ π†  
+
+> i,¯π−i)
+
+[Z2 
+
+> i
+
+] + 
+
+q
+
+Ex∼ρ, a∼¯π [Z2 
+
+> i
+
+]
+
+
+
++ η
+
+2
+
+> m
+
+X
+
+> i=1
+
+Ex∼ρ
+
+
+
+max 
+
+> ai
+
+Ea−i∼¯π−i
+
+Zi(x, a)2
+
+.
+
+Step 6: Distribution Shift and Data Coverage 
+
+We bound each expected term by shifting the evaluation distribution to the offline dataset distribution 
+
+μ via the Reference-Anchored Unilateral Concentrability (Assumption 3.2). Crucially, because GAMD explicitly constructs the correlated policy via exponentiated Mirror Descent updates, we can strictly bound the density ratio of every individual iterate π(t) 
+
+> i
+
+relative to the reference policy. Initialized at π(1)  
+
+> i
+
+= πref  
+
+> i
+
+, the decaying-stepsize closed-form update (Step 12, Algorithm 2) unrolls to the Gibbs form anchored to the reference policy: 
+
+π(t+1)  
+
+> i
+
+(ai|x) ∝ πref  
+
+> i
+
+(ai|x) exp  η ˜Q(t) 
+
+> i
+
+(x, a i), ˜Q(t) 
+
+> i
+
+(x, a i) := 1
+
+t
+
+> t
+
+X
+
+> k=1
+
+¯Q(k) 
+
+> i
+
+(x, a i).
+
+22 Since the empirical rewards are bounded in [0 , 1] , we have ∥ ¯Q(k) 
+
+> i
+
+∥∞ ≤ 1, so the arithmetic average 
+
+˜Q(t) 
+
+> i
+
+∈ [0 , 1] . Evaluating the normalization constant yields the exact pointwise bound for any action: 
+
+π(t+1)  
+
+> i
+
+(ai|x)
+
+πref  
+
+> i
+
+(ai|x) = exp  η ˜Q(t) 
+
+> i
+
+(x, a i)
+
+Ea′∼πref  
+
+> i
+
+exp  η ˜Q(t) 
+
+> i
+
+(x, a ′) ≤ exp( η)1 = exp( η).
+
+Because the marginalized opponent policy ¯π−i and the joint policy ¯π are convex combinations of these iterates, they rigorously preserve this upper bound. To unify our notation across the m players, we define a single global distribution shift constant: 
+
+Λη,m := exp( ηm ).
+
+For the unilateral deviation trajectories, we encounter two distinct expectations: one over the empirical best response profile (¯ π† 
+
+> i
+
+, ¯π−i) and one involving a worst-case maximization max ai Ea−i∼¯π−i [·].In both cases, shifting the m − 1 opponents from ¯π−i to the reference policy πref  
+
+> −i
+
+produces a joint density ratio bounded by exp( η(m − 1)) ≤ Λη,m .For the first term, the profile (¯ π† 
+
+> i
+
+, π ref  
+
+> −i
+
+) strictly belongs to Πref −uni , allowing us to directly apply the concentrability coefficient Cuni :
+
+Ex∼ρ, a∼(¯ π† 
+
+> i,¯π−i)
+
+Z2
+
+> i
+
+ ≤ Λη,m Ex∼ρ, a∼(¯ π†  
+
+> i,π ref
+> −i)
+
+Z2
+
+> i
+
+ ≤ Λη,m Cuni Eμ
+
+Z2
+
+> i
+
+ .
+
+For the second term, to formalize the application of our data coverage assumption on the maximization, we construct a deterministic greedy policy ˜πi(x) := argmax ai Ea−i∼πref  
+
+> −i
+
+[Zi(x, a i, a−i)2]. The resulting joint profile ˜π = (˜ πi, π ref  
+
+> −i
+
+) also strictly belongs to Πref −uni , yielding: 
+
+Ex∼ρ
+
+
+
+max 
+
+> ai
+
+Ea−i∼¯π−i
+
+Zi(x, a)2
+
+≤ Λη,m Ex∼ρ, a∼˜π(·| x)
+
+Zi(x, a)2
+
+= Λ η,m E(x, a)∼μ
+
+ ρ(x)˜ π(a|x)
+
+μ(x, a) Zi(x, a)2
+
+
+
+≤ Λη,m Cuni Eμ
+
+Z2
+
+> i
+
+.
+
+Similarly, for the on-policy evaluation over the correlated joint policy ¯π, we shift the actions of all m
+
+players to the joint reference policy πref = Qmj=1 πref  
+
+> j
+
+. The total density ratio is strictly bounded by 
+
+Qmj=1 exp( η) = exp( ηm ) = Λ η,m . Because the joint reference policy πref is explicitly covered by the unilateral assumption set Πref −uni (representing the trivial case where the deviation policy equals the reference policy), we directly apply Cuni to bound the joint evaluation: 
+
+Ex∼ρ, a∼¯π
+
+Z2
+
+> i
+
+ ≤ Λη,m Cuni Eμ
+
+Z2
+
+> i
+
+ .
+
+By applying the fast-rate guarantee for regularized least-squares regression, the in-sample expected squared regression error is bounded by O
+
+ log |Q i|
+
+> n
+
+
+
+. Substituting this statistical rate into the square-root and linear components yields: 
+
+> m
+
+X
+
+> i=1
+
+Ex∼ρ[Term II i(x) + Term III i(x)] 
+
+≤
+
+> m
+
+X
+
+> i=1
+
+2
+
+s
+
+Λη,m Cuni O
+
+ log |Q i|
+
+n
+
+
+
++
+
+> m
+
+X
+
+> i=1
+
+O
+
+ ηΛη,m Cuni log |Q i|
+
+n
+
+
+
+.
+
+Step 7: Final Bound Synthesis 
+
+Summing the empirical optimization error from Step 2 and the combined statistical evaluation error from Step 6, we obtain the final bound on the expected Total Exploitability Gap. Because the absolute 23 linear errors decay at ˜O(1 /√n), they asymptotically dominate the ˜O(1 /n ) squared Q-difference term. 
+
+E[Gap CCE (¯ π)] = 
+
+> m
+
+X
+
+> i=1
+
+Ex∼ρ [Term I i(x) + Term II i(x) + Term III i(x)] 
+
+≤ eO
+
+ mη T
+
+
+
++ eO m
+
+r Λη,m Cuni log |Q| 
+
+n
+
+!
+
++ eO
+
+ 1
+
+n
+
+
+
+.
+
+Here, Λη,m := exp( ηm ), and Cuni is the coefficient for unilateral coverage. Setting the number of Mirror Descent iterations such that T ≥ √n ensures that the empirical optimization error is strictly dominated by the statistical evaluation error. The final sample complexity is therefore: 
+
+E[Gap CCE (¯ π)] ≤ eO
+
+ 1
+
+√n
+
+
+
+.
+
+This result demonstrates that while GAMD attains a fast eO(1 /T ) empirical optimization rate, the fundamental distribution mismatch inherent to evaluating a correlated joint policy strictly bottlenecks the statistical performance at the standard minimax rate of eO(1 /√n).24
