@@ -1,0 +1,941 @@
+Title: On-the-fly LTLf Synthesis under Partial Observability
+
+URL Source: https://arxiv.org/pdf/2604.26688v2
+
+Published Time: Tue, 05 May 2026 01:17:38 GMT
+
+Number of Pages: 14
+
+Markdown Content:
+# On-the-fly LTL f Synthesis under Partial Observability 
+
+# Nadav Alon 1 , Supratik Chakraborty 2 , Alexandre Duret-Lutz 3 , Dror Fried 1,Lucas M. Tabajara 4 , Moshe Y. Vardi 5 , Shufang Zhu 61The Open University of Israel, Israel 
+
+> 2
+
+# IIT Bombay, India 
+
+> 3
+
+# LRE, EPITA, Le Kremlin-Bicˆ etre, France 
+
+> 4
+
+# Runtime Verification Inc., USA 
+
+> 5
+
+# Rice University, USA 
+
+> 6
+
+# University of Liverpool, UK 
+
+Abstract 
+
+LTL f synthesis under partial observability requires reasoning about unobservable environment variables, which is typically handled by constructing a belief-state DFA via subset con-struction that universally quantifies these variables. Existing approaches perform this construction as a separate step prior to game solving, often generating belief states that are un-necessary in practice. We propose an on-the-fly approach to 
+
+LTL f synthesis under partial observability based on observ-able progression. Our method incrementally builds the belief-state DFA by progressing the specification with respect to ob-servable variables only, universally quantifying unobservable variables on the fly. We prove the correctness of the con-struction and show that it naturally enables on-the-fly game solving, leading to a fully on-the-fly synthesis framework. Our implementation leverages DFAs represented using Multi-Terminal Binary Decision Diagrams: a compact representa-tion that has proven highly effective for LTL f synthesis under full observability. Experimental results demonstrate that our approach significantly outperforms existing methods and fur-ther highlight the practical benefits of integrating on-the-fly game solving with belief-state construction. 
+
+# 1 Introduction 
+
+A key challenge in Artificial Intelligence (AI) is enabling intelligent agents to autonomously deliberate their courses of action in order to achieve desired tasks (Reiter 2001; Ghallab, Nau, and Traverso 2016). Reasoning about actions, planning, and sequential decision making are closely con-nected to Formal Methods for strategic reasoning, such as re-active synthesis (Pnueli and Rosner 1989; Finkbeiner 2016; Ehlers et al. 2017). In reactive synthesis, an agent operates in an adversarial environment and must construct a strategy that guarantees task achievement under all possible environ-ment behaviors. Within this setting, Linear Temporal Logic on finite traces ( LTL f ) synthesis has become a natural and expressive framework for specifying and automatically syn-thesizing correct-by-construction strategies over finite exe-cutions (De Giacomo and Vardi 2015). Moreover, LTL f
+
+synthesis is closely related to (strong) planning for tempo-rally extended goals in fully observable nondeterministic domains (Cimatti et al. 2003; Bacchus and Kabanza 2000; Calvanese, De Giacomo, and Vardi 2002; Baier, Fritz, and McIlraith 2007; Gerevini et al. 2009; De Giacomo and Ru-bin 2018; Camacho, Bienvenu, and McIlraith 2019). In many realistic settings, however, agents do not have complete information about the environment in which they operate. They must therefore make decisions based on par-tial observations and reason about uncertainty while inter-acting with the environment (Rintanen 2004). As such, par-tial observability has been widely studied in planning and synthesis, including contingent and belief-based planning as well as reactive synthesis from logic specifications (Bonet and Geffner 2000; Hoffmann and Brafman 2005; Maliah, Komarnitski, and Shani 2022; Kupferman and Vardi 1997; De Giacomo and Vardi 2016; Tabajara and Vardi 2020). In this paper, we focus on LTL f synthesis under partial ob-servability as described by De Giacomo and Vardi (2016). In their setting, a specification is given, in the form of an LTL f
+
+formula over observable environment variables, unobserv-able environment variables, and system variables, which are also observable. The challenge is to construct a controller that for every history of observable environment assign-ments, directs how to assign the system variables, inducing a finite trace such that, no matter what the assignments for the unobservable variables are, the overall sequence meets the given specification. De Giacomo and Vardi (2016) provide a general solution to LTL f synthesis under partial observability. Given an LTL f
+
+specification, their (belief-state-based) approach first con-structs a deterministic finite automaton (DFA) for the for-mula. To handle partial observability, the DFA is lifted to a belief-state automaton via a subset construction that uni-versally quantifies over unobservable environment variables. The synthesis problem then reduces to solving a reachability game on the resulting belief-state DFA. An MSO-based ap-proach was suggested by Tabajara and Vardi (2020), which translates the LTL f specification into a monadic second-order logic (MSO) formula with the unobservable variables universally quantified explicitly – a second-order operation that exceeds the expressive power of FOL. The approach then constructs a belief-state DFA from the MSO formula. In both approaches, synthesis ultimately requires solving a reachability game on a fully built belief-state DFA. Through a symbolic implementation and experimental 
+
+> arXiv:2604.26688v2 [cs.LO] 3 May 2026
+
+evaluation, Tabajara and Vardi (2020) show that the MSO-based approach overall outperforms the other approaches in practice. A key reason for this is a semi-symbolic repre-sentation of DFAs (Henriksen et al. 1995), where transitions are compactly represented using Multi-Terminal Binary De-cision Diagrams (MTBDDs). This representation, called MTDFA in the sequel, allows extensive sharing of common transition structures across states, resulting in significantly more effective automaton construction. The effectiveness of MTDFA-based representations is fur-ther confirmed by recent advances in LTL f synthesis (under full observability). Many state-of-the-art LTL f synthesiz-ers rely on such representations (Zhu et al. 2017; Bansal et al. 2020; De Giacomo and Favorito 2021; Zhu and Favorito 2025; Duret-Lutz et al. 2025). Using MTDFA alone, how-ever, has its limitations. The top-ranked LTL f synthesizer in the 2025 reactive synthesis competition 1, ltlfsynt ,combines the MTDFA-based representation with on-the-fly 
+
+techniques, incrementally constructing the MTDFA and in-tegrating this construction with game solving (Duret-Lutz et al. 2025). This demonstrates that a tight integration of MTDFA-based on-the-fly automaton construction and on-the-fly game solving can substantially improve performance in practice. This naturally raises the question of whether the same combination of techniques can be brought to LTL f synthe-sis under partial observability. While MTDFAs provide a powerful technique for compact automaton representation and on-the-fly construction, partial observability introduces an additional challenge: universal quantification over unob-servable environment variables. In all existing approaches to LTL f synthesis under partial observability, such as that of Tabajara and Vardi (2020), this quantification is handled conceptually as a separate step, rather than being opera-tionally integrated with automaton construction and game solving. In this paper, we address this challenge by bringing to-gether the key techniques that have proven successful in 
+
+LTL f synthesis under full observability, with complete op-erational integration of MTDFAs and universal quantifica-tion. We first propose an on-the-fly construction of belief-state DFAs from LTL f specifications, which we call observ-able progression . This technique incrementally builds an au-tomaton for the LTL f specification via formula progression, while at the same time universally quantifying over unob-servable environment variables, therefore directly resulting in a belief-state DFA. This construction enables integrating game solving directly during belief-state DFA construction. Thus, belief states are generated incrementally and only when needed, providing an on-the-fly approach to LTL f syn-thesis under partial observability, which still preserves the 2EXPTIME worst-case complexity, as for full-observability. Furthermore, to harness the efficiency of MTDFA, we im-plement our tool using the MTDFA representation, in which belief states are obtained naturally as MTBDD terminals. In particular, with careful variable ordering, our MTDFA-based belief-state construction does not incur any additional 
+
+> 1See https://www.syntcomp.org/syntcomp-2025-results/.
+
+blowup. This construction allows us to further integrate on-the-fly game solving on the same MTDFA representation. To summarize, our approach enables the automaton con-struction, the universal quantification, and the game solving, all to be performed on the fly and directly on MTBDDs. Our implementation resulted in a modified version of 
+
+ltlfsynt that we call ltlfsynt-po , which can now handle LTL f synthesis under partial observability. Em-pirical evaluation showed that ltlfsynt-po dramati-cally outperforms the tools from Tabajara and Vardi (2020), which so far has represented the state of the art for partial-observability LTL f synthesis. In addition, we show how each of the phases, belief-state DFA via observable progres-sion, and on-the-fly game solving, contributes to the perfor-mance of ltlfsynt-po . Detailed analysis demonstrates the practical benefits of enabling on-the-fly game solving. 
+
+# 2 Preliminaries 
+
+2.1 Words over Assignments 
+
+Let Σ be a finite alphabet. We view a word over Σ as a sequence of letters indexed by positions: an infinite word is a function σ : N → Σ, whereas a finite word of length n
+
+is a function σ : {0, 1, . . . , n − 1} → Σ. The collection of all infinite words is denoted Σω . For each n ∈ N, the set of length-n words is Σn, and we let Σ⋆ (resp. Σ+) range over all finite words of length at least 0 (resp. strictly positive). For a finite word σ, its length is written |σ|. If σ ∈ Σn and 
+
+0 ≤ i < n , we write σ(..i ) for the prefix of σ ending at position i. Note that σ(..i ) is of length i + 1 . Similarly, we denote σ(i.. ) for the suffix starting at position i; the same notation applies to σ ∈ Σω in the natural way. Let P be a finite set of Boolean variables (equivalently, 
+
+atomic propositions ). An assignment for P is a mapping of variables to values in B = {⊥ , ⊤} , represented as w :
+
+P → B. We use BP to denote the set of all such assign-ments. When P1 and P2 are disjoint variable sets, any pair of assignments w1 ∈ BP1 and w2 ∈ BP2 can be combined into a single assignment over P1 ∪ P 2, written 
+
+w1 ⊔ w2, by agreeing with w1 on P1 and with w2 on P2.Formally, we have (w1 ⊔ w2)( v) = w1(v) for v ∈ P 1 and 
+
+(w1 ⊔ w2)( v) = w2(v) for v ∈ P 2.We use these objects to encode synchronous, discrete-time Boolean signal models. Assigning one variable in 
+
+P to each signal, the global behavior over time is repre-sented by a finite word σ ∈ (BP )+ whose letters are as-signments of P at successive time steps. The operator ⊔ is lifted pointwise to such words: for disjoint P1, P2 and words 
+
+σ1 ∈ (BP1 )n, σ2 ∈ (BP2 )n of the same length n, we define 
+
+σ1 ⊔ σ2 ∈ (BP1∪P 2 )n by (σ1 ⊔ σ2)( i) = σ1(i) ⊔ σ2(i) for every i such that 0 ≤ i < n .
+
+2.2 Linear Temporal Logic over Nonempty Finite Words. 
+
+We use classical LTL f semantics over nonempty finite words (De Giacomo and Vardi 2013). 
+
+Definition 1 (LTL f formulas) . An LTL f formula φ is built from a set P of atomic propositions, using the following grammar, where p ∈ P , and ⊙ ∈ {∧ , ∨, →, ↔, . . . } is any 
+
+2Boolean operator: φ ::= tt | ff | p | ¬ φ | φ ⊙ φ | Xφ |
+
+X!φ | Fφ | Gφ | φ U φ | φ R φ.Symbols tt and ff represent the true and false LTL f
+
+formulas. Other than the usual Boolean operators, we have the temporal operators X (weak next), X! (strong next), F (finally), G (globally), U (until), and R (release). Let LTL f (P) denote the set of all formulas produced by the above grammar. For φ ∈ LTL f (P), we use sf (φ) to denote the set of all sub-formulas of φ. A maximal temporal subformula of φ is a subformula whose primary operator is temporal and that is not strictly contained within any other temporal subformula of φ.The semantics of LTL f defines when a formula φ ∈
+
+LTL f (P) is satisfied by a word σ ∈ (BP )n at position 0 ≤
+
+i < n . We denote this by σ, i |= φ, and define it as follows. 
+
+σ, i |= tt ⇐⇒ i < n σ, i |= p ⇐⇒ p ∈ σ(i)
+
+σ, i |= ff ⇐⇒ i = n σ, i |= ¬φ ⇐⇒ ¬ (σ, i |= φ)
+
+σ, i |= φ1 ⊙ φ2 ⇐⇒ (σ, i |= φ1) ⊙ (σ, i |= φ2)
+
+σ, i |= Xφ ⇐⇒ (i + 1 = n) ∨ (σ, i + 1 |= φ)
+
+σ, i |= X!φ ⇐⇒ (i + 1 < n ) ∧ (σ, i + 1 |= φ)
+
+σ, i |= Fφ ⇐⇒ ∃ j ∈ [i, n ), σ, j |= φσ, i |= Gφ ⇐⇒ ∀ j ∈ [i, n ), σ, j |= φσ, i |= φ1 U φ2 ⇐⇒ ∃j∈[i, n ),  (σ, j |= φ2) ∧ (∀k∈[i, j ), σ, k |= φ1)
+
+σ, i |= φ1 R φ2 ⇐⇒ ∀j∈[i, n ),  (σ, j |= φ2) ∨ (∃k∈[i, j ), σ, k |= φ1)
+
+The set of words that satisfy φ ∈ LTL f (P) is represented by L (φ) = {σ ∈ (BP )+ | σ, 0 |= φ}.
+
+Example 1. Consider the following LTL f formula over P =
+
+{u, i, o }: Ψ =  GF u → F(i ↔ o) ∧  GF ¬u → F(i ∨ o).Suppose u and i are inputs, and o is the output of a system. The above formula specifies that if u is set in the last step, then o must eventually have the same value as i. Otherwise, at least one of i or o must eventually be set, although it is not necessary for them to have the same value. 
+
+Definition 2 (Propositional Equivalence (Esparza, Kˇ ret´ ınsk´ y, and Sickert 2018)) . For φ ∈ LTL f (P), let 
+
+φP be the Boolean formula obtained from φ by replacing every maximal temporal subformula ψ by a Boolean variable xψ . Two formulas φ1, φ 2 ∈ LTL f (P) are proposi-tionally equivalent , denoted φ1 ∼ φ2, if φ1P and φ2P are semantically equivalent Boolean formulas. 
+
+Note that if φ1 ∼ φ2, then L (φ1) = L (φ2), but the converse is not true in general. We use [φ]∼ ∈ LTL f (P) to denote some unique representative of the equivalence class of φ with respect to ∼.
+
+2.3 LTL f Synthesis and Realizability 
+
+Consider a setting where the desired behavior of a system interacting with an environment is specified by an LTL f for-mula over variables representing inputs of the environment and outputs of the system. The synthesis problem asks us to design a controller (aka. strategy /plan ) that observes the history of inputs and determines the outputs at every time step, such that the specification is satisfied for every input se-quence produced by the environment. Not all system inputs may be observable or even usable by the controller. This can happen if some inputs are noisy or cannot be measured reliably enough. Therefore, it makes sense to partition the input variables into two disjoint sets I and U, representing observable and unobservable inputs, respectively. Let O be the set of output variables. In general, the desired system behavior is specified by a formula φ ∈ LTL f (I ⊎ U ⊎ O ).We use the terminating transducer interpretation of con-trollers, originally introduced by Bansal et al. (2023). As observed by Jacobs, Perez, and Schlehuber-Caissier (2026), this is a natural interpretation in the context of LTL f syn-thesis, since we expect a controller to know when a task is completed, and therefore when to stop interacting with the environment. The controller itself may be represented as a deterministic Mealy or Moore machine with input alphabet 
+
+BI , output alphabet BO , and a distinguished subset of states designated as terminating states . With Mealy semantics, the controller can access the past and also current inputs to de-termine its current output; with Moore semantics, it can ac-cess only the past inputs. The controller M induces a func-tion ρM : ( BI )∗ → (BO ) that maps a history of assignments of observable input variables to the current assignment of output variables. Given an input word σ ∈ (BI )n of length 
+
+n, the controller produces a corresponding word of n output assignments, denoted σρM ∈ (BO )n. If σ leads the underly-ing machine to a terminating state, the system is assumed to stop interacting with the environment after reading σ.
+
+Synthesis under full observability: To understand when a controller M realizes a specification φ, we first consider the case when all inputs of the environment are observable by the controller, i.e., U = ∅.
+
+Definition 3 ((Bansal et al. 2023; Jacobs, Perez, and Schle-huber-Caissier 2026)) . A controller M realizes an LTL f
+
+specification φ if for every word σ ∈ (BI )ω there ex-ists a position k ≥ 0 such that (a) M enters a terminat-ing state after reading the input sequence σ(..k ), and (b) 
+
+(σ ⊔ σρM )( ..k ) ∈ L (φ).
+
+If we view the interaction between the system and the en-vironment as a two-player game, then Definition 3 implies the following. For every input sequence produced by the environment, the controller generates an output at each step based on the input history so far. It does so such that, af-ter finitely many steps, the play reaches a terminating state of the transducer. When the resulting finite interaction se-quence satisfies the LTL f specification φ, the system player chooses to terminate the play. The first player is chosen ac-cording to the desired semantics (Mealy or Moore). 
+
+Synthesis under partial observability: If U̸ = ∅, the sit-uation becomes more interesting. While the controller M
+
+generates its output sequence by observing only the inputs on I, satisfaction of φ depends on the values on I, O and U.This motivates the following definition of realizability under partial observation (De Giacomo and Vardi 2016). 
+
+Definition 4. A controller M implementing the function 
+
+ρM : ( BI )∗ → BO realizes a specification φ ∈ LTL f (I ⊎ 
+
+3U ⊎ O ) if for any word σ ∈ (BI )ω there exists a position 
+
+k ≥ 0 such that (a) M enters a terminating state after read-ing the input sequence σ(..k ), and (b) for every σU ∈ (BU )k,the word σU ⊔ (σ ⊔ σρM )( ..k ) ∈ L (φ).
+
+The alternation of quantifiers in the above definition de-serves careful attention. Intuitively, once the controller de-cides to terminate the play (by entering a terminating state), it must be possible to satisfy φ by augmenting (σ⊔σρM )( ..k )
+
+with any arbitrary sequence of valuations of U of length 
+
+k + 1 . Note that we do not pick a separate k for each word in (BU )ω . Instead, once k is chosen, the same choice works in condition (b) of Definition 4 for all words in (BU )k. This is why, despite the lack of visibility of U, the outputs gen-erated by the controller allow the system to win the game, irrespective of how the environment assigns values to U.We say a specification φ ∈ LTL f (I ⊎ U ⊎ O ) is real-izable under full (resp. partial) observability if there ex-ists a controller M that realizes φ in the sense of Defi-nition 3 (resp. Definition 4). The synthesis problem for 
+
+LTL f under full (resp. partial) observability is the task of algorithmically generating a controller M that realizes φ.The computational complexity of both problems is known to be 2EXPTIME-complete (De Giacomo and Vardi 2015; De Giacomo and Vardi 2016). Referring to Example 1, if both inputs i and u are observ-able, the specification is realizable in one step by a Mealy machine controller; however, with only i observable, two steps are needed. We discuss this in detail in Section 4. 
+
+Some important notions used in later sections: The no-tions of formula progression (Xiao et al. 2021; De Gia-como et al. 2022; Xiao et al. 2025; Duret-Lutz et al. 2025), belief-state automata construction (De Giacomo and Vardi 2016), and on-the-fly interleaved construction of automata and game-solving (Xiao et al. 2021; De Giacomo et al. 2022; Xiao et al. 2024; Favorito 2023; Li et al. 2025; Duret-Lutz et al. 2025) have been used in earlier work in the context of 
+
+LTL f synthesis under full observability. We introduce non-trivial adaptations of these techniques to work in the pres-ence of partial observability. Details of these techniques and our adaptations are discussed in Section 3. Multi-Terminal Binary Decision Diagrams (MTB-DDs) (Minato 1996; Fujita, McGeer, and Yang 1997; Klarlund and Møller 2001), also called Algebraic Decision Diagrams (ADDs) (Bahar et al. 1993; Somenzi 2015), are graph-based symbolic representa-tions of functions f : BP → S , where P is a set of Boolean propositions and S is a set of labels. We use MTBDDs to symbolically represent the next-state transition functions of deterministic finite automata (DFA) arising from LTL f for-mulas. MTBDD-based representations of DFA, also called MTDFA, have been used by Zhu et al. (2017) and Duret-Lutz et al. (2025) for LTL f synthesis under full observability. More details on MTDFAs are given in Section 4. 
+
+# 3 On-the-fly Synthesis Framework 
+
+This section presents an on-the-fly approach to LTL f synthe-sis under partial observability. We first briefly recall formula progression as a standard technique for constructing DFAs for LTL f specifications on the fly. We then extend this tech-nique to partial observability by introducing observable pro-gression , which incrementally constructs a belief-state DFA, performing universal quantification over unobservable vari-ables at each step. Finally, we show how this construction enables on-the-fly game solving, by interleaving belief-state DFA construction with game exploration. 
+
+3.1 LTL f -to-DFA via Formula Progression 
+
+On-the-fly DFA construction for an LTL f formula is based on the idea of formula progression (Xiao et al. 2021; De Gi-acomo et al. 2022; Xiao et al. 2025). Our formula progres-sion procedure, denoted by fp (·, ·), is adapted from existing progression-based translations to better align with state-of-the-art MTDFA-based implementation of formula progres-sion (Duret-Lutz et al. 2025). Specifically, our adaptation requires fp (·, ·) to return a (formula, flag) pair, rather than a formula alone. This is essential for introducing observable progression in the next section, which leverages the MTDFA representation to construct belief-state DFAs on the fly. The procedure fp (φ, w ) takes an LTL f formula φ and an assignment w ∈ BP , and returns a pair (φ′, b ) ∈ LTL f (P) ×
+
+B, where φ′ is an LTL f formula representing the remaining to be satisfied after reading w, and b is a Boolean value in-dicating whether φ is satisfied after reading w, assuming the trace terminates at that point. Note that we use the following lifting of Boolean connectives to pairs: for ⊙ ∈ {∧ , ∨, →
+
+, ↔, ⊕} , we have (φ1, b 1)⊙(φ2, b 2) = ([ φ1 ⊙φ2]∼, b 1 ⊙b2),and ¬(φ, b ) = ([ ¬φ]∼, ¬b).
+
+fp (tt , w ) = ( tt , ⊤) and fp (ff , w ) = ( ff , ⊥); 
+
+fp (p, w ) = 
+
+(tt , ⊤) if p ∈ w, 
+
+(ff , ⊥) if p̸ ∈ w;
+
+fp (¬φ, w ) = ¬fp (φ, w ); 
+
+fp (φ1 ⊙ φ2, w ) = fp (φ1, w ) ⊙ fp (φ2, w ); 
+
+fp (Xφ, w ) = ( φ, ⊤) and fp (X!φ, w ) = ( φ, ⊥); 
+
+fp (Fφ, w ) = fp (φ, w ) ∨  Fφ, ⊥;
+
+fp (Gφ, w ) = fp (φ, w ) ∧  Gφ, ⊤;
+
+fp (φ1 U φ2, w ) = fp (φ2, w ) ∨  fp (φ1, w ) ∧ (φ1 U φ2, ⊥);
+
+fp (φ1 R φ2, w ) = fp (φ2, w ) ∧  fp (φ1, w ) ∨ (φ1 R φ2, ⊤).
+
+In order to build a DFA of an LTL f formula φ ∈ LTL f (P)
+
+via formula progression, we consider [φ]∼ as the initial state of the DFA. Then, for each assignment w ∈ BP ,we compute fp (φ, w ) and obtain a progressed formula, which is treated as the successor state of φ with respect to the input w. By repeating this construction for newly generated formulas, the DFA is built on the fly, generat-ing only the states that are reachable from φ, denoted by 
+
+Reach (φ), where Reach (φ) = {[φ]∼} ∪ { [φ′]∼ | (φ′, b ) = 
+
+fp (φ, σ ) for every σ ∈ (BP )+}. Note that the function 
+
+fp (·, ·) is naturally generalized to finite non-empty words 
+
+σ ∈ (BP )+: fp (φ, σ ) = ( φ|σ|− 1, b |σ|− 1) with (φi, b i) = 
+
+fp (φi−1, σ (i)) for 0 ≤ i < |σ|, and φ−1 refers to the orig-inal formula φ. Due to propositional equivalence, this con-4struction produces a doubly exponential DFA, i.e. 22O(|sf (φ)|)
+
+states, in the worst case. 
+
+3.2 Belief-State DFA Construction 
+
+Note that in LTL f synthesis under partial observability, a subset of variables is unobservable. Therefore, a straightfor-ward way to handle the unobservable variables U is project-ing them away from the transitions of the DFA over alphabet 
+
+I ⊎ O ⊎ U . This projection introduces an NFA over alphabet 
+
+I ⊎ O that must be determinized via subset construction to obtain a belief-state DFA (De Giacomo and Vardi 2016). In this section, we show how this belief-state DFA construction can be performed on the fly by interleaving formula progres-sion with subset construction. In the remainder of the section, for simplicity, we only distinguish observable and unobservable variables. Thus, we consider P = Po ⊎ P u, where Po = I ⊎ O is the set of observable (environment and system) variables and Pu = U
+
+is the set of unobservable (environment) variables. Intuitively, formula progression decomposes an LTL f for-mula φ into a requirement about the current assignment, which can be checked immediately, and a requirement about the future that must hold on the yet unavailable suffix of the trace. Under partial observability, however, the current as-signment is only partially known, due to the unobservable variables Pu. As a result, progressing an LTL f formula with respect to an observable assignment wo ∈ BPo no longer leads to a single future requirement, but to a set of possible future requirements corresponding to different assignments of the unobservable variables. Accordingly, given an LTL f formula φ ∈ LTL f (P), a be-lief state is a finite set s = {φ1, . . . , φ k} ⊆ Reach (φ).In particular, we represent such a belief-state by the for-mula ψs = V 
+
+> φi∈s
+
+φi, which naturally captures the universal quantification over unobservable variables induced by sub-set construction. It is worth noting that the implementation of belief states by Tabajara and Vardi (2020) did introduce an additional exponential blowup beyond standard LTL f -to-DFA construction, resulting in a triply exponential worst-case complexity. However, this additional cost is not inher-ent to our belief-state approach. Although belief states are defined as finite sets of formulas, they can be represented as conjunctions of formulas, and identified through propo-sitional equivalence, rather than treated as distinct syntactic sets. We return to this point later and formally show that the resulting belief-state space remains doubly exponential in the size of the original formula. For simplicity, we iden-tify belief states s with their conjunctive formula represen-tations ψs, or ψ when it’s clear from the context. 
+
+Observable Progression. Let ψs be a belief state, and let 
+
+wo ∈ BPo be an observable assignment. Intuitively, observ-able progression takes the current belief state, progresses it with respect to the observable assignment wo, and produces the corresponding successor belief state. To this end, observ-able progression considers all full assignments w ∈ BP that agree with wo on the observable variables, i.e., wo = w|Po .Formula progression is applied to ψs under each such as-signment. Since the successor belief state must account for all such possible assignments, we combine the result-ing progressions conjunctively. Note that formula progres-sion returns a pair in LTL f (P) × B, so to define observable progression, we lift conjunction to such pairs as follows: for a non-empty finite set X ⊆ LTL f (P) × B, we define 
+
+V X =
+
+V 
+
+> (φ,b )∈X
+
+φ, V 
+
+> (φ,b )∈X
+
+b
+
+
+
+.
+
+Definition 5. The observable progression of ψs under wo is defined as 
+
+fpObs (ψs, w o) = ^ fp (ψs, w ) | w ∈ BP , w |Po = wo .
+
+The following two lemmas show that observable progres-sion is a suitable generalization of formula progression to the setting of partial observability. In particular, observable pro-gression preserves the semantics of LTL f under unobserv-able variables as well as the propositional behavior of LTL f
+
+formulas. 
+
+Lemma 1. Let P = Po ⊎ P u, let ψs be a belief state, and 
+
+ψ′ 
+
+> s
+
+the observably progressed formula over wo ∈ BPo , i.e., 
+
+(ψ′
+
+> s
+
+, ) = fpObs (ψs, w o). Let σ ∈ (BP )+ be a full trace and let i < |σ| − 1 be a position such that σ(i)|Po = wo. Then 
+
+σ, i + 1 |= ψ′ 
+
+> s
+
+iff ∀wu ∈ BPu : σwu , i |= ψs,
+
+where σwu is obtained from σ by changing only position i:
+
+σwu (i) = wo ⊔ wu and σwu (j) = σ(j) for all j̸ = i.Proof. By definition of observable progression, 
+
+fpObs (ψs, w o) = ^ fp (ψs, w ) w ∈ BP , w |Po = wo
+
+= ^ fp (ψs, w o ⊔ wu) wu ∈ BPu .
+
+For each wu ∈ BPu , let (ψwu , b wu ) be the result of progressing ψs under the assignment wo ⊔ wu, that is, 
+
+(ψwu , b wu ) = fp (ψs, w o ⊔ wu). By construction, the for-mula ψ′ returned by fpObs (ψs, w o) is the conjunction of all formulas ψwu over wu ∈ BPu . Therefore, we need to show 
+
+σ, i + 1 |= ψ′ 
+
+> s
+
+iff ∀wu ∈ BPu : σ, i + 1 |= ψwu . (1) Now let wu ∈ BPu be arbitrary. By definition of the trace 
+
+σwu , its value at position i is wo ⊔ wu. By the correctness of formula progression, we have 
+
+σwu , i |= ψs iff σwu , i + 1 |= ψwu . (2) Moreover, the traces σwu and σ share the same suffix start-ing at i + 1 . Hence, the satisfaction of ψwu at position i + 1 
+
+is the same on both traces. That is, 
+
+σwu , i + 1 |= ψwu iff σ, i + 1 |= ψwu . (3) Combining (2) & (3), we obtain that for every wu ∈ BPu ,
+
+σwu , i |= ψs iff σ, i + 1 |= ψwu .
+
+Taking universal quantification over all wu ∈ BPu and using (1), we conclude that 
+
+σ, i + 1 |= ψ′ 
+
+> s
+
+iff ∀wu ∈ BPu : σwu , i |= ψs.
+
+5Lemma 2. Let φ and ψ be two LTL f formulas over P such that φ ∼ ψ, and let φ′ and ψ′ be their respective observ-ably progressed formulas over wo ∈ BPo , i.e., (φ′, ) = 
+
+fpObs (φ, w o) and (ψ′, ) = fpObs (ψ, w o). Then 
+
+φ′ ∼ ψ′.
+
+Proof. By definition of observable progression, 
+
+fpObs (φ, w o) = ^ fp (φ, w ) w ∈ BP , w |Po = wo ,
+
+and 
+
+fpObs (ψ, w o) = ^ fp (ψ, w ) w ∈ BP , w |Po = wo .
+
+Since φ ∼ ψ and formula progression preserves proposi-tional equivalence, for every w ∈ BP we have fp (φ, w ) ∼
+
+fp (ψ, w ). For each w ∈ BP , write (φw, ) = fp (φ, w ) and 
+
+(ψw, ) = fp (ψ, w ), and we have that φw ∼ ψw. Therefore, since φw ∼ ψw for every w ∈ BP with w|Po = wo, and propositional equivalence is preserved under conjunction, it follows that ^ 
+
+> w|Po=wo
+
+φw ∼ ^ 
+
+> w|Po=wo
+
+ψw.
+
+Hence, φ′ ∼ ψ′, concluding the proof. Let φ ∈ LTL f (P) be an LTL f formula such that P =
+
+Po ⊎ P u. We construct a belief-state DFA for φ by us-ing observable progression to obtain the state space and transition function. Intuitively, each state of the automa-ton represents a belief state reachable from the initial spec-ification φ with some sequence of observable assignments 
+
+σo ∈ (BPo )+. Progressing on an observable assignment 
+
+wo ∈ BPo transits from the current belief state to its suc-cessor by applying observable progression, which accounts for all full assignments w ∈ BP consistent with wo. Ac-ceptance is checked by the Boolean value returned by ob-servable progression. We generalize LTL f observable pro-gression from single instance to finite traces by defining 
+
+fpObs (φ, σ o · wo) = fpObs (fpObs (φ, σ o), w o), where wo ∈
+
+BPo and σo ∈ (BPo )+ and formalize the belief-state DFA construction as follows. 
+
+Definition 6 (LTL f to Belief-State DFA) . Given an LTL f
+
+formula φ ∈ LTL f (P), where P = Po ⊎ P u, let ABφ =
+
+⟨S , BPo , ι B , δ B , T B ⟩ be a belief-state DFA by setting S =
+
+Reach B (φ), where Reach B (φ) = {[φ]∼} ∪ { [ψ′]∼ |
+
+(ψ′, ) = fpObs (φ, σ o), σ o ∈ (BPo )+}, ιB = [φ]∼,
+
+δB : S × BPo → S is such that δB (s, w o) = s′, where 
+
+(s′, ) = fpObs (s, w o) for s ∈ S and T B = {(s, w o) ∈S × BPo | ( , b ) = fpObs (s, w o) and b = ⊤} .
+
+The following theorem shows the correctness of the con-struction in Definition 6. 
+
+Theorem 1. Let φ ∈ LTL f (P) with P = Po ⊎ P u, and let ABφ be the belief-state DFA constructed in Definition 6. Then for every observable word σo ∈ (BPo )+,
+
+σo ∈L (ABφ ) iff 
+
+∀σ ∈ (BP )+ such that σ|Po = σo we have that σ |= φ. 
+
+Proof. Let σo = w0 
+
+> o
+
+· · · wn−1 
+
+> o
+
+∈ (BPo )+. Consider the (unique) run of ABφ on σo:
+
+s0
+
+> w0
+> o
+
+−−→ s1
+
+> w1
+> o
+
+−−→ · · · wn−1
+
+> o
+
+−−−→ sn,
+
+where s0 = [ φ]∼ and δB (st, w to) = st+1 for 0 ≤ t ≤ n − 1.By Definition 6, this means that 
+
+(st+1 , ) = fpObs (st, w to). (1) For 0 ≤ t < n , let τ ∈ (BP )n−t be such that τ |Po =
+
+wto · · · wn−1 
+
+> o
+
+. We need to show that the following holds: 
+
+τ |= st ⇐⇒ ∀(w0 
+
+> u
+
+· · · wt−1 
+
+> u
+
+) ∈ (BPu )t.(σo(..t − 1) ⊔ (w0 
+
+> u
+
+· · · wt−1 
+
+> u
+
+)) · τ |= φ. 
+
+For t = 0 , the equivalence holds since s0 = [ φ]∼.Assume the equivalence holds for some t < n . Let wo =
+
+wto = τ (0) |Po . By (1), we have (st+1 , ) = fpObs (st, w o).Applying Lemma 1, we have that 
+
+τ (1 .. ) |= st+1 iff ∀wu ∈ BPu : τ wu |= st,
+
+where τ wu (1 .. ) = τ (1 .. ) and τ wu (0) = wo ⊔ wu.By induction hypothesis, we have that τ (1 .. ) |= st+1 iff 
+
+∀(w0 
+
+> u
+
+· · · wt−1 
+
+> u
+
+) ∈ (BPu )t and ∀wu ∈ (BPu )(σo(..t − 1) ⊔ (w0 
+
+> u
+
+· · · wt−1 
+
+> u
+
+)) · (wo ⊔ wu) · τ (1 .. ) |= φ
+
+which is equivalent to ∀(w0 
+
+> u
+
+· · · wtu) ∈ (BPu )t+1 
+
+(σo(..t ) ⊔ (w0 
+
+> u
+
+· · · wtu)) · τ (1 .. ) |= φ. 
+
+Thus, the equivalence holds for t + 1 .Finally, by Definition 6, the run on σo is accepting iff the last transition (sn−1, w n−1 
+
+> o
+
+) is accepting, i.e., iff for 
+
+( , b ) = fpObs (sn−1, w n−1 
+
+> o
+
+) we have b = ⊤. Unfolding the definition of fpObs (·) and the Boolean value of fp (·),this holds exactly when φ is satisfied for all full traces con-sistent with σo. Therefore, σo ∈ L (ABφ ) iff every full trace 
+
+σ ∈ (BP )+ with σ|Po = σo satisfies φ.We now consider the size of the belief-state space in-duced by observable progression. Although belief states are defined as sets of formulas obtained from formula pro-gression, they are always identified by propositional equiv-alence through their conjunctive representation. Intuitively, while belief states may be considered as sets, they are rep-resented as single Boolean formulas built from subformu-las of φ. Indeed, there are at most doubly exponentially many propositionally non-equivalent Boolean formulas of this form, thereby avoiding a triply exponential worst-case blowup of Tabajara and Vardi (2020)’s construction. Thanks to propositional equivalence, this new belief-state construc-tion maintains a doubly exponential worst-case bound, as formalized by the following theorem. 
+
+Theorem 2. Let φ ∈ LTL f (P) and let ABφ be the belief-state DFA constructed in Definition 6. Then the state set S
+
+of ABφ is finite and satisfies |S| = |Reach B (φ)| = O(2 2n
+
+),
+
+where n = |sf (φ)|.
+
+6Proof. By construction, every belief state is represented by a formula obtained as a conjunction of formulas produced by formula progression starting from φ. Formula progres-sion introduces only Boolean combinations of subformulas of φ. Since sf (φ) is finite with |sf (φ)| = n, there are at most 22n
+
+propositional equivalence classes of such Boolean formulas. Therefore, the set of reachable belief states, con-sidering propositional equivalence (Lemma 2), is finite and bounded by O(2 2n
+
+).A straightforward way of using our belief-state DFA con-struction technique would be solving a reachability game on a fully built belief-state DFA, as done by Tabajara and Vardi (2020). However, this cannot avoid the worst-case doubly exponential blowup. In the next section, we show how to integrate on-the-fly game solving to the belief-state DFA construction, enabling a unified on-the-fly approach to 
+
+LTL f synthesis under partial observability. 
+
+3.3 On-the-fly Synthesis 
+
+For LTL f synthesis under full observability, on-the-fly syn-thesis techniques have proven to be highly effective (Xiao et al. 2021; De Giacomo et al. 2022; Xiao et al. 2024; Favorito 2023; Li et al. 2025; Duret-Lutz et al. 2025). In this setting, the DFA for the LTL f specification is constructed in-crementally via formula progression and explored only as needed during game solving, avoiding the upfront construc-tion of the full automaton. Our belief-state construction enables the same on-the-fly technique to be applied to LTL f synthesis under partial ob-servability. Since belief states and transitions are generated on demand via observable progression, the belief-state DFA does not need to be built upfront. Instead, belief-state con-struction and game solving can be tightly interleaved, ex-ploiting only those belief states that are actually visited dur-ing the reachability game. 
+
+# 4 Implementation 
+
+The Spot library (Duret-Lutz et al. 2022) contains a tool for LTL f -synthesis called ltlfsynt 2 (Duret-Lutz et al. 2025). Our implementation is an extension of ltlfsynt 
+
+that adds the option --unobservable-ins , which is publicly available since version 2.15 of Spot. We first recall how that tool does synthesis with full observability before discussing our changes. In ltlfsynt , the LTL f specification is converted into a DFA with transition-based acceptance, represented using MTBDDs: they call that representation an MTDFA. The states Q ⊆ LTL f (P) of an MTDFA are identified with 
+
+LTL f formulas denoting the language recognized from these states. The set of outgoing transitions of a state are repre-sented by an MTBDD with internal nodes labeled by P and terminals labeled by LTL f (P) × B. In a terminal (α, b ), the destination state is α, while b indicates whether the automa-ton can stop upon reaching this terminal (in other words, b
+
+is the acceptance of the transition leading to α). 
+
+> 2https://spot.lre.epita.fr/ltlfsynt.html
+
+i
+
+o o
+
+α1 α2 α3
+
+∧
+
+i
+
+o o
+
+β1 β2 β3
+
+=
+
+i
+
+o o
+
+α1∧β1 α2∧β3 α1∧β1 α3∧β2          
+
+> Figure 1: Conjunction of two MTBDDs with LTL fterminals. As typical in BDD-based representations, a node xℓ
+> hshould be read as “if xthen helse ℓ”.
+
+ψ1 Ψ ψ2
+
+u u u
+
+i i i i i i
+
+o o o o o o o o
+
+ψ1 ψ2 ψ1 tt ψ2 Ψ
+
+u∧¬ i / ¬oi∨¬ u / o                              
+
+> Figure 2: (left) An MTDFA for the formula Ψ = ψ1∧ψ2where
+> ψ1= ( GF u)→F(i↔o)and ψ2= ( GF ¬u)→F(i∨o).A root αmindicates that tr (α) = m.If this automaton is interpreted as a game where the environment plays I={u, i }, and the controller plays O={o}, then the controller has a strategy to reach an accepting terminal if it takes the highlighted edges. (right) The corresponding controller as a terminating Mealy machine.
+
+Concretely, outgoing transitions are computed using the function tr : LTL f (P) → MTBDD (P, LTL f (P) × B) de-fined inductively as follows, where we represent a terminal labeled by (α, ⊥) (resp. (α, ⊤)) as α (resp. α ).                                                 
+
+> tr (ff ) = ff tr (X!α) = α
+> tr (tt ) = tt tr (Xα) = α
+> tr (p) = p
+> ff tt
+> for p∈ P tr (¬α) = ¬tr (α)
+> tr (α⊙β) = tr (α)⊙tr (β)for any ⊙ ∈ {∧ ,∨,→,↔,⊕}
+> tr (αUβ) = tr (β)∨(tr (α)∧αUβ)tr (Fα) = tr (α)∨Fα
+> tr (αRβ) = tr (β)∧(tr (α)∨αRβ)tr (Gα) = tr (α)∧Gα
+
+Boolean operators that appear to the right of the equal sign are applied to MTBDDs using algorithms similar to those of BDDs, with the difference that LTL f -labeled termi-nals are combined to form new terminals: (α, a ) ⊙ (β, b ) = ([ α ⊙ β]∼, a ⊙ b), as done with formula progressions (Sec-tion 3.1). Figure 1 shows an example of a conjunction of two MTBDDs, that we shall reuse later. The different paths in the MTBDD computed by tr (φ)
+
+represent all possible formula progressions for φ, but the above efficiently constructs all progressions at once, without having to compute fp (φ, w ) for each w ∈ BP independently. By computing such an MTBDD for all LTL f terminals reach-7Ψ ψ1 ψ2
+
+i i i
+
+o o o o
+
+ψ1 ψ2 tt Ψ ψ2
+
+i / o 
+
+¬i / ¬o ⊤ / o        
+
+> Figure 3: (left) Belief-state MTDFA for Ψ, assuming that U={u}
+> is unobservable. If this automaton is interpreted as a game where the controller plays O={o}, the highlighted edges represent one possible winning strategy. (right) The corresponding controller as a terminating Mealy machine.
+
+able from φ, one can obtain an MTDFA representation as shown in Figure 2 for the formula Ψ of Example 1. Assuming an appropriate ordering of the MTBDD vari-ables P (e.g., input variables before output variables for Mealy semantics), the constructed MTDFA can be inter-preted directly as a two-player game to solve the correspond-ing LTL f synthesis problem under full observability ( I =
+
+{i, u } and O = {o}). In this construction, accepting termi-nals (such as tt in Fig. 2) are the targets of the reachabil-ity game, so their successors do not need to be computed. Finally, the fact that tr (·) computes all successors of one state enables an on-the-fly construction of the MTDFA while solving the game (Duret-Lutz et al. 2025, Algorithm 2). For instance in Figure 2, the highlighted winning strategy can al-ready be found after computing tr (Ψ) , so the algorithm can stop without exploring the discovered successors. 
+
+MTDFA-based Observable Progression. The partial-observability extension introduces support for partial ob-servability in the above architecture. To do so, we use an MTBDD operation to universally quantify the unobservable variables U ⊆ P in the MTBDD computed by tr (φ) during on-the-fly exploration of the MTDFA. If tr (φ) was a symbolic representation of the set of progressions of the form fp (φ, w ) for w ∈ BP , then 
+
+∀U .tr (φ) is the symbolic representation of the set of all ob-servable progressions fpObs (φ, w o) for wo ∈ BPo .The MTBDD ∀U .tr (φ) is computed bottom-up using an algorithm similar to those of BDDs: an internal MTBDD node labeled with a variable in U is replaced by the conjunc-tion of its children. For instance, the MTBDD computed for 
+
+tr (Ψ) in Figure 2 has its top-level node labeled by u ∈ U ,so it should be replaced by the conjunction of its two chil-dren. This is exactly the operation depicted in Figure 1, with 
+
+α1 = α2 = ψ1, β1 = β3 = ψ2, and α3 = β2 = tt .Doing this quantification for every state reached during the translation gives the belief-state MTDFA of Figure 3. To make this quantification efficient, we always put all unob-servable variables U at the bottom of the variable order: thus all nodes that should be removed appear in subtrees of the MTBDDs, and their quantification replaces those subtrees by terminals labeled by the conjunction of their leaves. 
+
+Theorem 3. For φ ∈ LTL f (P), with P = Po ⊎ U , let 
+
+ABφ = ⟨S , Po, ι B , ∆B ⟩ be the belief-state MTDFA obtained by setting ιB = [ φ]∼, ∆B (s) = ∀U .tr (s), and letting S be the smallest subset of LTL f (P) such that (i) ιB ∈ S , and (ii) for every s ∈ S and every terminal labeled (α, b ) in ∆B (s),
+
+α ∈ S . Then S is finite and ABφ is a symbolic representation of the belief-state DFA defined in Definition 6. Proof. Finiteness follows directly from Theorem 2: tr (s)
+
+contains only Boolean combinations of subformulas of φ,and the quantification ∀U only combines leaves by conjunc-tion. Hence all states are still Boolean combinations of sub-formulas of φ, up to propositional equivalence, and there are finitely many of them. Correctness follows from the definition of MTBDD uni-versal quantification. For every s ∈ S and wo ∈ BPo ,evaluating ∀U .tr (s) under wo yields the conjunction of the progressions obtained from all completions of wo with val-uations of the unobservable variables: (∀U .tr (s))( wo) = V fp (φ, w ) w ∈ BP , w |Po = wo . By definition, this is exactly fpObs (s, w o). Therefore, ∆B induces the same successors and accepting transitions as the belief-state DFA of Definition 6. 
+
+On-the-fly synthesis is enabled by solving the induced reachability game during the exploration of the belief-state MTDFA, without constructing the full automaton upfront. On the example of Figure 3, an on-the-fly construction that explores ψ2 before ψ1 would solve the game before explor-ing ψ1. The game-solving procedure was not changed; it was only applied to the belief states. 
+
+# 5 Empirical Evaluation 
+
+In this section, we evaluate our on-the-fly synthesis ap-proach by comparing our implementation against state-of-the-art tools for LTL f synthesis under partial observ-ability. As mentioned in Section 4, our implementation is available in ltlfsynt , starting from Spot 2.15. In the experimental plots and tables, we denote that partial-observability configuration by ltlfsynt-po . In addi-tion, to evaluate the practical benefits of integrating the on-the-fly game solving (see Sec 3.3), we implemented a vari-ant of ltlfsynt-po , named ltlfsynt-po-naive , in which on-the-fly game solving is disabled. In this configu-ration, a belief-state MTDFA is first constructed in full, and only afterward a reachability game is solved on the resulting automaton. All of our experiments were run on a machine with an Intel Xeon Gold 6130 CPU with 2.10GHz, 64 cores and 188.5 GB of RAM. We limited each test to 90 seconds. 
+
+5.1 Baseline Tools 
+
+The tools used as baselines in our evaluation are those intro-duced by Tabajara and Vardi (2020), which implement dif-ferent approaches. All tools were built on the symbolic syn-thesis framework Syft for LTL f under full observability (Zhu et al. 2017). The first approach is belief-state based, imple-mented in Syft-bsc . This approach is similar to belief con-structions commonly used in planning (Bonet and Geffner 2000; Hoffmann and Brafman 2005), which first builds a 8deterministic finite automaton (DFA) for the LTL f specifi-cation and then applies a second subset construction to turn it into a belief-state DFA, with the unobservable variables omitted from the transition function. The second approach is projection based, and implemented in Syft-proj . It instead starts from a nondeterministic finite automaton (NFA) and applies a sequence of manipulations to obtain an equivalent belief-state DFA. The third approach is MSO based, im-plemented in Syft-mso . It translates the LTL f specification into a monadic second-order logic (MSO) formula with the unobservable variables universally quantified, and then con-structs a DFA directly for this MSO formula, which is equiv-alent to the belief-state DFA obtained by the other two ap-proaches. Since Syft-proj has been shown to perform worse than Syft-bsc and Syft-mso in their experimental evaluation, we exclude it from our comparison. Refer to Tabajara and Vardi (2020) for further details on these approaches. 
+
+5.2 Benchmarks 
+
+We ran our experiments on several benchmark sets, which we divide into two categories. The first category is the TV-Benchmarks , introduced by Tabajara and Vardi (2020) and designed with partial-observability in mind. That is, every instance in this benchmark already contains a set of unob-servable environment variables. This category includes Coin game (8 instances), Traveling Target (9 instances), and Pri-vate Peek , which consists of 16 sub-categories with 100 in-stances each (1600 instances in total). The second category is SYNTCOMP-fin Benchmarks ,taken from the annual reactive synthesis competi-tion (SYNTCOMP) (Perez 2025). These benchmarks do not originally contain any unobservable variables. As such, we randomly selected half of the environment variables and made them unobservable. To get a better chance that the unobservable variables affect the overall result, we selected benchmarks from designated two-player games, in which such variables are highly likely to affect the outcome. In total, we have 150 instances: Single Counter (20 instances), Double Counter (20 instances), 
+
+Chomp Game (22 instances), and Nim Game (88 instances). We ran each instance 10 times, and in each run randomly selected a fresh set of 50% environment variables consid-ered unobservable, without repeating any previously chosen set, to reduce the impact of randomness and obtain more robust and representative performance measurements. 
+
+Correctness. The implementation of ltlfsynt-po and 
+
+ltlfsynt-po-naive was verified by comparing the re-sults (realizable/unrealizable) returned by them with those from Syft-bsc and Syft-mso . The results were consistent among all tools in all solved cases. 
+
+5.3 Evaluation Results 
+
+Due to space limitations, we only present overall compari-son results here. A detailed comparison on individual bench-mark families can be found in the appendix. Figure 4 is a cactus plot for TV-Benchmarks , compar-ing the end-to-end runtime. All benchmark instances are sorted by runtime for each tool. The colors correspond 0 250 500 750 1000 1250 1500         
+
+> Number of Solved Instances
+> 10 1
+> 10 2
+> 10 3
+> 10 4
+> 10 5
+> Execution Time (ms)  Syft-bsc
+> Syft-mso
+> ltlfsynt-po
+> ltlfsynt-po-naive
+> Figure 4: Cactus plot for TV-Benchmarks 010 20 30 40 50 60
+> Number of Solved Instances
+> 10 0
+> 10 1
+> 10 2
+> 10 3
+> 10 4
+> 10 5
+> 10 6
+> Execution Time (ms)
+> Syft-bsc
+> Syft-mso
+> ltlfsynt-po
+> ltlfsynt-po-naive
+> Figure 5: Cactus plot for SYNTCOMP-fin Benchmarks
+
+to ltlfsynt-po (green), ltlfsynt-po-naive (yel-low), Syft-bsc (blue) and Syft-mso (red). Recall that in this category the partial observability is native to the specifi-cations. This figure shows a significant performance im-provement for ltlfsynt-po over Syft-bsc and Syft-mso ,with the speedup ranging from 27.65x to 126.6x in aver-age runtime across the three different benchmark families. The speedup is measured by taking the total running time of both tools ( ltlfsynt-po and the best-performing be-tween Syft-bsc and Syft-mso ) for each individual benchmark family and computing their ratio. Similarly, Figure 5 is a cactus plot for the SYNTCOMP-fin Benchmarks , in which the unobservable variables are randomly selected, following the same palette of colors as in Figure 4. Here too, the plot shows a significant perfor-mance improvement for ltlfsynt-po over Syft-bsc and 
+
+Syft-mso , with the speedup ranging from 4.81x to 7,892.82x in average runtime across the different benchmark families. Overall, ltlfsynt-po dramatically outperforms cur-rent state-of-the-art tools. These results demonstrate the strength of both our theoretical on-the-fly approaches as de-scribed in Section 3, and our practical MTDFA-based im-plementation, as described in Section 4. We conducted a more detailed comparison to better under-9Table 1: Combined average speedups of ltlfsynt-po com-pared to ltlfsynt-po-naive across all benchmarks. 
+
+Source Family Speedup 
+
+TV-Benchmarks Coin-Game 16.54 ×
+
+Moving-Target 1.22 ×
+
+Private-Peek 1.17 ×
+
+SYNTCOMP-fin Bench. Chomp 4.62 ×
+
+Counter 4.46 ×
+
+Counters-Double 5.11 ×
+
+Nim 4.61 ×
+
+stand the contribution of the on-the-fly game solving compo-nent in ltlfsynt-po . In general, ltlfsynt-po con-sistently outperforms ltlfsynt-po-naive across all benchmarks instances. Table 1 summarizes the speedup on both benchmark cate-gories. Specifically, for the TV-Benchmarks , we can see that 
+
+ltlfsynt-po achieves a speedup ranging from 1.17x to 16.54x over ltlfsynt-po-naive across the individual benchmark families. For the SYNTCOMP-fin Benchmarks ,the speedups range from 4.46x to 5.11x. These results indi-cate that the major improvement in performance is due to our belief-state MTDFA construction techniques. At the same time, they also show that the integration of on-the-fly game solving plays an important role. By solving the reachabil-ity game already during the construction of the belief-state MTDFA, ltlfsynt-po can avoid exploring parts of the automaton that are not needed, which further improves the overall performance. 
+
+# 6 Conclusion and Future Work 
+
+In this paper, we presented an on-the-fly approach to LTL f
+
+synthesis under partial observability based on observable progression. This approach incrementally constructs the belief-state DFA, universally quantifying unobservable en-vironment variables during construction, enabling a tight in-tegration of belief-state DFA construction and game solv-ing. The resulting implementation, leveraging MTDFA rep-resentation, shows significant improvements compared to existing approaches. More generally, our results show that MTDFA-based on-the-fly techniques are not limited to the fully-observable setting. Note that our belief-state DFA con-struction through observable progression essentially builds an automaton incrementally that is equivalent to a formula of the form ∀U .φ , with φ ∈ LTL f (P) and U ⊆ P . This tech-nique can be adapted to support DFA construction for ∃U .φ 
+
+by changing universal quantification to existential quantifi-cation on the MTBDDs, and more generally for quantified 
+
+LTL f formulas ( QLTL f ). Thus our approach can be extended to settings that apply synthesis to QLTL f formulas, such as in (Hagemeier, De Giacomo, and Vardi 2025). 
+
+# Acknowledgments 
+
+We thank the reviewers for their insightful comments. SZ and SC are partly supported by the Royal Society Interna-tional Exchanges grant IES \R2 \252189. NA is supported by the Open University of Israel MSc Excellence Scholar-ship and by The Open University of Israel Research Fund 47372. 
+
+# AI Declaration 
+
+Generative AI was used for language polishing and experi-mental script development. All scientific results, proofs, ar-tifacts, and conclusions were independently verified by the authors, who assume full responsibility for the final content of the paper. 
+
+# References 
+
+Bacchus, F., and Kabanza, F. 2000. Using temporal logics to express search control knowledge for planning. Artificial Intelligence 116(1–2):123–191. Bahar, R. I.; Frohm, E. A.; Gaona, C. M.; Hachtel, G. D.; Macii, E.; Pardo, A.; and Somenzi, F. 1993. Algebraic decision diagrams and their applications. In ICCAD , 188– 191. Baier, J. A.; Fritz, C.; and McIlraith, S. A. 2007. Exploit-ing procedural domain control knowledge in state-of-the-art planners. In ICAPS , 26–33. Bansal, S.; Li, Y.; Tabajara, L. M.; and Vardi, M. Y. 2020. Hybrid compositional reasoning for reactive synthesis from finite-horizon specifications. In AAAI , 9766–9774. Bansal, S.; Li, Y.; Tabajara, L. M.; Vardi, M. Y.; and Wells, A. M. 2023. Model checking strategies from synthesis over finite traces. In ATVA , 227–247. Bonet, B., and Geffner, H. 2000. Planning with incomplete information as heuristic search in belief space. In AIPS , 52– 61. Calvanese, D.; De Giacomo, G.; and Vardi, M. Y. 2002. Reasoning about actions and planning in LTL action theo-ries. In KR , 593–602. Camacho, A.; Bienvenu, M.; and McIlraith, S. A. 2019. To-wards a unified view of AI planning and reactive synthesis. In ICAPS , 58–67. Cimatti, A.; Pistore, M.; Roveri, M.; and Traverso, P. 2003. Weak, strong, and strong cyclic planning via symbolic model checking. Artificial Intelligence 147(1–2):35–84. De Giacomo, G., and Favorito, M. 2021. Compositional approach to translate LTL f /LDL f into deterministic finite automata. In ICAPS , 122–130. De Giacomo, G., and Rubin, S. 2018. Automata-theoretic foundations of FOND planning for LTL f /LDL f goals. In 
+
+IJCAI , 4729–4735. De Giacomo, G., and Vardi, M. Y. 2013. Linear temporal logic and linear dynamic logic on finite traces. In IJCAI ,854–860. De Giacomo, G., and Vardi, M. Y. 2015. Synthesis for LTL and LDL on finite traces. In IJCAI , 1558–1564. De Giacomo, G., and Vardi, M. Y. 2016. LTL f and LDL fSynthesis under Partial Observability. In IJCAI , 1044–1050. 10 De Giacomo, G.; Favorito, M.; Li, J.; Vardi, M. Y.; Xiao, S.; and Zhu, S. 2022. LTL f synthesis as AND-OR graph search: Knowledge compilation at work. In IJCAI , 2591– 2598. Duret-Lutz, A.; Renault, E.; Colange, M.; Renkin, F.; Aisse, A. G.; Schlehuber-Caissier, P.; Medioni, T.; Martin, A.; Dubois, J.; Gillard, C.; and Lauko, H. 2022. From Spot 2.0 to Spot 2.10: What’s new? In CAV , 174–187. Duret-Lutz, A.; Zhu, S.; Piterman, N.; De Giacomo, G.; and Vardi, M. Y. 2025. Engineering an LTL f synthesis tool. In 
+
+CIAA , 129–147. Ehlers, R.; Lafortune, S.; Tripakis, S.; and Vardi, M. Y. 2017. Supervisory control and reactive synthesis: a com-parative introduction. Discrete Event Dynamic Systems 
+
+27(2):209–260. Esparza, J.; Kˇ ret´ ınsk´ y, J.; and Sickert, S. 2018. One the-orem to rule them all: A unified translation of LTL into ω-automata. In LICS , 384–393. Favorito, M. 2023. Forward LTL f synthesis: DPLL at work. In IPS-RCRA-SPIRIT@AI*IA .Finkbeiner, B. 2016. Synthesis of reactive systems. In 
+
+Dependable Software Systems Engineering , volume 45. IOS Press. 72–98. Fujita, M.; McGeer, P. C.; and Yang, J. C. 1997. Multi-terminal binary decision diagrams: An efficient data struc-ture for matrix representation. Formal Methods in System Design 10(2/3):149–169. Gerevini, A.; Haslum, P.; Long, D.; Saetti, A.; and Di-mopoulos, Y. 2009. Deterministic planning in the fifth in-ternational planning competition: PDDL3 and experimen-tal evaluation of the planners. Artificial Intelligence 173(5– 6):619–668. Ghallab, M.; Nau, D. S.; and Traverso, P. 2016. Automated planning and acting . Cambridge. Hagemeier, C.; De Giacomo, G.; and Vardi, M. Y. 2025. LTL f synthesis under unreliable input. In AAAI , 14958– 14966. Henriksen, J. G.; Jensen, J.; Jørgensen, M.; Klarlund, N.; Paige, R.; Rauhe, T.; and Sandholm, A. 1995. Mona: Monadic second-order logic in practice. In TACAS , 89–110. Hoffmann, J., and Brafman, R. I. 2005. Contingent planning via heuristic forward search with implicit belief states. In 
+
+ICAPS , 71–80. Jacobs, S.; Perez, G. A.; and Schlehuber-Caissier, P. 2026. The temporal logic synthesis format TLSF v1.2. arXiV. (Up-dated in 2026 to use terminating semantics.). Klarlund, N., and Møller, A. 2001. MONA version 1.4, user manual. Technical report, BRICS. Kupferman, O., and Vardi, M. 1997. Synthesis with incom-plete informatio. In ICTL , 1044–1050. Li, Y.; Xiao, S.; Zhu, S.; Li, J.; and Pu, G. 2025. A compo-sitional framework for on-the-fly LTL f synthesis. In ECAI ,1711–1718. Maliah, S.; Komarnitski, R.; and Shani, G. 2022. Com-puting contingent plan graphs using online planning. ACM Trans. Auton. Adapt. Syst. 16(1):1:1–1:30. Minato, S.-i. 1996. Representation of Multi-Valued Func-tions . Boston, MA: Springer US. 39–47. Perez, G. A. 2025. SyntComp’s GitHub repository of TLSF-fin benchmarks. https://github.com/SYNTCOMP/ benchmarks/tree/master/tlsf-fin. Pnueli, A., and Rosner, R. 1989. On the synthesis of a reactive module. In POPL , 179–190. Reiter, R. 2001. Knowledge in Action: Logical Foundations for Specifying and Implementing Dynamical Systems . MIT Press. Rintanen, J. 2004. Complexity of planning with partial ob-servability. In ICAPS , 345–354. Somenzi, F. 2015. CUDD: CU Decision Diagram package release 3.0.0. Tabajara, L. M., and Vardi, M. Y. 2020. LTL f syn-thesis under partial observability: From theory to prac-tice. In GandALF , 1–17. Benchmarks and tools can be found at https://github.com/lucasmt/ltlf-po-benchmarks (commit 2c866cd ) and https://github.com/lucasmt/Syft/ tree/double-negation-dfa (commit 7d797f0 ). Xiao, S.; Li, J.; Zhu, S.; Shi, Y.; Pu, G.; and Vardi, M. 2021. On-the-fly synthesis for LTL over finite traces. In AAAI ,6530–6537. Xiao, S.; Li, Y.; Huang, X.; Xu, Y.; Li, J.; Pu, G.; Strichman, O.; and Vardi, M. Y. 2024. Model-guided synthesis for LTL over finite traces. In VMCAI , 186–207. Xiao, S.; Li, Y.; Zhu, S.; Sun, J.; Li, J.; Pu, G.; and Vardi, M. Y. 2025. An on-the-fly synthesis framework for LTL over finite traces. ACM Trans. Softw. Eng. Methodol. Just Accepted. Zhu, S., and Favorito, M. 2025. LydiaSyft: A compositional symbolic synthesis framework for LTL f specifications. In 
+
+TACAS , 295–302. Zhu, S.; Tabajara, L. M.; Li, J.; Pu, G.; and Vardi, M. Y. 2017. Symbolic LTL f synthesis. In IJCAI , 1362–1369. 11 A Supplementary Evaluation 
+
+A.1 Full Benchmark Results 
+
+We provide detailed results of our experiments. We first discuss the TV-Benchmarks , in which the partial observ-ability is originated in the specification. Then we discuss the SYNTCOMP-fin Benchmarks , in which the unobservable variables were randomly selected. 
+
+TV-Benchmarks Figures 6, 7, and 8 show the performance of ltlfsynt-po , ltlfsynt-po-naive , Syft-bsc and 
+
+Syft-mso on the TV-Benchmarks .2 3 4 5 6 7 8 9 10 
+
+Parameter (n) 
+
+> 10 1
+> 10 2
+> 10 3
+> Execution Time (ms)
+> Syft-bsc
+> Syft-mso
+> ltlfsynt-po
+> ltlfsynt-po-naive
+
+Figure 6: Moving Target Performance 3 4 5 6 7 8
+
+Parameter (n) 
+
+> 10 1
+> 10 2
+> 10 3
+> 10 4
+> Execution Time (ms)
+> Syft-bsc
+> Syft-mso
+> ltlfsynt-po
+> ltlfsynt-po-naive
+
+Figure 7: Coin Game Performance n=1,m=1 
+
+> n=1,m=2
+> n=1,m=3
+> n=1,m=4
+> n=2,m=1
+> n=2,m=2
+> n=2,m=3
+> n=2,m=4
+> n=3,m=1
+> n=3,m=2
+> n=3,m=3
+> n=3,m=4
+> n=4,m=1
+> n=4,m=2
+> n=4,m=3
+> n=4,m=4
+
+Parameters (n, m) 
+
+> 10 1
+> 10 2
+> 10 3
+> 10 4
+> 10 5
+> Execution Time (ms)  Syft-bsc
+> Syft-mso
+> ltlfsynt-po
+> ltlfsynt-po-naive
+
+Figure 8: Private Peek Performance 
+
+Table 2 shows the average speedup in each benchmark family. The speedup is measured by taking the total running time of both tools ( ltlfsynt-po and the best-performing one between Syft-bsc and Syft-mso ) for each individual benchmark family and computing their ratio. Benchmark Family Speedup Coin-Game 126.60 ×
+
+Moving-Target 27.65 ×
+
+Private-Peek 126.00 ×
+
+Table 2: Average speedups of ltlfsynt-po compared to the best-performing Syft implementation ( Syft-bsc or Syft-mso ) across 
+
+TV-Benchmarks .
+
+SYNTCOMP-fin Benchmarks Similarly, Figures 9, 10, 11 and 12 show the performance of ltlfsynt-po ,
+
+ltlfsynt-po-naive , Syft-bsc and Syft-mso on the 
+
+SYNTCOMP-fin Benchmarks .2,2 
+
+> 2,3
+> 2,4
+> 2,5
+> 2,6
+> 3,2
+> 3,3
+> 3,4
+> 4,2
+> 4,3
+
+Parameters (n, m) 
+
+> 10 1
+> 10 2
+> 10 3
+> 10 4
+> 10 5
+> Execution Time (ms)  Syft-bsc
+> Syft-mso
+> ltlfsynt-po
+> ltlfsynt-po-naive
+
+Figure 9: Chomp Performance 
+
+12 1,17 
+
+> 2,3
+> 2,4
+> 2,5
+> 2,9
+> 2,14
+> 2,16
+> 2,17
+> 3,1
+> 3,7
+> 3,12
+> 3,17
+> 4,4
+> 5,4
+> Parameters (n, m)
+> 10 1
+> 10 2
+> 10 3
+> 10 4
+> 10 5
+> Execution Time (ms)  Syft-bsc
+> Syft-mso
+> ltlfsynt-po
+> ltlfsynt-po-naive
+
+Figure 10: Nim Performance 1 5 9 13 17 
+
+> Parameter (n)
+> 10 1
+> 10 2
+> 10 3
+> 10 4
+> 10 5
+> 10 6
+> Execution Time (ms)  Syft-bsc
+> Syft-mso
+> ltlfsynt-po
+> ltlfsynt-po-naive
+
+Figure 11: Counter Performance 1 5 9 13 17 
+
+> Parameter (n)
+> 10 1
+> 10 2
+> 10 3
+> 10 4
+> 10 5
+> Execution Time (ms)
+> Syft-bsc
+> Syft-mso
+> ltlfsynt-po
+> ltlfsynt-po-naive
+
+Figure 12: Double Counters Performance 
+
+Table 3 shows a speedup ranging from 4.81x to 7892.82x. It should be noted that both ltlfsynt-po and 
+
+ltlfsynt-po-naive solve a lot of benchmarks that the state-of-the-art tools could not solve due to either time con-straints or memory constraints. Benchmark Family Speedup Chomp 4.81 ×
+
+Counter 7,892.82 ×
+
+Counters-Double 915.84 ×
+
+Nim 32.10 ×
+
+Table 3: Average speedups of ltlfsynt-po compared to the best-performing Syft implementation across SYNTCOMP-fin Benchmarks (50% variables hidden). 
+
+# B Reproducibility 
+
+We describe how to reproduce the results that appear in this paper. 
+
+B.1 Benchmarks 
+
+TV-Benchmarks can be found online at https://github. com/lucasmt/ltlf-po-benchmarks 
+
+SYNTCOMP-fin Benchmarks can be found online at https://github.com/SYNTCOMP/benchmarks/tree/master/ tlsf-fin 
+
+B.2 Our Tool 
+
+The implementation is publicly available in Spot start-ing from version 2.15 (available at https://spot.lre.epita.fr/ install.html). After installing Spot, the tool can be invoked as follows: 
+
+ltlfsynt-po ./ltlfsynt <formula> --ins=<inputs> --outs=<outputs> --unobservable-ins=<unobservables> --semantics=<mealy or moore> 
+
+ltlfsynt-po-naive ./ltlfsynt <formula> --ins=<inputs> --outs=<outputs> --unobservable-ins=<unobservables> --semantics=<mealy or moore> --translation=restricted 
+
+B.3 Baseline Tools 
+
+The version of Syft with support for partial observability can be found online at https://github.com/lucasmt/Syft/tree/ double-negation-dfa. To install, follow the instructions in https://github.com/lucasmt/Syft/blob/double-negation-dfa/ INSTALL. You might need to change the CUDD ROOT 
+
+variable in https://github.com/lucasmt/Syft/blob/ double-negation-dfa/CMakeModules/Findcudd.cmake 13 to point to your local CUDD installation. Afterwards, add the build/bin folder to your path in order to have access to the ltlf2fol and Syft binaries. 
+
+Syft-bsc To run Syft-bsc on a benchmark bm composed of 
+
+LTL f file bm.ltlf and variable partition file bm.part ,follow these steps: 1. Run ltlf2fol to convert the LTL f file into a MONA input file bm.mona :
+
+ltlf2fol NNF bm.ltlf > bm.mona 
+
+2. Run MONA to generate a DFA file: 
+
+mona -u -xw bm.mona > bm.dfa 
+
+3. Run Syft on the resulting DFA, with the system as the starting player (0) and partial observability (implemented via symbolic belief-states construction): 
+
+Syft bm.dfa bm.part 0 partial dfa 
+
+Syft-mso To run Syft-mso on a benchmark bm composed of LTL f file bm.ltlf and variable partition file bm.part ,follow these steps: 1. Run ltlf2fol to convert the LTL f file into a MONA input file bm.mona :
+
+ltlf2fol NNF bm.ltlf > bm.mona 
+
+2. Quantify the unobservable variables universally in the MONA file (see the script in https://github.com/lucasmt/ ltlf-po-benchmarks/blob/master/quantify.py for an exam-ple), producing a new file bm.mona.quant .3. Remove the unobservable variables from the variable par-tition file, producing a new file bm.part.quant .4. Run MONA to generate a DFA file from the universally-quantified MSO formula: 
+
+mona -u -xw bm.mona.quant >bm.dfa.quant 
+
+5. Run Syft on the resulting DFA, with the system as the starting player (0) and full observability (since partial ob-servability has already been handled by universal quan-tification): 
+
+Syft bm.dfa.quant bm.part.quant 0 full dfa 
+
+Note that for the benchmarks in https://github. com/lucasmt/ltlf-po-benchmarks, the .mona , .part ,
+
+.mona.quant and .part.quant files have already been generated, and therefore only the last two steps are necessary in each case. 14
