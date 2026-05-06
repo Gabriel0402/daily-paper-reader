@@ -1,0 +1,441 @@
+Title: DualGeo: A Dual-View Framework for Worldwide Image Geo-localization
+
+URL Source: https://arxiv.org/pdf/2604.25533v1
+
+Published Time: Wed, 29 Apr 2026 01:02:56 GMT
+
+Number of Pages: 6
+
+Markdown Content:
+# DualGeo: A Dual-View Framework for Worldwide Image Geo-localization 
+
+Junchao Cui 1,2 , Wenqi Shi 1,2 , Shaoyong Du 1,2 , Hang He 1,2 , Xuanzi Ma 2, Hao Tang 1,2 , Xiangyang Luo 1,2,†  
+
+> 1
+
+Henan Key Laboratory of Cyberspace Situation Awareness, Zhengzhou, China  
+
+> 2
+
+Information Engineering University, Zhengzhou, China 
+
+Abstract —Worldwide image geo-localization aims to infer the geographic location of an image captured anywhere on Earth, spanning street, city, regional, national, and continental scales. Existing methods rely on visual features that are sensitive to environmental variations (e.g., lighting, season, and weather) and lack effective post-processing to filter outlier candidates, limiting localization accuracy. To address these limitations, we propose DualGeo, a two-stage framework for worldwide image geo-localization. First, it establishes a geo-representational foun-dation by fusing image and semantic segmentation features via bidirectional cross-attention. The fused features are then aligned with GPS coordinates through dual-view contrastive learning to build a global retrieval database. Second, it performs geo-cognitive refinement by re-ranking retrieved candidates using geographic clustering. It then feeds them into large multimodal models (LMMs) for final coordinate prediction. Experiments on IM2GPS, IM2GPS3k, and YFCC4k show that DualGeo outper-forms state-of-the-art methods, improving street-level ( <1 km) and city-level ( <25 km) localization accuracy by 3.6%–16.58% and 1.29%–8.77%, respectively. Our code and datasets are available : https://github.com/CJ310177/DualGeo. 
+
+Index Terms —Worldwide Image Geo-localization, Multimodal Learning, Image Retrieval, Large Multimodal Models 
+
+I. I NTRODUCTION 
+
+Worldwide image geo-localization refers to the task of es-timating the geographic coordinates of a photograph captured anywhere on Earth [1], and holds significant value across real-world applications. For instance, in digital forensics [2], rapidly localizing images shared on social media can aid crim-inal investigations; in intelligent navigation and augmented reality systems [3], it enables location awareness without relying on GPS signals. Furthermore, it underpins large-scale geographic information mining [4], environmental change monitoring [5], and tourism recommendation systems [6]. Thus, developing a worldwide image geo-localization method that operates robustly across arbitrary locations and conditions carries substantial scientific and societal significance. Traditional approaches primarily rely on visual cues in RGB images, such as landmark buildings or natural landscapes, which can effectively support localization under favorable illumination. However, in real-world scenarios, variations in weather, season, and lighting conditions substantially alter image appearance. As illustrated in Fig. 1, the same location may exhibit drastically different visual characteristics between day and night or across seasons. In contrast to raw visual appearance, the structural layout represented by semantic 
+
+† Corresponding author : Xiangyang Luo, luoxy ieu@sina.com sky   
+
+> river
+> tree
+> grass
+> building
+> plant
+> Day and Night (RGB) Day and Night (SEG)
+> Four Seasons (RGB) Four Seasons (SEG)
+
+Fig. 1. Scenes under diurnal and seasonal variations. RGB images exhibit significant visual changes, while semantic segmentation maps remain stable. 
+
+segmentation maps is more stable and effectively mitigates disruptive changes caused by appearance variations. Existing methods model localization based solely on RGB features; due to the vast diversity and environmental complexity of worldwide imagery, some restrict their scope to specific regions [7]–[9]. Although recent deep learning approaches trained on large-scale datasets [10]–[12] have advanced the task toward a global scale, they still struggle to achieve robust and generalizable localization.This limitation primarily manifests in two aspects: 
+
+ISSUE 1: Drastic appearance variation of the same lo-cation under diverse environmental conditions. The visual appearance of a location can change dramatically over time, weather, and lighting, while its semantic structure remains stable. We argue that robust worldwide image geo-localization must be grounded in such invariance. Existing methods ex-hibit significant limitations when confronted with substantial appearance shifts. This inconsistency directly undermines lo-calization strategies relying solely on visual feature matching, leading to markedly reduced robustness in complex environ-ments and frequent erroneous matches. 
+
+ISSUE 2: Lack of geo-cognitive post-processing for re-trieval results. Current mainstream approaches typically adopt a nearest-neighbor retrieval paradigm. Even with advanced feature representations learned via deep networks, they often resort to simplistic strategies, such as selecting the top-1 
+
+match or applying basic voting, without leveraging geographic priors. In reality, correct matches tend to form spatial clusters due to the local coherence of geographic space, whereas erroneous candidates appear as outliers. However, existing methods generally lack a geo-cognitive refinement mechanism 
+
+> arXiv:2604.25533v1 [cs.CV] 28 Apr 2026
+
+to analyze the spatial distribution of retrieved GPS candidates, failing to identify and suppress outliers based on clustering patterns. Consequently, their localization results struggle to achieve global-scale generalization and stability. To address the aforementioned issues, we propose DualGeo, a two-stage framework for worldwide image geo-localization that leverages the invariance of semantic structure and inte-grates geographic cognition with reasoning. 
+
+For ISSUE 1 , DualGeo constructs a geo-representational foundation in the first stage by fusing features from RGB images and their semantic segmentation maps via bidirectional cross-attention, and aligning each view with GPS coordinates through dual-view contrastive learning. This yields a retrieval database enriched with structural semantics. To enable dual-view training, we further generate corresponding semantic seg-mentation maps for the original MP16 dataset [13], resulting in a new variant termed MP16-SEG. For ISSUE 2 , DualGeo performs geo-cognitive refinement in the second stage by introducing geographic prior–driven clustering for candidate re-ranking and leveraging large multimodal models (LMMs) for contextual inference to produce the final location estimate. The main contributions of this work include:  
+
+> •
+
+We propose DualGeo, a two-stage framework for world-wide image geo-localization. It addresses appearance sen-sitivity by leveraging the structural invariance of seman-tic segmentation, and boosts localization reliability via geographic clustering and LMMs. DualGeo consistently outperforms existing methods, including GeoCLIP [14], PEGION [15], and G3 [16], on three benchmark datasets.  
+
+> •
+
+We construct MP16-SEG, a large-scale dataset of 4.12M semantic segmentation maps aligned with MP16, anno-tated with stable structures to provide consistent semantic cues for geo-localization.  
+
+> •
+
+We design a bidirectional cross-attention mechanism to align RGB images and semantic segmentation maps, improving robustness to appearance changes and yielding more discriminative representations for retrieval. II. R ELATED WORK 
+
+A. Worldwide Image Geo-localization 
+
+The objective of worldwide image geo-localization is to pre-dict the geographic coordinates of an image’s capture location using a single input image. Existing approaches can be broadly categorized into three classes: classification-based methods, retrieval-based methods, and retrieval-augmented generation (RAG)-based methods. (1) Classification-based methods [10]– [12], [15], [17] partition the Earth’s surface into fixed spatial units, framing the localization task as a multi-class classifi-cation problem. While these methods enable efficient training on large-scale datasets, their accuracy is fundamentally con-strained by the spatial granularity of the predefined units: even if the model correctly identifies the target unit, substantial localization errors arise when the true location is near the unit boundary or distant from its centroid. (2) Retrieval-based methods [1], [14] perform comparisons between the query image and a geotagged reference database, then designate the location of the most similar database sample as the prediction. These methods depend heavily on the database’s spatial cover-age and the discriminative power of the extracted features, but they typically adopt the top-1 retrieval result directly without modeling the spatial correlations among candidate locations. Consequently, localization failures frequently stem from mis-matches when confronted with appearance perturbations or spatially sparse database regions. (3) RAG-based methods [16], [18] seek to incorporate LMMs for post-processing: they first retrieve a set of candidate locations, then feed these candidates as prompt information into LMMs to generate the final coordinates. Nevertheless, existing RAG strategies usually construct prompts using a single or unfiltered candidate set. This approach neglects the structural priors of geographic space and thus limits the reliability of the inference process. 
+
+B. Contrastive Learning 
+
+The core principle of contrastive learning is to learn discrim-inative representations by minimizing the distance between semantically relevant samples and maximizing the distance between irrelevant counterparts. In recent years, the CLIP model has exhibited powerful cross-modal representation ca-pabilities by aligning image and text features across large-scale image-text pairs. Inspired by this work, Cepeda et al. [14] pioneered the replacement of CLIP’s text encoder with a GPS coordinate encoder, establishing a shared embedding space that achieves image-location alignment and thus introducing a novel paradigm for worldwide image geo-localization. Since then, numerous studies [16], [18] have optimized feature fusion, location encoding, and training strategies based on this framework, thereby further boosting the performance of worldwide geo-localization systems. III. M ETHOD 
+
+Fig. 2 illustrates the overall framework of DualGeo, which consists of two stages: the geo-representational foundation 
+
+and the geo-cognitive refinement . The geo-representational foundation integrates two steps: (a) Geo-Fusion , a dual-view contrastive learning framework that aligns RGB images and their corresponding semantic segmentation maps with GPS coordinates; and (b) World Index , a global retrieval database built from the fused multimodal features. The subsequent 
+
+geo-cognitive refinement stage further improves localization accuracy through: (c) GeoCluster-Rerank , which performs geographic clustering of initial retrieval results followed by cluster-aware re-ranking; and (d) Geo-Thinker , LMMs-based module that leverages the re-ranked candidates and the original query image to generate the final geo-localization prediction. 
+
+A. Dual-view Comparative Learning 
+
+In the first stage, DualGeo separately encodes RGB images and semantic segmentation maps via dual-view contrastive learning, and achieves joint embedding with geographic loca-tions using a multi-task contrastive loss function. This process Stage I  : Geo -Representational Foundation 
+
+RGB -IMG 
+
+SEG -IMG 
+
+RGB -Feature 
+
+SEG -Feature 
+
+Feature -Fusion 
+
+(b)  World  Index 
+
+Database 
+
+Drop 
+
+> Cross
+> Attention
+> Segformer
+
+RGB -IMG 
+
+SEG -IMG 
+
+Image Manipulation 
+
+&
+
+Pixel  Alignment 
+
+Contrastive  Learning 
+
+(a)  Geo -Fusion 
+
+> 116.41
+> 39.91
+> 116.41
+> 39.91
+> 116.41
+> 39.91
+> 116.41
+> 39.91
+> 23.032
+> 72.577
+> 23.032
+> 72.577
+> 116.41
+> 39.91
+> 116.41
+> 39.91
+> 23.032
+> 72.577
+> Cross -Attention
+
+Contrastive  Learning 
+
+Stage II  : Geo -Cognitive Refinement 
+
+(d)  Geo -Thinker 
+
+Query IMG 
+
+Qwen -VL3 -Plus/LMM          
+
+> {query image} You are an expert in geo -localization.
+> Analyze the image and output its location.
+> Rules:
+> -Output ONLY a valid JSON: { {"latitude": float,
+> "longitude": float} }.
+> -Use reference coordinates below to guide your guess.
+> -Never refuse; always output your best estimate.
+> References:
+> -After cluster Similar images: [ ]
+> -Dissimilar images: [ ]
+> Output JSON directly:
+> 1. If LMM e ffective response.
+> 2. If IMG contain s ensitive information ,
+> LMM no e ffective response .
+> Qwen -VL3 -Plus :
+> (2.294946, 48.873756)
+> Final inference
+> NEW Rank TOP -1 Similar GPS :
+> (2 .2 95373 , 48 .8 73 113 )
+> Final inference TOP -k Dissimilar GPS
+> NEW Rank TOP -k Similar GPS
+> TOP -k Dissimilar GPS
+> NEW Rank TOP -k Similar GPS
+
+(d)  Geo -Thinker 
+
+Query IMG 
+
+Qwen -VL3 -Plus/LMM          
+
+> {query image} You are an expert in geo -localization.
+> Analyze the image and output its location.
+> Rules:
+> -Output ONLY a valid JSON: { {"latitude": float,
+> "longitude": float} }.
+> -Use reference coordinates below to guide your guess.
+> -Never refuse; always output your best estimate.
+> References:
+> -After cluster Similar images: [ ]
+> -Dissimilar images: [ ]
+> Output JSON directly:
+> 1. If LMM e ffective response.
+> 2. If IMG contain s ensitive information ,
+> LMM no e ffective response .
+> Qwen -VL3 -Plus :
+> (2.294946, 48.873756)
+> Final inference
+> NEW Rank TOP -1 Similar GPS :
+> (2 .2 95373 , 48 .8 73 113 )
+> Final inference TOP -k Dissimilar GPS
+> NEW Rank TOP -k Similar GPS
+
+Database Database 
+
+> DBSCAN
+> Geo -Cluster
+> TOP -k
+> Similar IMG
+
+(c)  GeoCluster -Rer ank 
+
+Query SEG  Query RGB 
+
+RANK 
+
+> TOP -k
+> Dissimilar IMG
+
+RERANK     
+
+> NEW Rank
+> TOP -k
+> Similar IMG
+> GC -Distance:
+> L5 > L4 > L3 > L2 > L1L1L2L3L4L5L1L2L3L4L5L1L2L3L4L5
+> Geo -Projection
+
+Database 
+
+> DBSCAN
+> Geo -Cluster
+> TOP -k
+> Similar IMG
+
+(c)  GeoCluster -Rer ank 
+
+Query SEG Query RGB 
+
+RANK 
+
+> TOP -k
+> Dissimilar IMG
+
+RERANK     
+
+> NEW Rank
+> TOP -k
+> Similar IMG
+> GC -Distance:
+> L5 > L4 > L3 > L2 > L1L1L2L3L4L5
+> Geo -Projection
+
+Fig. 2. Overview of the proposed framework DualGeo. 
+
+ultimately realizes multimodal alignment for both RGB-to-GPS and SEG-to-GPS tasks, as illustrated in Fig. 2(a). Unlike existing methods that align only RGB images with locations [14] or text [16], our approach explicitly unifies appearance and structural views in a shared geographic seman-tic space. This enables the model to learn rich visual details from RGB data. It also captures structure-invariant cues from semantic segmentation maps that are robust to environmental variations such as lighting, seasonal shifts, and weather con-ditions. Through cross-modal collaborative training, DualGeo enhances unimodal representations and generates augmented features for retrieval, establishing a robust foundation for global-scale localization. The RGB and GPS encoders follow the architecture of Jia et al. [16]. 
+
+SEG Encoder. We design a dedicated SEG encoder to process single-channel semantic segmentation maps. It is built based on the ResNet-18 architecture [19]. The first-layer con-volution kernel is adjusted to adapt to single-channel input, and the fully connected layer is removed to retain spatial structure information. The output features are projected to align with the dimension of the RGB encoder, ensuring compatibility for cross-modal contrastive learning and fusion. By introducing the bidirectional cross-attention mechanism (Section III-B), dynamic information complementarity between RGB images and semantic views is achieved, promoting contextual fusion and providing effective support for cross-view alignment. 
+
+Contrastive Learning Loss. In the first stage, the core goal of Geo-Fusion is to establish consistent associations between RGB images and their corresponding semantic segmentation maps and the geographic coordinates of the shooting location respectively. To this end, we adopt a contrastive learning strategy, encouraging each image (whether from RGB or semantic view) to be closer to its true geographic location in its embedding space, while being far away from other locations. We define the loss functions for the two different modalities as follows: 
+
+La,b = − 1
+
+N
+
+nX
+
+i=1 
+
+log exp( Si,y i )
+
+Pnj=1 exp( Si,j )
+
+!
+
+, (1) where La,b denotes the unidirectional cross-entropy loss from modality a to modality b, Si,j denotes the similarity between 
+
+i-th sample image feature and the j-th geographic location feature, and yi indicates that the positive location for the i-th sample is the i-th location. During geo-representation learning, DualGeo enforces bidi-rectional alignment between both RGB and GPS, and SEG and GPS. The overall loss is therefore defined as: 
+
+Lt = 12 (LRGB ,GPS + LGPS ,RGB + LSEG ,GPS + LGPS ,SEG ).This symmetric contrastive formulation enables the model to jointly utilize fine-grained visual details and structural semantics, learning geo-representations that are robust to en-vironmental changes. 
+
+B. Bidirectional Cross-attention Mechanism 
+
+We construct a bidirectional cross-attention mechanism to achieve complementary information fusion between RGB im-ages and semantic segmentation maps. This mechanism gen-erates modality-enhanced features through dual-view feature interaction, providing support for Geo-Fusion. As shown in Fig.3, the RGB branch incorporates structural cues from semantic segmentation maps to compensate for detail loss in nighttime or low-illumination scenarios, while the semantic branch enhances edge positioning precision by leveraging RGB texture information. For the unidirectional RGB       
+
+> feature
+> d
+> n
+> SEG
+> feature
+> d
+> m
+> Q
+> RGB
+> dq
+> n
+> K
+> SEG
+> dk=dq
+> m
+> V
+> SEG
+> dv=dq
+> m
+> RGB_SEG
+> TQK
+> n
+> m
+
+ARGB_SEG     
+
+> n
+> m
+> Softmax
+> Z
+> SEG_RG B_SEG
+> n
+> dv
+> Dropout
+> d
+> nSkip Connect
+> New RGB feature
+> Input 1
+> Input 2
+> Output Fig. 3. Schematic diagram of cross-attention. RGB branches.
+
+RGB branch, the cross-attention mechanism is formally de-fined as follows: the query vector is QRGB = WQ · FRGB , the key vector is KSEG = WK · FSEG , and the value vector is 
+
+VSEG = WV · FSEG . The attention weight is calculated as: 
+
+ARGB ,SEG = Softmax 
+
+ QRGB · K⊤
+
+> SEG
+
+√dk
+
+
+
+, (2) with the corresponding output being ZRGB ,SEG = ARGB ,SEG ·
+
+VSEG . The final enhanced feature is formulated as: 
+
+F new RGB = LayerNorm  Dropout( ZRGB ,SEG ) + FRGB 
+
+, (3) where WQ, W K , W V denote learnable projection matrices, and 
+
+dk is the shared dimension of query and key vectors. Cross-attention for the SEG branch is obtained by swapping RGB and SEG features, yielding the enhanced representation F new SEG .After bidirectional interaction, the augmented features retain the discriminative strength of each modality and improve cross-view alignment, enabling accurate visual–geographic matching in Geo-Fusion. 
+
+World Index. As shown in Fig.2(b), upon completion of the Geo-Fusion stage, we construct the global index using the enhanced RGB features, where F ′ = F new RGB . Here, F ′ denotes the unique representation of each image in the index, ensuring efficient storage and fast retrieval of the image features. 
+
+C. Geo-cognitive Refinement 
+
+This section presents the second stage of DualGeo: geo-cognitive refinement , which comprises two components. The first is GeoCluster-Rerank , designed for geographically clus-tered re-ranking (Fig. 2(c)). The second is Geo-Thinker ,which performs LMMs-based reasoning (Fig. 2(d)). Using the retrieval database built in the previous stage, we first retrieve the top-k most visually similar GPS coordinates 
+
+S = {sj = ( lat j , lon j )}kj=1 for a query image (encoded via RGB and segmentation features). Due to illumination, season, or viewpoint variations, S may contain geographic outliers. Notably, true locations typically form dense local clusters, while mismatches appear as isolated points. 
+
+GeoCluster-Rerank proceeds in three steps: 
+
+1. Initial Retrieval. First, we obtain S via nearest-neighbor search, along with the top-k most dissimilar coordinates D =
+
+{dj = ( lat j , lon j )}kj=1 . Candidates in S are ranked by visual similarity, ignoring geospatial distribution. 
+
+2. Geospatial Clustering. Then, we project them onto the world map and apply the DBSCAN algorithm for cluster analysis. Specifically, the coordinates are first converted to radians, the distance metric of DBSCAN adopts the spherical Haversine distance, and its neighborhood radius is denoted as 
+
+ε, is normalized to spherical radians. DBSCAN can identify high-density regions (i.e., clusters where real shooting loca-tions may exist), and regard coordinates in isolated or low-density regions as outliers. Then, the candidate coordinates S
+
+are labeled to obtain the cluster label lj ∈ {− 1, 0, 1, ... } of each candidate, where lj = −1 indicates noise points. The set of all non-noise clusters is denoted as L = {l|l̸ = −1}.For each l ∈ L, its Geometrical Center (GC) is calculated. GC serves as the spatial average of all points in the cluster, providing the best estimate of the potential real location. 
+
+3. Re-Ranking. If L̸ = ∅, we select the largest cluster as the main cluster and use its geometric center ¯sl as the reference position; if L = ∅, we take the mean of all coordinates as ¯s = 1
+
+> k
+
+Pkj=1 sj . Subsequently, we compute the Haversine distance between each candidate position in S and the reference position: 
+
+mj = Haversine( sj , ¯sref ), (4) where ¯sref ∈ { ¯sl, ¯s} is the reference position. Finally, we re-rank the candidates in ascending order of distance: 
+
+π = argsort([ m1, m 2, . . . , m k]) . (5) This yields the re-ranked set S′ = {sπ(1) , s π(2) , . . . , s π(k)},where the first element sπ(1) serves as the top-1 localization prediction after re-ranking. By shifting the ranking criterion from original feature similarity to geospatial consistency, this strategy effectively suppresses the impact of outlier matches, significantly improving the robustness and rationality of local-ization without introducing additional models. To further enhance localization reliability, DualGeo’s Geo-Thinker interprets the retrieval results through geospatial reasoning with LMMs. As shown in Fig. 2(d), it constructs a contrastive geospatial context by selecting the top-n most similar coordinates from the re-ranked set S′ and the top-n
+
+most dissimilar coordinates from the initial dissimilar set D
+
+(where n < k ). A structured prompt, comprising the query image and these 2n coordinates, is fed to LMMs. The model fuses visual and world knowledge to filter out unreasonable candidates, acting as a geospatial arbiter rather than a re-gressor, thereby improving both robustness and interpretability in global geo-localization [20]. The prompt construction for LMMs is detailed in the supplementary material. IV. E XPERIMENTS 
+
+A. Datasets and Experimental Setup 
+
+MP16-SEG. To enhance DualGeo’s robustness to lighting, seasonal, and weather variations, we generated high-resolution semantic segmentation maps for the MP16 dataset [13], creat-ing MP16-SEG. Using a SegFormer-B5 model [21] pretrained on the ADE20K, we segmented images into 150 semantic cate-gories (e.g., sky, buildings, vegetation). Semantic segmentation layouts remain stable across environmental changes, making them more suitable than RGB appearances as geographically invariant features. MP16-SEG provides structured semantic priors, enabling the model to reduce reliance on RGB appear-ance during localization and achieve more robust and flexible modeling through semantic consistency. 
+
+Datasets. We utilize the MP16 [13] and MP16-SEG datasets to build the training set and retrieval library. The test sets con-sist of three components: the IM2GPS dataset [1], a manually curated few-shot dataset; and two standard benchmarks for worldwide image geo-localization, namely the IM2GPS3k and YFCC4k datasets [4]. Corresponding semantic segmentation maps are generated for all test sets. 
+
+Evaluation Metrics. We adopt the spherical distance met-ric, calculating the proportion of samples where the distance between the predicted location and ground-truth coordinates falls within the following thresholds: 1 km (street-level), 25 km (city-level), 200 km (region-level), 750 km (country-level), and 2500 km (continent-level). 
+
+Experimental Details. All experiments are implemented based on PyTorch. RGB and semantic segmentation features are unified to a dimensionality of 768. Training is conducted for 10 epochs using the AdamW optimizer, with a batch size of 256, an initial learning rate of 4e −5, and dynamic weight decay. The temperature coefficient for contrastive learning is uniformly set to 3.99. For top-k nearest neighbor search, we set k = 20 . In geospatial clustering, the neighborhood radius is configured as ε = 5 km. LMM is performed using the 
+
+Qwen3-VL-Plus model, with n = 10 for IM2GPS, n = 15 for IM2GPS3k, and n = 5 for YFCC4k. More training details are provided in the supplementary material. 
+
+B. Comparison with State-of-the-art Methods 
+
+To assess the geo-localization performance of DualGeo, we conduct comprehensive experiments on the three aforemen-tioned test sets. The baseline methods selected for comparison include: kNN σ = 4 [4], PlaNet [10], CPlaNet [11], ISN [12], Translocator [17], GeoCLIP [14], Img2Loc [18], PIGEON [15], and G3 [16]. The detailed descriptions of baselines are in supplementary material. Experimental results for different methods are presented in Tab. I. DualGeo achieves strong fine-grained localization performance, especially at the street and city levels, due to the effective fusion of semantic structure and geographic reasoning, which enhances robustness to envi-ronmental appearance variations. A slight drop in coarse-scale accuracy (e.g., country or continent) is observed, as the model emphasizes local structural consistency and prioritizes precise localization over global ambiguity resolution. Overall, Dual-Geo delivers superior performance across multiple datasets and demonstrates remarkable fine-grained inference capability. 
+
+C. Ablation Study 
+
+To verify the effectiveness of each component of DualGeo, we conduct ablation experiments on the IM2GPS3k dataset. 
+
+TABLE I MAIN RESULTS ON IM2GPS, IM2GPS3 K AND YFCC4 K.Benchmark Method Distance (% @ km) Street 1 km City 25 km Region 200 km Country 750 km Continent 2,500 km IM2GPS [1] PlaNet [10] 8.4 24.5 37.6 53.6 71.3 CPlaNet [11] 16.5 37.1 46.4 62.0 78.3 ISNs [12] 16.9 43.0 51.9 66.7 80.2 Translocator [17] 19.8 48.1 64.6 75.6 86.7 PIGEON [15] 14.8 40.9 63.3 82.3 91.1 DualGeo(ours) 23.2 52.32 65.4 78.9 89.87                                                                                                                    
+
+> Improvement (%) +16.58 +8.77 +1.23 -4.13 -1.35 IM2GPS3k [4] kNN, σ=4 [4] 7.2 19.4 26.9 38.9 55.9 PlaNet [10] 8.5 24.8 34.3 48.4 64.6 CPlaNet [11] 10.2 26.5 34.6 48.6 64.6 ISNs [12] 10.5 28.0 36.6 49.7 66.0 Translocator [17] 11.8 31.1 46.7 58.9 76.1 GeoCLIP [14] 14.11 34.47 50.65 69.67 83.82 Img2Loc [18] 15.34 39.83 53.39 69.7 82.78 PIGEON [15] 11.3 36.7 53.8 72.4 85.3 G3 [16] 16.65 40.94 55.56 71.24 84.68 DualGeo(ours) 17.25 41.47 55.76 71.71 85.05
+> Improvement (%) +3.60 +1.29 +0.36 -0.95 -0.29 YFCC4k [4] kNN, σ=4 [1] 2.3 5.7 11.0 23.5 42.0 PlaNet [10] 5.6 14.3 22.2 36.4 55.8 CPlaNet [11] 7.9 14.8 21.9 36.4 55.5 ISNs [12] 6.5 16.2 23.8 37.4 55.0 Translocator [17] 8.4 18.6 27.0 41.1 60.4 GeoCLIP [14] 9.59 19.31 32.63 55.0 74.69 Img2Loc [18] 19.78 30.71 41.4 58.11 74.07 PIGEON [15] 10.4 23.7 40.6 62.2 77.7 G3 [16] 23.99 35.89 46.98 64.26 78.15 DualGeo(ours) 27.49 36.45 45.03 61.58 75.92
+> Improvement (%) +14.59 +1.56 -4.15 -4.17 -2.85
+
+We design the following variant models: MRGB : training with only RGB images for contrastive learning; MDual : training with dual-view contrastive learning instead; MDual CT : adding bidirectional cross-attention mechanism on the basis of MDual ;
+
+MDual CT RR5 : adding the geographic clustering re-ranking mechanism on the basis of MDual CT , setting ε = 5 km; 
+
+MZero LMM : relying only on the LMM for image location inference; Full model: the complete DualGeo model. In Tab. II, we find that (1) every component contributes substantially to DualGeo’s final performance; (2) geographic clustering significantly boosts fine-grained localization ac-curacy; (3) the LMM’s extensive knowledge base enables strong reasoning at country and continental scales; and (4) the complete DualGeo effectively integrates the fine-grained precision from clustering with the LMM’s global contextual awareness, yielding balanced performance across all scales. We perform LMMs hyperparameter analysis on n ∈{1, 5, 10 , 15 , 20 }, shown in Fig. 4. Performance quickly sat-urates as n increases, owing to geospatial prior-guided re-ranking, which refines candidate ordering, filters implausible coordinates, and conserves token budget. Ablations with differ-
+
+TABLE II ABLATION STUDY ON IM2GPS3 K.Method Street 1 km City 25 km Region 200 km Country 750 km Continent 2,500 km 
+
+MRGB 11.11 29.83 40.61 55.86 73.41 
+
+MDual 12.25 31.97 42.64 57.59 75.19 
+
+MDual CT 12.81 32.3 43.24 58.79 76.37 
+
+MDual CT RR 5 14.81 34.5 45.41 60.19 76.78 
+
+MZero LM M 8.54 33.13 52.12 70.84 83.32 Full model 17.25 41.47 55.76 71.71 85.05 Fig. 4. Performance of different n values on LMM on IM2GPS3k dataset. 
+
+Fig. 5. Performance of different clustering radii on the IM2GPS3k dataset. 
+
+ent SEG encoders are provided in the supplementary material. We also conduct an ablation study on the impact of re-ranking clustering radius ε ∈ { 0, 5, 10 , 20 , 30 , 50 , 100 } km on geo-localization performance, shown in Fig. 5, with MDual CT 
+
+(ε = 0 km) as baseline. Results show that a smaller clustering radius yields higher accuracy in fine-grained localization, whereas increasing it effectively improves performance at long distances. The choice of radius depends on target scenario distance requirements. V. C ONCLUSION 
+
+Existing worldwide image geo-localization methods rely heavily on visual appearance and are vulnerable to lighting, seasonal, and weather changes. We propose DualGeo, a two-stage framework that first fuses RGB and semantic features via dual-view contrastive learning and bidirectional attention to build a retrieval database, and then re-ranks candidates using geographic clustering before feeding the re-ranked results together with the original image into LMMs for final localiza-tion. Experiments show that semantic segmentation mitigates environmental appearance variations, while geographic clus-tering significantly boosts localization accuracy. VI. A CKNOWLEDGMENT 
+
+This work was supported in part by the National Nat-ural Science Foundation of China (No. U23A20305, No. 62372465), Natural Science Foundation of Henan Province (No. 262300422589), and the Innovation Scientists and Tech-nicians Troop Construction Projects of Henan Province (No. 254000510007). REFERENCES [1] J. Hays and A. A. Efros, “IM2GPS: Estimating geographic information from a single image,” in CVPR , 2008, pp. 1–8. [2] D. Wilson, X. Zhang, W. Sultani, and S. Wshah, “Image and object geo-localization,” International Journal of Computer Vision , vol. 132, no. 4, pp. 1350–1392, 2024. [3] G. Huang, Y. Zhou, L. Zhao, and W. Gan, “CV-Cities: Advancing cross-view geo-localization in global cities,” IEEE Journal of Selected Topics in Applied Earth Observations and Remote Sensing , vol. 18, pp. 1592– 1606, 2025. [4] N. Vo, N. Jacobs, and J. Hays, “Revisiting IM2GPS in the deep learning era,” in ICCV , 2017, pp. 2640–2649. [5] K. S. Willis, “Remote sensing change detection for ecological monitor-ing in united states protected areas,” Biological Conservation , vol. 182, pp. 233–242, 2015. [6] F. Gu, K. Jiang, X. Hu, and J. Yang, “Deep learning-based image geolocation for travel recommendation via multi-task learning,” Journal of Circuits, Systems and Computers , vol. 31, pp. 1–19, 2022. [7] L. Yu, C. Yang, M. Zhu, X. Wang, and Y. Pei, “EU2-Geo: Cross-view image geo-localization via enhancing unlabeled data utility,” in ICME ,2026, pp. 1–6. [8] N. Wu, C. Yang, B. Qi, M. Zhu, J. Li, and X. Luo, “CCIGeo: Cross-view and cross-day-night image geo-localization using daytime image supervision,” IEEE Trans. Multimedia , vol. 27, pp. 6475–6488, 2025. [9] B. Hu, L. Chen, R. Chen, S. Bu, P. Han, and H. Li, “CurriculumLoc: Enhancing cross-domain geolocalization through multistage refinement,” 
+
+IEEE Trans. Geosci. Remote Sensing , vol. 62, pp. 1–14, 2024. [10] T. Weyand, I. Kostrikov, and J. Philbin, “PlaNet-photo geolocation with convolutional neural networks,” in ECCV , 2016, pp. 37–55. [11] P. H. Seo, T. Weyand, J. Sim, and B. Han, “CPlaNet: Enhancing image geolocalization by combinatorial partitioning of maps,” in ECCV , 2018, pp. 544–560. [12] E. M¨ uller-Budack, K. Pustu-Iren, and R. Ewerth, “Geolocation estima-tion of photos using a hierarchical model and scene classification,” in 
+
+ECCV , 2018, pp. 575–592. [13] M. Larson, M. Soleymani, G. Gravier, B. Ionescu, and G. J. F. Jones, “The benchmarking initiative for multimedia evaluation: MediaEval 2016,” IEEE Multimedia , vol. 24, no. 1, pp. 93–96, 2017. [14] V. Cepeda, G. K. Nayak, and M. Shah, “GeoCLIP: CLIP-inspired alignment between locations and images for effective worldwide ge-olocalization,” in NeurIPS , 2023, pp. 8690–8701. [15] L. Haas, M. Skreta, S. Alberti, and C. Finn, “PIGEON: Predicting image geolocations,” in CVPR , 2024, pp. 12893–12902. [16] P. Jia, Y. Liu, X. Li, Y. Wang, Y. Du, X. Han, X. Wei, S. Wang, D. Yin, and X. Zhao, “G3: An effective and adaptive framework for worldwide geolocalization using large multi-modality models,” in NeurIPS , 2025, pp. 53198–53221. [17] S. Pramanick, E. M. Nowara, J. Gleason, C. D. Castillo, and R. Chel-lappa, “Where in the world is this image? transformer-based geo-localization in the wild,” in ECCV , 2022, pp. 196–215. [18] Z. Zhou, J. Zhang, Z. Guan, M. Hu, N. Lao, L. Mu, S. Li, and G. Mai, “Img2Loc: Revisiting image geolocalization using multi-modality foun-dation models and image-based retrieval-augmented generation,” in 
+
+ACM SIGIR , 2024, pp. 2749–2754. [19] K. He, X. Zhang, S. Ren, and J. Sun, “Deep residual learning for image recognition,” in CVPR , 2016, pp. 770–778. [20] B. Zhang, A. Ren, D. Liu, and et al., “MCAP: Modality characteristics-aware pruning for multimodal models,” in ICME , 2026, pp. 1–6. [21] E. Xie, W. Wang, Z. Yu, A. Anandkumar, J. M. Alvarez, and P. Luo, “SegFormer: Simple and efficient design for semantic segmentation with transformers,” in NeurIPS , 2021, pp. 12077–12090.

@@ -1,0 +1,321 @@
+Title: DINO Soars: DINOv3 for Open-Vocabulary Semantic Segmentation of Remote Sensing Imagery
+
+URL Source: https://arxiv.org/pdf/2605.03175v1
+
+Published Time: Wed, 06 May 2026 00:21:45 GMT
+
+Number of Pages: 15
+
+Markdown Content:
+# DINO Soars: DINOv3 for Open-Vocabulary Semantic Segmentation of Remote Sensing Imagery 
+
+# Ryan Faulkenberry University of Houston 
+
+rfaulken@cougarnet.uh.edu 
+
+# Saurabh Prasad University of Houston 
+
+sprasad2@central.uh.edu 
+
+Figure 1. Open-vocabulary segmentation maps from our model, CAFe-DINO. CAFe-DINO can accurately segment remote sensing scenes with arbitrary semantic classes, despite zero training on remote sensing imagery. 
+
+# Abstract 
+
+The remote sensing (RS) domain suffers from a lack of densely labeled datasets, which are costly to obtain. Thus, models that can segment RS imagery well without super-vised fine-tuning are valuable, but existing solutions fall behind supervised methods. Recently, DINOv3 [30] sur-passed SOTA RS foundation models on the GEO-bench segmentation benchmark without pre-training on RS data. Additionally, DINO.txt [16] has enabled open vocabu-lary semantic segmentation (OVSS) with the DINOv3 back-bone. We leverage these developments to form an OVSS model for RS imagery, free of RS-domain fine-tuning. Our model, CAFe-DINO (Cost Aggregation + Feature Upsam-pling with DINO) exploits the strong OVSS performance of DINOv3 for RS imagery via cost aggregation and training-free upsampling of text-image similarity scores. The ro-bust latent of the DINOv3 backbone eliminates the need for fine-tuning on RS imagery; we instead fine-tune our model on a RS-targeted subset of COCO-Stuff. CAFe-DINO achieves state-of-the-art performance on key RS segmenta-tion datasets, outperforming OVSS methods fine-tuned on RS data. Our code and data are publicly available at https://github.com/rfaulk/DINO_Soars. 
+
+# 1. Introduction 
+
+Remote sensing (RS) imagery has revolutionized our abil-ity to observe the planet. It has equipped us with the ability to monitor our environment, optimize agriculture, and re-spond to natural disasters. RS imagery does not enjoy the same wealth of densely labeled datasets as natural imagery, which has led to a body of work on adapting models trained on natural imagery to fit the unique characteristics of RS imagery, with little or no fine-tuning. For semantic segmentation tasks in RS, the latest and most successful of these models are Open Vocabulary Semantic Segmentation (OVSS) models. They leverage vision-language models (VLMs) that are pretrained to align a large corpus of image and text pairs. These models, im-bued with a large “vocabulary” from their pretraining, can be prompted with the name of a desired class to create a similarity map between that class and an input image, en-abling zero-shot segmentation of arbitrary classes. The recent release of DINOv3 [30] included a text en-coder aligned with DINOv3 image features, enabling OVSS via alignment of image features and text embeddings of se-mantic classes [16]. Their “DINOv3.txt” model surpasses OVSS state-of-the-art by a large margin on natural imagery benchmarks. DINOv3 has also shown remarkable adapt-  
+
+> arXiv:2605.03175v1 [cs.CV] 4 May 2026 (a) DINOv3.txt (b) DINOv3.txt + CA + AnyUp (Ours) (c) Ground Truth
+> Figure 2. DINOv3.txt alone is not a strong OVSS model for remote sensing
+
+ability to RS tasks without any pre-training on RS imagery, outperforming RS-specific foundation models (e.g. Prithvi [33], DOFA [42]), as well as a sister version of DINOv3 trained on RS imagery, on five of six GEO-Bench [18] seg-mentation tasks. It is noteworthy that DINOv3 achieved this while using only the RGB bands of these mostly multi-spectral datasets. This suggests that natural image train-ing at scale can overcome RS-specific obstacles such as scale/resolution differences, sensor noise, and varying spec-tral characteristics. Motivated by these results, we look to DINOv3.txt as a starting point for a RS OVSS model trained without RS imagery. Despite its pedigree on natural imagery, DINOv3.txt struggles with OVSS on RS imagery, as we show in Fig. 2a and Tab. 2. We unlock the RS capability of DINOv3 for OVSS by adding a cost aggregation module to semantically and spatially refine the similarity maps of DINOv3.txt. Ad-ditionally, motivated by the recent success of feature up-sampling [9, 13, 32, 39], we incorporate AnyUp [39] to up-sample the aggregated features directly without fine-tuning. The combination of AnyUp, which is training-free, and the cost aggregation module, which learns only to denoise sim-ilarity maps from the existing DINO vision/text encoders, creates a synergistic architecture in which RS fine-tuning is not required. 
+
+Contributions: 
+
+1. We introduce CAFe-DINO, a cost-aggregation and fea-ture upsampling model for the DINOv3 backbone that does not require RS fine-tuning. We demonstrate the efficacy of cost aggregation and feature upsampling for OVSS of RS imagery. 2. Leveraging the capability of DINOv3 on RS imagery, we train CAFe-DINO on only natural imagery with an RS-targeted subset of the COCO-Stuff [3] dataset. 3. We show state of the art OVSS performance on a set of multiclass RS segmentation tasks with CAFe-DINO. 
+
+> (a) An overview of our method. Class-wise similarity maps from DINOv3 are aggregated and upsampled to form a segmentation prediction.
+> (b) An overview of the cost aggregation network. Cost maps are projected and propagated through a series of aggregation blocks.
+> Figure 3. Details of the CAFe-DINO architecture.
+
+# 2. Related Work 
+
+2.1. Open Vocabulary Semantic Segmentation 
+
+Open vocabulary semantic segmentation (OVSS) [47] has advanced significantly with vision-language models (VLMs) [6, 21, 22, 28] that imbue an image encoder with text-conditioned reasoning. CLIP [28] introduced a con-trastive method for aligning image and text embeddings, attaining state-of-the-art performance on zero-shot image classification in its time. CLIP has since been adapted for application to segmentation tasks and forms the backbone of most OVSS models to this day [10, 14, 20, 25, 43]. Early adaptations such as SegCLIP [46] and PACL [27] intro-duced image patches rather than a global image embedding as an alignment objective. Later work added more sophisti-cated techniques, such as mask proposal-based region seg-mentation [2, 17, 24, 29, 31], and CAT-Seg [8], which in-corporated cost aggregation (See Sec. 2.5) of aligned CLIP features for segmentation. Some methods have managed to eschew CLIP and still achieve good performance. One such class of methods [19, 37] apply text-guided diffusion models to generate em-beddings for arbitrary classes. Despite these advances, most OVSS methods still strug-gle with fine-grained localization and domain shift, partic-ularly when deployed outside natural image distributions such as RS. 
+
+2.2. OVSS for Remote Sensing 
+
+Because OVSS for remote sensing has only recently emerged, there are only a few methods published. GSNet [44] uses a DINO-based RS backbone as guidance for a frozen CLIP model and trains on a newly introduced large-scale semantic segmentation dataset for RS. AerOSeg [12] uses SAM to spatially refine CLIP features and guide up-sampling. T2ASeg [38] uses gradient activation maps to augment CLIP embeddings. OVRS [4] applies some RS-targeted modifications to the CAT-Seg framework, such as rotational invariance encoding and feature-guided upsam-pling. SegEarth-OV [23] directly upsamples CLIP fea-tures with guidance from the input image, then subtracts the [CLS] token to extract localized features; notably, they re-quire only self-supervised [35] training on RS data, though on a per-dataset basis. Collectively, these methods demon-strate the promise of OVSS in RS, but are limited by the need to train with RS imagery. 
+
+2.3. DINOv3 
+
+DINOv3 [30] is a very large vision foundation model appli-cable to a variety of visual tasks. DINOv3 is based on a ViT [11] scaled to 7B parameters, trained via self-supervised learning (SSL) on a pool of over 1 billion unlabeled images. The 7B-parameter model is distilled into versions matching the usual ViT sizes (ViT-H, ViT-B, etc). DINOv3 outperforms established geospatial foundation models (GFMs) [33, 34, 41] on both classification and seg-mentation tracks of the GEO-Bench [18] benchmark, de-spite using only RGB channels, whereas GFMs use all available bands. In fact, the authors additionally pre-train a DINOv3 model on satellite imagery and find that it does not match the performance of the natural-imagery-trained version on GEO-Bench. This result suggests that general-purpose SSL on natural imagery can surpass domain-specific training. We capitalize on this property by lever-aging DINOv3 as the backbone for our OVSS model in an RS-free training regime. 
+
+2.4. DINO.txt 
+
+DINO.txt [16] was originally released for DINOv2, but has since been integrated into DINOv3 without modification (we distinguish this version with the name “DINOv3.txt”). This work equipped the DINO backbone with an aligned text encoder to enable vision-language tasks in the style of CLIP. Unlike CLIP, DINO.txt freezes DINO and trains only the text encoder with a similar contrastive objective as CLIP (known as “locked-image tuning” [45]). Whereas CLIP aligns a global image representation ([CLS] token), DINO.txt concatenates average-pooled embeddings of im-age patches with the [CLS] token, allowing gradients to propagate to specific patches and improving dense feature representation. Its RS efficacy and segmentation-guided de-sign make DINOv3.txt a more optimal backbone than CLIP for RS OVSS tasks. 
+
+2.5. Cost Aggregation 
+
+Cost aggregation was originally developed for semantic correspondence tasks [5, 7, 15] as a mechanism for pro-cessing for similarity maps between e.g. images. The modern transformer-based standard for cost aggregation is CATs++ [7], which aggregates individual cost maps spa-tially and models dependencies between cost maps with separate transformer modules. CAT-Seg [8] introduced cost aggregation for OVSS by framing similarity scores between CLIP text and image em-beddings as cost maps. Following the outline of CATs++, CAT-Seg creates a cost map from CLIP for each seman-tic class of interest, then aggregates, alternating between spatially refining cost maps individually and inter-class fea-ture dependencies. This aggregation refines the raw cost maps into per-class probability maps. After upsampling, an argmax operation across classes forms the resulting predic-tion. 
+
+2.6. Feature Upsampling 
+
+Recently, methods have been developed to upsample the deep latent features of foundation models to higher reso-lutions with high fidelity [9, 13, 32, 39]. These methods use the input image as guidance to upsample low-resolution latent features. Feature upsamplers are immediately appli-cable to CLIP-based OVSS methods [23], because image-text similarity can be computed after image feature upsam-pling, providing full-resolution similarity scores that can be directly converted to segmentation predictions. Of partic-ular interest is AnyUp [39], an upsampler that is feature-agnostic, i.e. performs well on features from an unseen backbone without fine-tuning. Prior to AnyUp, cost aggre-gation required trainable upsampling, which fit the training domain but did not generalize to unseen domains without further fine-tuning. By using AnyUp, we avoid training a domain-constrained upsampler and enable RS-data-free fine-tuning. 
+
+# 3. Method 
+
+A graphical overview of our method is shown in Fig. 3a. In short, a cost volume from DINOv3.txt is cost-aggregated and upsampled to form pixel-wise probabilities for each class. The argmax of this volume across the class dimen-sion forms a segmentation prediction. 
+
+3.1. Preliminaries 
+
+3.1.1. DINOv3.txt 
+
+DINOv3.txt is composed of a DINOv3 vision backbone 
+
+ϕV (·) and an aligned text encoder ϕT (·).Given an input image I ∈ R3×H×W , the encoder parti-tions I into a 1-D sequence of N patch tokens plus a learn-able global image representation token (a.k.a. [CLS] to-ken) and projects them to a higher dimension D: ϕV (I) = [[CLS] , f 1, ..., f N ] ∈ R(N +1) ×D , where fp ∈ RD is the embedded patch p. To provide both global and dense fea-ture representations, the actual encoder output is a concate-nation of the [CLS] token and average-pooled patches: 
+
+g = [ c; σ([ f1, ..., f N ])] ∈ R2D , (1) where σ denotes average pooling and ; denotes concatena-tion. The text encoder functions similarly, encoding an arbi-trary text input q into the same fixed dimension: 
+
+Tq = ϕT (q) ∈ R2D . (2) A similarity score between an image and semantic class is formed by the cosine similarity of the text embedding for semantic class ti and the output of Eq. (1) for input image 
+
+I: gI . For a set of M semantic classes, a cost volume is formed by concatenating the similarity scores for each class 
+
+i:
+
+V = [ sim (gI , T t1 ); ... ; sim (gI , T tM )] ∈ Rh×w×M , (3) where h × w is the dimension of the patch sequence after spatial reconstruction. DINOv3.txt forms a segmentation prediction for a set of 
+
+M semantic classes by applying an argmax operation across 
+
+V . CAFe-DINO uses V as the input to the cost aggregation network. 
+
+3.1.2. AnyUp 
+
+Given an input image I ∈ R3×H×W and the low-resolution encoded representation of that image from an arbitrary en-coder, p = ϕ(I) ∈ Rh×w×C , the AnyUp model uses I as guidance to upsample p to the image resolution H × W :
+
+q = U(I, p ) ∈ RH×W ×C , (4) where U is the AnyUp network and q is the full-resolution feature map. 
+
+3.2. Cost Aggregation Network 
+
+As with other remote sensing works that employ cost aggre-gation [4], our model closely follows the CAT-Seg [8] im-plementation. However, we replace the linear transformer blocks used by CAT-Seg with channel attention blocks to improve representational capacity, and we dispose of the convolutional upsampler, opting instead for feature upsam-pling, as described in Sec. 3.3. We surmise that this choice will mitigate overfitting to the natural image domain during fine-tuning. The cost aggregation network is displayed graphically in Fig. 3b. We begin by forming a cost volume from an image 
+
+I ∈ R3×H×W and a set of captions for each of M semantic classes of interest Q = {q1, ..., q M }. The resulting cost volume V is given by equation Eq. (3). The Class-Wise Projection layer projects each cost map to a higher dimension Dagg for cost aggregation with a small convolutional net. Weights are shared across cost maps so that the same features are extracted from each: 
+
+Vagg = ϕproj (V ) ∈ Rh×w×M ×Dagg . (5) The projected cost volume is passed to a set of aggrega-tion blocks. Following CAT-Seg, we use 6 blocks in prac-tice. Each block first aggregates cost slices independently of each other with a Swin Transformer [26] block pair, 
+
+V ′ 
+
+> agg
+
+= ϕswin (Vagg (: , i )) + Vagg (: , i ). (6) 
+
+Vagg (: , i ) indicates the ith cost slice of Vagg .Next, the spatially aggregated cost volume is input to a channel attention block. This block computes self-attention across classes on a per-pixel basis, independent of spatial context. 
+
+V ′′  
+
+> agg
+
+= ϕchan (V ′ 
+
+> agg
+
+(: , j, k )) + V ′ 
+
+> agg
+
+(: , j, k ). (7) 
+
+V ′ 
+
+> agg
+
+(: , j, k ) indicates pixel (j, k ) of the cost volume. Residual connections between all aggregation block modules are added to encourage training stability with in-creasing depth. 
+
+3.3. Class-Wise Upsampling 
+
+Given a projected, aggregated cost volume with M classes, 
+
+V ′′  
+
+> agg
+
+∈ Rh × w × M × Dagg , we apply an upsampling and channel-reduction procedure for each cost map V ′′ agg (: , i ),
+
+i ∈ [1 , ..., M ].DINOv3.txt OVRS GSNet SegEarth-OV CAFe-DINO (Ours) Ground Truth   
+
+> Figure 4. Quantitative results for CAFe-DINO and other OVSS methods. Our method is remarkably accurate on urban scenes, but sometimes struggles to distinguish fine-grained textures in rural scenes.
+
+The cost map features are upsampled to the resolution of the original image I with AnyUp: 
+
+Vup (i) = U(I, V ′′  
+
+> agg
+
+(: , i )) ∈ RH×W ×Dagg . (8) We then apply a network of 1 × 1 convolutional layers to reduce the upsampled cost map Vup from Dagg channels to a single channel of pixel-wise probabilities. As with pro-jection, the same convolutional kernels are applied to each cost slice for channel reduction. The upsample/reduce procedure is applied for every cost map of the volume in parallel. The segmentation prediction 
+
+Y is formed by taking the argmax of the upsampled and reduced cost maps: 
+
+Y = argmax [ϕred (Vup (1)); ... ; ϕred (Vup (M ))] (9) 
+
+ϕred (·) denotes channel reduction, and ; denotes concatena-tion. A key benefit of the feature upsampler is that it does not require fine-tuning, so it will not overfit to the natural image domain during training. 
+
+# 4. Experiments 
+
+4.1. Remote-Sensing-Targeted Natural Image Training 
+
+We train CAFe-DINO on natural imagery with the goal of introducing as many relevant semantic classes as possible, noting that a key drawback of existing RS datasets is a lack of dense labeling with a large variety of classes. Thus, we train CAFe-DINO on the COCO-Stuff [3] dataset. We re-duce the COCO-Stuff dataset to a subset of 41 classes rele-vant to RS. Though semantically smaller than datasets used for natural imagery, this dataset is rich in the context of RS, which tends to offer datasets with fewer semantic classes. Labels of other classes are ignored during training; this has the effect of hastening convergence time and keeping the procedure tractable, as GPU memory grows rapidly with increasing cost maps. The classes that form our subset are listed in Sec. 8 of the supplementary material. We provide additional justification for this choice by comparing our curated subset with 5 ran-Road Building Low Veg. Tree Car Prediction DINOv3.txt 
+
+CAFe-DINO 
+
+> Figure 5. DINOv3.txt cost maps for each of the Potsdam classes before (top row) and after (bottom row) CAFe-DINO aggregation. The segmentation prediction is an argmax over all cost maps. Cost maps for each dataset are shown in Sec. 7 of the supplementary material. Table 1. mIoU scores of our RS-targeted subset of COCO-Stuff vs. 5 random samples. Scores are reported in mIoU (%)
+
+Method Potsdam Vaihingen OEM LoveDA RS-targeted Subset 65.5 56.5 38.8 59.3 
+
+Random Subsets 4.8 (1.4) 4.3 (0.9) 3.8 (1.9) 3.5 (2.5) domly sampled subsets of COCO-Stuff, shown in Tab. 1. Our curated subset outperforms the random trials by a large margin. 
+
+4.2. Implementation Details 
+
+We use the ViT-L variant of the DINOv3.txt model and load it with the pretrained weights provided by the authors. We keep the cost aggregation network fully trainable, and the upsampler fully frozen. For contrastive training of DINOv3.txt, its authors added two ViT blocks to the base DINOv3 backbone. The original pre-training of DINOv3.txt left only those two blocks and the text encoder trainable. We ablate training different parts of the DINOv3 backbone in our own regime in Tab. 4. Semantic classes are passed to the text encoder as part of a prompt, e.g. “A photo of a {}”, “An image of a {}”. Following common practice [8, 23], we ensemble a set of prompts; that is, we pass a single class through the text en-coder as part of many prompts and take the average. We use the prompt template set established by [23], listed in Sec. 6 of the supplementary material. We resize images to 
+
+224 × 224 for efficient training. For testing, we resize im-ages to 512 × 512 and perform sliding window inference with a window size of 224 × 224 and a stride of 112 . We train CAFe-DINO on a single NVIDIA Ada 6000 GPU with a batch size of 4 for 45,000 iterations. 
+
+4.3. Results 
+
+4.3.1. Datasets 
+
+We evaluate CAFe-DINO on 4 multiclass RS datasets: IS-PRS Potsdam and Vaihingen [1], OpenEarthMap [40], and LoveDA [36]. These provide a healthy mix of urban vs. rural scenes, various resolutions/ground sample distances, and a collection of both object and land cover classes. For each dataset, we serve the names of the semantic classes as prompts to CAFe-DINO. Sometimes, we alter the given semantic name to improve model recognition (e.g., we will use “farm” instead of “agricultural” in LoveDA). A full list of our semantic prompts for each dataset is provided in Sec. 6 of the supplementary material. 
+
+4.3.2. Comparison to State-of-the-Art 
+
+The wave of RS-specific OVSS methods recently published has decisively eclipsed OVSS methods from the natural im-agery domain [23, 44], therefore we compare against only RS-specific baselines. For performance comparisons of nat-ural image OVSS methods, refer to the respective results of these baselines. We additionally compare against vanilla DINOv3.txt in order to demonstrate the efficacy of our cost aggregation network in unlocking the potential of DINOv3 on RS im-agery. Our results are shown in Tab. 2. CAFe-DINO outper-forms the existing state-of-the-art on all evaluated datasets without any RS training, supervised or unsupervised. Our largest margins of success are on the Potsdam and Vaihin-Table 2. Comparison of OVSS methods across multiple datasets with mIoU (%). †Method was trained on this dataset. 
+
+Method RS Training Potsdam Vaihingen OEM LoveDA Average DINOv3.txt[30] FAIR’25 No 27.0 20.1 24.2 43.7 28.8 OVRS[4] TGRS’25 Yes 28.6 22.0 21.7 47.6 30.0 GSNet[44] AAAI’25 Yes 43.2 34.1 36.8 78.2 † 38.0 SegEarth-OV[23] CVPR’25 Self-Supervised 52.0 27.2 35.6 53.5 48.0 CAFe-DINO Ours No 66.8 54.4 39.6 65.3 56.5  
+
+> Table 3. The same evaluation as Tab. 2, but with the background class included. †Method was trained on this dataset.
+
+Method RS Training Potsdam Vaihingen OEM LoveDA Average DINOv3.txt[30] FAIR’25 No 23.8 17.3 21.1 26.3 22.1 OVRS[4] TGRS’25 Yes 17.9 19.0 9.6 10.2 14.2 GSNet[44] AAAI’25 Yes 34.9 28.2 31.6 43.8 † 31.6 SegEarth-OV[23] CVPR’25 Self-Supervised 46.2 24.3 39.8 36.9 36.8 CAFe-DINO Ours No 56.4 47.1 35.5 42.5 45.4 
+
+gen datasets. This is not surprising, as the semantic classes of Potsdam/Vaihingen are common in natural imagery, and it is a relatively high-resolution dataset. The lower mIoU score and slimmer margin on OEM sug-gest that CAFe-DINO is weaker on rural scenes than urban. This is corroborated by row 3 of Fig. 4; we see that CAFe-DINO has mis-segmented a crop as a barren patch in one region and a field of grass in another. Interestingly, a simi-lar mistake was made by SegEarth-OV, which was not fine-tuned on RS data (only self-supervised), that was avoided by the other two RS-trained baselines. This suggests an in-herent limitation of natural-imagery-trained models for dis-tinguishing specific textures in RS land cover, as there is no such distinction to be learned in natural imagery. 
+
+4.3.3. Comparison to DINOv3 
+
+DINOv3.txt falls short of its natural imagery performance when applied to RS. We provide an explanatory diagram of the strengths and weaknesses of DINOv3.txt alone on RS data, and how our method improves it in Fig. 5. This fig-ure shows raw similarity maps of DINOv3.txt for each class against the aggregated versions produced by CAFe-DINO in an urban scene. Familiar forms from natural imagery are well-activated, but the “Low Vegetation” class is not. In spite of this, the cost aggregation network recovers a legit-imate segmentation prediction. It is noteworthy that Low Vegetation was not a part of the text corpus for fine-tuning the cost aggregator, meaning that the cost aggregation net-work produced this probability score via cross-class reason-ing against more well-formed similarity maps. 
+
+4.3.4. Inclusion of the Background Class 
+
+Prior art in RS OVSS varies on the evaluation choice of whether to include the background/clutter/unlabeled classes of certain datasets as a semantic class, or ignoring it. The background class is relevant for certain evaluation scenar-ios, but because the background is an ill-defined category whose semantic meaning varies across datasets, we argue that ignoring the background is a better way to measure OVSS methods against one another. We note in particu-lar the large proportion of background labels (>20%) in the LoveDA dataset, which could skew results wildly between methods. For completeness, we provide an evaluation that includes backgrounds in Tab. 3, though we do not consider these our primary results. Performance is generally worse across all datasets and methods given the increased difficulty of back-ground segmentation. Our method is still dominant in all domains except OEM under this regime. 
+
+4.4. Ablations 
+
+4.4.1. Fine-tuning DINOv3 
+
+In the proposed architecture, the cost aggregation network is fine-tuned and the upsampling network is necessarily left frozen, but there are some options available for partially fine-tuning the DINOv3 backbone. We ablate fine-tuning the DINOv3 text encoder and fine-tuning the final 2 blocks of the DINOv3 vision encoder. The last 2 blocks are unique, as they were added post-hoc to the vision backbone and fine-tuned with the text encoder on image-text tasks in the original DINOv3 work. Results are shown in Tab. 4. Incorporating fine-tuning of either DINOv3 backbone component (or both at once) Table 4. The effect of freezing parts of CAFe-DINO during training on multiple datasets. Scores are reported in mIoU (%) 
+
+Method Potsdam Vaihingen OEM LoveDA Average Vision Blocks Trainable 66.8 54.4 39.6 65.3 56.5 
+
+Text Blocks Trainable 61.5 52.5 36.6 62.2 53.2 Both Trainable 66.7 56.5 37.1 64.9 56.3 Neither Trainable 50.9 43.5 32.9 51.1 44.6 
+
+> Table 5. The effect of reducing the aggregation dimension before upsampling. Providing AnyUp with the full feature dimension of the aggregated cost maps has a pronounced effect on overall performance. Scores are reported in mIoU (%)
+
+Method Potsdam Vaihingen OEM LoveDA Base Model 66.8 54.4 39.6 65.3 
+
+Reduce Before Up 52.4 40.0 33.6 41.8 
+
+> Table 6. Linear attention vs. full attention. Scores are reported in mIoU (%)
+
+Method Pots. Vaihin. OEM LoveDA Full Attn. 66.8 54.4 39.6 65.3 
+
+Linear Attn. 63.9 53.8 34.9 58.6 is necessary for competitive performance, yielding, in the worst case, an 11.9% mIoU gain compared to freezing the backbone completely. Since cost maps are generated from the similarity score between embeddings of both the vision and text encoders, fine-tuning either component can influ-ence the initial cost maps in a similar (though distinct) way. It follows intuition that fine-tuning the vision blocks is more effective, as the domain gap between natural and RS im-agery is great, whereas most text labels used in RS will have been well-represented in DINOv3’s pretraining. CAFe-DINO reduces the aggregated cost map channel dimension after upsampling (see Sec. 3.3). We explore a more runtime-efficient approach, in which the aggregator feature dimension is reduced to a single channel before up-sampling. As a result, the prediction maps are being di-rectly upsampled, rather than projected cost slices. Results are shown in Tab. 5. Retaining the deep aggregator feature dimension is critical for good performance with AnyUp; we note that AnyUp was pre-trained on embedded features with high channel counts, not single channel inputs. 
+
+# 5. Conclusion 
+
+In this work, we introduce CAFe-DINO, an OVSS method for RS imagery that eschews fine-tuning on geospatial data. We have demonstrated strong OVSS improvements with large margins on several datasets. We look forward to ad-ditional research leveraging the representational power of DINOv3 for RS tasks. 
+
+5.1. Limitations 
+
+While CAFe-DINO achieves strong OVSS performance without RS supervision, several limitations remain: 
+
+Scaling with Increasing Classes 
+
+Cost aggregation uses a cost volume whose memory usage grows linearly with the number of semantic classes. As the cost volume grows, memory increases linearly, which may limit applicability in large open-vocabulary settings. Run-time is not as badly impacted due to parallelization of cost aggregation operations. 
+
+Sensitivity to Pretraining Classes 
+
+We employ an RS-focused subset of COCO-Stuff for train-ing, and show that it is necessary for good performance (vs. random subsets). Though we logically form our subset around RS-related classes, we do not claim an optimal se-mantic set. The stark performance difference between train-ing with our subset and random subsets may warrant further study of which classes are relevant and which are harmful. 
+
+Performance on Rural Scenes 
+
+CAFe-DINO performs strongly on urban datasets such as Potsdam and Vaihingen, but results on OpenEarthMap show poor discrimination between visually similar land-cover textures (e.g., grass and crops, see Fig. 9 of supplemen-tary material). This is likely a limitation of large-scale nat-ural image pretraining, where such distinctions are under-represented. Incorporating texture-aware representations or multi-spectral information could alleviate this issue. 
+
+# 6. Acknowledgment 
+
+This work was supported by NASA under Grant 80NSSC22K1163. References 
+
+[1] 2D Semantic Labeling. https://www.isprs.org/. 6 [2] Luca Barsellotti, Roberto Amoroso, Marcella Cornia, Lorenzo Baraldi, and Rita Cucchiara. Training-Free Open-Vocabulary Segmentation with Offline Diffusion-Augmented Prototype Generation. In 2024 IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) , pages 3689–3698, 2024. 3 [3] Holger Caesar, Jasper Uijlings, and Vittorio Ferrari. COCO-Stuff: Thing and stuff classes in context. In Computer Vi-sion and Pattern Recognition (CVPR), 2018 IEEE Confer-ence On . IEEE, 2018. 2, 5 [4] Qinglong Cao, Yuntian Chen, Chao Ma, and Xiaokang Yang. Open-vocabulary high-resolution remote sensing image se-mantic segmentation. IEEE Transactions on Geoscience and Remote Sensing , 63:1–14, 2025. 3, 4, 7 [5] Jia-Ren Chang and Yong-Sheng Chen. Pyramid Stereo Matching Network. In 2018 IEEE/CVF Conference on Com-puter Vision and Pattern Recognition , pages 5410–5418, 2018. 3 [6] Mehdi Cherti, Romain Beaumont, Ross Wightman, Mitchell Wortsman, Gabriel Ilharco, Cade Gordon, Christoph Schuh-mann, Ludwig Schmidt, and Jenia Jitsev. Reproducible scal-ing laws for contrastive language-image learning. In Pro-ceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , pages 2818–2829, 2023. 2 [7] Seokju Cho, Sunghwan Hong, and Seungryong Kim. CATs++: Boosting cost aggregation with convolutions and transformers. IEEE Transactions on Pattern Analysis and Machine Intelligence , 45(6):7174–7194, 2023. 3 [8] Seokju Cho, Heeseong Shin, Sunghwan Hong, Anurag Arnab, Paul Hongsuck Seo, and Seungryong Kim. CAT-Seg: Cost Aggregation for Open-Vocabulary Semantic Segmenta-tion. In 2024 IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) , pages 4113–4123, Seattle, WA, USA, 2024. IEEE. 3, 4, 6 [9] Paul Couairon, Loick Chambon, Louis Serrano, Jean-Emmanuel Haugeard, Matthieu Cord, and Nicolas Thome. JAFAR: Jack up any feature at any resolution, 2025. 2, 3 [10] Jian Ding, Nan Xue, Gui-Song Xia, and Dengxin Dai. Decoupling Zero-Shot Semantic Segmentation. In 2022 IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) , pages 11573–11582, 2022. 3 [11] Alexey Dosovitskiy, Lucas Beyer, Alexander Kolesnikov, Dirk Weissenborn, Xiaohua Zhai, Thomas Unterthiner, Mostafa Dehghani, Matthias Minderer, Georg Heigold, Syl-vain Gelly, Jakob Uszkoreit, and Neil Houlsby. An Image is Worth 16x16 Words: Transformers for Image Recognition at Scale. In International Conference on Learning Representa-tions , 2020. 3 [12] Saikat Dutta, Akhil Vasim, Siddhant Gole, Hamid Rezatofighi, and Biplab Banerjee. AerOSeg: Harnessing SAM for Open-Vocabulary Segmentation in Remote Sens-ing Images. In 2025 IEEE/CVF Conference on Computer Vision and Pattern Recognition Workshops (CVPRW) , pages 2245–2255, Nashville, TN, USA, 2025. IEEE. 3 [13] Stephanie Fu, Mark Hamilton, Laura E. Brandt, Axel Feld-mann, Zhoutong Zhang, and William T. Freeman. FeatUp: A model-agnostic framework for features at any resolution. In The Twelfth International Conference on Learning Repre-sentations , 2024. 2, 3 [14] Golnaz Ghiasi, Xiuye Gu, Yin Cui, and Tsung-Yi Lin. Scal-ing Open-Vocabulary Image Segmentation with Image-Level Labels. In Computer Vision – ECCV 2022 , pages 540–557. Springer Nature Switzerland, Cham, 2022. 3 [15] Xiaoyang Guo, Kai Yang, Wukui Yang, Xiaogang Wang, and Hongsheng Li. Group-Wise Correlation Stereo Network. In 
+
+2019 IEEE/CVF Conference on Computer Vision and Pat-tern Recognition (CVPR) , pages 3268–3277, Long Beach, CA, USA, 2019. IEEE. 3 [16] Cijo Jose, Théo Moutakanni, Dahyun Kang, Federico Baldassarre, Timothée Darcet, Hu Xu, Daniel Li, Marc Szafraniec, Michaël Ramamonjisoa, Maxime Oquab, Oriane Siméoni, Huy V. Vo, Patrick Labatut, and Piotr Bojanowski. DINOv2 meets text: A unified framework for image- and pixel-level vision-language alignment, 2024. 1, 3 [17] Dahyun Kang and Minsu Cho. In Defense of Lazy Vi-sual Grounding for Open-Vocabulary Semantic Segmenta-tion. In Computer Vision – ECCV 2024: 18th European Conference, Milan, Italy, September 29–October 4, 2024, Proceedings, Part XLI , pages 143–164, Berlin, Heidelberg, 2024. Springer-Verlag. 3 [18] Alexandre Lacoste, Nils Lehmann, Pau Rodriguez, Evan David Sherwin, Hannah Kerner, Björn Lütjens, Jeremy Irvin, David Dao, Hamed Alemohammad, Alexan-dre Drouin, Mehmet Gunturkun, Gabriel Huang, David Vazquez, Dava Newman, Yoshua Bengio, Stefano Ermon, and Xiao Xiang Zhu. GEO-bench: Toward foundation models for earth monitoring. In Proceedings of the 37th International Conference on Neural Information Processing Systems , pages 51080–51093, Red Hook, NY, USA, 2023. Curran Associates Inc. 2, 3 [19] Mengcheng Lan, Chaofeng Chen, Yiping Ke, Xinjiang Wang, Litong Feng, and Wayne Zhang. Proxyclip: Proxy attention improves clip for open-vocabulary segmentation. In European Conference on Computer Vision , pages 70–88. Springer, 2024. 3 [20] Boyi Li, Kilian Q Weinberger, Serge Belongie, Vladlen Koltun, and Rene Ranftl. Language-driven semantic seg-mentation. In International Conference on Learning Rep-resentations , 2022. 3 [21] Junnan Li, Dongxu Li, Caiming Xiong, and Steven Hoi. BLIP: Bootstrapping language-image pre-training for uni-fied vision-language understanding and generation. In ICML ,2022. 2 [22] Junnan Li, Dongxu Li, Silvio Savarese, and Steven Hoi. BLIP-2: Bootstrapping language-image pre-training with frozen image encoders and large language models. In Pro-ceedings of the 40th International Conference on Machine Learning , pages 19730–19742, Honolulu, Hawaii, USA, 2023. JMLR.org. 2 [23] Kaiyu Li, Ruixun Liu, Xiangyong Cao, Xueru Bai, Feng Zhou, Deyu Meng, and Zhi Wang. Segearth-ov: Towards training-free open-vocabulary segmentation for remote sens-ing images. In Proceedings of the Computer Vision and Pat-tern Recognition Conference , pages 10545–10556, 2025. 3, 6, 7, 1 [24] Feng Liang, Bichen Wu, Xiaoliang Dai, Kunpeng Li, Yinan Zhao, Hang Zhang, Peizhao Zhang, Peter Vajda, and Diana Marculescu. Open-vocabulary semantic segmentation with mask-adapted clip. In Proceedings of the IEEE/CVF Con-ference on Computer Vision and Pattern Recognition , pages 7061–7070, 2023. 3 [25] Yong Liu, Sule Bai, Guanbin Li, Yitong Wang, and Yan-song Tang. Open-Vocabulary Segmentation with Semantic-Assisted Calibration. In 2024 IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) , pages 3491–3500, 2024. 3 [26] Ze Liu, Yutong Lin, Yue Cao, Han Hu, Yixuan Wei, Zheng Zhang, Stephen Lin, and Baining Guo. Swin Transformer: Hierarchical Vision Transformer using Shifted Windows. In 
+
+2021 IEEE/CVF International Conference on Computer Vi-sion (ICCV) , pages 9992–10002, Montreal, QC, Canada, 2021. IEEE. 4 [27] Jishnu Mukhoti, Tsung-Yu Lin, Omid Poursaeed, Rui Wang, Ashish Shah, Philip H.S. Torr, and Ser-Nam Lim. Open Vo-cabulary Semantic Segmentation with Patch Aligned Con-trastive Learning. In 2023 IEEE/CVF Conference on Com-puter Vision and Pattern Recognition (CVPR) , pages 19413– 19423, 2023. 3 [28] Alec Radford, Jong Wook Kim, Chris Hallacy, A. Ramesh, Gabriel Goh, Sandhini Agarwal, Girish Sastry, Amanda Askell, Pamela Mishkin, Jack Clark, Gretchen Krueger, and I. Sutskever. Learning Transferable Visual Models From Natural Language Supervision. In International Conference on Machine Learning , 2021. 2 [29] Tong Shao, Zhuotao Tian, Hang Zhao, and Jingyong Su. Ex-plore the Potential of CLIP for Training-Free Open Vocab-ulary Semantic Segmentation. In Computer Vision – ECCV 2024 , pages 139–156, Cham, 2025. Springer Nature Switzer-land. 3 [30] Oriane Siméoni, Huy V. Vo, Maximilian Seitzer, Federico Baldassarre, Maxime Oquab, Cijo Jose, Vasil Khalidov, Marc Szafraniec, Seungeun Yi, Michaël Ramamonjisoa, Francisco Massa, Daniel Haziza, Luca Wehrstedt, Jianyuan Wang, Timothée Darcet, Théo Moutakanni, Leonel Sentana, Claire Roberts, Andrea Vedaldi, Jamie Tolan, John Brandt, Camille Couprie, Julien Mairal, Hervé Jégou, Patrick La-batut, and Piotr Bojanowski. DINOv3, 2025. 1, 3, 7 [31] Shuyang Sun, Runjia Li, Philip Torr, Xiuye Gu, and Siyang Li. CLIP as RNN: Segment countless visual concepts with-out training endeavor. In CVPR , 2024. 3 [32] Saksham Suri, Matthew Walmer, Kamal Gupta, and Abhinav Shrivastava. LiFT: A surprisingly simple lightweight feature transform for dense ViT descriptors. In European Confer-ence on Computer Vision , pages 110–128. Springer, 2025. 2, 3[33] Daniela Szwarcman, Sujit Roy, Paolo Fraccaro, Þorsteinn Elí Gíslason, Benedikt Blumenstiel, Rinki Ghosal, Pedro Hen-rique de Oliveira, João Lucas de Sousa Almeida, Rocco Sedona, Yanghui Kang, Srija Chakraborty, Sizhe Wang, Ankur Kumar, Myscon Truong, Denys Godwin, Hyunho Lee, Chia-Yu Hsu, Ata Akbari Asanjan, Besart Mujeci, Trevor Keenan, Paulo Arévolo, Wenwen Li, Hamed Ale-mohammad, Pontus Olofsson, Christopher Hain, Robert Kennedy, Bianca Zadrozny, Gabriele Cavallaro, Camp-bell Watson, Manil Maskey, Rahul Ramachandran, and Juan Bernabe Moreno. Prithvi-EO-2.0: A versatile multi-temporal foundation model for earth observation applica-tions. arXiv preprint arXiv:2412.02732 , 2024. 2, 3 [34] Jamie Tolan, Hung-I Yang, Benjamin Nosarzewski, Guil-laume Couairon, Huy V. Vo, John Brandt, Justine Spore, Sayantan Majumdar, Daniel Haziza, Janaki Vamaraju, Theo Moutakanni, Piotr Bojanowski, Tracy Johns, Brian White, Tobias Tiecke, and Camille Couprie. Very high resolu-tion canopy height maps from RGB imagery using self-supervised vision transformer and convolutional decoder trained on aerial lidar. Remote Sensing of Environment , 300: 113888, 2024. 3 [35] Tobias Uelwer, Jan Robine, Stefan Sylvius Wagner, Marc Höftmann, Eric Upschulte, Sebastian Konietzny, Maike Behrendt, and Stefan Harmeling. A survey on self-supervised methods for visual representation learning. Ma-chine Learning , 114(4):111, 2025. 3 [36] Junjue Wang, Zhuo Zheng, Ailong Ma, Xiaoyan Lu, and Yanfei Zhong. LoveDA: A Remote Sensing Land-Cover Dataset for Domain Adaptive Semantic Segmentation. 6 [37] Jinglong Wang, Xiawei Li, Jing Zhang, Qingyuan Xu, Qin Zhou, Qian Yu, Lu Sheng, and Dong Xu. Diffusion model is secretly a training-free open vocabulary semantic segmenter. 
+
+arXiv preprint arXiv:2309.02773 , 2023. 3 [38] Wenzhen Wang, Aoran Xiao, Wei He, Hongyuan Zhu, and Liang Xiao. Text-to-image activation for open-vocabulary semantic segmentation in remote sensing. IEEE Transac-tions on Geoscience and Remote Sensing , 63:1–17, 2025. 3 [39] Thomas Wimmer, Prune Truong, Marie-Julie Rakotosaona, Michael Oechsle, Federico Tombari, Bernt Schiele, and Jan Eric Lenssen. AnyUp: Universal feature upsampling. 
+
+arXiv preprint arXiv:2510.12764 , 2025. 2, 3 [40] Junshi Xia, Naoto Yokoya, Bruno Adriano, and Clifford Broni-Bediako. OpenEarthMap: A Benchmark Dataset for Global High-Resolution Land Cover Mapping. In 2023 IEEE/CVF Winter Conference on Applications of Computer Vision (WACV) , pages 6243–6253, 2023. 6 [41] Zhitong Xiong, Yi Wang, Fahong Zhang, Adam J Stewart, Joëlle Hanna, Damian Borth, Ioannis Papoutsis, Bertrand Le Saux, Gustau Camps-Valls, and Xiao Xiang Zhu. Neural plasticity-inspired foundation model for observing the Earth crossing modalities. arXiv preprint arXiv:2403.15356 , 2024. 3[42] Zhitong Xiong, Yi Wang, Fahong Zhang, Adam J. Stewart, Joëlle Hanna, Damian Borth, Ioannis Papoutsis, Bertrand Le Saux, Gustau Camps-Valls, and Xiao Xiang Zhu. Neural Plasticity-Inspired Multimodal Foundation Model for Earth Observation, 2025. 2 [43] Mengde Xu, Zheng Zhang, Fangyun Wei, Han Hu, and Xi-ang Bai. SAN: Side adapter network for open-vocabulary semantic segmentation. IEEE Transactions on Pattern Anal-ysis and Machine Intelligence , 45(12):15546–15561, 2023. 3[44] Chengyang Ye, Yunzhi Zhuge, and Pingping Zhang. To-wards Open-Vocabulary Remote Sensing Image Semantic Segmentation. Proceedings of the AAAI Conference on Arti-ficial Intelligence , 39(9):9436–9444, 2025. 3, 6, 7 [45] Xiaohua Zhai, Xiao Wang, Basil Mustafa, Andreas Steiner, Daniel Keysers, Alexander Kolesnikov, and Lucas Beyer. LiT: Zero-Shot Transfer with Locked-image text Tuning. In 
+
+2022 IEEE/CVF Conference on Computer Vision and Pat-tern Recognition (CVPR) , pages 18102–18112, 2022. 3 [46] Shijie Zhang, Bin Zhang, Yuntao Wu, Huabing Zhou, Junjun Jiang, and Jiayi Ma. SegCLIP: Multimodal Visual-Language and Prompt Learning for High-Resolution Remote Sensing Semantic Segmentation. IEEE Transactions on Geoscience and Remote Sensing , 62:1–16, 2024. 3 [47] Chaoyang Zhu and Long Chen. A survey on open-vocabulary detection and segmentation: Past, present, and future. IEEE Transactions on Pattern Analysis and Machine Intelligence , 46(12):8954–8975, 2024. 2 DINO Soars: DINOv3 for Open-Vocabulary Semantic Segmentation of Remote Sensing Imagery 
+
+# Supplementary Material 
+
+> Table 7. The prompt class name of the evaluation datasets.
+
+Dataset Class Name 
+
+OpenEarthMap barren, grass, pavement, road, tree, water, cropland, building LoveDA building, road, water, barren, tree, farm Potsdam, Vaihingen road, building, low vegeta-tion, tree, car 
+
+# 7. Prompt Details 
+
+Every dataset contains a named set of classes. Instead of using these names directly, we have found it beneficial to make some logical modifications to the existing names, which we list here in Tab. 7 for reproducibility. Our heuris-tic in making substitutions is to target classes with complex or abstract semantic names (e.g. “agriculture”) and replace them with something simple and concrete (e.g. “farm”). There may be more gains to be realized with sophisticated prompt tuning, but this is beyond the scope of our work. Note that the semantic names used for Potsdam and Vai-hingen are left unmodified. We believed that the model would struggle to apply the “low vegetation” class, so we attempted some simple substitutions (grass, greenery, etc.) only to find that using low vegetation gave the best perfor-mance. For LoveDA, we realized small performance gains by substituting “forest” and “agriculture” with “tree” and “farm”, respectively. For OpenEarthMap, we substituted “bareland”, “rangeland”, “developed space”, and “agricul-ture land” with “barren”, “grass”, “pavement”, and “crop-land”, respectively. Besides class names, the other variable in forming prompts is the choice of surrounding sentence. Ensem-bling is a common approach, in which a group of “wrapper” prompts is submitted to the text encoder for each semantic class, and the mean of all embeddings is used downstream. We use the set of wrappers defined by [23] in their code implementation, and repeat them here in Tab. 8 for easy ref-erence. We show aggregated cost maps for Potsdam, Vaihin-gen, LoveDA, and OEM in Fig. 6, Fig. 7 ,Fig. 8, Fig. 9, respectively, for both vanilla DINOv3 and CAFe-DINO. Aggregated cost maps are effectively a per-class probabil-ity score, so they are a good empirical heuristic of model uncertainty and identifying problem classes. For exam-ple, the “car” cost map for Potsdam is much sharper than the one for Vaihingen for both models, and therefore the predictions are weaker on the Vaihingen image (we at-tribute this particular phenomenon to the non-RGB spec-tra of the Vaihingen dataset). A core limitation of CAFe-DINO (and RS-training-free methods in general) can be gleaned from the cost maps of OEM, particularly the near-identical Grass and Cropland maps. We conjecture that the difference between texture-characterized classes such as grass and crops in a satellite image is too fine-grained for a model trained on natural imagery to distinguish, though more shape-characterized greenery such as trees are more easily identified. CAFe-DINO cost maps are generally sharper and higher-contrast than DINOv3 cost maps as a result of cost aggrega-tion. Some classes are segmentable by DINOv3 out-of-the-box (such as cars in Potsdam), while others produce almost completely unstructured cost maps (such as Low Veg. in Potsdam). These unstructured cost maps benefit the most from cost aggregation. Note that the cost map of a class is aggregated relative to other classes in the given semantic set, so changing the input set of classes will change the cost map of a given class. 
+
+> Table 8. Prompt wrappers for CAFe-DINO. “{}” is a placeholder for a desired semantic class.
+
+a photo of {} an image of {} a photograph of {} a picture of {} a photo of a {} an image of a {} a photo of the {} an image of the {} a close-up photo of {} a cropped image featuring {} 8. COCO-Stuff Subset 
+
+We use a subset of the COCO-Stuff dataset containing only the following classes: 
+
+Classes: bicycle, car, motorcycle, airplane, bus, train, truck, boat, bridge, building, bush, dirt, fence, grass, gravel, ground, hill, house, leaves, metal, mountain, mud, pavement, plant, platform, playing field, railing, railroad, river, road, rock, roof, sand, sea, skyscraper, snow, stone, structural, tree, water, wood. 
+
+Our heuristic in forming this dataset was to remove se-mantic classes that could never exist in satellite imagery at current resolution capabilities, such as household objects and food items. Using a reduced semantic set brings the benefit of smaller cost volumes, resulting in a substantial decrease in GPU memory and FLOPs for both training and inference. Additionally, we find that training convergence with the reduced set is very short (45,000 iterations). 
+
+# 9. Additional Cost Maps 
+
+On the following pages, we provide additional cost maps for samples from the Potsdam (Fig. 6), Vaihingen (Fig. 7), LoveDA (Fig. 8), and OEM (Fig. 9) datasets. Road Building Low Veg. Tree Car Prediction CAFe-DINO 
+
+DINOv3 
+
+True Mask 
+
+> Figure 6. Cost maps for a Potsdam image.
+
+Road Building Low Veg. Tree Car Prediction CAFe-DINO 
+
+DINOv3 
+
+True Mask 
+
+> Figure 7. Cost maps for a Vaihingen image.
+
+Building Road Water Barren Tree Farm Prediction CAFe-DINO 
+
+DINOv3 
+
+True Mask 
+
+> Figure 8. Cost maps for a LoveDA image.
+
+Barren Grass Pavement Road Tree Water Cropland Building Prediction CAFe-DINO 
+
+DINOv3 
+
+True Mask

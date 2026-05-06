@@ -1,0 +1,545 @@
+Title: EAPFusion: Intrinsic Evolving Auxiliary Prior Guidance for Infrared and Visible Image Fusion
+
+URL Source: https://arxiv.org/pdf/2605.01916v1
+
+Published Time: Tue, 05 May 2026 01:15:13 GMT
+
+Number of Pages: 23
+
+Markdown Content:
+# EAPFusion: Intrinsic Evolving Auxiliary Prior Guidance for Infrared and Visible Image Fusion 
+
+Zhenyu Sun a, Luobin Zhang a, Axi Niu a, Haishen Wang a, Qingsen Yan a, ∗
+
+> aNorthwestern Polytechnical University, Xi’an, China
+
+Abstract 
+
+Infrared-visible image fusion aims to create an information-rich fused image by integrating the complementary thermal saliency from infrared sensing and fine textures from visible imaging. Such accurate fusion is essential for real-world perception applications in complex scenes, including nighttime autonomous driving, search and rescue, and surveillance, and can further benefit downstream tasks such as semantic segmentation. However, most existing fusion methods rely on static trained weights that cannot adapt to scene-specific content at inference time, and often suffer from a granularity mismatch when coarse auxiliary semantics are injected, which makes it difficult to simultaneously highlight targets and preserve details. In this work, we propose EAPFusion to address these issues by using self-evolving intrinsic priors instead of relying on external auxiliary models. Concretely, EAPFusion maintains a compact set of intrinsic priors and progressively updates them across scales. These evolved priors are utilized to dynamically generate convolutional kernels, shifting the paradigm from fixed, pre-trained filters to instance-adaptive parameters via prior-conditioned dynamic convolution. Furthermore, we design a channel-level fusion module that shuffles and interleaves infrared and visible channels, applying local channel mixing to boost cross-modal complementarity. Experiments on different datasets, including cross-dataset evaluation and semantic segmentation, show that the proposed method achieves state-of-the-art quantitative and qualitative fusion results, and consistently boosts downstream performance. Code is coming soon. 
+
+Keywords: infrared and visible image fusion, intrinsic prior evolution, dynamic convolution, local channel mixing, auxiliary prior guidance 
+
+1. Introduction 
+
+Complex real-world scenarios often involve multiple factors, such as low illumination, occlusion, smoke and haze, and strong background interference, making it difficult for a single imaging sensor to simultaneously ensure target visibility, texture details, and imaging robustness [1]. Accordingly, multimodal image fusion has emerged as a key technique for all-weather perception: it integrates information from complementary sensors into a single, more informative and interpretable image representation, benefiting both human observation and downstream machine vision tasks. Among various fusion settings, infrared and visible image fusion (VIF) is particularly representative. Infrared imaging reflects the spatial distribution of thermal radiation and can highlight salient targets at night or under adverse weather, but it is typically limited by low spatial resolution and poor textural fidelity, leading to          
+
+> ∗Corresponding author
+> Email addresses: sunzhenyu@mail.nwpu.edu.cn (Zhenyu Sun), zhangluobin@mail.nwpu.edu.cn (Luobin Zhang),
+> nax@nwpu.edu.cn (Axi Niu), wanghaishen@mail.nwpu.edu.cn (Haishen Wang), qingsenyan@nwpu.edu.cn (Qingsen Yan)
+> arXiv:2605.01916v1 [cs.CV] 3 May 2026
+
+insufficient details and contrast. Conversely, visible images contain richer spatial details and structural textures, yet are more sensitive to illumination changes and occlusion. Therefore, VIF aims to generate fused results that combine infrared target saliency with clearly preserved visible details, and has shown significant value in applications such as nighttime autonomous driving, search and rescue, and security surveillance [2]. Recent deep learning approaches for VIF generally fall into two paradigms. The first line targets image recon-struction and low-level fidelity, typically employing CNN-based autoencoders [3] for local texture extraction or Transformers [4] for long-range dependency modeling. Nevertheless, since their optimization objectives primarily emphasize signal reconstruction and statistical preservation, these methods inherently struggle to capture high-level semantic information. To compensate for this semantic deficiency, an auxiliary-guided fusion paradigm has emerged [5]. Specifically, these methods incorporate external teacher models, leveraging pre-trained networks for high-level tasks like object detection [6], or utilizing CLIP to transform natural language into steering features [7]. While effectively endowing fusion networks with semantic cues, the heavy reliance on these external priors intro-duces two inherent tensions that constrain practical fusion performance. First, regarding the feature interaction mechanism, most existing networks rely on fixed parameters, i.e., a static processing scheme independent of the input content. During inference, such mechanisms cannot adaptively adjust convolutional kernel weights according to the characteristics of the current sample (e.g., illumination intensity, texture complexity, or target saliency). Using a single fixed interaction pattern for diverse scenes makes it difficult for the model to adapt to sample-specific properties, resulting in either suppressed IR targets or the loss of VIS details. Second, there exists a granularity mismatch between auxiliary semantics and low-level texture requirements. Features extracted by external auxiliary models are typically high-level semantics that focus on abstract object-category information, whereas the shallow layers of a fusion network mainly extract low-level textures and edge details [8]. Many existing methods ignore this discrepancy and directly inject high-level semantics into shallow layers. Introducing coarse-grained semantics into fine-grained feature layers may interfere with low-level texture representations, causing high-frequency detail loss or visual artifacts. To address the above issues, we propose EAPFusion. The core idea is to construct an internal guidance mech-anism that eliminates the dependence on external auxiliary models, enabling the network to automatically mine high-value auxiliary priors from its own features. Specifically, to mitigate the mismatch between high-level semantics and low-level details, we propose an Adap-tive Prior Generator (APG) which establishes an auxiliary-prior updating mechanism evolving synchronously with the backbone. Unlike the static injection of external semantics, APG adopts a progressive absorption strategy: it inherits historical priors while continuously updating them with current-level features, allowing the auxiliary infor-mation to transition smoothly from shallow to deep layers and thereby alleviating conflicts caused by cross-level granularity inconsistency. Furthermore, to overcome the static nature of interaction mechanisms at inference time, we introduce the Prior-Driven Dynamic Convolution Block (DDCB). This block transforms the hierarchical evolution of priors into test-time adaptive interactions: it generates dynamic interaction rules according to the input content (e.g., illumination or texture structures), shifting feature aggregation from fixed-parameter fitting to dynamic instance reasoning, and enabling adaptive fusion under varying scenes and imaging conditions. 2Encoder  
+
+> Encoder
+> Encoder
+> Encoder
+> Encoder
+> SCFB
+> SCFB
+> SCFB
+> SCFB
+> SCFB
+> Encoder
+> Encoder
+> Encoder
+> Encoder
+> Encoder
+> Decoder
+> Decoder
+> Decoder
+> U
+> Final Conv
+> C
+> SCFB
+> Encoder
+> Encoder
+> U
+> C
+> APG
+> DDCB +
+> BasicBlock
+> SIM
+> +
+> Embedding
+> DDCB
+> Global
+> Extractor
+> FFN
+> +
+> APG
+
+Fig. 1: Overall architecture of EAPFusion. EAPFusion consists of a dual-branch encoder, APG, DDCB, SCFB, and a progressive decoder for infrared-visible fusion. 
+
+To better match the front-end encoder, we further design the Shuffle Channel Fusion Block. It shuffles and interleaves IR and VIS channels to facilitate thorough cross-modal interaction along the channel dimension, and then performs effective information integration via local channel mixing. The main contributions of this paper are summarized as follows: • We propose a self-evolving prior-guided fusion framework that constructs an internal guidance mechanism to autonomously mine high-value auxiliary priors from its own features, eliminating the reliance on external priors. • The proposed APG progressively evolves auxiliary priors from textures to semantics, bridging the granular-ity gap; meanwhile, the DDCB converts the evolved priors into instance-adaptive interaction rules, shifting feature aggregation from static fitting to dynamic reasoning. • The SCFB leverages channel shuffling and local mixing to facilitate thorough cross-modal interaction along the channel dimension. • Extensive experiments on multiple public datasets demonstrate that our method achieves superior fusion quality and significantly benefits downstream semantic segmentation tasks. 
+
+2. Related work 
+
+2.1. End-to-End fusion methods 
+
+End-to-end deep networks for infrared–visible image fusion have undergone a systematic architectural evolu-tion, advancing from CNN-based models and generative adversarial networks (GANs) to Transformer architectures 3and, most recently, diffusion models. CNN-based formulations primarily pursue cross-modal feature aggregation under reconstruction-oriented constraints: Li et al. [9] exploited dense feature encoding for intermediate fusion, whereas Li et al. [10] devised a residual fusion nesting strategy to preserve fine textures and salient targets. To further sharpen perceptual details, adversarial objectives have been incorporated as implicit realism regularizers, as exemplified by FusionGAN proposed by Ma et al. [11] and the attention-enhanced adversarial design of Li 
+
+et al. [12]. Nevertheless, the convolutional inductive bias inherently restricts long-range dependency modeling, motivating Transformer-based fusion that explicitly parameterizes interactions within and across modalities via at-tention; Tang et al. [13] proposed an interactive Transformer to facilitate cross-modal information flow, and Ma et al. [14] explored Swin Transformer long-range learning under a unified fusion framework. More recently, diffusion-driven approaches have reframed the fusion process as conditional generation with iterative denoising, where Zhao 
+
+et al. [15] introduced a denoising-diffusion formulation and Xu et al. [16] extended it with multi-attribute condi-tioning for improved fidelity. 
+
+2.2. External auxiliary guided methods 
+
+To explicitly align fusion with high-level semantics, external-auxiliary-guided approaches inject task super-vision or distill priors from pretrained foundation models. In task-driven settings, fusion is co-optimized with downstream objectives so that the fused output becomes directly discriminative: Liu et al. [17] integrated dual adversarial learning with object-detection training, Bai et al. [18] parameterized learnable fusion losses to em-phasize task-critical cues, and Liu et al. [19] formulated fusion–task coupling as an evolutionary multi-objective optimization. Complementarily, language-conditioned fusion has emerged to offer user-controllable semantics: Li 
+
+et al. [20] coupled text supervision with detection-oriented training, while Li et al. [21] and Liu et al. [22] leveraged frozen vision–language encoders such as CLIP to align textual concepts with cross-modal visual representations, and Yi et al. [23] introduced semantic text guidance for degradation-aware and interactive fusion. Beyond language, segmentation-centric priors have been distilled from large frozen segmentation models; Wu et al. [24] exploited the Segment Anything Model to provide semantic persistence for multi-modality fusion. 
+
+2.3. Intrinsic prototype priors guided methods 
+
+Intrinsic-prior-based methods attempt to internalize reusable knowledge by maintaining compact prototypes— including memory units, learnable look-up tables, and codebooks—that are repeatedly retrieved and updated to stabilize fusion across scenes. Cheng et al. [25] proposed MUFusion with a read-write memory and a self-evolution training scheme, while He et al. [26] introduced a gated recurrent memory mechanism to preserve informative features and suppress redundancy. For efficiency and cross-modality alignment, Yi et al. [27] distilled fusion into learnable look-up tables, Li et al. [28] explored modality dictionaries for unregistered alignment, and Huang et al. [29] investigated vector-quantized codebook representations for robustness and anomaly suppression. 
+
+2.4. Summary 
+
+In summary, existing paradigms face an inherent trade-off between semantic awareness and instance adaptivity: externally guided methods suffer from granularity mismatches, while static prototype models lack content-adaptive 4expressiveness. To reconcile this tension, we propose EAPFusion. Instead of relying on external guidance, EAP-Fusion autonomously mines and progressively evolves internal priors from hierarchical features into dynamic in-teractions, achieving robust fusion across diverse scenes. 
+
+3. Proposed method 
+
+3.1. Overview 
+
+As shown in Fig. 1, our EAPFusion is a self-evolving prior-guided framework for infrared (IR) and visible (VIS) image fusion. It consists of three core components: the Adaptive Prior Generator (APG), the Prior-Driven Dynamic Convolution Block (DDCB), and the Shuffle Channel Fusion Block (SCFB). EAPFusion adopts a dual-branch hierarchical encoder to extract multi-scale representations for the two modal-ities. At the i-th scale, the encoder outputs are denoted as Fiir and Fivis , and the network maintains scale-evolving auxiliary priors Diir and Divis initialized as D0 
+
+> ir
+
+and D0
+
+> vis
+
+. Within each scale, an Embedding layer produces embedded features Fiemb , APG updates auxiliary priors by inheriting history and incorporating current contextual information, and the DDCB then converts these evolved priors into spatially-variant dynamic filters to capture content-adaptive local details. In parallel, a Global Extractor captures global context; the local (DDCB-enhanced) and global repre-sentations are aggregated by residual addition and an FFN to produce the next-scale features. SCFB then fuses the two modalities to obtain the scale-wise fused feature Fi
+
+> fused
+
+.The decoder performs progressive reconstruction, as depicted in the right branch of Fig. 1. Starting from the deepest fused feature, each stage performs an upsampling operation, integrates it with the fused feature at the corresponding scale via a semantic injection module (SIM) [30], and refines the aggregated features with a Basic Block [31]. At the highest resolution, the decoder concatenates shallow details and reconstructs the final fused image 
+
+I f with Final Conv. Final Conv is a reconstruction head: it first uses a Basic Block to refine and denoise the high-resolution features and then applies several 3 × 3 convolutions followed by a sigmoid for intensity normalization. 
+
+3.2. Adaptive prior generator 
+
+In a multi-scale encoder, shallow features tend to capture textures and edges, whereas deeper features are more related to structures and target semantics. If auxiliary priors are injected as static external priors or via a single-shot generation, cross-scale granularity mismatch can easily occur: coarse semantics may disturb shallow layers and harm fine details. To address this issue, we propose an Adaptive Prior Generator (APG), which maintains a compact set of auxiliary priors at each scale and evolves them progressively by inheriting history and incorporating current contextual information. In this way, the auxiliary priors grow in sync with the backbone representations, providing stable and content-related conditioning for subsequent DDCB. As shown in Fig. 2, APG aligns historical priors, summarizes current features via cross-attention, and updates the priors with a gated evolution mechanism. Given the embedded feature Fiemb on scale i and the auxiliary priors from the previous scale Di−1, the general APG update is formulated as follows: 
+
+Di = APG (Fiemb , Di−1), (1) where Fiemb ∈ RB×Ci×Hi×Wi denotes the embedded feature map at the i-th scale, Di ∈ RB×M×Ci denotes the auxiliary priors at this scale, and M is the number of auxiliary priors. 53.2.1. Initialization and cross-scale inheritance 
+
+We introduce learnable initial priors at the shallowest scale: 
+
+D0 = D0, D0 ∈ RM×C1 . (2) We parameterize D0 as learnable since the priors will be repeatedly read and updated in subsequent layers. A fixed learnable starting point avoids distribution fluctuations caused by random noise and allows the model to accumulate a set of cross-sample prototype bases during training, improving convergence stability and transferability. To accommodate the varying channel dimensions across different scales, we align the historical auxiliary priors to the current dimension and normalize them before propagation: 
+
+˜Di−1 = LN (Ai(Di−1)) , Ai : RM×Ci−1 → RM×Ci , (3) where ˜Di−1 represents the aligned and normalized historical auxiliary prior, Ai(·) is a scale-wise dimension align-ment mapping, and LN( ·) denotes Layer Normalization 
+
+3.2.2. Extracting candidate priors from current features 
+
+Relying solely on historical inheritance may weaken adaptability to the current content. Therefore, APG also extracts candidate auxiliary features from the current scale features. We first flatten the feature map into a token sequence: 
+
+Ki = Flatten (Fiemb 
+
+) ∈ RB×Ni×Ci , Ni = HiWi, (4) where Flatten( ·) flattens the spatial dimensions (Hi, Wi) into a token sequence while keeping the channel dimension 
+
+Ci, and Ni = HiWi is the number of spatial tokens at scale i. Using M learnable query tokens Qi ∈ RB×M×Ci , we perform cross-attention over Ki (with Vi = Ki) to produce candidate auxiliary features: 
+
+∆Di = CA (Qi, Ki, Vi), (5a) 
+
+Di 
+
+> prop
+
+= LN (Qi + ∆ Di), (5b) where Qi denotes the learnable query tokens at scale i, CA( ·) denotes the cross-attention operator, ∆Di is the residual update extracted from the current features, and Di 
+
+> prop
+
+represents the generated candidate auxiliary prior. Utilizing M fixed queries to compress information from Ni spatial locations can be viewed as a capacity-controlled summary of key structural patterns at this scale, which is more suitable as conditioning for subsequent dynamic convolution. 
+
+3.2.3. Gated evolutionary update 
+
+Directly replacing the historical priors with Di 
+
+> prop
+
+might discard valuable information from shallow layers. In-stead, we adopt a gated, progressive update rule that adaptively balances historical inheritance and the incorporation of current context. Specifically, we formulate this progression as a gated residual update. A learnable gating pa-rameter ηi is passed through a sigmoid function to dynamically scale the residual between the candidate term Di
+
+> prop
+
+6and the aligned historical term ˜Di−1:
+
+Di = LN ( ˜Di−1 + σ(ηi) ⊙ (Di 
+
+> prop
+
+− ˜Di−1)) , (6) where σ(·) is the sigmoid function, and ⊙ denotes element-wise multiplication. A smaller gate value σ(ηi) preserves more historical consistency, whereas a larger value integrates more current content for enhanced adaptability. Flatten 
+
+> LN
+> Q
+
++
+
+> K V
+> LN
+> Sigmoid
+
++ 
+
+> Linear
+> LN
+> Fig. 2: Adaptive Prior Generator (APG). Historical priors are aligned, summarized with current features via cross-attention, and updated by a gated evolution rule.
+
+3.3. Prior-driven dynamic convolution block 
+
+The set of auxiliary priors Di produced by the APG at each scale encapsulates key structural information and salient patterns. However, if they are merely concatenated or injected via simple feature addition, they often fail to induce truly content-adaptive interactions during inference. To overcome this limitation, we transform each auxiliary prior into a unique, content-specific convolution kernel. As illustrated in Fig. 3, the DDCB achieves this by employing a weight generation network (WeightGen) to parameterize each auxiliary prior into a distinct convolution expert. Subsequently, a hybrid dense and Top-K routing mechanism produces spatially-variant mixing weights. The aggregated expert kernels then execute position-adaptive dynamic convolutions within a residual block. This design facilitates spatially-variant feature extraction, enabling the differentiated enhancement of salient targets and background details. 
+
+3.3.1. Expert generation and routing 
+
+Given an input feature Fin ∈ RB×C×H×W and a set of priors D ∈ RB×M×C , we map each token dm to specific convolution parameters via a shared weight generation network (WeightGen): 
+
+(Wm, bm) = WeightGen( dm), m = 1, . . . , M, (7) where Wm and bm represent the generated convolutional kernel and bias parameters for the m-th expert, respectively. 
+
+dm ∈ RC denotes the m-th token in D, and M represents the total number of experts. This step transforms the descriptive priors into a distinct set of dynamic filter parameters. 7At each spatial location n, we compute the routing logits with a temperature scaling factor τ:
+
+an = r( fn)/τ, (8) where fn ∈ RC is the local channel vector at location n, r(·) is a lightweight routing network that outputs an M-dimensional logit vector, and an ∈ RM represents the unnormalized preference vector over all experts at location n.The temperature coefficient τ > 0 controls the distribution sharpness. Based on the logit vector an, we construct a dense routing distribution pn by applying a softmax function. Con-currently, we compute a Top-K sparse routing distribution qn by retaining only the top-K elements in an, setting the remainder to zero, and re-normalizing the retained values. We then blend these two distributions using a balancing coefficient λ to obtain the final routing weight vector πn:
+
+pn = Softmax( an), (9a) 
+
+qn = TopKSoftmax( an; K), (9b) 
+
+πn = λqn + (1 − λ)pn, (9c) where pn, qn, π n ∈ RM represent probability vectors that each sum to 1, K is the number of activated experts in the sparse routing path, and λ ∈ [0 , 1] explicitly controls the sparsity of the final routing weights. 
+
+3.3.2. Position-dependent dynamic convolution 
+
+With routing weights πn,m, the equivalent convolution parameters at location n are 
+
+ˆWn =
+
+> M
+
+∑
+
+> m=1
+
+πn,mWm, ˆbn =
+
+> M
+
+∑
+
+> m=1
+
+πn,mbm, (10) where ˆWn and ˆbn denote the aggregated location-specific convolution kernel and bias, respectively, while Wm and 
+
+bm represent the base parameters of the m-th expert. Computationally, (10) is a weighted linear combination of expert parameters, ensuring that the entire process is fully differentiable. The output at location n and channel c follows standard convolution with location-dependent parameters: 
+
+yn,c =
+
+> C
+
+∑
+
+> c′=1
+
+∑
+
+> ∆∈Ω
+
+ˆWn,c,c′,∆ Fc′, n+∆ + ˆbn,c, (11) where Ω denotes the set of spatial offsets in the convolution window and ∆ is an offset index; n + ∆ indicates the neighboring position of n. Fc′, n+∆ is the sampled input feature at an offset ∆ around n, and ˆWn,c,c′,∆ denotes the location-dependent kernel weight. 
+
+3.3.3. Residual encapsulation and post-processing 
+
+Finally, the dynamic convolution operator is integrated into a residual block to ensure stable feature propagation. We sequentially apply Layer Normalization and a GELU activation function to the dynamic convolution output, 8followed by a residual connection with the original input Fin :
+
+Fout = Fin + GELU (LN (DDC( Fin , D))) , (12) where Fout denotes the final enhanced feature map of the block, DDC( ·, ·) is the proposed prior-driven dynamic convolution operator, LN( ·) represents Layer Normalization, and GELU( ·) stands for the Gaussian Error Linear Unit activation function. Dynamic   
+
+> Conv
+> LN
+> GELU
+> Flatten
+> Linear
+> GELU
+> Linear
+> Topk
+> S
+> S
+> λ +
+> ×+
+> Topk
+
+# Ss  
+
+> Fig. 3: Prior-Driven Dynamic Convolution Block (DDCB). Each prior token generates an expert kernel via WeightGen, and dense/Top-Krouting yields location-dependent mixing weights for dynamic convolution.
+
+3.4. Shuffle channel fusion block 
+
+At the same scale, IR and VIS features often encode complementary information in different channel subspaces: IR features emphasize target saliency and structural contours, while VIS features contain richer textures and back-ground semantics. If we solely rely on global channel mixing via concatenation followed by a standard 1 × 1 con-volution, the cross-modal complementarity might be excessively homogenized. To address this issue, we introduce a channel-wise mixing convolution that performs sliding aggregation along the channel dimension. Coupled with a channel shuffling operation that interleaves the channels of both modalities, this design facilitates fine-grained cross-modal interactions within localized channel neighborhoods, ultimately leading to a more effective fusion. As illustrated in Fig. 4, the proposed SCFB sequentially performs preprocessing, cross-modal FiLM gating [30], channel shuffling, and channel-wise mixing convolution (CWMC) with multi-branch interactions, followed by a final 1 × 1 projection to produce the scale-wise fused feature. 93.4.1. FiLM-based gating modulation 
+
+At the i-th scale, we first apply pre-processing and gated modulation to the input features: 
+
+¯Fivis = R(Fivis 
+
+), (13a) 
+
+¯Fiir = R(Fiir 
+
+), (13b) 
+
+( ˜ Fiir , ˜Fivis ) = G( ¯Fiir , ¯Fivis 
+
+), (13c) where Fivis , Fiir ∈ RB×Ci×Hi×Wi denote the input feature maps, with B, Ci, Hi, and Wi representing the batch size, channel number, and spatial dimensions at scale i, respectively. R(·) denotes a Basic Block employed for local enhancement, and G(·, ·) represents the gating modulation module. We implement G(·, ·) via a FiLM-style channel-wise affine modulation. Specifically, we compute a joint global descriptor to predict the scale and bias coefficients for each modality, which are subsequently used to modulate both feature streams: 
+
+zi = GAP (Cat[ ¯ Fiir , ¯Fivis ]), (14a) 
+
+ϕi = MLP( zi) = [γiir , β iir , γ ivis , β ivis ], (14b) 
+
+˜Fim = γim ⊙ ¯Fim + βim, m ∈ { ir , vis }, (14c) where GAP( ·) denotes global average pooling, Cat[ ·, ·] denotes concatenation along the channel dimension, and zi
+
+is the joint global descriptor. The function MLP( ·) represents a multi-layer perceptron. The terms γim and βim denote the scale and bias coefficients for modality m, respectively, which are broadcast along the spatial dimensions, and 
+
+⊙ denotes element-wise multiplication along the channel dimension. 
+
+3.4.2. Channel-wise mixing convolution 
+
+To enhance cross-modal information interaction, we design a channel-wise mixing convolution (CWMC), de-noted as Cik,s(·). As shown in Fig. 5, the key idea is to treat the channel vector at each spatial location (h, w) as a 1D sequence, and perform local sliding-window convolution along the channel dimension with window length k and Basic      
+
+> Block
+> FiLM
+> Gate
+> Shuffle
+> CWMC
+> CWMC CWMC
+> CWMC
+> CWMC
+> CWMC
+> CWMC
+> C
+> 1×1 Conv
+> Basic
+> Block
+> Fig. 4: Shuffle Channel Fusion Block (SCFB). FiLM-based cross-modal gating, channel shuffling, local channel mixing, and multi-branch interaction are followed by a 1×1projection.
+
+10 stride s. This local channel aggregation avoids excessive homogenization caused by one-shot full-channel mixing. Given an input feature Fi ∈ RB×Cin ×H×W , we first apply padding along the channel dimension denoted as p, and then perform a 1D convolution along the channel dimension for each (h, w). We denote this operation as Ψch 
+
+> k,s
+
+(·):
+
+Yi = Ψ ch 
+
+> k,s
+
+(Fi) ∈ RB×Cout ×Nwin ×H×W ,
+
+Nwin = ⌊(Cin + 2p − k)/s⌋ + 1,
+
+(15) where Ψch 
+
+> k,s
+
+(·) denotes sliding-window 1D convolution along the channel dimension shared across spatial locations, 
+
+Cout is the number of channel kernel groups, and Nwin is the response length produced by the sliding windows. We then fold the window dimension Nwin into the channel dimension and employ two standard 1×1 convolutions for feature compression and projection: 
+
+Zi = Conv 1×1
+
+(R(Yi)) , (16a) 
+
+Fi 
+
+> out
+
+= Conv 1×1
+
+(Zi) . (16b) where R(·) denotes the reshape operation that collapses the window dimension into the channel manifold, and 
+
+Zi ∈ RB×(Cout ·Kagg )×H×W represents the intermediate representation. Conv 1×1(·) refers to the standard pointwise con-volution. Fi 
+
+> out
+
+is the final output feature of the proposed operator. Overall, we denote the operator as 
+
+Fi 
+
+> out
+
+= Cik,s
+
+(Fi) . (17) C
+
+C    
+
+> Fig. 5: Channel-wise mixing convolution (CWMC). A sliding-window 1D convolution along channels is folded and projected by 1×1
+> layers to obtain local channel interactions.
+
+11 3.4.3. Scale-wise fusion 
+
+As shown in Fig. 4, we concatenate and shuffle the gated features to interleave modality channels, and then apply channel mixing to obtain an embedding: 
+
+Ei = C(i)
+
+> k,s
+
+(Shu ffl e( ˜ Fivis , ˜Fiir )). (18) where Shu ffl e( ·, ·) denotes channel shuffling after concatenation to interleave the channels of the two modalities. 
+
+C(i)
+
+> k,s
+
+(·) instantiates the channel-wise mixing convolution in (17), and Ei ∈ RB×2Ci×Hi×Wi is the interleaved embedding feature. Given the interleaved embedding Ei, we employ three parallel channel-mixing branches with varying depths and subsequently project the aggregated features back to Ci channels: 
+
+Fi 
+
+> 1
+
+= T1
+
+(Ei), Fi 
+
+> 2
+
+= T2
+
+(Ei), Fi 
+
+> 3
+
+= T3
+
+(Ei), (19a) 
+
+Fi 
+
+> fused
+
+= Conv 1×1
+
+(Cat[ Fi
+
+> 1
+
+, Fi
+
+> 2
+
+, Fi
+
+> 3
+
+]). (19b) where T1(·), T2(·), and T3(·) denote the respective channel-mixing branches designed to capture multi-scale inter-action strengths. 
+
+3.5. Loss functions 
+
+In the absence of ground-truth supervision, we optimize the fusion network using complementary intensity-and structure-preserving objectives. This enables the fused image to retain both prominent thermal targets and rich visible textures. Let I, V ∈ RH×W denote the input IR and VIS images, respectively, and let F ∈ RH×W be the fused output, where H and W represent the spatial dimensions. The overall loss function is formulated as follows: 
+
+Ltotal = λ1Lint + λ2Lgrad + λ3Lssim + λ4Lstruct , (20) where λ1 through λ4 are trade-off coefficients controlling the relative importance of each term. To encourage the fused image to retain salient intensity responses from both source modalities and prevent prominent targets or significant luminance features from being degraded, we define the intensity preservation term as: 
+
+Lint = 1
+
+HW ∥F − max( I, V)∥1 , (21) where ∥ · ∥ 1 denotes the ℓ1 norm, and max( ·) indicates the pixel-wise maximum selection between I and V.To enhance edges and fine textures, we compel the gradients of the fused image to align with the maximum gradient responses from the two source images: 
+
+Lgrad = 1
+
+HW ∥∇ F − max( ∇I, ∇V)∥1 , (22) where ∇(·) denotes the gradient magnitude computed via the Sobel operator, and max( ·) is defined as in (21). We further enforce structural consistency between the fused image and both source modalities using weights 12 adaptively derived from their global gradient strengths: 
+
+Lssim = 1 − (ωI SSIM( I, F) + ωV SSIM( V, F)), (23a) 
+
+ωI = μ(∇I)
+
+μ(∇I) + μ(∇V) , ωV = 1 − ωI , (23b) where SSIM( ·, ·) denotes the structural similarity index [32], and μ(·) computes the global mean of a given gradient map. To explicitly encourage complementary structure injection, we define two residual maps: 
+
+RV = |F − V| , RI = |F − I| , (24) where RV and RI measure the absolute residuals of the fused image relative to the VIS and IR images, respectively. Subsequently, we constrain the gradients of the residual structures relative to one modality to match the gradients of the other modality: 
+
+Lstruct = 1
+
+HW 
+
+( ∥∇ RV − ∇ I∥1 + ∥∇ RI − ∇ V∥1
+
+), (25) where ∇(·) represents the aforementioned gradient magnitude operator. This term mitigates structural inconsisten-cies and artifacts, thereby promoting a more thorough cross-modal structure injection into F.
+
+4. Experiments 
+
+4.1. Experimental settings 
+
+To evaluate the proposed approach, we utilize three widely adopted datasets in the field of infrared and visible image fusion: MSRS [33], M3FD [17], and TNO [34]. Specifically, the MSRS dataset provides 1444 aligned infrared and visible image pairs. From this, a subset of 1083 pairs serves as our training corpus, from which 
+
+128 ×128 spatial patches are randomly extracted during preprocessing. The held-out 361 pairs constitute the primary test dataset. Furthermore, to rigorously examine the cross-domain adaptability and generalization capabilities of our network, we conduct zero-shot evaluations on the external M3FD and TNO datasets. The entire framework is developed using the PyTorch library, with all computational procedures executed on an infrastructure featuring one NVIDIA RTX 4090 GPU. Optimization is driven by the Adam algorithm over a span of 60 epochs, utilizing a batch size of 32. We initialize the learning rate at 1.7e-4, subsequently modulating it via a cosine annealing strategy preceded by a linear warm-up phase. To achieve an optimal equilibrium among the constituent objective functions, the weighting coefficients λ1, λ2, λ3, and λ4 are empirically assigned values of 4.0, 24.0, 0.5, and 4.5, respectively. To benchmark our network’s performance, we compare it against eight recent advanced VIF architectures: EMMA [35], SwinFusion [14], T2EA [36], WaveFusion [37], CDDFuse [38], MaeFuse [39], SPDFusion [40], and TDFusion [18]. Quantitative assessment is carried out using a suite of five established evaluation criteria: Entropy (EN), Spatial Frequency (SF), Average Gradient (AG), Standard Deviation (SD), and Visual Information Fidelity (VIF). Across these chosen indices, a larger numerical score directly correlates with enhanced fusion quality. For all metric tables, the bold and underlined values represent the optimal and second-best results, respectively. 13 Table 1: Quantitative evaluation on M3FD, MSRS, and TNO datasets.                                                                                                                                                          
+
+> Method M3FD MSRS TNO EN SF AG SD VIF EN SF AG SD VIF EN SF AG SD VIF EMMA 6.924 15.227 5.341 38.255 0.769 6.723 11.559 3.788 44.590 0.974 7.240 12.650 5.165 48.467 0.692 SwinFusion 6.790 13.685 4.615 35.834 0.774 6.621 11.089 3.566 42.998 0.990 6.898 11.679 4.511 40.864 0.724 T2EA 6.643 10.452 3.894 29.664 0.609 6.316 8.477 2.909 34.642 0.779 7.039 9.874 4.125 39.728 0.636 WaveFusion 6.983 15.889 5.226 37.224 0.772 6.720 11.999 3.988 42.936 1.019 7.224 14.534 5.356 45.707 0.748 CDDFuse 6.899 14.775 4.874 37.236 0.793 6.701 11.557 3.748 43.382 1.051 7.151 13.959 5.078 46.581 0.752
+> MaeFuse 6.966 8.831 3.639 35.410 0.477 6.605 9.407 3.432 38.383 0.711 6.967 8.762 3.981 37.570 0.495 SPDFusion 6.872 14.952 5.144 35.861 0.748 6.682 11.460 3.800 42.683 0.988 7.145 14.075 5.541 44.362 0.679 TDFusion 7.063 14.365 4.947 39.736 0.769 6.738 11.305 3.736 42.950 1.001 7.248 13.313 5.089 46.888 0.699 Ours 7.179 18.007 6.238 43.908 0.764 6.831 13.199 4.398 47.544 1.026 7.314 15.176 6.604 48.136 0.658
+> Table 2: Quantitative results on semantic segmentation.
+
+Model Unl Car Per Bik Cur CS GD CC Bu mIoU aAcc mAcc EMMA 97.90 86.17 66.66 67.25 46.06 52.00 43.94 53.89 68.70 64.73 97.87 72.55 SwinFusion 97.91 86.26 67.77 67.50 44.22 51.80 41.66 53.55 69.38 64.45 97.88 72.08 T2EA 97.91 85.84 68.11 68.52 44.82 51.41 41.45 53.17 71.47 64.74 97.88 72.47 WaveFusion 97.94 86.59 68.52 67.76 46.68 53.36 41.47 52.21 67.51 64.67 97.91 72.77 CDDFuse 97.91 86.11 67.44 66.78 45.62 52.06 43.85 54.01 71.14 64.99 97.87 73.02 MaeFuse 97.89 86.13 68.63 67.88 44.95 48.92 39.72 52.66 68.36 63.90 97.86 71.82 SPDFusion 97.92 85.91 67.89 68.11 44.61 54.46 39.48 53.27 69.96 64.62 97.89 72.65 TDFusion 97.93 86.25 68.63 67.46 44.34 53.92 42.32 53.20 71.11 65.02 97.90 73.12 Ours 97.99 86.15 68.57 68.43 48.71 56.01 48.98 55.79 67.63 66.47 97.96 74.43 
+
+4.2. Quantitative comparison 
+
+As summarized in Table 1, EAPFusion demonstrates consistent superiority across three datasets. First, it achieves the best performance on EN, SF, and AG. By maximizing these indicators of information capacity and detail activity, the proposed strategy robustly aggregates complementary multimodal features and enhances tex-ture responses. Second, regarding SD, a metric reflecting global contrast, EAPFusion ranks first on MSRS and M3FD and second on TNO. This proves its effectiveness in highlighting salient IR targets while preserving VIS background visibility and gray-level separability. Third, for the perceptual metric VIF, our method ranks second on MSRS, confirming high in-domain visual fidelity. The performance gap on M3FD and TNO relative to the top method is primarily attributed to cross-dataset domain shifts. 
+
+4.3. Qualitative comparison 
+
+As illustrated in Fig. 6, the visual comparison on the MSRS and M3FD datasets reveals distinct limitations in existing state-of-the-art methods. Specifically, CDDFuse, EMMA, and SwinFusion exhibit insufficient overall contrast and fail to adequately render structures that are occluded or situated in low-light regions, often resulting in diminished visual contrast and compromised situational awareness. Meanwhile, MaeFuse and WaveFusion are prone to introducing noticeable visual artifacts and noise, particularly at the boundaries of thermal targets, which disrupt the coherence of the fused image. Furthermore, T2EA suffers from insufficient detail preservation, leading to blurred textures in complex background areas. In contrast, our proposed EAPFusion effectively overcomes these drawbacks by achieving superior global contrast and structure recovery; it sharply delineates occluded details and salient thermal targets without introducing visual artifacts, yielding the most visually informative and natural fusion results among all compared methods. 14 Fig. 6: Qualitative fusion comparison on MSRS and M3FD. Columns show VIS, IR, and fused results of CDDFuse, EMMA, MaeFuse, SPDFusion, SwinFusion, T2EA, TDFusion, WaveFusion, and Ours; boxed regions are enlarged. 
+
+15 4.4. Downstream applications 
+
+To verify the practical value of fused images for downstream tasks, we conduct semantic segmentation exper-iments on the MSRS dataset, which includes nine categories: background, speed bump, cone, guardrail, curve, bicycle, person, car-stop, and car. The experiment consists of two stages. First, we generate fused results using our method and mainstream fusion baselines. Second, we train a DeepLabV3+ [41] network on the MMSegmenta-tion [42] platform with these fused images as input. We initialize the backbone with ImageNet-pretrained weights to improve convergence speed and generalization stability. Specifically, we use the SGD optimizer with an initial learning rate of 7 × 10 −3, a momentum of 0.9, and a weight decay of 5 × 10 −4. We adopt the PolyLR schedule to decay the learning rate to 1 × 10 −4 over 2750 iterations. We use 1083 image pairs for training and 361 image pairs for testing. Model performance is evaluated by mean IoU (mIoU), mean class accuracy (mAcc), and overall pixel accuracy (aAcc).  
+
+> Fig. 7: Qualitative segmentation comparison in daytime (top) and nighttime (bottom) scenes. Columns show source VIS/IR images and segmentation maps from different fusion methods; boxed regions highlight differences. VIS: visible; IR: infrared.
+
+As reported in Table 2, EAPFusion achieves the best overall segmentation performance, securing the highest mIoU, aAcc, and mAcc among all competitors. At the category level, our approach leads across most classes, performing exceptionally well on safety-critical categories for autonomous driving, such as Bike and Person. These improvements demonstrate that the proposed self-evolving auxiliary priors successfully preserve discriminative target structures and fine-grained textures, thereby providing highly informative representations for downstream segmentation. Fig. 7 illustrates qualitative segmentation comparisons across representative daytime and nighttime scenar-ios. Focusing on the encircled pedestrian examples in the daytime scene (top), our method successfully avoids erroneous classification regions, thereby producing more complete and accurate segmentation masks compared to several competing methods that exhibit fragmented or missing regions, especially around object boundaries. In the nighttime scene (bottom), the advantage of EAPFusion becomes more pronounced. As visually depicted, our model demonstrates superior preservation of the contours of the three road cones. This is attributed to the fact that the fused images generated by our method retain clearer target contours and better contrast under low-illumination 16 conditions, enabling the segmentation network to correctly delineate objects that are partially or entirely missed by other approaches. These visual results are consistent with the quantitative findings in Table 2, confirming that the high-quality fusion produced by EAPFusion effectively benefits downstream semantic understanding tasks. 
+
+4.5. Ablation study 
+
+To further validate the proposed design, we conduct ablation experiments on the MSRS dataset. Unless other-wise specified, we follow the full model and only modify the targeted component. 
+
+4.5.1. Basic module ablation 
+
+Table 3 investigates the contributions of the DDCB and the SCFB. In Setting I, both modules are removed, and the model reverts to using the Restormer-CNN block [35] as the baseline operator, discarding any prior-conditioned dynamic kernels. To isolate the effect of each module, the DDCB and the SCFB are individually replaced by the Restormer-CNN block in Setting II and Setting III, respectively. In Setting IV, the DDCB is similarly replaced by the Restormer-CNN block, but the APG priors are explicitly injected via channel concatenation. Setting V denotes the full model. As shown in Table 3, the full model (Setting V) achieves the best overall performance across all metrics. The most pronounced degradation appears in Setting I, indicating that the DDCB and the SCFB provide complemen-tary gains and are most effective when jointly utilized. Removing either the DDCB in Setting II or the SCFB in Setting III also leads to consistent performance drops, confirming the importance of both modules. Moreover, the concatenation-based prior injection in Setting IV underperforms the DDCB-based design, suggesting that condi-tioning local operators on the APG priors is more effective than naive concatenation. 
+
+4.5.2. Ablation on adaptive auxiliary prior usage 
+
+Table 4 examines the update rule of the auxiliary prior in the APG module. In Setting I, cross-scale inheritance is removed and the dictionary is updated only from current-level proposals. In Setting II, the proposal update is removed and only inherited priors are retained. Settings III and IV modify the dictionary initialization by sharing the learnable initial prior D0 between the IR and VIS branches or freezing D0 during training. Setting V corresponds to the full model. As shown in Table 4, the full model (Setting V) yields the best overall results. Using a single update source, as in Settings I and II, consistently degrades performance, indicating that cross-scale inheritance and current-level proposals are jointly required to maintain stability while preserving input adaptivity. In addition, altering the learn-able initial prior D0 by sharing or freezing it, as in Settings III and IV, yields inferior results compared to Setting V, suggesting that modality-aware and learnable initialization further improves the performance ceiling.  
+
+> Table 3: Ablation study on MSRS (Basic Module Ablation).
+
+Ablation Setting EN SF AG SD VIF 
+
+I w/o Fusion & DynConv 6.769 12.490 4.093 44.699 0.990 II w/o DynConv 6.797 12.805 4.262 44.800 1.011 III w/o Fusion 6.794 12.753 4.133 46.100 1.006 IV Concat auxiliary prior 6.827 12.362 4.163 46.373 0.993 V Ours (Full) 6.831 13.199 4.398 47.544 1.026 
+
+17 Table 4: Ablation study on MSRS (Ablation on adaptive auxiliary prior usage). 
+
+Ablation Setting EN SF AG SD VIF 
+
+I Proposal-Only 6.795 12.797 4.196 46.975 1.004 II History-Only 6.796 12.680 4.171 46.236 0.975 III Shared InitDict 6.817 12.849 4.166 47.465 1.016 IV Freeze InitDict 6.808 13.149 4.361 47.379 1.019 V Ours (Full) 6.831 13.199 4.398 47.544 1.026  
+
+> Table 5: Ablation study on MSRS (Fusion-module ablation).
+
+Ablation Setting EN SF AG SD VIF 
+
+I single-branch 6.843 12.598 4.162 47.226 0.977 II Conv module 6.833 12.502 4.126 45.693 0.994 III Ours (Full) 6.831 13.199 4.398 47.544 1.026 
+
+4.5.3. Ablation of the fusion module 
+
+Table 5 presents the ablation results concerning the design of the SCFB. In Setting I, the multi-branch inter-action is simplified to a single fusion branch. In Setting II, the overall topology is preserved while the specialized convolution operators are replaced with standard convolutions. Setting III corresponds to the full model. As shown in Table 5, Settings I and II achieve marginally higher EN but lead to a consistent degradation in SF, AG, and VIF relative to Setting III. Overall, the full SCFB design in Setting III provides a more balanced fusion, demonstrating that fine-grained cross-modal interaction is essential for producing perceptually informative fused images. 
+
+5. Conclusion 
+
+In this paper, we present EAPFusion, which builds self-evolving internal priors to guide fusion without relying on external auxiliary models. Our main contributions include: (1) the Adaptive Prior Generator, which progres-sively evolves a compact set of priors across scales to provide stable texture-to-semantic guidance; (2) the Prior-driven Dynamic Convolution Block, which converts these priors into instance-adaptive operators for local feature modulation; and (3) the Shuffle Channel Fusion Block, which promotes fine-grained cross-modal interaction via channel shuffling. Extensive evaluations on MSRS, M3FD, and TNO datasets demonstrate EAPFusion’s superiority in both vi-sual quality and objective metrics. Furthermore, improved downstream segmentation performance validates our intrinsic-prior-guided paradigm. Notably, this self-contained approach offers the community a novel shift from relying on external pre-trained models toward internally generated, data-driven prior modeling. However, perfor-mance fluctuates across datasets due to inherent distribution shifts. Future work will explore more robust prior generation and interaction mechanisms to mitigate cross-dataset domain gaps and enhance transferability. 
+
+Acknowledgements 
+
+This work was supported by NSFC of China under Grant 62301432 and Grant 62306240, the Natural Science Basic Research Program of Shaanxi under Grant QCYRCXM-2023-057, the Fundamental Research Funds for Cen-18 tral Universities, and Guangdong Basic and Applied Basic Research Foundation under Grant 2025A1515011119. 
+
+CRediT authorship contribution statement Zhenyu Sun : Conceptualization, Methodology, Software, Formal analysis, Investigation, Project administra-tion, Writing–original draft. Luobin Zhang : Validation, Visualization, Data curation. Axi Niu : Project adminis-tration, Writing–review and editing. Haishen Wang : Formal analysis, Software. Qingsen Yan : Writing–review and editing, Resources. 
+
+Declaration of generative AI and AI-assisted technologies in the manuscript preparation process 
+
+During the preparation of this work, the authors used ChatGPT to improve the language and readability of parts of the manuscript and to assist with organizing and synthesizing the literature relevant to this study. The tool was used only as an aid and not as a substitute for the authors’ critical assessment. After using this tool, the authors reviewed and edited the content as needed, verified the accuracy of all information , including manually validating all references, and take full responsibility for the content of the published article. 
+
+Declaration of competing interests 
+
+The authors declare that they have no known competing financial interests or personal relationships that could have appeared to influence the work reported in this paper. 
+
+References 
+
+[1] K. Liu, M. Li, C. Chen, C. Rao, E. Zuo, Y. Wang, Z. Yan, B. Wang, C. Chen, X. Lv, Dsfusion: Infrared and visible image fusion method combining detail and scene information, Pattern Recognit. 154 (2024) 110633. 
+
+https://doi.org/10.1016/j.patcog.2024.110633 .[2] X. Luo, J. Wang, Z. Zhang, X.-j. Wu, A full-scale hierarchical encoder-decoder network with cascading edge-prior for infrared and visible image fusion, Pattern Recognit. 148 (2024) 110192. https://doi.org/10. 1016/j.patcog.2023.110192 .[3] Z. Zhao, S. Xu, C. Zhang, J. Liu, J. Zhang, P. Li, DIDFuse: deep image decomposition for infrared and visible image fusion, in: Proc. 29th Int. Joint Conf. Artif. Intell. (IJCAI), 2020, pp. 970–976. https://doi.org/ 10.24963/ijcai.2020/135 .[4] K. Liu, C. Rao, C. Chen, C. Chen, B. Wang, X. Lv, Infrared and visible image fusion model based on source image interaction, Pattern Recognit. 172 (2026) 112642. https://doi.org/10.1016/j.patcog.2025. 112642 .[5] B. Zheng, R. Wang, X. Liu, J. Li, A multi-level detection guided and co-encoding network for infrared and visible image fusion, Pattern Recognit. 168 (2025) 111778. https://doi.org/10.1016/j.patcog.2025. 111778 .19 [6] L. Guo, X. Luo, Y. Liu, Z. Zhang, X. Wu, SAM-guided multi-level collaborative transformer for infrared and visible image fusion, Pattern Recognit. 162 (2025) 111391. https://doi.org/10.1016/j.patcog. 2025.111391 .[7] J. Zhang, K. He, D. Xu, H. Shi, CLIP-based natural language-guided low-redundancy fusion of infrared and visible images, IEEE Trans. Consum. Electron. 71 (2025) 931–944. https://doi.org/10.1109/TCE. 2025.3526792 .[8] Z. Zhao, L. Deng, H. Bai, Y. Cui, Z. Zhang, Y. Zhang, H. Qin, D. Chen, J. Zhang, P. Wang, L. Van Gool, Image fusion via vision-language model, in: Proc. Int. Conf. Mach. Learn. (ICML), 2024, pp. 60749–60765. 
+
+https://doi.org/10.5555/3692070.3694583 .[9] H. Li, X.-J. Wu, DenseFuse: a fusion approach to infrared and visible images, IEEE Trans. Image Process. 28 (5) (2019) 2614–2623. https://doi.org/10.1109/TIP.2018.2887342 .[10] H. Li, X.-J. Wu, J. Kittler, RFN-Nest: an end-to-end residual fusion network for infrared and visible images, Inf. Fusion 73 (2021) 72–86. https://doi.org/10.1016/j.inffus.2021.02.023 .[11] J. Ma, W. Yu, P. Liang, C. Li, J. Jiang, FusionGAN: a generative adversarial network for infrared and visible image fusion, Inf. Fusion 48 (2019) 11–26. https://doi.org/10.1016/j.inffus.2018.09.004 .[12] J. Li, H. Huo, C. Li, R. Wang, Q. Feng, AttentionFGAN: infrared and visible image fusion using attention-based generative adversarial networks, IEEE Trans. Multimed. 23 (2021) 1383–1396. https://doi.org/ 10.1109/TMM.2020.2997127 .[13] W. Tang, F. He, Y. Liu, ITFuse: an interactive transformer for infrared and visible image fusion, Pattern Recognit. 156 (2024) 110822. https://doi.org/10.1016/j.patcog.2024.110822 .[14] J. Ma, L. Tang, F. Fan, J. Huang, X. Mei, Y. Ma, SwinFusion: cross-domain long-range learning for general image fusion via Swin Transformer, IEEE/CAA J. Autom. Sinica 9 (7) (2022) 1200–1217. https://doi. org/10.1109/JAS.2022.105686 .[15] Z. Zhao, H. Bai, Y. Zhu, J. Zhang, S. Xu, Y. Zhang, K. Zhang, D. Meng, R. Timofte, L. Van Gool, DDFM: denoising diffusion model for multi-modality image fusion, in: Proc. IEEE/CVF Int. Conf. Comput. Vis. (ICCV), 2023, pp. 8048–8059. https://doi.org/10.1109/ICCV51070.2023.00742 .[16] H. Xu, R. Nie, J. Cao, M. Tan, Z. Ding, MADMFuse: a multi-attribute diffusion model to fuse infrared and visible images, Digit. Signal Process. 155 (2024) 104741. https://doi.org/10.1016/j.dsp.2024. 104741 .[17] J. Liu, X. Fan, Z. Huang, G. Wu, R. Liu, W. Zhong, Z. Luo, Target-aware dual adversarial learning and a multi-scenario multi-modality benchmark to fuse infrared and visible for object detection, in: Proc. IEEE/CVF Conf. Comput. Vis. Pattern Recognit. (CVPR), 2022, pp. 5792–5801. https://doi.org/10.1109/CVPR52688. 2022.00571 .20 [18] H. Bai, J. Zhang, Z. Zhao, Y. Wu, L. Deng, Y. Cui, T. Feng, S. Xu, Task-driven image fusion with learnable fusion loss, in: Proc. IEEE/CVF Conf. Comput. Vis. Pattern Recognit. (CVPR), 2025, pp. 7457–7468. https: //doi.org/10.1109/CVPR52734.2025.00699 .[19] J. Liu, B. Zhang, Q. Mei, X. Li, Y. Zou, Z. Jiang, L. Ma, R. Liu, X. Fan, DCEvo: discriminative cross-dimensional evolutionary learning for infrared and visible image fusion, in: Proc. IEEE/CVF Conf. Comput. Vis. Pattern Recognit. (CVPR), 2025, pp. 2226–2235. https://doi.org/10.1109/CVPR52734.2025. 00213 .[20] X. Li, Y. Zou, J. Liu, Z. Jiang, L. Ma, X. Fan, R. Liu, From text to pixels: A context-aware semantic synergy solution for infrared and visible image fusion, arXiv (Jan. 2024). arXiv:2401.00421 , https://doi.org/ 10.48550/arXiv.2401.00421 .URL https://arxiv.org/abs/2401.00421 
+
+[21] X. Li, J. Wang, W. Chen, R. Chen, G. Zhang, L. Cheng, Infrared and visible image fusion based on text-image core-semantic alignment and interaction, Digit. Signal Process. 163 (2025) 105203. https://doi.org/10. 1016/j.dsp.2025.105203 .[22] J. Liu, X. Li, Z. Wang, Z. Jiang, W. Zhong, W. Fan, B. Xu, PromptFusion: harmonized semantic prompt learning for infrared and visible image fusion, IEEE/CAA J. Autom. Sinica 12 (3) (2025) 502–515. https: //doi.org/10.1109/JAS.2024.124878 .[23] X. Yi, H. Xu, H. Zhang, L. Tang, J. Ma, Text-IF: leveraging semantic text guidance for degradation-aware and interactive image fusion, in: Proc. IEEE/CVF Conf. Comput. Vis. Pattern Recognit. (CVPR), 2024, pp. 27016–27025. https://doi.org/10.1109/CVPR52733.2024.02552 .[24] G. Wu, H. Liu, H. Fu, Y. Peng, J. Liu, X. Fan, R. Liu, Every SAM drop counts: embracing semantic priors for multi-modality image fusion and beyond, in: Proc. IEEE/CVF Conf. Comput. Vis. Pattern Recognit. (CVPR), 2025, pp. 17882–17891. https://doi.org/10.1109/CVPR52734.2025.01666 .[25] C. Cheng, T. Xu, X.-J. Wu, MUFusion: a general unsupervised image fusion network based on memory unit, Inf. Fusion 92 (2023) 80–92. https://doi.org/10.1016/j.inffus.2022.11.010 .[26] J. He, X. Luo, Z. Zhang, X.-j. Wu, MemoryFusion: a novel architecture for infrared and visible image fusion based on memory unit, Pattern Recognit. 170 (2026) 112004. https://doi.org/10.1016/j.patcog. 2025.112004 .[27] X. Yi, Y. Zhang, X. Xiang, Q. Yan, H. Xu, J. Ma, LUT-Fuse: towards extremely fast infrared and visible image fusion via distillation to learnable look-up tables, in: Proc. IEEE/CVF Int. Conf. Comput. Vis. (ICCV), 2025, pp. 14559–14568. [28] H. Li, Z. Yang, Y. Zhang, W. Jia, Z. Yu, Y. Liu, MulFS-CAP: multimodal fusion-supervised cross-modality alignment perception for unregistered infrared-visible image fusion, IEEE Trans. Pattern Anal. Mach. Intell. 47 (5) (2025) 3673–3690. https://doi.org/10.1109/TPAMI.2025.3535617 .21 [29] S. Huang, S. Su, J. Wei, L. Hu, Z. Cheng, Vector-quantized dual-branch fusion network for robust image fusion and anomaly suppression, Inf. Fusion 126 (2026) 103630. https://doi.org/10.1016/j.inffus. 2025.103630 .[30] L. Tang, H. Zhang, H. Xu, J. Ma, Rethinking the necessity of image fusion in high-level vision tasks: a practical infrared and visible image fusion network based on progressive semantic injection and scene fidelity, Inf. Fusion 99 (2023) 101870. https://doi.org/10.1016/j.inffus.2023.101870 .[31] M. Lou, Y. Yu, OverLoCK: an overview-first-look-closely-next ConvNet with context-mixing dynamic ker-nels, in: Proc. IEEE/CVF Conf. Comput. Vis. Pattern Recognit. (CVPR), 2025, pp. 128–138. https: //doi.org/10.1109/CVPR52734.2025.00021 .[32] Z. Wang, A. C. Bovik, H. R. Sheikh, E. P. Simoncelli, Image quality assessment: from error visibility to structural similarity, IEEE Trans. Image Process. 13 (4) (2004) 600–612. https://doi.org/10.1109/ TIP.2003.819861 .[33] L. Tang, J. Yuan, H. Zhang, X. Jiang, J. Ma, Piafusion: A progressive infrared and visible image fusion network based on illumination aware, Inf. Fusion 83–84 (2022) 79–92. https://doi.org/10.1016/j. inffus.2022.03.007 .[34] A. Toet, M. A. Hogervorst, Progress in color night vision, Optical Engineering 51 (2012) 010901. https: //doi.org/10.1117/1.OE.51.1.010901 .[35] Z. Zhao, H. Bai, J. Zhang, Y. Zhang, K. Zhang, S. Xu, D. Chen, R. Timofte, L. Van Gool, Equivariant multi-modality image fusion, in: Proc. IEEE/CVF Conf. Comput. Vis. Pattern Recognit. (CVPR), 2024, pp. 25912–25921. https://doi.org/10.1109/CVPR52733.2024.02448 .[36] Z. Huang, C. Lin, B. Xu, M. Xia, Q. Li, Y. Li, N. Sang, T2EA: target-aware Taylor expansion approximation network for infrared and visible image fusion, IEEE Trans. Circuits Syst. Video Technol. 35 (5) (2025) 4831– 4845. https://doi.org/10.1109/TCSVT.2024.3524794 .[37] Q. Wang, Z. Li, S. Zhang, N. Chi, Q. Dai, WaveFusion: a novel wavelet vision transformer with saliency-guided enhancement for multimodal image fusion, IEEE Trans. Circuits Syst. Video Technol. 35 (8) (2025) 7526–7542. https://doi.org/10.1109/TCSVT.2025.3549459 .[38] Z. Zhao, H. Bai, J. Zhang, Y. Zhang, S. Xu, Z. Lin, R. Timofte, L. Van Gool, Cddfuse: Correlation-driven dual-branch feature decomposition for multi-modality image fusion, in: Proc. IEEE/CVF Conf. Comput. Vis. Pattern Recognit. (CVPR), 2023, pp. 5906–5916. https://doi.org/10.1109/CVPR52729.2023.00572 .[39] J. Li, J. Jiang, P. Liang, J. Ma, L. Nie, MaeFuse: transferring omni features with pretrained masked au-toencoders for infrared and visible image fusion via guided training, IEEE Trans. Image Process. 34 (2025) 1340–1353. https://doi.org/10.1109/TIP.2025.3541562 .[40] Q. Xiao, H. Jin, H. Su, Y. Zhang, Z. Xiao, B. Wang, SPDFusion: a semantic prior knowledge-driven method for infrared and visible image fusion, IEEE Trans. Multimed. 27 (2025) 1691–1705. https://doi.org/10. 1109/TMM.2024.3521848 .22 [41] L.-C. Chen, Y. Zhu, G. Papandreou, F. Schroff, H. Adam, Encoder-decoder with atrous separable convolution for semantic image segmentation, in: Computer Vision – ECCV 2018, Vol. 11211, Springer, Cham, 2018, pp. 833–851. https://doi.org/10.1007/978-3-030-01234-2_49 .[42] M. Contributors, MMSegmentation: Openmmlab semantic segmentation toolbox and benchmark, https: //github.com/open-mmlab/mmsegmentation (2020). 23
