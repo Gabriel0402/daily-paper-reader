@@ -1,0 +1,321 @@
+Title: Dual-Foundation Models for Unsupervised Domain Adaptation
+
+URL Source: https://arxiv.org/pdf/2605.03365v1
+
+Published Time: Wed, 06 May 2026 00:38:26 GMT
+
+Number of Pages: 15
+
+Markdown Content:
+# Dual-Foundation Models for Unsupervised Domain Adaptation 
+
+Yerin Cheon 1, Aruna Balasubramanian 1, and Francois Rameau 2 
+
+> 1
+
+Stony Brook University, Stony Brook, NY, USA 
+
+{ycheon, arunab}@cs.stonybrook.edu  
+
+> 2
+
+SUNY Korea, The State University of New York, Korea 
+
+francois.rameau@sunykorea.ac.kr 
+
+Abstract. Semantic segmentation provides pixel-level scene understand-ing essential for autonomous driving and fine-grained perception tasks. However, training segmentation models requires costly, labor-intensive annotations on real-world datasets. Unsupervised Domain Adaptation (UDA) addresses this by training models on labeled synthetic data and adapting them to unlabeled real images. While conceptually simple, adaptation is challenging due to the domain gap—differences in visual appearance and scene structure between synthetic and real data. Prior approaches bridge this gap through pixel-level mixing or feature-level contrastive learning. Yet, these techniques suffer from two major limi-tations: (1) reliance on high-confidence pseudo-labels restricts learning to a subset of the target domain, and (2) prototype-based contrastive methods initialize class prototypes from source-trained models, yield-ing biased and unstable anchors during adaptation. To address these issues, we propose a dual-foundation UDA framework that leverages two complementary foundation models. First, we employ the Segment Any-thing Model (SAM) with superpixel-guided prompting to enable learning from a broader range of target pixels beyond high-confidence predictions. Second, we incorporate DINOv3 to construct stable, domain-invariant class prototypes through its robust representation learning. Our method achieves consistent improvements of +1.3% and +1.4% mIoU over strong UDA baselines on GTA →Cityscapes and SYNTHIA →Cityscapes, re-spectively. Code is available at https://github.com/ycheon1101/DFUDA .
+
+Keywords: Unsupervised Domain Adaptation · Semantic Segmentation 
+
+· Foundation Models. 
+
+## 1 Introduction 
+
+Semantic segmentation refers to the task of assigning a semantic class label to each pixel in an image. It is widely used in scene understanding and robotic perception tasks [3,30]. Training semantic segmentation models typically relies on supervised learning and therefore requires pixel-wise annotations, which are time-consuming and costly to obtain [9]. In particular, annotating complex real-world scenes containing numerous objects, or scenes captured under adverse weather conditions [39], is especially expensive.  
+
+> arXiv:2605.03365v1 [cs.CV] 5 May 2026 2Y. Cheon et al.
+
+To alleviate this issue, labeled synthetic datasets [37,38] are often used to train semantic segmentation models, as they can be generated and annotated at low cost. While models trained on synthetic data typically perform well within the synthetic domain, they fail to generalize directly to real-world data. This lack of generalization is primarily caused by the domain gap between synthetic and real images, which arises from differences in visual style, texture, illumination, and contextual information, as well as from variations between clear and adverse weather conditions [44]. Unsupervised Domain Adaptation (UDA) has therefore been widely explored to leverage labeled synthetic data while adapting models to unlabeled real-world domains. To reduce this domain gap, previous works have approached the problem from two major perspectives: pixel-level [14,22,31,44,55] and feature-level adap-tation [10,20,33,44]. At the pixel level, many studies employ image mixing strate-gies [6,45] that combine source and target images with strong augmentations to mitigate domain differences. However, these approaches typically rely on high-confidence pseudo-labels in the target domain [45], which restricts learning to a limited subset of target pixels. As a result, the model observes only limited target-domain appearance variations that contribute to the domain gap. At the feature level, contrastive learning [10,20,21,48] has been used to align representations between source and target domains. However, pixel-wise con-trastive learning [21,48] requires aligning features for every pixel pair, which is computationally expensive and demands substantial GPU memory. As an alter-native, many works adopt prototype-based contrastive learning [10,20]. While more efficient, these methods typically initialize class prototypes from a source-pretrained teacher model [20,56], resulting in source-biased prototypes that do not adequately represent target-domain features. Moreover, prototypes are con-tinuously updated using teacher features during training, making their quality highly dependent on the teacher’s predictions. This dependency can lead to pro-totype collapse when the teacher produces unstable outputs. In addition, proto-types derived from the training network often struggle to represent rare classes, as such categories are infrequently observed during adaptation. To address these issues, we introduce a framework combining SAM and DI-NOv3 to strengthen both pseudo-label refinement and feature alignment. SAM provides object-level cues that extend supervision beyond high-confidence target pixels, while DINOv3 offers stable, domain-robust class prototypes that avoid the source bias and instability of teacher-driven prototype updates. Figure 1 illustrates the overall framework. Our main contributions are as follows:  
+
+> •
+
+We employ SAM [23] to extend supervision beyond high-confidence pseudo-labels using object-level spatial priors.  
+
+> •
+
+We introduce a novel mask filtering and superpixel-based prompt-ing strategy to make SAM more efficient and suitable for semantic segmentation.  
+
+> •
+
+We construct fixed, domain-agnostic class prototypes from DINOv3 [41] features and use them to guide contrastive alignment, avoiding the source bias and instability of teacher-updated prototypes. Dual-Foundation Models for Unsupervised Domain Adaptation 3
+
+## 2 Related Work 
+
+The generalization of semantic segmentation networks across various domains has been a long-lasting problem [17,18,19,45]. A common approach to address this issue is unsupervised domain adaptation (UDA), where no labeled data are available in the target domain. In this setting, self-training frameworks have emerged as a popular solution: a teacher network generates pseudo-labels on target images to iteratively train a student model [7,45,47]. As a result, self-training performance is highly sensitive to the quality of the pseudo-labels. When these labels contain substantial noise, they can reinforce incorrect predictions and lead the model to suffer from confirmation bias [2,43,53]. In semi-supervised learning and active learning, the use of coarse labels can partially mitigate the performance degradation caused by incorrect pseudo-labels [10]. However, in unsupervised domain adaptation, such coarse labels are not available, making the quality of pseudo-labels even more critical. Most existing UDA works use the softmax outputs of the model as a con-fidence measure and train the model using only pseudo-labels whose confi-dence exceeds a predefined threshold, thereby restricting supervision to high-quality pseudo-labels [17,25,45,50]. Some studies additionally employ selective pseudo-labeling strategies [42,49]. Alternatively, prior studies have explored im-proving generalization performance by refining noisy pseudo-labels using FFT-based techniques [57] or by explicitly modeling the noise distribution of pseudo-labels [15]. Other works increase the model’s exposure to rare classes by leverag-ing class distribution statistics [17], thereby enabling more accurate predictions for under-represented classes. Since the release of SAM [23], it has quickly found use across many tasks to refine model predictions [26,28,34,35]. In UDA, SAM can be employed to refine pseudo-labels using simple majority voting strategies over mask predictions. [52] further exploits the observation that the relative area ratios of semantic classes remain consistent across domains, and assigns semantic labels to SAM-generated masks based on class-wise area statistics, thereby refining pseudo-labels for the target domain. Additionally, [4] refines pseudo-labels by generating connected-component-based binary masks using the Hoshen–Kopelman algorithm [16], and then selecting random points within each binary mask as point prompts for SAM. Existing SAM-based approaches typically utilize SAM masks merely as bi-nary masks, either to roughly infer semantic classes based on relative area ratios or to determine the presence or absence of objects, thereby primarily focusing on refining object boundaries or improving mask regions. In contrast, our method assigns a unique object-level identifier to each SAM-generated mask, enabling not only boundary refinement but also independent and explicit comparisons across masks during label selection. This design allows for more informed and reliable label assignment at the mask level. Specifically, in contrast to prior approaches that primarily rely on majority voting or confidence-based heuristics to inject semantic information into SAM, our method adopts a stricter criterion by assuming that each mask corresponds to a single semantic class. By jointly considering softmax probability differences 4 Y. Cheon et al. 
+
+in addition to confidence scores, we favor classes with both low entropy and high confidence, leading to more reliable pseudo-labels. Additionally, we propose a superpixel-guided SAM prompting serves as an efficient mask generation strategy while simultaneously filtering out semantically irrelevant regions, yielding masks that are better suited for semantic segmentation. In addition to SAM-based pseudo-label refinement, recent works have also explored leveraging self-supervised vision foundation models to mitigate domain gaps. To address domain gaps arising from style and scene-context discrepan-cies, recent studies have explored leveraging vision foundation models pretrained on large-scale datasets to introduce more robust and generalizable representa-tions [1,4,11,12,27,29,40,51,54]. [4,12,51,54] adopt a frozen CLIP [36] encoder as the backbone of the segmentation network to extract rich and robust visual rep-resentations. Leveraging such vision foundation models has demonstrated strong effectiveness [11] in domain generalization [4], unsupervised domain adaptation (UDA) [51], and zero-shot domain adaptation [12,54]. Furthermore, [13,40] en-hances adaptation to domain discrepancies by exploiting CLIP’s powerful global representations while mitigating its limited localized supervision via fine-tuning. Moreover, [27,29] enhance unsupervised domain adaptation performance by en-couraging the class representation distances of the segmentation encoder to be close to those in the latent space derived from a frozen CLIP text encoder. Closer to our work, [1] uses DINOv2 [32] as a frozen feature extractor for domain-robust representations and improves ViT efficiency with a bottleneck architecture. Unlike prior works that replace conventional segmentation backbones with large foundation models, we retain a standard segmentation feature extractor and instead incorporate the domain-invariant knowledge of vision foundation models. Specifically, we perform contrastive learning using class-wise prototypes derived from a DINOv3 feature extractor, guiding the model to learn rich and discriminative representations in an efficient manner. Moreover, our approach not only enables the model to follow these informative representations but also simultaneously addresses two long-standing challenges in contrastive learning: source-biased initialization of prototypes and prototype collapse for rare classes. 
+
+## 3 Methods 
+
+The goal of UDA is to adapt a neural network fθ trained on a labeled source domain DS = {XS , Y S } to an unlabeled target domain DT = {XT }, where 
+
+XS = {xS }NS 
+
+> i=1
+
+and YS = {yS }NS 
+
+> i=1
+
+denote source images with corresponding one-hot segmentation labels, and XT = {xT }NT 
+
+> i=1
+
+denotes unlabeled target images. Following recent state-of-the-art methods [17,18,19,45], we adopt an online self-training strategy to reduce the domain gap. Our framework extends exist-ing approaches through three key components. First, while conventional methods rely solely on confidence-based pseudo-label filtering, we refine teacher-generated pseudo-labels using SAM mask regions. For each mask, we assign pseudo-labels that satisfy both high confidence and low entropy criteria, where entropy is mea-sured by the softmax probability gap (Sec. 3.2). Second, we introduce superpixel-guided prompting with overlap-aware mask filtering to efficiently generate se-Dual-Foundation Models for Unsupervised Domain Adaptation 5Proj Head    
+
+> Supervised Loss
+> Source Ground Truth
+> Source Image
+> Target Image SAM Refine Mask
+> Pseudo Label
+> Refined PL
+> Mixed Image Mixed Label
+> Unsupervised Loss
+> EMA Update
+> Feature Consistency Loss
+> Source Images
+> Dino Class Prototypes
+> Source Ground Truth
+> Source-Target Distillation
+> Pseudo-Label Refinement
+> Student Model
+> Teacher Model
+> Student Encoder
+> DINO V3
+> Feature-Alignment
+
+Fig. 1: Overview of our framework. (Blue) Source–Target Distillation: An online self-training scheme reduces the source–target domain gap using EMA-updated teacher predictions. (Yellow) Pseudo-Label Refinement: Superpixel-prompted SAM masks are filtered, and each mask region is assigned a high-confidence, low-entropy pseudo-label. (Sec. 3.2 & Sec. 3.3) (Pink) Feature Align-ment: Student features are projected into the same latent space as the DINOv3 prototypes and aligned with DINOv3-based class prototypes to learn domain-invariant representations, reducing source bias and improving generalization. (Sec. 3.4) All components interact cyclically, progressively improving pseudo-label quality and adaptation performance. mantically coherent masks suitable for segmentation (Sec. 3.3). Third, we lever-age class-wise prototypes derived from DINOv3 features to guide the model toward learning stable, domain-invariant representations (Sec. 3.4). Fig. 1 illus-trates our complete pipeline. 
+
+3.1 Source–Target Distillation with Self-Training 
+
+We build upon the standard teacher–student self-training framework [10,17,18,19,45]. A student network fθ is trained using supervised loss LS on labeled source im-ages and unsupervised loss LT on target images pseudo-labeled by a teacher network hϕ. For the target loss computation, we select only pixels where the teacher’s prediction confidence exceeds a threshold τ . The teacher parameters 
+
+ϕ are updated via exponential moving average (EMA) of the student parame-ters θ, maintaining stable pseudo-label generation throughout training. In the following sections, we describe how we enhance this baseline with SAM-based pseudo-label refinement and DINOv3-guided feature alignment. 6 Y. Cheon et al. 
+
+3.2 Pseudo-Label Refinement Using SAM 
+
+To overcome the limitation of prior methods that train models only on high-quality target pixels, thereby exposing the student to only a small portion of the target domain, we leverage SAM masks generated by our proposed approach (Sec. 3.3). Specifically, in this section, we introduce our approach for refining pseudo-labels by assigning appropriate semantic labels to SAM masks, which do not natively carry any semantic information. Each pixel (h′, w ′) is assigned a mask ID, where SAM masks are indexed from 1 to M (the number of masks) and uncovered pixels are assigned ID 0:MaskID (h′,w ′) =
+
+(
+
+m, if pixel (h′, w ′) ∈ m, 
+
+0, otherwise . (1) For every mask region, our goal is to assign a single semantic class label. To ensure that each mask receives a reliable and consistent label, we select only the pixels satisfying two confidence criteria. 
+
+(1) High Softmax Confidence. For each pixel (h′, w ′) in a mask region, we first check whether its maximum softmax probability exceeds a threshold τ .
+
+C(h′,w ′)1 =
+
+h
+
+max  
+
+> c′
+
+hϕ(xT )(h′,w ′,c ′) > τ 
+
+i
+
+. (2) 
+
+(2) Low Entropy via Softmax Margin. Inspired by [24], we sort the softmax probabilities at pixel (h′, w ′) and compute the difference between the highest and second-highest probabilities. We denote the largest and second-largest prob-abilities at pixel (h′, w ′) as p(h′,w ′)(1) and p(h′,w ′)(2) , respectively (i.e., the top-1 and top-2 entries of p(h′,w ′)). Only pixels with a gap above threshold τ ′ are retained. 
+
+C(h′,w ′)2 =
+
+h
+
+p(h′,w ′)(1) − p(h′,w ′)(2) > τ ′ i
+
+. (3) For each mask region, we collect pixels satisfying both confidence conditions in Eq. 2 and Eq. 3. For each selected pixel (h′′ , w ′′ ), the pseudo-label is defined as: 
+
+P L (h′′ ,w ′′ ,c ) =
+
+h
+
+c = arg max  
+
+> c′
+
+hϕ(xT )(h′′ ,w ′′ ,c ′)i
+
+. (4) We then check whether all selected pixels within the same mask share the same pseudo-label. If all selected pixels agree on the same class k, the entire mask region is assigned that class. Otherwise, we discard the mask refinement and preserve the original pixel-level pseudo-labels. 
+
+3.3 Super-Pixel based SAM and Filtering Mask 
+
+To address the limitations of SAM in semantic segmentation, where it tends to produce overly fragmented and redundant masks, we propose Superpixel-guided SAM, which integrates a superpixel-based point sampling strategy into the au-tomatic mask generation process, followed by overlap-aware filtering and region Dual-Foundation Models for Unsupervised Domain Adaptation 7  
+
+> (a) (b) (c)
+
+Fig. 2: Comparison of SAM mask generation strategies. (a) Superpixel-based SAM prompting (Sec. 3.3). (b) SAM automatic mask generation. (c) Our superpixel-guided and filtered masks. The proposed method yields more mean-ingful and structurally coherent masks than the SAM auto mask generator. refinement. Our approach generates a compact and structurally coherent set of masks that is better suited for downstream semantic segmentation. 
+
+Superpixel-guided Point Prompts. 
+
+Given an input image I ∈ RH×W ×3, we partition the image into K superpix-els using the SEEDS [5] algorithm: S = {S1, S 2, . . . , S K }. Each superpixel Sk
+
+is a spatially contiguous set of pixels. We define a representative center point for each superpixel as pk =  median (x,y )∈Sk (x), median (x,y )∈Sk (y). To match the normalized point coordinate format required by SAM, the center points are normalized to ˜pk = ( xk/W, y k/H ). The resulting superpixel-guided point set is defined as: P = {˜pk}Kk=1 . By using these points as prompts, we generate a more meaningful and structurally coherent set of masks compared to the standard automatic mask generator (as illustrated in Fig. 2). 
+
+Overlap-aware Mask Filtering and Mask ID Assignment. 
+
+Since SAM tends to generate multiple overlapping masks for the same region, we apply an overlap-aware filtering strategy that retains only non-overlapping regions after area-based sorting. Given a set of candidate masks is M = {Mi |
+
+i = 1 , . . . , N }, we first sort the masks in descending order of their area M↓ =sort( M, |Mi|). We maintain a set of already assigned pixels, denoted by Ω, which is initially empty. For each mask Mi ∈ M ↓, we compute its non-overlapping re-gion as ˜Mi = Mi \ Ω. If | ˜Mi| > 0, the mask is retained, and the assigned pixel set is updated as Ω ← Ω ∪ ˜Mi. This greedy strategy preserves larger regions while naturally removing smaller and redundant masks. We define an indicator function for each retained mask ˜Mk as 
+
+I ˜Mk (x, y ) = 
+
+(
+
+1, if (x, y ) ∈ ˜Mk,
+
+0, otherwise . (5) The final label map L is then defined as 
+
+L(x, y ) = 
+
+> K
+
+X
+
+> k=1
+
+k · I ˜Mk (x, y ), (6) where mask IDs are assigned sequentially starting from k = 1 . Pixels that do not belong to any mask satisfy L(x, y ) = 0 .8 Y. Cheon et al. 
+
+3.4 Feature Alignment with Domain-Agnostic Prototype DINO-based Domain-Agnostic Prototype Construction. 
+
+Given a source dataset with semantic labels, we extract dense feature maps using a pretrained DINO encoder f = FDINO (I) ∈ RC×H′×W ′
+
+, where C denotes the feature dimension. For each semantic class c ∈ { 1, . . . , K }, we compute a class prototype by averaging DINO features belonging to that class: 
+
+pc = 1
+
+|Ωc|
+
+X
+
+> (x,y )∈Ωc
+
+fx,y , (7) where Ωc = {(x, y ) | yx,y = c} denotes the set of pixels labeled as class c. Each prototype vector is subsequently ℓ2-normalized to ensure a consistent scale across classes, i.e., pc ← pc/∥pc∥2. The resulting prototype matrix is then formed as 
+
+P = [ p1, p2, . . . , pK ] ∈ RC×K . These prototypes are fixed during training and shared across domains, serving as domain-agnostic semantic anchors. 
+
+Prototype-based Contrastive Alignment. 
+
+For each pixel, we obtain a projected feature vector zi by feeding the student encoder feature into a projection head. We then compute the temperature-scaled cosine similarity si,c = z⊤ 
+
+> i
+
+pc/T . Based on these similarities, we define the pro-totype contrastive loss as: 
+
+Lproto = − 1
+
+N
+
+> N
+
+X
+
+> i=1
+
+log exp( si,y i )
+
+PKc=1 exp( si,c ) . (8) This loss encourages pixel features to be close to their corresponding class pro-totypes while being separated from prototypes of other classes. The final loss is given by 
+
+L = LS + LT + λLproto , (9) where λ is empirically set to 0.1.
+
+## 4 Experiments 
+
+4.1 Datasets & Implementation Details 
+
+We evaluate our method on the Cityscapes dataset [9] as the target domain, which contains 2,975 training images and 500 validation images with 19 seman-tic classes. As source domains, we use GTA with 24,966 images covering all 19 classes, and SYNTHIA [38] with 9,400 images covering 16 classes. Our frame-work is instantiated on two representative UDA architectures: DAFormer [17] with a MiT-B5 encoder, and DeepLabV2 [8] with a ResNet-101 backbone, both pretrained on ImageNet. Our base method is MIC [19], but our strategy is ap-plicable on any other self-training-based UDA pipelines (Sec. 4.4). The model is optimized using AdamW with learning rates of 6 × 10 −5 and 6 × 10 −4 for the encoder and decoder, respectively, and a batch size of 2. We follow the train-ing protocol of DACS [45], including data augmentation, EMA with α = 0 .99 ,Dual-Foundation Models for Unsupervised Domain Adaptation 9   
+
+> (a) Image (b) MIC [19] (c) Ours (d) Ground Truth
+
+Fig. 3: Comparison of our method with the state-of-the-art baseline. 
+
+Compared to MIC, our method produces improved segmentation for challenging classes such as traffic sign and terrain. In addition, influenced by SAM-based Pseudo Label refinement, fine structures such as bicycle wheels are more com-pletely filled, closely matching the ground truth.    
+
+> (a) (b) (c) (d)
+
+Fig. 4: Ablation of DINO-based prototype alignment and Superpixel-based SAM. (a) Original image. (b) Without SAM and DINO. (c) Only DINO-based prototype alignment. (d) With both SAM and DINO. DINO improves segmentation in hard-to-distinguish regions via feature alignment, while SAM enhances boundary-aware object prediction. and confidence-based pseudo-labeling with threshold τ = 0 .968 . In addition, we introduce a refined threshold τ ′ = 0 .99 in our framework. Superpixels are gen-erated with a maximum of 1,000 regions per image. For feature alignment, we extract representations using DINOv3 [41] with a ViT-L backbone, and employ a lightweight 1 × 1 convolution as the projection head. 
+
+4.2 Super-Pixel based SAM 
+
+In this section, we evaluate the effectiveness of our superpixel-based SAM by comparing it with the SAM automatic mask generator. As shown in Figures 2b and 5b, the automatic mask generator produces overly fine-grained and frag-mented masks, which are less suitable for semantic segmentation. Figure 2 qual-itatively compares our superpixel-based SAM with filtering (Fig. 2c) against the SAM automatic mask generator (Fig. 2b). As summarized in Table 1, our method uses 13.9% fewer point prompts than the automatic mask generator while pro-ducing a comparable number of final masks. Despite using fewer prompts, our method produces more semantically meaningful object-level masks. The auto-matic mask generator often segments fine structures such as windows instead of 10 Y. Cheon et al. 
+
+Table 1: Comparison of SAM prompting strategies on the Cityscapes train set. Offline mask generation and online training speed are measured on an RTX 4070. 
+
+(a) Effective mask generation          
+
+> Method # of # of Cov. Prompts Masks AutoMask 1024 118 62.94 % Ours 882 117 91.46 %
+
+(b) Efficiency       
+
+> Method Mask Gen. Train Throughput AutoMask 8.04 s/img 0.46 it/s Ours 6.96 s/img 0.53 it/s
+
+entire buildings and fails to capture thin objects like poles (red boxes in Fig. 2b). In contrast, our approach successfully segments complete objects while avoiding unnecessary over-segmentation. Table 1 further shows that our method improves average mask coverage by +28.52 percentage points, reduces offline mask gener-ation time by 13.4%, and improves online training throughput by 15.2% on the Cityscapes training set. These results suggest that superpixel-guided prompting produces more usable object-level masks while reducing the computational over-head of SAM-based refinement. It also remains robust in challenging cases such as closely attached rider–bicycle instances (Fig. 5c). 
+
+(a) Original Image (b) SAM AutoMask (c) Ours 
+
+Fig. 5: SAM Mask Comparison. Comparison between SAM AutoMask and our superpixel-based SAM with overlap-aware filtering. 
+
+4.3 Unsupervised Domain Adaptation for Semantic Segmentation 
+
+Table 2 compares our method with state-of-the-art UDA approaches on the GTA →Cityscapes and SYNTHIA →Cityscapes benchmarks, where all evalua-tions are conducted on the Cityscapes validation set using IoU as the evaluation metric. When applied on top of MIC, our method consistently improves perfor-mance across most semantic classes, achieving gains of +1 .3% and +1 .4% mIoU on GTA →Cityscapes and SYNTHIA →Cityscapes, respectively. On GTA →Cityscapes, our method shows notable improvements on rare or challenging classes such as train and bike , as well as visually ambiguous classes Dual-Foundation Models for Unsupervised Domain Adaptation 11 
+
+including fence , pole , traffic light , traffic sign , and sidewalk . These improvements indicate that aligning pixel-level features with DINOv3-based prototypes helps the model learn more discriminative and robust representations, particularly for classes that are underrepresented or difficult to distinguish. This is also re-flected in the t-SNE visualization in Fig. 6, which shows improved clustering of target-domain features around DINOv3 prototype anchors. In addition, re-fining pseudo-labels with SAM enables the model to leverage a larger number of reliable pixels, especially for rare classes. The combination of SAM-based pseudo-label refinement and DINO-based feature alignment proves particularly effective for these challenging categories. Similar trends are observed on the SYNTHIA →Cityscapes benchmark. While many existing UDA methods strug-gle on the fence class, our method achieves a +2 .3% improvement over COPT, suggesting that the proposed framework better transfers the generalization ca-pability of DINO features to the target domain. Table 2: Semantic segmentation performance (IoU in %) on different UDA bench-marks. All methods’ results are taken from publications. Method Road S.walk Build. Wall Fence Pole Tr.Light Sign Veget. Terrain Sky Person Rider Car Truck Bus Train M.bike Bike mIoU                                                                                                                                                                                                                                                                                                                   
+
+> Synthetic-to-Real: GTA →Cityscapes (Val.)
+> ADVENT [46] 89.4 33.1 81.0 26.6 26.8 27.2 33.5 24.7 83.9 36.7 78.8 58.7 30.5 84.8 38.5 44.5 1.7 31.6 32.4 45.5 DACS [45] 89.9 39.7 87.9 30.7 39.5 38.5 46.4 52.8 88.0 44.0 88.8 67.2 35.8 84.5 45.7 50.2 0.0 27.3 34.0 52.1 ProDA [56] 87.8 56.0 79.7 46.3 44.8 45.6 53.5 53.5 88.6 45.2 82.1 70.7 39.2 88.8 45.5 59.4 1.0 48.9 56.4 57.5 DAFormer [17] 95.7 70.2 89.4 53.5 48.1 49.6 55.8 59.4 89.9 47.9 92.5 72.2 44.7 92.3 74.5 78.2 65.1 55.9 61.8 68.3 HRDA [18] 96.4 74.4 91.0 61.6 51.5 57.1 63.9 69.3 91.3 48.4 94.2 79.0 52.9 93.9 84.1 85.7 75.9 63.9 67.5 73.8 MIC [19] 97.4 80.1 91.7 61.2 56.9 59.7 66.0 71.3 91.7 51.4 94.3 79.8 56.1 94.6 85.4 90.3 80.4 64.5 68.5 75.9 COPT [29] 97.6 80.9 91.6 62.1 55.9 59.3 66.7 70.5 91.9 53.0 94.4 80.0 55.6 94.7 87.1 88.6 82.1 65.0 68.8 76.1 Ours 98.1 83.1 93.5 64.1 60.4 61.2 68.3 73.3 91.4 52.1 95.0 80.3 55.2 94.8 87.7 91.8 83.4 66.1 70.0 77.4 Synthetic-to-Real: Synthia →Cityscapes (Val.)
+> ADVENT [46] 85.6 42.2 79.7 8.7 0.4 25.9 5.4 8.1 80.4 –84.1 57.9 23.8 73.3 –36.4 –14.2 33.0 41.2 DACS [45] 80.6 25.1 81.9 21.5 2.9 37.2 22.7 24.0 83.7 –90.8 67.6 38.3 82.9 –38.9 –28.5 47.6 48.3 ProDA [56] 87.8 45.7 84.6 37.1 0.6 44.0 54.6 37.0 88.1 –84.4 74.2 24.3 88.2 –51.1 –40.5 45.6 55.5 DAFormer [17] 84.5 40.7 88.4 41.5 6.5 50.0 55.0 54.6 86.0 –89.8 73.2 48.2 87.2 –53.2 –53.9 61.7 60.9 HRDA [18] 85.2 47.7 88.8 49.5 4.8 57.2 65.7 60.9 85.3 –92.9 79.4 52.8 89.0 –64.7 –63.9 64.9 65.8 MIC [19] 86.6 50.5 89.3 47.9 7.8 59.4 66.7 63.4 87.1 –94.6 81.0 58.9 90.1 –61.9 –67.1 64.3 67.3 COPT [29] 83.4 44.3 90.0 50.4 8.0 60.0 67.0 63.0 87.5 –94.8 81.1 58.6 89.7 –66.5 –68.9 65.0 67.4 Ours 89.4 52.7 91.4 51.1 10.3 60.7 68.1 64.8 87.3 –95.1 80.6 57.4 89.2 –67.8 –69.3 65.4 68.8
+
+4.4 Ablation 
+
+Table 3 presents an ablation study evaluating the impact of our proposed com-ponents —DINO prototype-based feature alignment and superpixel-guided SAM pseudo-label refinement—across different network architectures and UDA meth-ods. Incorporating our components consistently improves performance across all evaluated backbones and UDA frameworks, demonstrating the general appli-cability of our approach. We observe several interesting trends in the results. First, DINO prototype-based feature alignment yields larger performance gains for DeepLabV2 compared to DAFormer. This suggests that aligning CNN-based features with DINO prototypes, which encode rich semantic knowledge and strong generalization capabilities learned from large-scale data, effectively com-pensates for representation limitations inherent to CNN architectures. Second, SAM-based pseudo-label refinement becomes more beneficial as baseline per-formance increases. When the underlying UDA method produces more reliable pseudo-labels, SAM can refine a larger set of accurate regions, providing stronger 12 Y. Cheon et al. 
+
+(a) Baseline (b) Ours 
+
+> road
+> sidewalk
+> building
+> wall
+> fence
+> pole
+> traffic light
+> traffic sign
+> vegetation
+> terrain
+> sky
+> person
+> rider
+> car
+> truck
+> bus
+> train
+> motorcycle
+> bicycle
+
+Fig. 6: t-SNE visualization on Cityscapes val set. Compared with the base-line without SAM and DINO, ours forms more compact target-feature clus-ters around DINOv3 prototype anchors (black crosses), indicating improved prototype-guided alignment. and cleaner supervision to higher-performing baselines. Finally, we observe di-minishing absolute performance gains when applying our method to stronger UDA baselines, a trend commonly observed in state-of-the-art adaptation meth-ods due to performance saturation. Qualitative visualizations corresponding to these ablation results are provided in Fig. 4. Table 3: Segmentation performance (mIoU in %) of our method with different UDA methods on GTA →CS.                                         
+
+> Network UDA Method w/o SAM + DINO w/ DINO w/ SAM + DINO Diff. DeepLabV2 [8] DACS [45] 55.93 58.12 58.77 +2.84 DeepLabV2 [8] DAFormer [17] 57.55 59.48 60.37 +2.82 DeepLabV2 [8] HRDA [18] 62.74 63.41 64.80 +2.06 DeepLabV2 [8] MIC [19] 63.53 64.81 65.36 +1.83 DAFormer [17] DAFormer [17] 66.72 68.45 69.17 +2.45 DAFormer [17] HRDA [18] 73.72 74.57 76.04 +2.32 DAFormer [17] MIC [19] 75.19 76.18 77.4 +2.21
+
+## 5 Conclusions 
+
+In this paper, we presented a dual-foundation framework for unsupervised do-main adaptation in semantic segmentation that addresses two key limitations of existing methods: restricted supervision from high-confidence pseudo-labels and unstable, source-biased prototype representations. To this end, we leverage SAM with superpixel-based prompting and mask filtering to effectively refine object-level pseudo-labels, and DINOv3-based class prototypes to provide stable feature-alignment guidance, particularly for rare and challenging classes. Exper-iments on GTA →Cityscapes and SYNTHIA →Cityscapes show consistent im-provements of +1.3% and +1.4% mIoU over strong baselines without replacing standard segmentation backbones. This work demonstrates that domain-robust foundation models can serve as effective auxiliary guidance, offering a scalable strategy for future domain adaptation research. Dual-Foundation Models for Unsupervised Domain Adaptation 13 
+
+## Acknowledgments 
+
+This work was supported by the Institute of Information & Communications Technology Planning & Evaluation(IITP)-Innovative Human Resource Develop-ment for Local Intellectualization program grant funded by the Korea govern-ment(MSIT) (IITP-2025-RS-2023-00259678). 
+
+## References 
+
+1. Abedi, A., Wu, Q.M.J., Zhang, N., Pourpanah, F.: Euda: An efficient unsupervised domain adaptation via self-supervised vision transformer (2024), https://arxiv. org/abs/2407.21311 , accessed 3 May 2026 2. Arpit, D., Jastrzębski, S., Ballas, N., Krueger, D., Bengio, E., Kanwal, M.S., Ma-haraj, T., Fischer, A., Courville, A., Bengio, Y., et al.: A closer look at memoriza-tion in deep networks. In: ICML (2017) 3. Badrinarayanan, V., Kendall, A., Cipolla, R.: Segnet: A deep convolutional encoder-decoder architecture for image segmentation. T-PAMI 39 (12), 2481–2495 (2017) 4. Benigmim, Y., Roy, S., Essid, S., Kalogeiton, V., Lathuilière, S.: Collaborating foundation models for domain generalized semantic segmentation. In: CVPR (2024) 5. Van den Bergh, M., Boix, X., Roig, G., De Capitani, B., Van Gool, L.: Seeds: Superpixels extracted via energy-driven sampling. In: ECCV (2012) 6. Berthelot, D., Carlini, N., Goodfellow, I., Papernot, N., Oliver, A., Raffel, C.A.: Mixmatch: A holistic approach to semi-supervised learning. NeurIPS (2019) 7. Brüggemann, D., Sakaridis, C., Truong, P., Van Gool, L.: Refign: Align and refine for adaptation of semantic segmentation to adverse conditions. In: WACV (2023) 8. Chen, L.C., Papandreou, G., Kokkinos, I., Murphy, K., Yuille, A.L.: Deeplab: Se-mantic image segmentation with deep convolutional nets, atrous convolution, and fully connected crfs. T-PAMI 40 (4), 834–848 (2017) 9. Cordts, M., Omran, M., Ramos, S., Rehfeld, T., Enzweiler, M., Benenson, R., Franke, U., Roth, S., Schiele, B.: The cityscapes dataset for semantic urban scene understanding. In: CVPR (2016) 10. Das, A., Xian, Y., Dai, D., Schiele, B.: Weakly-supervised domain adaptive seman-tic segmentation with prototypical contrastive learning. In: CVPR (2023) 11. Englert, B.B., Piva, F.J., Kerssies, T., De Geus, D., Dubbelman, G.: Exploring the benefits of vision foundation models for unsupervised domain adaptation. In: CVPR (2024) 12. Fahes, M., Vu, T.H., Bursuc, A., Pérez, P., De Charette, R.: Poda: Prompt-driven zero-shot domain adaptation. In: ICCV (2023) 13. Fahes, M., Vu, T.H., Bursuc, A., Pérez, P., De Charette, R.: A simple recipe for language-guided domain generalized segmentation. In: CVPR (2024) 14. Gong, R., Li, W., Chen, Y., Gool, L.V.: Dlow: Domain flow for adaptation and generalization. In: CVPR (2019) 15. Guo, X., Yang, C., Li, B., Yuan, Y.: Metacorrection: Domain-aware meta loss cor-rection for unsupervised domain adaptation in semantic segmentation. In: CVPR (2021) 16. Hoshen, J., Kopelman, R.: Percolation and cluster distribution. i. cluster multiple labeling technique and critical concentration algorithm. Physical Review B 14 (8), 3438 (1976) 14 Y. Cheon et al. 17. Hoyer, L., Dai, D., Van Gool, L.: Daformer: Improving network architectures and training strategies for domain-adaptive semantic segmentation. In: CVPR (2022) 18. Hoyer, L., Dai, D., Van Gool, L.: Hrda: Context-aware high-resolution domain-adaptive semantic segmentation. In: ECCV (2022) 19. Hoyer, L., Dai, D., Wang, H., Van Gool, L.: Mic: Masked image consistency for context-enhanced domain adaptation. In: CVPR (2023) 20. Jiang, Z., Li, Y., Yang, C., Gao, P., Wang, Y., Tai, Y., Wang, C.: Prototypical contrast adaptation for domain adaptive semantic segmentation. In: ECCV (2022) 21. Kang, G., Wei, Y., Yang, Y., Zhuang, Y., Hauptmann, A.: Pixel-level cycle asso-ciation: A new perspective for domain adaptive semantic segmentation. NeurIPS (2020) 22. Kim, M., Byun, H.: Learning texture invariant representation for domain adapta-tion of semantic segmentation. In: CVPR (2020) 23. Kirillov, A., Mintun, E., Ravi, N., Mao, H., Rolland, C., Gustafson, L., Xiao, T., Whitehead, S., Berg, A.C., Lo, W.Y., et al.: Segment anything. In: ICCV (2023) 24. Kweon, H., Kim, J., Yoon, K.J.: Weakly supervised point cloud semantic segmen-tation via artificial oracle. In: CVPR) (2024) 25. Li, G., Kang, G., Liu, W., Wei, Y., Yang, Y.: Content-consistent matching for domain adaptive semantic segmentation. In: Vedaldi, A., Bischof, H., Brox, T., Frahm, J.M. (eds.) ECCV (2020) 26. Lin, Y., Li, H., Shao, W., Yang, Z., Zhao, J., He, X., Luo, P., Zhang, K.: Samrefiner: Taming segment anything model for universal mask refinement (2025), https: //arxiv.org/abs/2502.06756 , accessed 3 May 2026 27. Liu, C., Balaji, B., Hossain, S., Thomas, C., Lai, K.H., Vemulapalli, R., Wong, A., Rambhatla, S.: Langda: Building context-awareness via language for domain adap-tive semantic segmentation (2025), https://arxiv.org/abs/2503.12780 , accessed 3 May 2026 28. Liu, X., Wu, J., Lu, T., Zhang, S., Wang, G.: Srpl-sfda: Sam-guided reliable pseudo-labels for source-free domain adaptation in medical image segmentation. Neuro-computing p. 130749 (2025) 29. Mata, C., Ranasinghe, K., Ryoo, M.S.: Copt: Unsupervised domain adaptive seg-mentation using domain-agnostic text embeddings. In: ECCV (2024) 30. McCormac, J., Handa, A., Davison, A., Leutenegger, S.: Semanticfusion: Dense 3d semantic mapping with convolutional neural networks. In: ICRA (2017) 31. Melas-Kyriazi, L., Manrai, A.K.: Pixmatch: Unsupervised domain adaptation via pixelwise consistency training. In: CVPR (2021) 32. Oquab, M., Darcet, T., Moutakanni, T., Vo, H., Szafraniec, M., Khalidov, V., Fernandez, P., Haziza, D., Massa, F., El-Nouby, A., Assran, M., Ballas, N., Galuba, W., Howes, R., Huang, P.Y., Li, S.W., Misra, I., Rabbat, M., Sharma, V., Synnaeve, G., Xu, H., Jegou, H., Mairal, J., Labatut, P., Joulin, A., Bojanowski, P.: Dinov2: Learning robust visual features without supervision (2024), https://arxiv.org/ abs/2304.07193 , accessed 3 May 2026 33. Paul, S., Tsai, Y.H., Schulter, S., Roy-Chowdhury, A.K., Chandraker, M.: Domain adaptive semantic segmentation using weak labels. In: ECCV (2020) 34. Peng, X., Chen, R., Qiao, F., Kong, L., Liu, Y., Wang, T., Zhu, X., Ma, Y.: Sam-guided unsupervised domain adaptation for 3d segmentation (2023) 35. Qin, M., Li, W., Zhou, J., Wang, H., Pfister, H.: Langsplat: 3d language gaussian splatting. In: CVPR (2024) 36. Radford, A., Kim, J.W., Hallacy, C., Ramesh, A., Goh, G., Agarwal, S., Sastry, G., Askell, A., Mishkin, P., Clark, J., et al.: Learning transferable visual models from natural language supervision. In: ICML (2021) Dual-Foundation Models for Unsupervised Domain Adaptation 15 37. Richter, S.R., Vineet, V., Roth, S., Koltun, V.: Playing for data: Ground truth from computer games. In: ECCV. Springer (2016) 38. Ros, G., Sellart, L., Materzynska, J., Vazquez, D., Lopez, A.M.: The synthia dataset: A large collection of synthetic images for semantic segmentation of ur-ban scenes. In: CVPR (2016) 39. Sakaridis, C., Dai, D., Van Gool, L.: Acdc: The adverse conditions dataset with correspondences for semantic driving scene understanding. In: ICCV (2021) 40. Sikdar, A., Kishor, A., Kadam, I., Sundaram, S.: Picazo: Pixel-aligned contrastive learning for zero-shot domain adaptation. In: CVPR Workshops (2025) 41. Siméoni, O., Vo, H.V., Seitzer, M., Baldassarre, F., Oquab, M., Jose, C., Khali-dov, V., Szafraniec, M., Yi, S., Ramamonjisoa, M., et al.: Dinov3. arXiv preprint arXiv:2508.10104 (2025) 42. Subhani, M.N., Ali, M.: Learning from scale-invariant examples for domain adap-tation in semantic segmentation. In: ECCV (2020) 43. Tarvainen, A., Valpola, H.: Mean teachers are better role models: Weight-averaged consistency targets improve semi-supervised deep learning results. NeuRIPS (2017) 44. Toldo, M., Maracani, A., Michieli, U., Zanuttigh, P.: Unsupervised domain adap-tation in semantic segmentation: a review. Technologies 8(2), 35 (2020) 45. Tranheden, W., Olsson, V., Pinto, J., Svensson, L.: Dacs: Domain adaptation via cross-domain mixed sampling. In: WACV (2021) 46. Vu, T.H., Jain, H., Bucher, M., Cord, M., Pérez, P.: Advent: Adversarial entropy minimization for domain adaptation in semantic segmentation. In: CVPR (2019) 47. Wang, Q., Fink, O., Van Gool, L., Dai, D.: Continual test-time domain adaptation. In: CVPR (2022) 48. Wang, W., Zhou, T., Yu, F., Dai, J., Konukoglu, E., Van Gool, L.: Exploring cross-image pixel contrast for semantic segmentation. In: ICCV (2021) 49. Wang, Y., Peng, J., Zhang, Z.: Uncertainty-aware pseudo label refinery for domain adaptive semantic segmentation. In: ICCV (2021) 50. Wang, Z., Yu, M., Wei, Y., Feris, R., Xiong, J., Hwu, W.m., Huang, T.S., Shi, H.: Differential treatment for stuff and things: A simple unsupervised domain adapta-tion method for semantic segmentation. In: CVPR (2020) 51. Wu, Y., Xing, M., Zhang, Y., Xie, Y., Qu, Y.: Clip2uda: Making frozen clip reward unsupervised domain adaptation in 3d semantic segmentation. In: ACM Multime-dia (2024) 52. Yan, W., Qian, Y., Zhuang, H., Wang, C., Yang, M.: Sam4udass: When sam meets unsupervised domain adaptive semantic segmentation in intelligent vehicles. Trans-actions on Intelligent Vehicles 9(2), 3396–3408 (2024). https://doi.org/10.1109/ TIV.2023.3344754 , accessed 3 May 2026 53. Yang, J., Peng, X., Wang, K., Zhu, Z., Feng, J., Xie, L., You, Y.: Divide to adapt: Mitigating confirmation bias for domain adaptation of black-box predictors (2022), 
+
+https://arxiv.org/abs/2205.14467 , accessed 3 May 2026 54. Yang, S., Tian, Z., Jiang, L., Jia, J.: Unified language-driven zero-shot domain adaptation. In: CVPR (2024) 55. Yang, Y., Soatto, S.: Fda: Fourier domain adaptation for semantic segmentation. In: CVPR (2020) 56. Zhang, P., Zhang, B., Zhang, T., Chen, D., Wang, Y., Wen, F.: Prototypical pseudo label denoising and target structure learning for domain adaptive semantic segmen-tation. In: CVPR (2021) 57. Zhao, X., Mithun, N.C., Rajvanshi, A., Chiu, H.P., Samarasekera, S.: Unsupervised domain adaptation for semantic segmentation with pseudo label self-refinement. In: WACV (2024)

@@ -1,0 +1,702 @@
+Title: Why Do LLMs Struggle in Strategic Play? Broken Links Between Observations, Beliefs, and Actions
+
+URL Source: https://arxiv.org/pdf/2605.00226v1
+
+Published Time: Mon, 04 May 2026 00:19:43 GMT
+
+Number of Pages: 23
+
+Markdown Content:
+# WHY DO LLM S STRUGGLE IN STRATEGIC PLAY ?BROKEN LINKS BETWEEN OBSERVATIONS , B ELIEFS , AND ACTIONS 
+
+Jan Sobotka ∗† 
+
+EPFL 
+
+Mustafa O. Karabag 
+
+The University of Texas at Austin 
+
+Ufuk Topcu 
+
+The University of Texas at Austin 
+
+ABSTRACT 
+
+Large language models (LLMs) are increasingly tasked with strategic decision-making under incom-plete information, such as in negotiation and policy-making. While LLMs can excel at many such tasks, they also fail in ways that are poorly understood. We shed light on these failures by uncovering two fundamental gaps in the internal mechanisms under-lying the decision-making of LLMs in incomplete-information games, supported by experiments with open-weight models Llama 3.1, Qwen3, and gpt-oss. First, an observation-belief gap: LLMs encode internal beliefs about latent game states that are substantially more accurate than their own verbal reports, yet these beliefs are brittle. In particular, the belief accuracy degrades with multi-hop rea-soning, exhibits primacy and recency biases, and drifts away from Bayesian coherence over extended interactions. Second, a belief-action gap: The im-plicit conversion of internal beliefs into actions is weaker than that of the beliefs externalized in the prompt, yet neither belief-conditioning consistently achieves higher game payoffs. These results show how analyzing LLMs’ internal processes can ex-pose systematic vulnerabilities that warrant caution before deploying LLMs in strategic domains with-out robust guardrails. 
+
+1 Introduction 
+
+Large language models (LLMs) are increasingly used for decision-making in strategic domains requiring reasoning under uncertainty, such as negotiation [ 1, 2, 3 , 4, 5], coordi-nation [ 2, 6], and policymaking [ 7, 8 , 9, 10 ]. These settings require agents to construct accurate beliefs about latent vari-ables that are not directly observable, such as opponents’ strategies, private cards, or hidden roles. While the general capabilities of LLMs have improved rapidly, our understand-ing of the decision-making processes they employ in these strategic contexts — and where those processes diverge from  
+
+> *Corresponding author: jan.sobotka@epfl.ch
+> †This work was completed while J.S. was with The University of Texas at Austin.
+
+rational behavior — has not kept pace [ 2 , 11 , 12 , 13 , 14 ]. As a result, it remains difficult to accurately predict, debug, or improve the reliability and safety of LLMs in strategic settings [15]. We employ game theory and tools from mechanistic interpretability to identify and understand the strengths and weaknesses of LLM agents’ strategic decision-making. While game theory provides formal models of optimal rea-soning under uncertainty, mechanistic interpretability meth-ods enable inspection of the internal states and mechanisms that support such reasoning in these models. This joint approach allows a structured analysis of how LLMs form, update, and act on their beliefs in strategic contexts. In particular, probing and activation steering techniques from mechanistic interpretability allow us to decode LLM agents’ 
+
+internal representations into game-theoretic concepts and to manipulate these representations through causal interven-tions (Figure 1) to achieve specific game outcomes. In mod-ern transformer-based LLMs, these internal representations, sometimes called hidden states , refer to continuous-valued vectors produced by intermediate layers of LLMs, which provide a window into their internal processing of inputs. Our focus on internal belief processes contrasts with prior work [ 1, 2, 5 , 7 , 11 , 14 , 16 , 17 , 18 ], which analyzed the external behavior (final outputs) of LLM agents, leaving the decision-making mechanisms underlying their (sub)optimal performance largely unexplored. The joint analysis of in-ternal beliefs and external behavior allows us to reveal two fundamental gaps in LLMs’ internal mechanisms. First, we identify an observation-belief gap , defined as the discrepancy between a ground-truth latent game variable and the agent’s belief about it. While LLMs form internal beliefs that are consistently more accurate reflections of the ground truth compared to their verbalized counterparts, this process remains a bottleneck. Specifically, belief formation is brittle: its accuracy declines monotonically as the number of required reasoning steps increases, and the internal repre-sentations of interaction history exhibit a bias that prioritizes the first and most recent observations, mirroring primacy and recency biases in humans [ 19 , 20 ]. Furthermore, we demonstrate that the internal consistency of these beliefs deteriorates over time, as the models’ belief updates drift away from Bayesian optimality in repeated interaction. 
+
+> arXiv:2605.00226v1 [cs.CL] 30 Apr 2026
+
+Why Do LLMs Struggle in Strategic Play? Broken Links Between Observations, Beliefs, and Actions 
+
+Figure 1: Aspects of strategic gameplay studied in this manuscript. f refers to an internal probe which decodes the contents of the LLM’s internal representations. Second, we discover a belief-action gap , in which the model fails to reliably translate internal beliefs into (rational) strategic choices. In particular, steering the LLMs’ hidden states toward specific beliefs results in surprisingly weak influence on final actions, and neither prompt-conditioning nor internal-belief steering leads to consistently better game-play. We further quantify this gap between beliefs and actions by showing that LLMs frequently fail to select the best-response action implied by their own internal represen-tations, and that one reason is a persistent first-item bias in the action space. We verify these gaps across three families of open-weight LLMs (Llama-3.1, Qwen3, gpt-oss) and three games requiring strategic decision-making under uncertainty (re-peated normal-form games, Generalized Kuhn Poker [ 21 ], and The Chameleon [22]). These findings carry practical implications for deploy-ing LLM agents in strategic settings. Because internal be-liefs can be substantially more accurate than verbalized ones, evaluations that rely on stated probabilities or explana-tions may be misleadingly optimistic or pessimistic about an agent’s true representational competence. Similarly, as LLM beliefs lose coherence over extended interactions (despite the short prompt context length), short-horizon rollouts can hide late-stage failures. More broadly, practitioners should anticipate systematic vulnerabilities (primacy/recency an-choring, under-reaction over time, exploitability via mid-trajectory deviations) and mitigate them with design choices that make beliefs explicit and coherent ( e.g. , adding internal beliefs in context, enforcing explicit reasoning steps, per-forming continual belief consistency checks), rather than assuming that standard prompting alone will elicit robust strategic behavior. 
+
+2 Experimental Setup 
+
+2.1 Models 
+
+We use open-weight, instruction-tuned LLMs Llama 3.1 70B [ 23 ], Qwen3 32B [ 24 ], and gpt-oss 20B [ 25 ]. The se-lection is made to include the largest model variants below 100B across widely-used model families. For computational and memory efficiency reasons, we use quantized variants of models with more than 30B parameters. The focus on open-weight models is motivated by the fact that many of our experiments rely on access to the LLMs’ internal rep-resentations, which APIs of closed-source models such as GPT-5 [26] do not provide. 
+
+2.2 Games 
+
+We study three classes of games that involve distinct forms of strategic inference under incomplete informa-tion: repeated normal-form games (matrix representation of common finite-action scenarios), Generalized Kuhn Poker [ 21 , 27 ] (an imperfect-information card game), and The Chameleon [ 22 ] (a hidden-identity, social deduction game). These games span increasing levels of inferential complexity while retaining clear objectives, precise control over latent variables, and, in some cases, computable opti-mal strategies. An overview of the rules and information-flow structures in these games is shown in Figure 2 and described in more detail below. 
+
+Repeated normal-form games. In repeated normal-form games, an LLM agent plays a two-player matrix game against a fixed opponent for T rounds. We consider 2 × 2
+
+normal form games: In each round, both players simulta-neously select an action from the set {A, B } and receive payoffs determined by a payoff matrix. To analyze belief formation in LLMs in a sufficiently complex setting, the payoff matrix and the complete action history are observable to both players, but the opponent’s underlying memoryless fixed strategy (probability distribu-tion over actions) or type (stochastic policy class or payoff matrix) is not directly observed. The LLM must therefore infer these latent opponent properties from past actions and use them to guide future decisions. The hidden variables of interest in this setting are the parameters of the oppo-nent’s strategy, the opponent’s type, or the unique Nash equilibrium (as specified in individual experiments). 
+
+Generalized Kuhn Poker. Similar to [ 27 ], we generalize the standard two-player, zero-sum, imperfect-information card game called Kuhn Poker [ 28 ] into its larger variant. While the original Kuhn Poker is restricted to two players, a deck of three cards, and a single betting round, our general-ized version is a natural extension to N ≥ 2 players, a deck of D ≥ 3 numerically ranked cards, and R ≥ 1 rounds of betting ( N = 3 , R = 3 , D = 20 in our experiments). At the start of each game trial, referred to as “hand” in poker, each player is dealt one private card from a known deck. Players then proceed through up to R betting rounds, taking turns to act and observing the full public betting history but never the opponents’ private cards. Available actions include check-ing, betting an allowed amount, folding in response to a bet, or calling a bet, subject to the player’s individual stack constraints. At the end of the hand — either after all betting rounds conclude or earlier if all but one player folds — the player holding the highest private card among the remaining players wins the pot. From the perspective of any single agent, the latent vari-ables are the private cards of the other players. Optimal play, therefore, requires maintaining and updating a belief distribution over opponents’ private cards conditioned on observed actions and selecting actions accordingly. Gen-2Why Do LLMs Struggle in Strategic Play? Broken Links Between Observations, Beliefs, and Actions 
+
+Figure 2: Schematic overview of the games used in this study. In Generalized Kuhn Poker and The Chameleon, separate LLM agents take the role of the players. eralized Kuhn Poker thus serves as a suitable testbed for evaluating whether LLMs translate inferred beliefs about hidden private information into approximately optimal bet-ting behavior. 
+
+The Chameleon. The Chameleon [ 22 ] is an N -player hidden-identity game that requires agents to strategically reveal, conceal, and infer information [ 29 ]. At the start of the game, a category and a finite set of possible secret words are publicly revealed. One word is uniformly randomly selected as the secret word and privately disclosed to all non-chameleon players, while a single chameleon player does not observe it. Player identities (chameleon vs. non-chameleon) are private. Players then respond sequentially, each providing a single-word clue after observing all prior clues. After all clues are given, players simultaneously vote to identify the chameleon. If the chameleon is correctly identified, it receives a second chance to guess the secret word; the chameleon wins if it either avoids identification or guesses the secret word correctly, and otherwise the non-chameleons win. For our analysis, the key latent game variables are the secret word and the chameleon’s identity. Non-chameleon agents must generate clues that are informative enough to signal shared knowledge to other non-chameleons while remaining sufficiently ambiguous to conceal the secret word from the chameleon. Conversely, the chameleon must infer the secret word and blend in despite lacking privileged infor-mation. The Chameleon game, therefore, provides a natural language-based setting in which to study the formation of internal beliefs and their translation into action. 
+
+Information-flow perspective. Across all three games, the core structure consists of publicly observable rules and ac-tion histories, agent-private information, and latent variables that are never directly observed but must be inferred. Fig-ure 2 makes this structure explicit: grey elements denote public information and rules, red elements denote hidden variables to be inferred, and blue elements denote an agent’s private information. This shared information-flow structure enables a unified analysis of belief formation, belief up-dating, and belief-to-action conversion across qualitatively different strategic environments. 
+
+2.3 Probing 
+
+Strategic decision-making under incomplete information requires agents to construct accurate beliefs about latent variables that are not directly observable, such as oppo-nents’ strategies, private cards, or hidden roles. To evaluate whether LLMs can extract such latent game information, we adopt a mechanistic interpretability approach based on probing [ 30 , 31 , 32 , 33 ]. Specifically, we train simple lin-ear probes (logistic or linear regression models) to predict ground-truth latent variables from the LLM’s internal repre-sentations, while keeping the base LLM’s parameters frozen. We use these internal probes merely as exogenous sensors to analyze the internal representations — their predictions are not provided to the base LLM unless stated otherwise (sub-section 3.6). In parallel, we evaluate verbal probes , where the LLM is explicitly asked in natural language to infer the same latent variables from the identical context. The abil-ity of such probes to reconstruct unobserved environment variables tells us about the representational and inferential capacity of current LLMs. We deliberately restrict our internal probes to linear mod-els, as the goal is not to improve the inference capabilities of the base LLM, but rather to analyze how the pre-existing systems operate [ 30 , 31 , 32 ]. Intuitively, such probes search the LLM’s hidden state space to identify a linear direction 3Why Do LLMs Struggle in Strategic Play? Broken Links Between Observations, Beliefs, and Actions 
+
+Prompt: Repeated normal-form games  
+
+> You are playing a game repeatedly with 1 other player, Player 1. There are 2 possible actions in each round (action A, action B). Players make their actions simultaneously, and the outcome is determined by their actions in the given round. All the players, including you, want to maximize their payoff (number of points). Players may adapt their strategies as they play more rounds. Here are the rules of the game: If you play action A and the other player plays action A, you get 4.2 points and they get 6.5 points. If you play action A and the other player plays action B, you get 4.4 points and they get 8.9 points. If you play action B and the other player plays action A, you get 9.6 points and they get 3.8 points. If you play action B and the other player plays action B, you get 7.9 points and they get 5.3 points. Here is the history of the game so far: Round 1: You played action B, and Player 1 played action B. Your payoff for this round was 7.9 points. Round 2: You played action A, and Player 1 played action A. Your payoff for this round was 4.2 points. . . . Round 8: You played action A, and Player 1 played action A. Your payoff for this round was 4.2 points. Given the history and the rules of the game, please provide your action for the next round. Respond with a single line that contains only the letter of your chosen action, do not say anything else.
+
+Figure 3: Prompt used for asking LLMs for their next action in repeated normal-form games. Rounds 3 to 7 are omitted for presentation purposes. that best represents the latent environment variable, thereby uncovering the LLM’s inference capabilities. We refer to these inferred variables as internal beliefs .In each game, we prompt the LLMs with the publicly available, full interaction history and ask them to select their next action. An example prompt for the repeated normal-form games is given in Figure 3 (other prompts in Appendix A.1 and A.2). We generate such independent game trajectories for all games, each with randomly initial-ized hidden variables ( e.g. , opponent strategies, uniformly sampled payoff matrices, private cards, etc.). Internal probes are trained on hidden states extracted from the intermedi-ate layers of the LLM while it is processing the final token of the prompt prior to action generation. The choice of middle layers is motivated by prior work, which found that these layers contain most of the high-level semantic infor-mation [ 34 , 35 , 36 ]. We use the hidden states from the last token position because in the decoder-only Transformer architecture [ 37 , 38 ], information relevant for next-token prediction (action selection) must be represented in this final state to causally influence the next-token probabilities. We split the data into disjoint subsets for the probe’s training, hyperparameter selection, and held-out evaluation, ensur-ing that the reported probe performance reflects genuine generalization rather than memorization. Further details on gameplay and probes are provided in Appendix A.2. 
+
+3 Results 
+
+3.1 Belief Formation: Inferring Latent Game Information 
+
+We examine how successful LLMs are in inferring latent game information given a history of actions. We perform this analysis for all three games and provide experimental details in Appendix A.1 and A.2. We compare internal and verbal probes against two baselines: a random baseline, that samples predictions from a uniform distribution over latent variables, and a majority baseline, that always predicts the most frequent latent value (or the average for distribution-based variables) in the internal probe’s training data. 
+
+Internal beliefs are more accurate than verbal beliefs. 
+
+Figure 4 summarizes the performance of the probes across all games and latent variables. In all settings, internal probes substantially outperform both baselines, achieving signif-icantly lower total variation distance when predicting dis-tributions (two plots on the left) and higher accuracy when predicting discrete hidden variables (three plots on the right). In contrast, verbal probes perform markedly worse, some-times only marginally improving over the majority baseline and, in 4 out of 5 cases, underperforming internal probes. The only qualitatively opposite result occurs when infer-ring the secret word in the Chameleon, where internal probes underperform verbal ones. The explanation behind this re-versal is the way the internal probes are constructed in this scenario. Specifically, for secret-word probing, we cannot use standard multinomial logistic regression linear probes because the secret words are not ordered, unlike targets such as possible private opponents’ cards in the Generalized Kuhn Poker. Predicting the secret words directly would require substantially more expressive probing techniques, increasing model complexity and hindering interpretability. In light of these limitations, we use projections of the LLM’s internal representations onto the secret-word embeddings of the same LLM (Appendix A.2). Normalizing the projected scores of each potential secret word gives us a measure of alignment between the current internal belief and the set of possible inferred beliefs [39, 40, 41]. The results demonstrate that LLMs form accurate im-plicit beliefs about latent game information that are not faithfully reflected in their explicit verbalizations. Crucially, the strong performance of linear probes indicates that this information is represented in a linearly accessible form at the point of LLMs’ action selection, implying that belief inference itself might not be the primary source of LLM sub-optimality in these strategic settings. Instead, these findings motivate our later analysis of how (and to what extent) these relatively accurate internal beliefs causally translate into (rational) action choices. Additionally, the dissociation be-tween internal and verbal beliefs has practical consequences for evaluation and alignment. Benchmarks that rely on elic-iting explicit probability judgments or explanations may 4Why Do LLMs Struggle in Strategic Play? Broken Links Between Observations, Beliefs, and Actions Total variation distance ( ↓)Total variation distance ( ↓)Total variation distance ( ↓)         
+
+> Llama 3.1 70B Opponent's strategy Nash equilibrium Opponent's card Secret word Chameleon identity Qwen3 32B  gpt-oss 20B
+> Random Majority Internal probe Verbal probe
+> 0.0
+> 0.2
+> 0.4 *** ***
+> 0.6
+> *** ***
+> 0.0
+> 0.2
+> 0.4
+> 0.6
+> 0.8
+> 1.0 Accuracy ( ↑)
+> *** ***
+> *** ***
+> *** ***
+> 0.0
+> 0.2
+> 0.4
+> 0.6
+> *** ***
+> *** ***
+> 0.0
+> 0.2
+> 0.4
+> 0.6
+> 0.8
+> 1.0 Accuracy ( ↑)
+> *** ***
+> *** ***
+> *** ns
+> 0.0
+> 0.2
+> 0.4
+> 0.6
+> *** *** *** ns
+> 0.0
+> 0.2
+> 0.4
+> 0.6
+> 0.8
+> 1.0 Accuracy ( ↑)
+> *** *
+> *** ***
+> *** ns
+
+Figure 4: Inference of latent information in the selected strategy games. Shown are the means and their standard errors obtained from 800 (repeated normal-form games), 400 (Generalized Kuhn Poker), and 230 (The Chameleon) game trials. Asterisks denote statistical significance (one-sided Wilcoxon signed-rank test for distribution-based targets - two leftmost plots, McNemar’s test for classification tasks - three rightmost plots; * p < 0.05 ; ** p < 0.01 ; *** p < 0.001 ). Total variation distance: lower is better; Accuracy: higher is better. Plots from left to right: (i) Repeated normal-form games: 
+
+Opponent’s fixed strategy (probability distribution over actions). (ii) Repeated normal-form games: Mixed strategies Nash equilibrium (probability distribution over actions for both players; zero-sum payoff structure). (iii) Generalized Kuhn Poker: 
+
+Secret card of the opponent. (iv) The Chameleon: Secret word. (v) The Chameleon: Chameleon identity. substantially underestimate the representational competence of LLM agents, as accurate beliefs can be present but not faithfully verbalized. Improving reliability in strategic do-mains may therefore require either methods that expose in-ternal beliefs or training objectives that more tightly couple internal representations with external reports. 
+
+3.2 Belief Formation: Effects of Side Information and Intermediate Reasoning Hops 
+
+We next examine how belief accuracy changes with aux-iliary information and an increasing number of required intermediate reasoning hops. We focus on repeated normal-form games in which the prompt specifies that the opponent belongs to one of two possible types. A reasoning hop is de-fined as a distinct latent computation that must be correctly performed and composed in order to identify the opponent’s type from the game history. We consider three settings with increasing hop counts. In the one-hop setting, opponent types differ only by their stationary mixed strategies, which we explicitly specify in the prompt. Correct inference requires estimating the op-ponent’s empirical action distribution from the history and matching it to the closer of the two candidate strategies. In the two-hop setting, each opponent type specifies distinct strategies for each of two round types ( blue and red ). Here, the LLM is explicitly told the round type at each timestep and must estimate a separate opponent’s strategy for each round type from the action history, before matching the re-sulting pair of strategies to the correct opponent type. In the three-hop setting, opponent types differ by their payoff matrices. In this case, the LLM must first infer the mixed-5Why Do LLMs Struggle in Strategic Play? Broken Links Between Observations, Beliefs, and Actions 1 2 3
+
+> Number of reasoning hops
+> 0.5
+> 0.6
+> 0.7
+> 0.8
+> Accuracy  Random baseline
+> Llama 3.1 70B (internal)
+> Llama 3.1 70B (verbal)
+> Qwen3 32B (internal)
+> Qwen3 32B (verbal)
+> gpt-oss-20B (internal)
+> gpt-oss-20B (verbal)
+
+Figure 5: Inference of opponent’s type in repeated normal-form games. Number of reasoning hops corresponds to: 1: 
+
+Opponent’s type by strategy. 2: Opponent’s type by strat-egy and round type. 3: Opponent’s type by payoff matrix. Shown are the means and their standard errors obtained from 800 repeated normal-form games. Internal and verbal 
+
+correspond to internal and verbal probes, respectively. strategy Nash equilibrium implied by each payoff matrix, then estimate the opponent’s empirical strategy from ob-served actions, and finally map this estimate to the closer equilibrium strategy. 
+
+Belief formation is successful for each individual rea-soning hop, while unsuccessful for combined hops. As shown in Figure 5, belief accuracy declines monotonically with hop count. In the one-hop setting, probes with the larger models achieve accuracies above 0.75, significantly outperforming the random baseline. In the two-hop set-ting, accuracy drops to below 0.65 and then either continues to degrade or plateaus in the three-hop setting, sometimes reaching near-random levels. Together, these results demonstrate that LLMs can ac-curately represent latent aspects of the game in isolation, but struggle when these representations must be composed across multiple reasoning steps: Belief formation becomes increasingly brittle as hop count increases. In particular, Figure 4 showed that both opponent strategy and the mixed-strategy Nash equilibrium are individually inferable, while their composition fails under multi-hop inference (Figure 5). In real-world settings such as negotiation or policymaking, correct behavior often depends on chaining multiple con-ditional inferences. Our results imply that LLM agents may perform reliably when reasoning steps are isolated, yet fail when these steps must be integrated. The degradation motivates the paradigm of verbal Chain-of-Thought reason-ing [ 42 , 43 , 44 ] or methods for strengthening compositional internal inference [45, 46, 47]. 
+
+3.3 Attention to Opponent’s Past Actions 
+
+Interaction history dominates representational variance relative to side information. In Figure 6, we examine how information about (i) specific past opponent actions and (ii) the opponent’s latent type is organized in Llama 3.1’s internal representations during repeated normal-form games. We perform principal component analysis (PCA) on the model’s hidden states at the action-selection step and visualize the resulting down-projected states, labeled by the opponent’s first-round action or the opponent’s type. The two possible types of the opponent differ in their strategies, and the experimental setup corresponds to one reasoning hop in Figure 5. Figure 6 shows that even late in the game (round 15 is shown), variation associated with the opponent’s round-1 action aligns with higher-variance principal components than variation associated with type labels. While PCA vari-ance does not by itself establish causal influence on the final policy, this result indicates that the model’s state space continues to allocate substantial representational capacity to early interaction evidence, relative to the (potentially decision-relevant) type information provided in the prompt. 
+
+Recency and first-action bias in internal representations. 
+
+The PCA visualization from Figure 6 suggests that the LLM’s decision-making is a result of, among other things, a memory of past opponent actions. To understand the con-tents of this memory, we analyze how easily individual past opponent’s actions can be extracted from the LLM’s internal representations. As shown in Figure 7, the actions from the first and the last rounds are the most easily extractable — the internal probe requires just around 20 training epochs to reach near-perfect decoding. In contrast, the extractability of actions from the intermediate rounds follows a U-shaped curve, with the opponent’s actions in the middle rounds being the least decodable. The attention to the first and last opponent’s actions mirrors recency bias observed in humans [ 19 , 20 ] and positional biases of LLMs observed in prior studies [48, 49, 50]. In practical applications, such U-shaped memory of past interactions could systematically bias strategic responses toward early commitments and recent deviations, making the LLM predictable and potentially exploitable. For example, an adversary could first signal cooperation or defection to anchor the LLM’s internal state, then strategically deviate in intermediate rounds without much long-term penalty, and then realign behavior near the end of the interaction to influence the LLM’s final decisions. 
+
+3.4 Belief Updating 
+
+In multi-step strategic interactions with incomplete infor-mation, belief inference requires continual updating of be-liefs in response to new evidence. The setting, therefore, naturally lends itself to the Bayesian framework: Robust Bayesian updating enables optimal control in partially ob-servable environments [ 51 , 52 ]. Moreover, since people are often modeled as — and model others as — Bayesian reasoners [ 53 , 54 , 55 ], LLMs that deviate from Bayesian updating become less predictable and interpretable to the humans who oversee or interact with them. To evaluate whether current LLMs update beliefs in a Bayesian manner, we measure the Pearson correlation co-efficient between the observed LLM’s belief updates and optimal, self-consistent Bayesian updates. This evaluation metric has been formalized as the Bayesian Coherence Co-efficient (BCC) [ 56 ], which we extend from output-token probabilities to internal and verbal beliefs. 6Why Do LLMs Struggle in Strategic Play? Broken Links Between Observations, Beliefs, and Actions PC 1 (35.30%) PC 2 (20.96%)    
+
+> PC 2 (20.96%) PC 3 (14.16%)
+> Opponent's action in round 1
+> 12
+> Round 2
+> PC 1 (34.81%) PC 2 (16.51%)
+> PC 2 (16.51%) PC 3 (9.59%)
+> PC 1 (35.30%) PC 2 (20.96%)
+> PC 2 (20.96%) PC 3 (14.16%)
+> Opponent's type
+> 12PC 1 (34.81%) PC 2 (16.51%)
+> PC 2 (16.51%) PC 3 (9.59%)
+> Round 2 Round 15 Round 15 well-separated not separated
+
+Figure 6: PCA of the internal representations of Llama 3.1 70B in rounds 2 and 15 of repeated normal-form games. Shown are the projections onto the first three principal components (PC) and the associated variances explained by these PCs. Both the top and bottom rows depict identical down-projected internal representations, but with color labeling by different game information. Data collected from 1,000 game trials. 0 10 20 30 40 Epoch     
+
+> 0.8
+> 0.9
+> 1.0 Accuracy
+> First round Second to last round Last round
+> 246810 12 14 Round
+> 1510 14 Round
+> 0
+> 10
+> 20
+> 30
+> 40 Epochs to reach 80% accuracy
+
+Figure 7: Probing past opponent’s actions from internal representations of Llama 3.1 70B in round 15 of repeated normal-form games. Left: The validation accuracy of the internal probe over the probe’s training epochs, colored by the round of the opponent’s action that is being probed. Right: The number of the probe’s training epochs (y-axis) after which the probe achieves 80% validation accuracy in decoding opponent’s actions from previous rounds (x-axis). Each line represents the mean ± std from 10 training runs of the internal probe. Formally, given an interaction history ht up to timestep 
+
+t and LLM’s belief distribution ˆbt := P (Z = z | ht) over some latent variable Z (e.g. , opponent’s strategy type), we compute the belief update as: 
+
+b∆t(z, z ′) := log ˆbt(z)ˆbt(z′) − log ˆbt−1(z)ˆbt−1(z′) . (1) Correspondingly, we compute the expected (Bayes) updates 
+
+Λt(z, z ′) based on a likelihood model of the observables that the LLM obtains at each timestep. In repeated normal-form games, for example, the LLM’s observables are the opponent’s actions at ∈ { A, B } sampled from the action distribution πz given by the opponent’s type z ∈ { 1, 2}. In this case, the Bayes-predicted updates become: 
+
+Λt(z, z ′) = log πz (at)
+
+πz′ (at) . (2) Given these belief updates over randomly sampled pairs of latent variables, Z = {(z, z ′) ∈ dom( Z) × dom( Z)},we compute the BCC as follows: 
+
+BCC t := ρ
+
+
+
+vec  { b∆t}, vec  {Λt}
+
+, (3) where b∆t ∈ R|Z| and Λt ∈ R|Z| are the observed and the expected belief updates, respectively, ρ(·, ·) is the Pearson correlation coefficient, and vec( ·) denotes concatenation over game trials. 7Why Do LLMs Struggle in Strategic Play? Broken Links Between Observations, Beliefs, and Actions 1.00 0.50 0.00 0.25            
+
+> BCC Repeated normal-form games
+> 1.00 0.50 0.00 0.25
+> Generalized Kuhn Poker
+> 1.00 0.50 0.00 0.25
+> The Chameleon
+> 246810 12 14 Round 0.0 1.0 2.0 Slope
+> 123Turn 024
+> 1234Number of response words 0.00 0.20 0.40 Llama 3.1 70B (internal) Llama 3.1 70B (verbal) Qwen3 32B (internal) Qwen3 32B (verbal) gpt-oss-20B (internal) gpt-oss-20B (verbal)
+
+Figure 8: Progression of the Bayesian Coherence Coefficient (BCC; top) and the slope of its associated regression line (bottom) with increasing length of interaction. BCC is measured with respect to internal and verbal beliefs about the opponent’s type (repeated normal-form games; 800 game trials), opponent’s secret card (Generalized Kuhn Poker; 2,000 game trials), and the chameleon identity (The Chameleon; 1,168 game trials). Details in Appendix A.3 By correlating the observed updates in LLMs’ beliefs with the ground-truth expected updates, BCC evaluates the extent to which LLMs remain consistent with the optimal Bayesian belief updating. Further details, including the likelihood models for other games, are included in Ap-pendix A.3. 
+
+Bayesian belief updating deteriorates over extended inter-actions. As shown in Figure 8 on the top, internal belief updates exhibit substantially higher Bayesian optimality than verbal belief updates in early rounds. However, the BCC of both internal and verbal beliefs decays over time. Internal beliefs are especially susceptible to this deteriora-tion: their BCC falls below half of the initial value by round 10 in normal-form games and by turn 3 in more complex games of Generalized Kuhn Poker and The Chameleon. When we analyze the slope of the fitted regression line between the observed and expected updates in repeated normal-form games (Figure 9), we find that internal belief updates transition from early updating at correct magnitude (slope ≈ 1) to later under-updating (slope < 1), providing further evidence for a systematic drift away from Bayesian optimality over long horizons. We observe a similar de-crease in the magnitude of belief updates in other games and models (Figure 8, bottom). These results show that while LLMs are capable of ap-proximately Bayesian belief updating, this capability deteri-orates over extended interactions. In high-stakes domains requiring long-horizon decision-making, such as multi-step planning or negotiation, such drift may lead to underreaction to new information or persistence in outdated hypotheses. Moreover, as the model’s updates become less aligned with Bayesian expectations, it may become less predictable and understandable to agents with Bayesian world models ( e.g. ,humans), highlighting an area for improvement. 
+
+3.5 Belief-to-Action Conversion: Steering internal belief representations 
+
+To test whether internally represented beliefs about latent game variables identified by our probes are causally involved in decision-making, we intervene directly on the LLMs’ hid-den states. Specifically, we add scaled steering vectors to the LLMs’ hidden states at inference time. Similar to prior studies [ 57 , 58 ], we use the learned weights of the linear (internal) probes as the steering vectors. The layer where we additively inject these vectors is based on the initial hyper-parameter search of the internal probe (Appendix, Table 1). By using the probe’s weights directly, we bias the models’ internal representations (and thus internal beliefs) toward dif-ferent opponents’ strategies (repeated normal-form games), toward higher opponents’ card values (Generalized Kuhn Poker), or toward different secret words (The Chameleon) without modifying the prompt or model parameters. This steering experiment builds on the idea of the linear represen-tation hypothesis for LLMs [ 39 ], which posits that concepts in LLMs are represented along linear directions in the rep-resentation space. Our activation steering is inspired by 8Why Do LLMs Struggle in Strategic Play? Broken Links Between Observations, Beliefs, and Actions 6 3 0 3 6                    
+
+> Expected log-odds update
+> 6
+> 3
+> 0
+> 3
+> 6
+> Observed log-odds update
+> Round 1
+> BCC=0.85 (***)
+> Slope=1.07
+> 63036
+> Expected log-odds update
+> 6
+> 3
+> 0
+> 3
+> 6
+> Round 2
+> BCC=0.80 (***)
+> Slope=0.89
+> 63036
+> Expected log-odds update
+> 6
+> 3
+> 0
+> 3
+> 6
+> Round 3
+> BCC=0.70 (***)
+> Slope=0.76
+> 63036
+> Expected log-odds update
+> 6
+> 3
+> 0
+> 3
+> 6
+> Observed log-odds update
+> Round 4
+> BCC=0.67 (***)
+> Slope=0.65
+> 63036
+> Expected log-odds update
+> 6
+> 3
+> 0
+> 3
+> 6
+> Round 5
+> BCC=0.61 (***)
+> Slope=0.51
+> 63036
+> Expected log-odds update
+> 6
+> 3
+> 0
+> 3
+> 6
+> Round 10
+> BCC=0.38 (***)
+> Slope=0.28
+
+Figure 9: Round-by-round progression of the Bayesian Coherence Coefficient (BCC) of internal beliefs about opponent’s type. Data collected from 800 repeated normal-form games with Llama 3.1 70B. Asterisks in parentheses denote statistical significance (two-sided Wald test with t-distributed test statistic; H0: zero correlation, HA: non-zero correlation; * p < 0.05 ;** p < 0.01 ; *** p < 0.001 ). prior work that similarly linearly shifted internal represen-tations of linguistic and higher-level semantic concepts to make LLMs safer [ 59 , 60 ], more truthful [ 58 , 61 ], or less sycophantic [62]. To quantify the strength of the causal pathway from in-ternal beliefs to actions, we compare the action distributions of the steered LLMs with those produced in a counterfac-tual setting where the targeted latent variable is actually true. For example, in Generalized Kuhn Poker, we steer the LLMs toward believing that the opponent holds a stronger private card and compare the resulting action distribution to one observed when the opponent indeed holds such a card and plays accordingly. We refer to this counterfactual setting as the contrast , following terminology used in prior work [ 63 , 64 ]. We quantify the gap between the steered and counterfactual action distributions using the total variation distance. We use the same metric to select the highest-performing multiplication factor on 50 held-out trials. The considered search space is {1, 5, 10 , 15 , 20 }.
+
+Internal beliefs have a weak causal influence on action selection. As shown in Figure 10, steering produces con-sistent but limited behavioral effects. In repeated normal-form games, steering internal beliefs toward different op-ponents’ strategies (distributions over actions) brings the LLMs’ strategies closer to the target counterfactuals in around 70% of trials. For gpt-oss-20B in Generalized Kuhn Poker, this belief-to-action conversion reaches just around the 50% chance level. These results establish a causal pathway from internal belief representations to action selection, but also demon-strate that this pathway is underutilized. Even when beliefs are manually nudged in the correct direction ( i.e., toward be-liefs consistent with the ground-truth), the resulting strategy changes are unreliable, suggesting that the belief-to-action conversion is underdeveloped in current models. 
+
+3.6 Implicit vs. Explicit Conditioning on Internal Beliefs 
+
+We next quantify the differences between LLMs’ gameplay when they play only according to their internal beliefs (im-plicit action conditioning) vs. when their internal beliefs are externalized in a prompt (explicit action conditioning). We measure this difference using two complementary met-rics: (i) the total variation distance between the internal-belief conditioned action distribution and the action distri-bution conditioned on the model’s internal beliefs through prompt, and (ii) the expected difference in payoffs between the internal-belief conditioned actions and the actions con-ditioned on the same internal beliefs through prompt. 
+
+Externalized beliefs have a strong causal influence on action selection, but are unreliable in improving game-play. 
+
+As shown in Figure 11 on the left, there is a large mismatch 9Why Do LLMs Struggle in Strategic Play? Broken Links Between Observations, Beliefs, and Actions Repeated   
+
+> normal-form
+> games
+> Generalized
+> Kuhn Poker
+> The Chameleon
+> 0
+> 20
+> 40
+> 60
+> 80
+> 100
+> Percent steered closer to contrast (%)
+> Llama 3.1 70B Qwen3 32B gpt-oss-20B
+
+Figure 10: Steering internal representations toward differ-ent opponents’ strategies (repeated normal-form games), toward higher opponents’ secret cards (Generalized Kuhn Poker), and toward different secret words (The Chameleon). Shown are the means and standard errors from 300 (repeated normal-form games) and 200 (Generalized Kuhn Poker, The Chameleon) game trials. Random chance is 50%. between the LLMs’ action distributions when conditioned implicitly vs. explicitly through prompts. Moreover, as shown on the right in Figure 11, neither implicit nor explicit action conditioning by beliefs consistently achieves better payoffs. These results demonstrate that while LLMs are more sensitive to externalized beliefs than purely internal ones, neither is consistently better at improving expected game payoffs. 
+
+First-item (action) gap. To further characterize failures in belief-to-action conversion, we analyze a systematic first-item (action) bias in repeated normal-form games. Specifi-cally, we measure the probability that the LLM selects the best-response (BR) action implied by the internal belief about the opponent’s strategy when that action corresponds to the first versus the second available option. As shown in Figure 12 on the left, when the BR cor-responds to the action listed first in the prompt (“A”), the LLM assigns it high probability mass, often exceeding 0.9.However, when the BR corresponds to the second action, the assigned probability is substantially lower and broadly distributed, even when internal beliefs clearly favor that ac-tion. This asymmetry reveals a strong positional bias that interferes with belief-consistent rational decision-making. Interestingly, verbalizing the LLM’s internal belief in the prompt partially mitigates this effect. When beliefs about the opponent’s strategy are explicitly stated in the prompt, the distribution over action probabilities becomes more balanced between the two actions, with the probability of selecting the correct BR action increasing when it is not the first option. This result reinforces the conclusion that even if LLMs possessed fully accurate (internal) beliefs, they do not act on them reliably. However, while explicit prompt conditioning does not improve gameplay in general, it can at least partially mitigate biases exhibited by LLMs. 
+
+4 Discussion 
+
+LLMs are already being deployed in strategic decision-making contexts, from automated negotiation [ 1 , 2, 3, 4, 5]to policy advisory systems [ 7, 8, 9, 10 ], where their outputs can carry serious real-world consequences [ 2, 12 ]. This has been reflected in a stream of scientific studies analyzing and improving LLMs as strategic agents [ 1, 2, 3, 4 , 6, 7 , 9, 10 ,11 , 14 , 16 , 17 , 18 ]. We advance this line of work by open-ing the black box: using mechanistic interpretability tools to expose the internal mechanisms driving LLM decision-making and tracing where they diverge from game-theoretic rationality. Across three classes of incomplete-information games, we find that LLM agents often contain useful latent game information, but struggle to maintain it stably over time and to use it reliably for rational action selection. We separate this into two broken links. First, the observation-belief gap : internal probes re-cover opponent strategies, Nash equilibria, and other latent game information significantly better than verbal probes, implying that models form linearly accessible implicit be-liefs during decision-making that are not faithfully reported in text. However, belief formation is brittle: accuracy de-grades with the number of required reasoning hops, belief consistency deteriorates after repeated interactions, and the representation of interaction history exhibits a U-shaped bias toward the first and most recent observations. Second, the belief-action gap : although internal beliefs are present at the action-selection step, their causal influence on actions is weak, and neither their implicit use nor their externalized prompt variants achieves consistent improve-ments in game payoffs. Moreover, models frequently fail to choose the best responses implied by their own internal beliefs, and their actions are prone to the first-item bias. These findings disentangle “bad play” into separate com-ponents, which behavior-only evaluation might conflate. Practically, the fact that accurate internal beliefs are often linearly decodable implies there is a strong substrate to build on: better interfaces for extracting beliefs, better training signals that bind beliefs to actions, and better agent architec-tures that separate state estimation from decision could yield gains without requiring completely new capabilities. Our work also serves as a proof of concept for how mechanistic interpretability can identify intrinsic failure modes of LLM agents, ranging from positional biases and recency/primacy weighting to drifts in belief updating over long horizons. For example, the degradation of Bayesian coherence of be-liefs over extended interactions suggests that even when models begin with approximately optimal updates, they can gradually under-react to new evidence, creating predictable vulnerabilities in negotiation, repeated coordination, or ad-versarial settings. Additionally, the U-shaped memory of past interactions implies systematic exploitability: an oppo-nent can anchor early impressions of cooperation, strategi-cally hide deviations in the middle stages of interaction, and 10 Why Do LLMs Struggle in Strategic Play? Broken Links Between Observations, Beliefs, and Actions Repeated   
+
+> normal-form
+> games
+> Generalized
+> Kuhn Poker
+> The Chameleon
+> 0.0
+> 0.1
+> 0.2
+> 0.3
+> 0.4
+> 0.5
+> 0.6
+> Total variation distance
+> Repeated
+> normal-form
+> games
+> Generalized
+> Kuhn Poker
+> The Chameleon
+> 0.06
+> 0.04
+> 0.02
+> 0.00
+> 0.02
+> 0.04
+> Payoff difference
+> Llama 3.1 70B Qwen3 32B gpt-oss-20B
+
+Figure 11: Differences in the gameplay of LLMs under implicit vs. explicit (prompt-based) conditioning by internal beliefs. Left: Total variation distance between the belief-conditioned action distributions of LLMs. Right: Payoff differences between the two types of conditioning. Shown are the means and their standard errors obtained from 2,000 (repeated normal-form games and Generalized Kuhn Poker) and 300 (The Chameleon) game trials. 0 0.5 1      
+
+> PLM (BR action)
+> 024
+> 68
+> Density
+> BR is action A
+> Implicit belief-conditioning Explicit belief-conditioning
+> BR is action B 00.5 1
+> PLM (BR action)
+> 024
+
+Figure 12: Effect of the first-item (action) bias on selecting the best response (BR) action by the LLM. The plot on the right illustrates a scenario where verbalizing internal beliefs about the opponent’s strategy partially mitigates this bias. Shown is the histogram of next-action probabilities (x-axis) assigned by the LLM across 1,000 repeated normal-form games. steer final outcomes by showing cooperative moves in late stages. Looking forward, our findings suggest concrete research directions. Reducing the observation-belief gap requires im-proving compositional latent inference and long-horizon be-lief maintenance ( e.g. , structured intermediate belief states, Chain-of-Thought reasoning, or training that directly targets multi-hop latent computations). Reducing the belief-action gap requires strengthening the causal link from beliefs to decisions ( e.g. , calibration of action selection against belief-implied best responses, or debiasing positional/action-order effects). As LLMs continue to be deployed in strategic domains, our results suggest that guardrails and human over-sight remain essential — not as a general precaution, but because the specific vulnerabilities we identify are system-atic, predictable, and currently unmitigated. 
+
+Acknowledgements 
+
+This work was supported in part by the Army Research Office (ARO) under grant number W911NF-23-1-0317 and the Office of Naval Research (ONR) under grant number N00014-24-1-2432. 
+
+References 
+
+[1] Federico Bianchi, Patrick John Chia, Mert Yuksek-gonul, Jacopo Tagliabue, Dan Jurafsky, and James Zou. How well can LLMs negotiate? negotiationarena platform and analysis. In Forty-first International Con-ference on Machine Learning , 2024. URL https: //openreview.net/forum?id=CmOmaxkt8p .[2] Sahar Abdelnabi, Amr Gomaa, Sarath Sivaprasad, Lea Schönherr, and Mario Fritz. Cooperation, competition, and maliciousness: LLM-stakeholders interactive ne-gotiation. In The Thirty-eight Conference on Neural Information Processing Systems Datasets and Bench-marks Track , 2024. [3] Priyanshu Priya, Saurav Dudhate, Desai Vishesh Yasheshbhai, and Asif Ekbal. We argue to agree: Towards personality-driven argumentation-based ne-gotiation dialogue systems for tourism. In Christos Christodoulopoulos, Tanmoy Chakraborty, Carolyn Rose, and Violet Peng, editors, Findings of the Asso-ciation for Computational Linguistics: EMNLP 2025 ,pages 25504–25536, Suzhou, China, November 2025. Association for Computational Linguistics. ISBN 979-8-89176-335-7. doi:10.18653/v1/2025.findings-emnlp.1390. URL https://aclanthology.org/2 025.findings-emnlp.1390/ .[4] Deuksin Kwon, Jiwon Hae, Emma Clift, Daniel Sham-soddini, Jonathan Gratch, and Gale Lucas. ASTRA: A negotiation agent with adaptive and strategic rea-11 Why Do LLMs Struggle in Strategic Play? Broken Links Between Observations, Beliefs, and Actions soning via tool-integrated action for dynamic offer optimization. In Christos Christodoulopoulos, Tan-moy Chakraborty, Carolyn Rose, and Violet Peng, edi-tors, Proceedings of the 2025 Conference on Empiri-cal Methods in Natural Language Processing , pages 16217–16238, Suzhou, China, November 2025. Asso-ciation for Computational Linguistics. ISBN 979-8-89176-332-6. doi:10.18653/v1/2025.emnlp-main.821. URL https://aclanthology.org/2025.emnl p-main.821/ .[5] Deuksin Kwon, Kaleen Shrestha, Bin Han, Elena Hay-oung Lee, and Gale Lucas. Evaluating behavioral alignment in conflict dialogue: A multi-dimensional comparison of LLM agents and humans. In Chris-tos Christodoulopoulos, Tanmoy Chakraborty, Car-olyn Rose, and Violet Peng, editors, Proceedings of the 2025 Conference on Empirical Methods in Natural Language Processing , pages 16366–16380, Suzhou, China, November 2025. Association for Com-putational Linguistics. ISBN 979-8-89176-332-6. doi:10.18653/v1/2025.emnlp-main.828. URL https: //aclanthology.org/2025.emnlp-main.828/ .[6] Haoran Su, Yandong Sun, and Congjia Yu. The end of reward engineering: How llms are redefining multi-agent coordination, 2026. URL https://arxiv.or g/abs/2601.08237 .[7] Pierre Le Coz, Jiaan Liu, Debarun Bhattacharjya, Georgina Curto, and Serge Stinckwich. What would an LLM do? evaluating policymaking capabilities of large language models. In Second Workshop on Language Models for Underserved Communities (LM4UC) , 2025. URL https://openreview.net/forum?id=ie9O GdjrVa .[8] Fangyong Pan, Xinyi Huang, Yuxi Bi, Yunfan Gao, Yu Ye, and Haofen Wang. From tools to partners: How large language models are transforming urban plan-ning. AI Open , 6:276–298, 2025. ISSN 2666-6510. doi:https://doi.org/10.1016/j.aiopen.2025.11.001. URL https://www.sciencedirect.com/scienc e/article/pii/S2666651025000191 .[9] Matt Ziegler, Sarah Lothian, Brian O’Neill, Richard Anderson, and Yoshitaka Ota. Ai language models could both help and harm equity in marine policymak-ing. npj Ocean Sustainability , 4(1):32, Jun 2025. ISSN 2731-426X. doi:10.1038/s44183-025-00132-7. URL 
+
+https://doi.org/10.1038/s44183-025-00132 -7 .[10] Cai Chen, Shu-Le Li, Anthony D. So, Yao-Yang Xu, Zhao-Feng Guo, Xinbing Wang, David W. Gra-ham, and Yong-Guan Zhu. Using large language models to assist antimicrobial resistance policy de-velopment: Integrating the environment into health protection planning. Environmental Science & Tech-nology , 59(2):1243–1252, Jan 2025. ISSN 0013-936X. doi:10.1021/acs.est.4c07842. URL https: //doi.org/10.1021/acs.est.4c07842 .[11] Olivia Macmillan-Scott and Mirco Musolesi. (ir)rationality and cognitive biases in large language models. Royal Society Open Science , 11(6):240255, 06 2024. ISSN 2054-5703. doi:10.1098/rsos.240255. URL https://doi.org/10.1098/rsos.240255 .[12] Denizalp Goktas, Amy Greenwald, Takayuki Osogami, Roma Patel, Kevin Leyton-Brown, Grant Schoenebeck, Daphne Cornelisse, Constantinos Daskalakis, Ian Gemp, John Horton, David C Parkes, David M. Pennock, Arjun Prakash, Sai Srivatsa Ravindranath, Max Olan Smith, Gokul Swamy, Eugene Vinitsky, Segev Wasserkrug, Michael Wellman, Jibang Wu, Haifeng Xu, Jiayao Zhang, Yichi Zhang, Sadie Zhao, and Quanyan Zhu. Strategic Foundation Models. working paper or preprint, February 2025. URL 
+
+https://hal.science/hal-04925309 .[13] Benjamin Kempinski, Ian Gemp, Kate Larson, Marc Lanctot, Yoram Bachrach, and Tal Kachman. Game of thoughts: Iterative reasoning in game-theoretic do-mains with large language models. AAMAS , 2025. [14] Nunzio Lorè and Babak Heydari. Strategic behav-ior of large language models and the role of game structure versus contextual framing. Scientific Re-ports , 14(1):18490, Aug 2024. ISSN 2045-2322. doi:10.1038/s41598-024-69032-z. URL https:// doi.org/10.1038/s41598-024-69032-z .[15] Peiyang Song, Pengrui Han, and Noah Goodman. Large language model reasoning failures. Transac-tions on Machine Learning Research , 2026. ISSN 2835-8856. URL https://openreview.net/for um?id=vnX1WHMNmz . Survey Certification. [16] Elif Akata, Lion Schulz, Julian Coda-Forno, Seong Joon Oh, Matthias Bethge, and Eric Schulz. Playing repeated games with large language models. 
+
+Nature Human Behaviour , 9(7):1380–1390, Jul 2025. ISSN 2397-3374. doi:10.1038/s41562-025-02172-y. URL https://doi.org/10.1038/s41562-025-0 2172-y .[17] Alexander Bondarenko, Denis Volk, Dmitrii Volkov, and Jeffrey Ladish. Demonstrating specification gaming in reasoning models. arXiv preprint arXiv:2502.13295 , 2025. [18] Leon Guertler, Bobby Cheng, Simon Yu, Bo Liu, Leshem Choshen, and Cheston Tan. Textarena, 2025. URL https://arxiv.org/abs/2504.11442 .[19] Jr. Murdock, Bennet B. The serial position effect of free recall. Journal of Experimental Psychology , 64 (5):482–488, 1962. doi:10.1037/h0045106. [20] Minhee Yoo, Giwon Bahg, Brandon Turner, and Ian Krajbich. People display consistent recency and pri-macy effects in behavior and neural activity across perceptual and value-based judgments. Cogn Affect Behav Neurosci , 25(4):923–940, March 2025. [21] Sam Ganzfried. Mistakes in games. In Proceedings of the First International Conference on Distributed Artificial Intelligence , pages 1–6, 2019. 12 Why Do LLMs Struggle in Strategic Play? Broken Links Between Observations, Beliefs, and Actions [22] Rikki Tahta. The chameleon board game. https://bigpotato.com/products/the-chameleon, 2017. [23] Aaron Grattafiori, Abhimanyu Dubey, Abhinav Jauhri, Abhinav Pandey, Abhishek Kadian, Ahmad Al-Dahle, Aiesha Letman, Akhil Mathur, Alan Schelten, Alex Vaughan, et al. The llama 3 herd of models. arXiv preprint arXiv:2407.21783 , 2024. [24] An Yang, Anfeng Li, Baosong Yang, Beichen Zhang, Binyuan Hui, Bo Zheng, Bowen Yu, Chang Gao, Chen-gen Huang, Chenxu Lv, Chujie Zheng, Dayiheng Liu, Fan Zhou, Fei Huang, Feng Hu, Hao Ge, Haoran Wei, Huan Lin, Jialong Tang, Jian Yang, Jianhong Tu, Jian-wei Zhang, Jianxin Yang, Jiaxi Yang, Jing Zhou, Jin-gren Zhou, Junyang Lin, Kai Dang, Keqin Bao, Kexin Yang, Le Yu, Lianghao Deng, Mei Li, Mingfeng Xue, Mingze Li, Pei Zhang, Peng Wang, Qin Zhu, Rui Men, Ruize Gao, Shixuan Liu, Shuang Luo, Tianhao Li, Tianyi Tang, Wenbiao Yin, Xingzhang Ren, Xinyu Wang, Xinyu Zhang, Xuancheng Ren, Yang Fan, Yang Su, Yichang Zhang, Yinger Zhang, Yu Wan, Yuqiong Liu, Zekun Wang, Zeyu Cui, Zhenru Zhang, Zhipeng Zhou, and Zihan Qiu. Qwen3 technical report, 2025. URL https://arxiv.org/abs/2505.09388 .[25] Sandhini Agarwal, Lama Ahmad, Jason Ai, Sam Alt-man, Andy Applebaum, Edwin Arbus, Rahul K Arora, Yu Bai, Bowen Baker, Haiming Bao, et al. gpt-oss-120b & gpt-oss-20b model card. arXiv preprint arXiv:2508.10925 , 2025. [26] OpenAI. GPT-5 , 2025. URL https://openai.com/ .Version: 2025-08-07. [27] Sam Ganzfried. Human strategic decision making in parametrized games. Mathematics , 10(7), 2022. ISSN 2227-7390. doi:10.3390/math10071147. URL 
+
+https://www.mdpi.com/2227-7390/10/7/1147 .[28] Harold W. Kuhn. Simplified two-person poker. In Harold W. Kuhn and Albert W. Tucker, editors, Con-tributions to the Theory of Games , volume 1, pages 97–103. Princeton University Press, Princeton, NJ, USA, 1950. [29] Mustafa O Karabag, Jan Sobotka, and Ufuk Topcu. Do LLMs strategically reveal, conceal, and infer in-formation? a theoretical and empirical analysis in the chameleon game. arXiv preprint arXiv:2501.19398 ,2025. [30] Yonatan Belinkov. Probing classifiers: Promises, short-comings, and advances. Computational Linguistics , 48 (1):207–219, March 2022. doi:10.1162/coli_a_00422. URL https://aclanthology.org/2022.cl-1.7 /.[31] Elena Voita and Ivan Titov. Information-theoretic probing with minimum description length. In Bon-nie Webber, Trevor Cohn, Yulan He, and Yang Liu, editors, Proceedings of the 2020 Conference on Empirical Methods in Natural Language Pro-cessing (EMNLP) , pages 183–196, Online, Novem-ber 2020. Association for Computational Linguistics. doi:10.18653/v1/2020.emnlp-main.14. URL https: //aclanthology.org/2020.emnlp-main.14/ .[32] Yanai Elazar, Shauli Ravfogel, Alon Jacovi, and Yoav Goldberg. Amnesic Probing: Behavioral Explanation with Amnesic Counterfactuals. Transactions of the Association for Computational Linguistics , 9:160–175, 03 2021. ISSN 2307-387X. doi:10.1162/tacl_a_00359. URL https://doi.org/10.1162/tacl_a_00359 .[33] Wes Gurnee, Neel Nanda, Matthew Pauly, Kather-ine Harvey, Dmitrii Troitskii, and Dimitris Bertsimas. Finding neurons in a haystack: Case studies with sparse probing. Transactions on Machine Learning Research , 2023. [34] Oscar Skean, Md Rifat Arefin, Dan Zhao, Niket Patel, Jalal Naghiyev, Yann LeCun, and Ravid Shwartz-Ziv. Layer by layer: Uncovering hidden representations in language models. arXiv preprint arXiv:2502.02013 ,2025. [35] Mor Geva, Roei Schuster, Jonathan Berant, and Omer Levy. Transformer feed-forward layers are key-value memories. In Proceedings of the 2021 Conference on Empirical Methods in Natural Language Processing ,pages 5484–5495, 2021. [36] Nostalgebraist. Interpreting gpt: The logit lens. Blog Post , 2020. URL https://www.lesswrong.com/ posts/AcKRB8wDpdaN6v6ru/interpreting-gpt -the-logit-lens .[37] Ashish Vaswani, Noam Shazeer, Niki Parmar, Jakob Uszkoreit, Llion Jones, Aidan N. Gomez, Łukasz Kaiser, and Illia Polosukhin. Attention is all you need. In Proceedings of the 31st International Conference on Neural Information Processing Systems , NIPS’17, page 6000–6010, Red Hook, NY, USA, 2017. Curran Associates Inc. ISBN 9781510860964. [38] Alec Radford, Karthik Narasimhan, Tim Salimans, Ilya Sutskever, et al. Improving language understand-ing by generative pre-training, 2018. [39] Kiho Park, Yo Joong Choe, and Victor Veitch. The linear representation hypothesis and the geometry of large language models. In Forty-first International Conference on Machine Learning , 2024. URL https: //openreview.net/forum?id=UGpGkLzwpP .[40] Nelson Elhage, Tristan Hume, Catherine Olsson, Nicholas Schiefer, Tom Henighan, Shauna Kravec, Zac Hatfield-Dodds, Robert Lasenby, Dawn Drain, Carol Chen, Roger Grosse, Sam McCandlish, Jared Ka-plan, Dario Amodei, Martin Wattenberg, and Christo-pher Olah. Toy models of superposition. Trans-former Circuits Thread , 2022. https://transformer-circuits.pub/2022/toy_model/index.html. [41] Kevin Meng, David Bau, Alex Andonian, and Yonatan Belinkov. Locating and editing factual associations in GPT. Advances in Neural Information Processing Systems , 36, 2022. arXiv:2202.05262. 13 Why Do LLMs Struggle in Strategic Play? Broken Links Between Observations, Beliefs, and Actions [42] Jason Wei, Xuezhi Wang, Dale Schuurmans, Maarten Bosma, brian ichter, Fei Xia, Ed H. Chi, Quoc V Le, and Denny Zhou. Chain of thought prompting elicits reasoning in large language models. In Al-ice H. Oh, Alekh Agarwal, Danielle Belgrave, and Kyunghyun Cho, editors, Advances in Neural Infor-mation Processing Systems , 2022. URL https: //openreview.net/forum?id=_VjQlMeSB_J .[43] Xuezhi Wang and Denny Zhou. Chain-of-thought reasoning without prompting. In The Thirty-eighth Annual Conference on Neural Information Processing Systems , 2024. URL https://openreview.net/f orum?id=4Zt7S0B0Jp .[44] Maciej Besta, Julia Barth, Eric Schreiber, Ales Ku-bicek, Afonso Catarino, Robert Gerstenberger, Pi-otr Nyczyk, Patrick Iff, Yueling Li, Sam Houlis-ton, Tomasz Sternal, Marcin Copik, Grzegorz Kwa´ sniewski, Jürgen Müller, Łukasz Flis, Hannes Eberhard, Zixuan Chen, Hubert Niewiadomski, and Torsten Hoefler. Reasoning Language Models: ABlueprint, June 2025. [45] Nikunj Saunshi, Nishanth Dikkala, Zhiyuan Li, Sanjiv Kumar, and Sashank J. Reddi. Reasoning with latent thoughts: On the power of looped transformers. In 
+
+The Thirteenth International Conference on Learning Representations , 2025. URL https://openreview .net/forum?id=din0lGfZFd .[46] Shibo Hao, Sainbayar Sukhbaatar, DiJia Su, Xian Li, Zhiting Hu, Jason E Weston, and Yuandong Tian. Training large language models to reason in a continu-ous latent space. In Second Conference on Language Modeling , 2025. URL https://openreview.net /forum?id=Itxz7S4Ip3 .[47] Xinghao Chen, Anhao Zhao, Heming Xia, Xuan Lu, Hanlin Wang, Yanjun Chen, Wei Zhang, Jian Wang, Wenjie Li, and Xiaoyu Shen. Reasoning beyond lan-guage: A comprehensive survey on latent chain-of-thought reasoning, 2025. URL https://arxiv.or g/abs/2505.16782 .[48] Walter Laurito, Benjamin Davis, Peli Grietzer, Tomáš Gavenˇ ciak, Ada Böhm, and Jan Kulveit. Ai–ai bias: Large language models favor communications gener-ated by large language models. Proceedings of the National Academy of Sciences , 122(31):e2415697122, 2025. doi:10.1073/pnas.2415697122. URL https: //www.pnas.org/doi/abs/10.1073/pnas.2415 697122 .[49] R Alexander Knipper, Charles S Knipper, Kaiqi Zhang, Valerie Sims, Clint Bowers, and Santu Karmaker. The bias is in the details: An assessment of cognitive bias in llms. arXiv preprint arXiv:2509.22856 , 2025. [50] Xinyi Wu, Yifei Wang, Stefanie Jegelka, and Ali Jadbabaie. On the emergence of position bias in transformers. In Forty-second International Confer-ence on Machine Learning , 2025. URL https: //openreview.net/forum?id=YufVk7I6Ii .[51] K. J. Åström. Optimal control of markov processes with incomplete state information. 
+
+Journal of Mathematical Analysis and Applica-tions , 10(1):174–205, 1965. ISSN 0022-247X. doi:https://doi.org/10.1016/0022-247X(65)90154-X. URL https://www.sciencedirect.com/scienc e/article/pii/0022247X6590154X .[52] Edward J. Sondik. The optimal control of partially observable markov processes over the infinite horizon: Discounted costs. Operations Research , 26(2):282– 304, 1978. ISSN 0030364X, 15265463. URL http: //www.jstor.org/stable/169635 .[53] David C Knill and Alexandre Pouget. The bayesian brain: the role of uncertainty in neural coding and com-putation. Trends Neurosci , 27(12):712–719, December 2004. [54] Chris L Baker, Rebecca Saxe, and Joshua B Tenen-baum. Action understanding as inverse planning. Cog-nition , 113(3):329–349, September 2009. [55] T L Griffiths, N Chater, and J B Tenenbaum. Bayesian Models of Cognition: Reverse Engineering the Mind .MIT Press, 2024. [56] Sohaib Imran, Ihor Kendiukhov, Matthew Broerman, Aditya Thomas, Riccardo Campanella, Rob Lamb, and Peter M. Atkinson. Are LLM belief updates consistent with bayes’ theorem? In ICML 2025 Workshop on Assessing World Models , 2025. URL https://open review.net/forum?id=Bki9T98mfr .[57] Kenneth Li, Oam Patel, Fernanda Viégas, Hanspeter Pfister, and Martin Wattenberg. Inference-time in-tervention: Eliciting truthful answers from a lan-guage model. In A. Oh, T. Naumann, A. Globerson, K. Saenko, M. Hardt, and S. Levine, editors, Advances in Neural Information Processing Systems , volume 36, pages 41451–41530. Curran Associates, Inc., 2023. URL https://proceedings.neurips.cc/paper _files/paper/2023/file/81b8390039b7302c9 09cb769f8b6cd93-Paper-Conference.pdf .[58] Samuel Marks and Max Tegmark. The geometry of truth: Emergent linear structure in large language model representations of true/false datasets. In First Conference on Language Modeling , 2024. URL http s://openreview.net/forum?id=aajyHYjjsk .[59] Amrita Bhattacharjee, Shaona Ghosh, Traian Rebe-dea, and Christopher Parisien. Towards inference-time category-wise safety steering for large language mod-els. In Neurips Safe Generative AI Workshop 2024 ,2024. URL https://openreview.net/forum?i d=EkQRNLPFcn .[60] Victor Batenburg, Gijs Wijnholds, and Olga Gady-atskaya. Steering llms towards safer shores. In Chuti-porn Anutariya, Marcello Bonsangue, Amalka Pini-diyaarachchi, and Hakim Usoof, editors, Data Science and Artificial Intelligence , pages 45–59, Singapore, 2026. Springer Nature Singapore. ISBN 978-981-95-4409-7. 14 Why Do LLMs Struggle in Strategic Play? Broken Links Between Observations, Beliefs, and Actions [61] Shauli Ravfogel, Gilad Yehudai, Tal Linzen, Joan Bruna, and Alberto Bietti. Emergence of linear truth encodings in language models. In Mechanistic Inter-pretability Workshop at NeurIPS 2025 , 2025. URL ht tps://openreview.net/forum?id=KDK99BgmPe .[62] Nina Rimsky. Reducing sycophancy and improving honesty via activation steering, 2023. URL https: //www.lesswrong.com/posts/zt6hRsDE84HeBK h7E . LessWrong post. [63] Alexander Matt Turner, Lisa Thiergart, Gavin Leech, David Udell, Juan J Vazquez, Ulisse Mini, and Monte MacDiarmid. Steering language models with activa-tion engineering. arXiv preprint arXiv:2308.10248 ,2023. [64] Alex Troy Mallen, Madeline Brumley, Julia Kharchenko, and Nora Belrose. Eliciting latent knowl-edge from ”quirky” language models. In First Con-ference on Language Modeling , 2024. URL https: //openreview.net/forum?id=nGCMLATBit .[65] Ziqian Bi, Keyu Chen, Chiung-Yi Tseng, Danyang Zhang, Tianyang Wang, Hongying Luo, Lu Chen, Jun-ming Huang, Jibin Guan, Junfeng Hao, Xinyuan Song, and Junhao Song. Is gpt-oss good? a comprehensive evaluation of openai’s latest open source models, 2025. URL https://arxiv.org/abs/2508.12461 .[66] Diederik P. Kingma and Jimmy Ba. Adam: A method for stochastic optimization. In International Confer-ence on Learning Representations , 2015. [67] Chenglei Si, Zhe Gan, Zhengyuan Yang, Shuohang Wang, Jianfeng Wang, Jordan Lee Boyd-Graber, and Lijuan Wang. Prompting GPT-3 to be reliable. In 
+
+The Eleventh International Conference on Learning Representations , 2023. URL https://openreview .net/forum?id=98p5x51L5af .[68] Fabio Petroni, Tim Rocktäschel, Sebastian Riedel, Patrick Lewis, Anton Bakhtin, Yuxiang Wu, and Alexander Miller. Language models as knowledge bases? In Kentaro Inui, Jing Jiang, Vincent Ng, and Xiaojun Wan, editors, Proceedings of the 2019 Conference on Empirical Methods in Natural Lan-guage Processing and the 9th International Joint Con-ference on Natural Language Processing (EMNLP-IJCNLP) , pages 2463–2473, Hong Kong, China, November 2019. Association for Computational Lin-guistics. doi:10.18653/v1/D19-1250. URL https: //aclanthology.org/D19-1250/ .[69] Hao Peng, Xiaozhi Wang, Shengding Hu, Hailong Jin, Lei Hou, Juanzi Li, Zhiyuan Liu, and Qun Liu. COPEN: Probing conceptual knowledge in pre-trained language models. In Yoav Goldberg, Zor-nitsa Kozareva, and Yue Zhang, editors, Proceed-ings of the 2022 Conference on Empirical Meth-ods in Natural Language Processing , pages 5015– 5035, Abu Dhabi, United Arab Emirates, Decem-ber 2022. Association for Computational Linguistics. doi:10.18653/v1/2022.emnlp-main.335. URL https: //aclanthology.org/2022.emnlp-main.335/ .[70] Jerry Wang and Ting Yu Liu. Observer, not player: Simulating theory of mind in large language models through game observation. In First Workshop on Foun-dations of Reasoning in Language Models , 2025. URL 
+
+https://openreview.net/forum?id=GYi2Voim 9O .[71] Joseph Suh, Erfan Jahanparast, Suhong Moon, Min-woo Kang, and Serina Chang. Language model fine-tuning on scaled survey data for predicting distribu-tions of public opinions. In Wanxiang Che, Joyce Nabende, Ekaterina Shutova, and Mohammad Taher Pilehvar, editors, Proceedings of the 63rd Annual Meeting of the Association for Computational Linguis-tics (Volume 1: Long Papers) , pages 21147–21170, Vienna, Austria, July 2025. Association for Com-putational Linguistics. ISBN 979-8-89176-251-0. doi:10.18653/v1/2025.acl-long.1028. URL https: //aclanthology.org/2025.acl-long.1028/ .15 Why Do LLMs Struggle in Strategic Play? Broken Links Between Observations, Beliefs, and Actions 
+
+A Appendix 
+
+A.1 Experimental Design Interaction with LLMs. We used instruction-tuned vari-ants of Qwen3 32B ( Qwen/Qwen3-32B-AWQ , quantized), Llama 3.1 70B ( hugging-quants/Meta-Llama-3.1-7 0B-Instruct-AWQ-INT4 , quantized), and gpt-oss 20B (openai/gpt-oss-20b ) from HuggingFace. The selec-tion of these models was based on computational constraints, their established popularity and performance [ 23 , 24 , 65 ], and the observed inability of smaller models to adhere to game rules or formatting requirements. To ensure repro-ducibility and facilitate precise hidden-state analysis, all models generated their outputs with a temperature set to zero. 
+
+Belief formation. Experiments on belief formation used the following setup. For probing the opponent’s strategy in repeated normal-form games, we sampled payoff matrix en-tries from a uniform distribution U (0 , 10) and used two ran-dom samples from the Dirichlet distribution ( α = (1 .0, 1.0) )as the policies (probability distribution over actions) of the LLM’s rollout and the opponent. We then simulated play between the rollout and opponent policies for T ∼ U (0 , 30) 
+
+rounds. We recorded the LLM’s internal representations while it generated the action letter (“A” or “B”) for the subsequent round. For Nash equilibrium inference, we set 
+
+T = 0 and constructed zero-sum payoff matrices by sam-pling one player’s payoffs from U (0 , 10) and setting the opponent’s to the negative. This T = 0 constraint ensured that inference relied solely on the game structure (payoff ma-trices) rather than an empirical estimate of the equilibrium strategies from the action history. In trials of Generalized Kuhn Poker, we let three LLMs play against each other for three betting rounds. Private cards were sampled uniformly from a deck of 20 cards. Initial stacks were set to 100, with allowed bet sizes of [1, 3, 5, 10, 15, 20, 50] chips. The prompt used for all LLMs is given in Figure 13. For probing the secret word and chameleon identity in the Chameleon game, we collected game trials of four LLMs playing against each other. We use the original categories and secret words from The Chameleon [ 22 ], combined with additional categories and secret words generated by prompt-ing GPT-4o ( gpt-4o-2024-08-06 ). In total, there are 20 original and 54 LLM-generated categories, where each cate-gory has 16 potential secret words. The prompt for asking GPT-4o to generate new categories and possible secret words is shown in Figure 14, and the prompts used for trials of The Chameleon game itself are displayed in Figures 15, 16, and 17. 
+
+A.2 Probing Internal probes. For inferring target latent variables ( e.g. ,the opponent’s strategy), we parametrize internal probes as linear models fθ : Rd → Rz , f θ (h) = Wh + b where 
+
+θ = {W ∈ Rz,d , b ∈ Rz } are the internal probe’s parame-ters, d is the dimension of the LLM’s internal representations 
+
+h ∈ Rd and z is the dimension of the latent variable to infer (e.g. , z = 2 for opponent’s strategy). Since the opponent’s strategy and the two mixed strategies in the Nash equilib-rium are probability distributions, we apply softmax at the outputs of the corresponding internal probes. Similarly, we apply softmax when predicting probability distribution over discrete target latent variables ( e.g. , opponent’s secret card). We train all internal probes to minimize the cross-entropy loss using the Adam optimizer [ 66 ]. We use weight decay to regularize the optimization problem. For repeated normal-form games, we collect 4,000 independent game trials and split them into training (65%), validation (15%), and test sets (20%). We perform the same 65/15/20 split for 2,000 independent game trials of the Generalized Kuhn Poker and all categories and secret words in The Chameleon (73 cards with 16 secret words each, for a total of 1,168 trials). Validation sets are used to search for the best hy-perparameters for training the internal probes. The hyper-parameter search space and selected values are provided in Table 1. 
+
+Verbal probes. Verbal probes used the same data for eval-uation as the internal probes. However, verbal probes did not involve any additional training or hyperparameter search. Instead, we prompted the LLM with the original game con-text suffixed with a question about the latent variable. For classification tasks, we used the normalized (log) probabil-ities assigned by the LLM to tokens corresponding to the possible target values ( e.g. , numbers 1 to 20 for the oppo-nent’s secret card) [ 67 , 68 , 69 , 56 ]. For tasks of inferring probability distributions ( e.g. , the opponent’s strategy), we asked the LLM to output the full distribution in JSON for-mat, similar to prior studies [ 70 , 71 ]. Prompts are provided in Figures 16, 21, 22, and 23. We did not observe any failures in parsing LLM outputs, as we caught corner cases in the initial stages of the study. In particular, when probing probability distributions in re-peated normal-form games, models sometimes output proba-bilities in fractional form ( e.g. , {"A": 4/6, "B": 2/6} ). 16 Why Do LLMs Struggle in Strategic Play? Broken Links Between Observations, Beliefs, and Actions Table 1: Hyperparameter search space for internal probes, with final selected values underlined. 
+
+Target variable Learning rate Weight decay Num. of epochs Batch size Layer number Repeated normal-form games 
+
+OPPONENT ’S STRATEGY (L LAMA 3.1 70B) {1e-3, 1e-4, 1e-5 } {0, 1e-3, 1e-5 } {20, 50, 100, 200, 400, 600 } {32 , 128 } {10 , 20, 30, 40, 50, 60 }
+
+OPPONENT ’S STRATEGY (Q WEN 3 32B) {1e-3, 1e-4, 1e-5 } {0, 1e-3, 1e-5 } {20, 50, 100, 200, 400, 600 } {32 , 128 } {10 , 20, 30, 40, 50, 60 }
+
+OPPONENT ’S STRATEGY (GPT -OSS 20B) {1e-3, 1e-4, 1e-5 } {0, 1e-3 , 1e-5 } {20, 50, 100, 200, 400, 600 } {32 , 128 } {5, 10, 15, 20 }
+
+NASH EQUILIBRIUM (L LAMA 3.1 70B) {1e-3, 1e-4 , 1e-5 } {0, 1e-3 , 1e-5 } {20, 50, 100, 200, 400 , 600 } {32, 128 } {10, 20, 30, 40 , 50, 60 }
+
+NASH EQUILIBRIUM (Q WEN 3 32B) {1e-3, 1e-4, 1e-5 } {0, 1e-3 , 1e-5 } {20, 50, 100, 200, 400, 600 } {32, 128 } {10, 20, 30, 40, 50 , 60 }
+
+NASH EQUILIBRIUM (GPT -OSS 20B) {1e-3, 1e-4, 1e-5 } {0, 1e-3 , 1e-5 } {20, 50, 100, 200, 400, 600 } {32 , 128 } {5, 10, 15, 20 }
+
+OPP . TYPE BY STRATEGY (L LAMA 3.1 70B) {1e-3, 1e-4, 1e-5 } {0, 1e-3, 1e-5 } {20, 50, 100, 200, 400, 600 } {32 , 128 } {10, 20, 30, 40, 50, 60 }
+
+OPP . TYPE BY STRATEGY (Q WEN 3 32B) {1e-3 , 1e-4, 1e-5 } {0, 1e-3, 1e-5 } {20, 50, 100, 200, 400 , 600 } {32 , 128 } {10, 20, 30, 40, 50 , 60 }
+
+OPP . TYPE BY STRATEGY (GPT -OSS 20B) {1e-3 , 1e-4, 1e-5 } {0, 1e-3 , 1e-5 } {20, 50, 100, 200, 400 , 600 } {32 , 128 } {5, 10, 15, 20 }
+
+OPP . TYPE BY STRATEGY AND ROUND (L LAMA 3.1 70B) {1e-3 , 1e-4, 1e-5 } {0, 1e-3, 1e-5 } {20, 50, 100, 200, 400 , 600 } {32 , 128 } {10, 20, 30 , 40, 50, 60 }
+
+OPP . TYPE BY STRATEGY AND ROUND (Q WEN 3 32B) {1e-3, 1e-4, 1e-5 } {0, 1e-3, 1e-5 } {20, 50, 100 , 200, 400, 600 } {32 , 128 } {10, 20, 30, 40, 50 , 60 }
+
+OPP . TYPE BY STRATEGY AND ROUND (GPT -OSS 20B) {1e-3, 1e-4 , 1e-5 } {0, 1e-3, 1e-5 } {20, 50, 100, 200 , 400, 600 } {32 , 128 } {5, 10, 15, 20 }
+
+OPP . TYPE BY PAYOFFS (L LAMA 3.1 70B) {1e-3 , 1e-4, 1e-5 } {0, 1e-3, 1e-5 } {20, 50, 100, 200 , 400, 600 } {32 , 128 } {10, 20, 30, 40 , 50, 60 }
+
+OPP . TYPE BY PAYOFFS (Q WEN 3 32B) {1e-3 , 1e-4, 1e-5 } {0, 1e-3, 1e-5 } {20, 50, 100, 200 , 400, 600 } {32 , 128 } {10, 20, 30, 40, 50 , 60 }
+
+OPP . TYPE BY PAYOFFS (GPT -OSS 20B) {1e-3, 1e-4, 1e-5 } {0, 1e-3, 1e-5 } {20, 50 , 100, 200, 400, 600 } {32, 128 } {5, 10, 15, 20 }
+
+Generalized Kuhn Poker 
+
+OPPONENT ’S SECRET CARD (L LAMA 3.1 70B) {1e-3 , 1e-4, 1e-5 } {0, 1e-3, 1e-5 } {20, 50, 100, 200 , 400 } {32 , 128 } {10, 20 , 30, 40, 50, 60 }
+
+OPPONENT ’S SECRET CARD (Q WEN 3 32B) {1e-3 , 1e-4, 1e-5 } {0, 1e-3, 1e-5 } {20, 50, 100, 200, 400 } {32, 128 } {10, 20, 30, 40, 50, 60 }
+
+OPPONENT ’S SECRET CARD (GPT -OSS 20B) {1e-3, 1e-4, 1e-5 } {0, 1e-3, 1e-5 } {20, 50, 100, 200, 400 } {32, 128 } {5, 10, 15 , 20 }
+
+The Chameleon 
+
+SECRET WORD (L LAMA 3.1 70B) N/A N/A N/A N/A {10, 20, 30, 40, 50, 60 }
+
+SECRET WORD (Q WEN 3 32B) N/A N/A N/A N/A {10, 20, 30, 40 , 50, 60 }
+
+SECRET WORD (GPT -OSS 20B) N/A N/A N/A N/A {5, 10, 15, 20 }
+
+CHAMELEON IDENTITY (L LAMA 3.1 70B) {1e-3 , 1e-4, 1e-5 } {0, 1e-3, 1e-5 } {20, 50, 100, 200, 400 , 600 } {32 , 128 } {10, 20, 30, 40 , 50, 60 }
+
+CHAMELEON IDENTITY (Q WEN 3 32B) {1e-3, 1e-4 , 1e-5 } {0, 1e-3 , 1e-5 } {20, 50, 100, 200, 400 , 600 } {32 , 128 } {10, 20, 30, 40, 50, 60 }
+
+CHAMELEON IDENTITY (GPT -OSS 20B) {1e-3, 1e-4 , 1e-5 } {0, 1e-3, 1e-5 } {20, 50, 100, 200 , 400 } {32 , 128 } {5, 10, 15 , 20 }
+
+A.3 Bayesian Coherence Coefficient (BCC) 
+
+For evaluating whether the LLM belief updates are inter-nally consistent with the Bayes’ rule, we use the Bayesian Coherence Coefficient (BCC) [ 56 ], extending it to both (i) verbal beliefs and (ii) internal beliefs. 
+
+Generic derivation. Consider an interaction indexed by 
+
+t = 1 , . . . , T . Let Z denote a latent variable of interest ( e.g. ,opponent’s type, opponent’s secret card), let Ot be the newly observed evidence at step t (e.g. , an opponent action, a bet, or a clue word), and let ht−1 denote the interaction history prior to observing Ot = ot. Let the agent’s belief at time t
+
+be 
+
+bt(z) := P (Z = z | ht), ht := ( ht−1, o t). (4) Bayes’ rule gives 
+
+P (z | ot, h t−1) = P (ot | z, h t−1) P (z | ht−1)
+
+P (ot | ht−1) , (5) where we use P (z) as a shorthand for P (Z = z).To express belief updates, we consider log-odds ratios between two hypotheses z and z′. From (5), 
+
+P (z | ot, h t−1)
+
+P (z′ | ot, h t−1) = P (ot | z, h t−1)
+
+P (ot | z′, h t−1) · P (z | ht−1)
+
+P (z′ | ht−1) , (6) 
+
+log P (z | ot, h t−1)
+
+P (z′ | ot, h t−1) − log P (z | ht−1)
+
+P (z′ | ht−1)
+
+| {z }
+
+Bayes log-odds update 
+
+= log P (ot | z, h t−1)
+
+P (ot | z′, h t−1) .
+
+(7) Thus, under Bayes-optimal updating, the log-odds up-date equals the log-likelihood ratio (LLR): 
+
+∆t(z, z ′)
+
+| {z }
+
+Bayes log-odds update 
+
+= Λ t(z, z ′)
+
+| {z }
+
+LLR 
+
+, where (8) 
+
+∆t(z, z ′) := log bt(z)
+
+bt(z′) − log bt−1(z)
+
+bt−1(z′) (9) 
+
+Λt(z, z ′) := log P (ot | z, h t−1)
+
+P (ot | z′, h t−1) . (10) 
+
+Observed vs. expected (Bayes-predicted) updates. In our experiments, we obtain a belief distribution ˆbt either from (i) a verbal probe (LLM-produced distribution) or (ii) an internal probe (softmax of a linear model). We then compute the observed update 
+
+b∆t(z, z ′) := log ˆbt(z)ˆbt(z′) − log ˆbt−1(z)ˆbt−1(z′) . (11) To compute the corresponding expected (Bayes-predicted) updates Λt(z, z ′), we require a likelihood model P (ot |
+
+z, h t−1), which is specified separately for each game below. Notice that BCC is a self-consistency measure: it eval-uates whether the agent’s realized belief changes b∆t track the Bayes-optimal changes implied by the same evidence under the likelihood model. 
+
+Definition of BCC. For discrete latent variables, we eval-uate updates for randomly sampled pairs Z = {(z, z ′) ∈
+
+dom( Z)×dom( Z)} and form vectors b∆t ∈ R|Z| and Λt ∈
+
+R|Z| by stacking b∆t(z, z ′) and Λt(z, z ′) over (z, z ′) ∈ Z 
+
+17 Why Do LLMs Struggle in Strategic Play? Broken Links Between Observations, Beliefs, and Actions obtained from all collected game trials. Then, we report 
+
+BCC t := ρ
+
+
+
+vec  { b∆t}, vec  {Λt}
+
+, (12) where ρ(·, ·) is the Pearson correlation coefficient and vec( ·)
+
+denotes concatenation over trials. We compute BCC sepa-rately for each timestep t (e.g. , individual rounds in repeated normal-form games) and for internal and verbal beliefs. 
+
+Likelihood model for repeated normal-form games. In this setting, the latent variable is the opponent’s (hidden) type: 
+
+Z ∈ dom( Z) := {1, 2}. (13) Each type z ∈ dom( Z) is associated with a known memo-ryless stochastic policy πz (·) over actions {A, B }.The observation at time t is the opponent’s action 
+
+ot = at ∈ { A, B }, (14) and the history ht−1 contains all previous actions and any publicly revealed side information. Because the opponent is memoryless conditional on its type, the likelihood term in (10) becomes 
+
+P (ot | z, h t−1) = P (at | z, h t−1) = πz (at) . (15) The Bayes-predicted log-likelihood ratio between the two candidate types z and z′ is therefore 
+
+Λt(z, z ′) = log πz (at)
+
+πz′ (at) . (16) We correlate these Bayes-predicted updates with the ob-served log-odds updates computed from the model’s beliefs 
+
+ˆbt(z) via (11) to obtain BCC. 
+
+Likelihood model for Generalized Kuhn Poker. In this setting, the latent variable is the opponent’s private card: 
+
+Z ∈ dom( Z) := {1, . . . , D }. (17) Each value z ∈ dom( Z) corresponds to a possible card rank dealt to the opponent at the beginning of the hand. The observation at time t is the opponent’s publicly visible action 
+
+ot = at ∈ A (st), (18) where A(st) denotes the set of legally available actions ( e.g. ,call, fold) in the current game state st. The history ht−1
+
+contains all previous actions and public game information. For the likelihood term in (10) , we use the opponent LLM’s own action probabilities. Specifically, for each can-didate private card z, we condition the opponent LLM on the public history ht−1 together with the counterfactual assignment that its private card equals z, and extract the model’s probability distribution PLLM (· | z, h t−1) over the next possible actions. The Bayes-predicted log-likelihood ratio between two candidate card values z and z′ is therefore 
+
+Λt(z, z ′) = log PLLM (ot | z, h t−1)
+
+PLLM (ot | z′, h t−1) . (19) 
+
+Likelihood model for The Chameleon. In this setting, the latent variable is the hidden identity of the chameleon: 
+
+Z ∈ dom( Z) := {1, . . . , N }, (20) where each value z ∈ dom( Z) corresponds to the hypothe-sis that player z is the chameleon. The observation at time t is the publicly visible clue word produced by the current speaker: 
+
+ot = wt ∈ V , (21) where V denotes the set of possible clue words, and the history ht−1 contains all previously generated clues together with the public game information (category and candidate secret words). For the likelihood term in (10) , we again use the LLM’s own word probabilities. Specifically, for each candidate chameleon identity z, we condition the speaking LLM on the public history ht−1 together with the counterfactual assignment that Z = z (i.e., that player z is the chameleon), and extract the model’s probability distribution PLLM (· | 
+
+z, h t−1) over the possible clue words. The Bayes-predicted log-likelihood ratio between two candidate chameleon identities z and z′ is therefore 
+
+Λt(z, z ′) = log PLLM (ot | z, h t−1)
+
+PLLM (ot | z′, h t−1) . (22) 18 Why Do LLMs Struggle in Strategic Play? Broken Links Between Observations, Beliefs, and Actions 
+
+Prompt: Generalized Kuhn Poker 
+
+You are an expert poker player playing Generalized Kuhn Poker. You must analyze the situation and decide on your next action. **Game Rules:** * The game has 3 players, and the deck consists of 20 cards, numbered 1 to 20. * All players start with a stack of 100 chips. * Each player is dealt one secret card. The player with the highest card at the end wins the pot. * The game proceeds in up to 3 rounds of betting. * The actions are “check” or “bet”. If a player bets, subsequent players can “fold” or “call”. * Allowed bet sizes are [1, 3, 5, 10, 15, 20, 50] chips, and players cannot bet more than their remaining stack. **Current Situation:** It is your turn to act as Player 1. Your stack is 85 chips. **Your Card (Secret):** * 4 **Action History (in order of play):** Round 1: * Player 0: bet 15 * Player 1: call * Player 2: call Round 2: * Player 0: check * Player 1: bet 5 * Player 2: fold * Player 0: call Round 3: * Player 0: check **Question:** Based on the rules and the history, what is your next action? Your legal actions are: check, bet. Choose one action. If you bet, specify the amount. Respond with a single line with the chosen action and, if you bet, the amount. Do not say anything else. The format is: chosen_action amount_if_bet **Response:** 
+
+Figure 13: Prompt used for asking LLMs for their next action in Generalized Kuhn Poker. 
+
+Prompt: Generating new categories and secret words for The Chameleon game 
+
+We are playing the game Chameleon but do not have enough game cards (categories and possible secret words). Please suggest 
+
+<NUM-OF-NEW-CARDS> new categories and associated 16 secret words for the game. Here are the existing categories and secret words: 
+
+<EXISTING-CATEGORIES-AND-SECRET-WORDS> 
+
+Please provide the <NUM-OF-NEW-CARDS> new categories and secret words in a JSON format, where each category is a key and the value is a list of secret words. Do not say anything else, just return the JSON. 
+
+Figure 14: Prompt used for asking GPT-4o for new categories and secret words for The Chameleon game. 19 Why Do LLMs Struggle in Strategic Play? Broken Links Between Observations, Beliefs, and Actions 
+
+Prompt: The Chameleon 
+
+Game: You will play a game of Chameleon with 3 other players. The aim in this game is to unmask the Chameleon without giving away the secret word. If you are the Chameleon, your mission is to blend in with the other players, avoid detection, and work out the secret word. One of the players will be randomly selected as the Chameleon. The Chameleon will know its identity but not the secret word. The other players will know the secret word but will not know who the Chameleon is. Each player (including the Chameleon) takes it in turns to say one word related to the secret word. Take a few moments to think of your word. If another player says the word you were going to say, you can repeat it. Choose wisely! If your word is too obvious, the Chameleon might catch on and figure out the secret word. If it’s too cryptic, people might start to think that you’re the Chameleon. After all players have said their word, you will vote for who you think the Chameleon is. The player with the most votes will be revealed as the Chameleon. If the Chameleon is correctly revealed, the Chameleon has one last chance to guess the secret word. If the Chameleon guesses correctly, the Chameleon wins. If not, the other players win. If the Chameleon is not correctly revealed, the Chameleon wins. The other players lose. Just say yes or no to confirm that you understand the rules of the game. Do not say anything else than yes or no. 
+
+Player: Yes 
+
+Game: The category for this game is Historical Periods. The possible secret words are elizabethan era, bronze age, renaissance, roman empire, industrial revolution, baroque period, iron age, ancient egypt, cold war, age of enlightenment, byzantine era, great depression, roaring twenties, stone age, victorian era, middle ages. Just say yes or no to confirm that you understand the category and possible secret words. Do not say anything else. 
+
+Player: Yes 
+
+Game: Let’s start the game. You are player number 3 in the running order. Wait for the identities to be chosen. Just say your player number to confirm that you understood your running order. Do not say anything else other than the number. 
+
+Player: 3
+
+Figure 15: Base conversation history used in the gameplay of LLM players in the Chameleon game. “Game:” and “Player:” prefixes user prompts and LLM player’s responses, respectively. 
+
+Prompt: The Chameleon – Non-chameleon player 
+
+Game: You are not the Chameleon. The secret word is: industrial revolution. Wait for your turn to say your word. To confirm that you understand your identity, say yes if you are the Chameleon. Say no if you are not the Chameleon. Do not say anything else. 
+
+Player: No 
+
+Game: Here are what the previous players said. Player 1 said Factory. Player 2 said Innovation. Player 3 said Steam. Player 4 said Coal. 
+
+(Game:) Based on what the other players have said so far, who do you think the Chameleon is? Only give the player number. Do not say anything else. 
+
+(Player:) 2
+
+Figure 16: Continuation of the base conversation history used in the gameplay of non-chameleon LLM players in the Chameleon game. “Game:” and “Player:” prefix user prompts and LLM player’s responses, respectively. The final messages prefixed with “(Game:)” and “(Player:)” are used only for verbal probing. 
+
+Prompt: The Chameleon – Chameleon player 
+
+Game: You are the Chameleon. Wait for your turn to say your word. To confirm that you understand your identity, say yes if you are the Chameleon. Say no if you are not the Chameleon. Do not say anything else. 
+
+Player: Yes 
+
+Game: Here are what the previous players said. Player 1 said Factory. Player 2 said Steam. It is now your turn to say your word. If your word is too obvious, the Chameleon might catch on and figure out the secret word. If it’s too cryptic, people might start to think that you’re the Chameleon. Make sure that your response is a single word. What is your word? 
+
+Player: Textiles 
+
+Figure 17: Continuation of the base conversation history used in the gameplay of the chameleon LLM player in the Chameleon game. “Game:” and “Player:” prefix user prompts and LLM player’s responses, respectively. 20 Why Do LLMs Struggle in Strategic Play? Broken Links Between Observations, Beliefs, and Actions 
+
+Prompt: Repeated normal-form games with opponent types by strategy 
+
+You are playing a game repeatedly with 1 other player, Player 1. There are 2 possible actions in each round (action A, action B). Players make their actions simultaneously, and the outcome is determined by their actions in the given round. All the players, including you, want to maximize their payoff (number of points). Here is the history of the game so far: Round 1: You played action B, and Player 1 played action B. Round 2: You played action A, and Player 1 played action A. . . . Round 8: You played action A, and Player 1 played action A. Note that Player 1 is one of two types, which determines their strategy and the payoffs of the game. In case they are of the first type, they play action A with probability 0.28 and action B with probability 0.72. In case they are of the second type, they play action A with probability 0.63 and action B with probability 0.37. However, you do not know which type they are. Given the history and the rules of the game, please provide your action for the next round. Respond with a single line that contains only the letter of your chosen action, do not say anything else. 
+
+Figure 18: Prompt used in repeated normal-form games for specifying the possible opponent’s types by strategy. 
+
+Prompt: Repeated normal-form games with opponent types by strategy and round type 
+
+You are playing a game repeatedly with 1 other player, Player 1. There are 2 possible actions in each round (action A, action B). Players make their actions simultaneously, and the outcome is determined by their actions in the given round. All the players, including you, want to maximize their payoff (number of points). Here is the history of the game so far: Round 1 (red): You played action B, and Player 1 played action B. Round 2 (blue): You played action A, and Player 1 played action A. . . . Round 8 (blue): You played action A, and Player 1 played action A. Note that Player 1 is one of two types, which determines their strategy and the payoffs of the game. In case they are of the first type, they play action A with probability 0.5 in blue rounds and 0.82 in red rounds, and action B with probability 0.5 in blue rounds and 0.18 in red rounds. In case they are of the second type, they play action A with probability 0.8 in blue rounds and 0.05 in red rounds, and action B with probability 0.2 in blue rounds and 0.95 in red rounds. However, you do not know which type they are. Given the history and the rules of the game, please provide your action for the next round. The next round will be red. Respond with a single line that contains only the letter of your chosen action, do not say anything else. 
+
+Figure 19: Prompt used in repeated normal-form games for specifying the possible opponent’s types by strategy and round type. 21 Why Do LLMs Struggle in Strategic Play? Broken Links Between Observations, Beliefs, and Actions 
+
+Prompt: Repeated normal-form games with opponent types by payoff matrix 
+
+You are playing a game repeatedly with 1 other player, Player 1. There are 2 possible actions in each round (action A, action B). Players make their actions simultaneously, and the outcome is determined by their actions in the given round. All the players, including you, want to maximize their payoff (number of points). Note that Player 1 is one of two types, which determines their strategy and the payoffs of the game. You do not know which type they are. If they are of the first type, the payoffs are as follows: If you play action A and the other player plays action A, you get 3.7 points and they get -3.7 points. If you play action A and the other player plays action B, you get 9.1 points and they get -9.1 points. If you play action B and the other player plays action A, you get 8.5 points and they get -8.5 points. If you play action B and the other player plays action B, you get 4.2 points and they get -4.2 points. If they are of the second type, the payoffs are as follows: If you play action A and the other player plays action A, you get 5.0 points and they get -5.0 points. If you play action A and the other player plays action B, you get 8.8 points and they get -8.8 points. If you play action B and the other player plays action A, you get 8.6 points and they get -8.6 points. If you play action B and the other player plays action B, you get 0.4 points and they get -0.4 points. Given the history and the rules of the game, please provide your action for the next round. Respond with a single line that contains only the letter of your chosen action, do not say anything else. 
+
+Figure 20: Prompt used in repeated normal-form games for specifying the possible opponent’s types by payoff matrix. 
+
+Verbal probe prompt: Opponent’s strategy 
+
+You are playing a game repeatedly with 1 other player, Player 1. There are 2 possible actions in each round (action A, action B). Players make their actions simultaneously, and the outcome is determined by their actions in the given round. All the players, including you, want to maximize their payoff (number of points). Players may adapt their strategies as they play more rounds. Here are the rules of the game: If you play action A and the other player plays action A, you get 4.2 points and they get 6.5 points. If you play action A and the other player plays action B, you get 4.4 points and they get 8.9 points. If you play action B and the other player plays action A, you get 9.6 points and they get 3.8 points. If you play action B and the other player plays action B, you get 7.9 points and they get 5.3 points. Here is the history of the game so far: Round 1: You played action B, and Player 1 played action B. Your payoff for this round was 7.9 points. Round 2: You played action A, and Player 1 played action A. Your payoff for this round was 4.2 points. . . . Round 27: You played action A, and Player 1 played action A. Your payoff for this round was 4.2 points. Based on the history so far, what is the most likely policy (probability distribution over actions) of Player 1? Respond with a single line that contains only the Player 1’s policy in JSON format, do not say anything else. The format is: 
+
+{"<action-letter>": <probability>, ...} 
+
+Figure 21: Prompt used for verbal probes of opponent’s strategy in repeated normal-form games. 22 Why Do LLMs Struggle in Strategic Play? Broken Links Between Observations, Beliefs, and Actions 
+
+Verbal probe prompt: Opponent’s private card 
+
+You are an expert poker player playing Generalized Kuhn Poker. You must analyze the situation and decide on your next action. **Game Rules:** * The game has 3 players, and the deck consists of 20 cards, numbered 1 to 20. * All players start with a stack of 100 chips. * Each player is dealt one secret card. The player with the highest card at the end wins the pot. * The game proceeds in up to 3 rounds of betting. * The actions are “check” or “bet”. If a player bets, subsequent players can “fold” or “call”. * Allowed bet sizes are [1, 3, 5, 10, 15, 20, 50] chips, and players cannot bet more than their remaining stack. **Current Situation:** It is your turn to act as Player 1. Your stack is 85 chips. **Your Card (Secret):** * 4 **Action History (in order of play):** Round 1: * Player 0: bet 15 * Player 1: call * Player 2: call Round 2: * Player 0: check * Player 1: bet 5 * Player 2: fold * Player 0: call Round 3: * Player 0: check **Question:** Based on the rules and the history, which card is the Player 0 most likely to have? Respond with a single line that contains only the Player 0 card (1, 2, ..., or 20), do not say anything else. **Response:** 
+
+Figure 22: Prompt used for verbal probes of opponent’s private card in Generalized Kuhn Poker. 
+
+Verbal probe prompt: Secret word 
+
+Game: You are the Chameleon. Wait for your turn to say your word. To confirm that you understand your identity, say yes if you are the Chameleon. Say no if you are not the Chameleon. Do not say anything else. 
+
+Player: Yes 
+
+Game: Here are what the players said: Player 1 said Factory. Player 2 said Steam. Based on what the other players have said so far and based on the possible secret words, what do you think the secret word is? Remember, all players except you know the secret word. Say the exact secret word that you believe they are concealing. Do not say anything else. 
+
+Player: industrial revolution 
+
+Figure 23: Continuation of the base conversation history used for verbal probes of the secret word in the Chameleon game. “Game:” and “Player:” prefix user prompts and LLM player’s responses, respectively. 23
