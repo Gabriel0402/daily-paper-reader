@@ -1,0 +1,1682 @@
+Title: NonZero: Interaction-Guided Exploration for Multi-Agent Monte Carlo Tree Search
+
+URL Source: https://arxiv.org/pdf/2605.00751v1
+
+Published Time: Mon, 04 May 2026 00:59:31 GMT
+
+Number of Pages: 21
+
+Markdown Content:
+# NonZero: Interaction-Guided Exploration for Multi-Agent Monte Carlo Tree Search 
+
+Sizhe Tang 1 Zuyuan Zhang 1 Mahdi Imani 2 Tian Lan 1
+
+## Abstract 
+
+Monte Carlo Tree Search (MCTS) scales poorly in cooperative multi-agent domains because expan-sion must consider an exponentially large set of joint actions, severely limiting exploration under realistic search budgets. We propose N ON ZERO ,which keeps multi-agent MCTS tractable by running surrogate-guided selection over a low-dimensional nonlinear representation using an interaction-guided proposal rule, instead of di-rectly exploring the full joint-action space. Our exploration uses an interaction score: single-agent deviations are ranked by predicted gain, while two-agent deviations are scored by a mixed-difference measure that reveals coordination ben-efits even when no single agent can improve alone. We formalize candidate proposal as a ban-dit problem over local deviations and derive a proposal rule, N ON UCT, with a sublinear local-regret guarantee for reaching approximate graph-local optima without enumerating the joint-action space. Empirically, N ON ZERO improves sample efficiency and final performance on MatGame, SMAC, and SMACv2 relative to strong model-based and model-free baselines under matched search budgets. 
+
+## 1. Introduction 
+
+Monte Carlo Tree Search (MCTS) is a widely used planning method, with successes in game playing (Sironi et al., 2018; Silver et al., 2017; Schrittwieser et al., 2020), robotics (Leisi-azar et al., 2023), and combinatorial optimization (Xiao et al., 2023). Its effectiveness in standard MCTS stems from Upper Confidence Bound for Trees (UCT) selection, which concentrates computation on promising parts of the search tree while still exploring uncertain actions through confidence bonuses (Kocsis & Szepesv ´ari, 2006). When combined with learned predictors, as in AlphaZero (Silver 
+
+> 1
+
+The George Washington University 2Northeastern University. Correspondence to: Sizhe Tang <s.tang1@gwu.edu >.
+
+Preprint. May 4, 2026. 
+
+et al., 2017) and MuZero (Schrittwieser et al., 2020), MCTS can be applied effectively in large state spaces by refining decisions online under a fixed simulation budget. Scaling MCTS to cooperative multi-agent planning is chal-lenging because action selection is combinatorial. With 
+
+n agents and d actions per agent, the joint-action set has size |A| = dn, so naive expansion induces an exponential branching factor and quickly exhausts practical simulation budgets (Lowe et al., 2017; Hernandez-Leal et al., 2019; Kwak et al., 2024; Liu et al., 2024). This bottleneck is es-pecially challenging when returns exhibit strong interaction effects, where high-value outcomes may require coordinated deviations that are unlikely to be found by uninformed sam-pling. Prior work alleviates this burden only partially by address-ing different aspects of the problem. MAZero (Liu et al., 2024) improves model learning and distributed planning components, but tree expansion still fundamentally depends on which joint actions are selected at each node. MAL-inZero (Tang et al., 2025) reduces joint-action search by exploiting linear return structure, enabling efficient explo-ration when improvements arise from independent single-agent changes; however, this assumption can miss coordi-nated improvements when returns are non-additive. Related value factorization approaches, such as VDN (Sunehag et al., 2017) and QMIX (Rashid et al., 2020b), similarly impose structural constraints on the joint value, but they are not designed to support the uncertainty-aware action expansion required by tree search. We propose N ON ZERO , a multi-agent MCTS framework that keeps search tractable without enumerating the |A| =
+
+dn joint-action space. At each node, N ON ZERO runs surrogate-guided selection over a low-dimensional nonlin-ear representation using an interaction-guided proposal rule. To drive candidate expansion, N ON ZERO fits a compact low-dimensional nonlinear predictor of joint-action returns and evaluates structured one- and two-agent deviations from the current candidates. Single-agent deviations are prioritized by predicted gain, while coordinated two-agent deviations are scored using a mixed-difference interaction measure that targets coordination benefits even when no single agent can improve alone (coordination traps), enabling targeted 1
+
+> arXiv:2605.00751v1 [cs.LG] 1 May 2026 NonZero: Nonlinear Search for Multi-Agent RL
+
+coordination search while keeping the per-node branching factor fixed. We formalize this candidate-expansion step as a nonlinear bandit problem over local deviations and derive N ON UCT, an optimistic proposal rule for allocating deviation queries during exploration. Under discrete smoothness assumptions on the return sur-rogate, we obtain a sublinear local-regret guarantee for reaching approximate graph-local optima with complex-ity that does not scale with |A| = dn. Empirically, in-tegrating N ON ZERO into MuZero-style planning yields consistent gains in both sample efficiency and final perfor-mance on MatGame, SMAC (Samvelyan et al., 2019), and SMACv2 (Ellis et al., 2023) relative to strong model-based and model-free baselines under matched search budgets. Our main contributions are: (i) N ON ZERO , a candidate-set multi-agent MCTS framework that overcomes the combi-natorial joint-action bottleneck through interaction-guided candidate expansion based on a compact nonlinear return surrogate. (ii) N ON UCT, a principled proposal mechanism derived from a nonlinear bandit formulation over local devia-tions, enabling coordinated exploration without enumerating the dn joint-action space. (iii) A sublinear local-regret anal-ysis under graph-local optimality, together with consistent empirical gains on MatGame, SMAC, and SMACv2 under matched search budgets. 
+
+## 2. Related Works 
+
+We formalize the cooperative multi-agent planning task as a Decentralized Partially Observable Markov Decision Pro-cess (Dec-POMDP) (Oliehoek et al., 2016; Zhang et al., 2025; Jiang et al., 2025; Mei et al., 2023), represented by the tuple M = ⟨I , S, A, P, R, Ω, O, γ ⟩. Here, I = {1, . . . , n }
+
+denotes the set of n agents operating within a global state space S. At each discrete time step t, every agent i ∈ I 
+
+receives a local observation oit ∈ Ωi and subsequently se-lects a local action ait from its individual action set Ai
+
+based on its action-observation history. These individual choices constitute a joint action vector at = ( a1 
+
+> t
+
+, . . . , a nt ),which resides in the joint action space A ≡ Qni=1 Ai.Upon the execution of at, the environment transitions to a new state st+1 ∼ P (·| st, at) and yields a shared global reward rt = R(st, at). The collective objective of the agents is to identify a joint policy π that maximizes the expected cumulative discounted return, formally defined as J(π) = Eπ [P∞ 
+
+> t=0
+
+γtrt], where γ ∈ [0 , 1) serves as the discount factor. 
+
+MARL with factorized representations. Factorization-based methods are pivotal for mitigating the curse of di-mensionality in the joint action space (Zhang et al., 2026; Zhou et al., 2022). Under the Centralized Training with Decentralized Execution (CTDE) paradigm, VDN (Sune-hag et al., 2017) approximates the global value function 
+
+Qtot via a linear sum of local utilities. This approach has been extended to monotonic nonlinear combinations in QMIX (Rashid et al., 2020b) and nearly-decomposable structures in NDQ (Wang et al., 2019). Further advance-ments include policy-based factorizations (DOP (Wang et al., 2020), FOP (Zhang et al., 2021)) and value-correction mechanisms (QTRAN (Son et al., 2019), WQMIX (Rashid et al., 2020a)) to address representational limitations. How-ever, their structural assumptions (e.g., additivity or mono-tonicity) are insufficient to capture complex interactions inherent in sophisticated multi-agent tasks. 
+
+MCTS-based Planning. MCTS has been established as a powerful paradigm for sequential decision-making in com-plex planning horizons (Browne et al., 2012; Silver et al., 2017; Fang et al., 2026; Li et al., 2026b;a; Tang et al., 2026). Instead of relying on exhaustive search, MCTS approxi-mates optimal values through iterative simulation, typically involving four stages: Selection , Expansion , Simulation , and 
+
+Back-Propagation . To eliminate the dependency on ground-truth simulators, model-based variants like MuZero (Schrit-twieser et al., 2020) introduce learnable components: a representation model hθ , a dynamics model gθ , and a pre-diction model fθ . Given an observation history, MuZero maps it to a latent state via hθ , and performs recursive pre-dictions using gθ and fθ . Crucially, during the Selection 
+
+phase, MuZero employs the Probabilistic Upper Confidence Tree (pUCT) rule to balance exploration and exploitation: 
+
+at = arg max 
+
+> a∈A
+
+"
+
+Φ( s, a ) + c(s)P (s, a )
+
+pP  
+
+> b
+
+N (s, b )1 + N (s, a )
+
+#
+
+,
+
+(1) where Φ( s, a ) is the estimated Q-value, P (s, a ) is the prior policy probability, and c(s) is a scaling factor. This makes evaluating and maintaining selection statistics over Eq. 1 over the full joint-action space computationally intractable. To address large action spaces, Sampled MuZero (Hubert et al., 2021) modifies the algorithm to only search over a randomly sampled subset of actions T (s) ⊂ A , drawn from a proposal policy β. The selection rule is adjusted to at =arg max a∈T (s)
+
+
+
+Φ( s, a ) + c(s) ˆβ(a) 
+
+> β(a)
+
+P (s, a )
+
+√P    
+
+> b∈T(s)N(s,b )1+ N(s,a )
+
+
+
+with an importance sampling correction. Although this sampling strategy (and similar distributed approaches like MAZero (Liu et al., 2024)) makes execution feasible, it fundamentally relies on the quality of the proposal distribution β. In the vast combinatorial landscapes of multi-agent tasks, random or heuristic sampling is often inefficient, failing to cover sparse optimal joint actions. In contrast, N ON ZERO constructs proposals using a learned nonlinear return surrogate and interaction-guided local 2NonZero: Nonlinear Search for Multi-Agent RL 
+
+deviations, targeting coordinated joint actions without relying on uninformed sampling. 
+
+## 3. N ON ZERO for Multi-Agents MCTS 
+
+NON ZERO leverages low-dimensional representations of the joint-action returns and solves the resulting nonlinear bandit problem to enable efficient and effective N ON UCT-based MCTS in complex multi-agent planning. N ON UCT is applied as a proposal and learning mechanism that guides candidate expansion and local surrogate refinement during MCTS. N ON ZERO follows MuZero with (i) representation, (ii) dynamics, and (iii) prediction heads, and adds (iv) a mix-ing/hypernetwork that initializes the node-wise surrogate parameter θ used by N ON UCT. To achieve more accurate and efficient reward approximation, we propose N ON UCT to capture the non-linearity of low-dimensional rewards and analyze its regret. All proofs are collected in the Appendix A. Here, “low-dimensional” refers to the fact that explo-ration and estimation depend on local deviations in A rather than on enumerating the full joint-action set |A| = dn.
+
+3.1. Leveraging Low-Dimensional Nonlinear Representations 
+
+NON ZERO models the joint-action returns through a low-dimensional nonlinear combination of the latent per-agent action rewards, based on which an online learner optimizes to capture the representation. Precisely, we consider a deter-ministic nonlinear bandit problem with an unknown param-eter θ∗ ∈ Θ and a discrete joint-action set A ⊂ { 0, 1}nd 
+
+consisting of n-hot vectors (one-hot per agent), where n
+
+denotes the number of agents and d is the size of action set for each agent. Thus, each joint action a ∈ A is represented by an n-hot vector selecting one local action for each agent. Given the action a, the environment reveals a deterministic reward rt = η(θ∗, a ).We define first- and second-order finite-difference operators on the joint-action adjacency graph. Let a = ( a1, . . . , a n) ∈A and define the one-agent neighbor a(i←j) as the joint action obtained by changing only agent i’s action to j ∈ A i.Let the neighbor set be N (a) = {a(i←j) : i ∈ [n], j ∈Ai, j ̸ = ai}. We denote a discrete direction by u = ( i ←
+
+j) and write a(u) := a(i←j). The first-order directional difference is 
+
+∆uη(θ, a ) := η(θ, a (u)) − η(θ, a ).
+
+For two directions u = ( i ← j) and v = ( k ← ℓ) with 
+
+i̸ = k, define the mixed second-order difference 
+
+∆2 
+
+> u,v
+
+η(θ, a ) := η(θ, a (u,v ))−η(θ, a (u))−η(θ, a (v))+ η(θ, a ),
+
+where a(u,v ) applies both one-agent changes. The iden-tity η(θ, a (u,v )) − η(θ, a ) = ∆uη(θ, a ) + ∆ v η(θ, a ) + ∆2 
+
+> u,v
+
+η(θ, a ) makes ∆2 
+
+> u,v
+
+a discrete interaction/curvature sig-nal for coordinated deviations. In this work, we define a score function z(θ, a ) =
+
+⟨w(θ), ψ (a)⟩ where w(θ) ∈ Rnd and ψ(a) ∈ Rnd . We adopt the asinh link g(z) = c asinh( αz ) with fixed scale parameters c > 0 and α > 0, and define the estimated deter-ministic reward η(θ, a ) = g(z(θ, a )) . Thus, for each n-hot action vector a ∈ A , we model the low-dimensional reward 
+
+η(θ, a ) as a nonlinear combination of n corresponding per-agent action rewards. This procedure can be viewed as pro-jecting the actual reward rt into the low-dimensional space representable with η(θ∗, a ) = c asinh( α⟨w(θ∗), ψ (a)⟩). It reduces MCTS from considering dn joint reward values in each state to learning a structured parameter vector whose estimation complexity is independent of the exponential joint-action count |A| = dn, thereby allowing quick estima-tion of the global reward structure from limited samples and speeding up tree search convergence in multi-agent MCTS. Using the learned return proxy η(ˆθt, a ), we select an action 
+
+at = arg max  
+
+> a∈A
+
+η(ˆθt, a ). (2) Directly solving (2) over the full joint-action set A is in-tractable when |A| = dn. Instead, at each tree node s we maintain a small candidate set C(s) ⊂ A of expanded joint actions. MCTS selection compares only actions in C(s)
+
+using the learned surrogate score η(ˆθs, ·).NON UCT is used only as a proposal mechanism that adds a small number of new candidates to C(s) by applying one-agent or two-agent deviations predicted to yield the largest discrete improvement under η(ˆθs, ·). This keeps the per-node branching factor |C (s)| fixed while still allowing coor-dinated exploration. However, the global convergence of the nonlinear bandit problem mentioned above is statistically intractable. Specifi-cally, it requires exponential samples in the input dimension; for example, O(|A| ) = O(dn) globally optimizing a non-linear reward model over A requires samples that scaling with the joint-action count |A| = dn.Thus, we propose guiding the model to converge to a local maximum rather than directly seeking global optimization. Note that the loss function ˜η(θ, a ) is not concave, but its discrete local-optimality structure admits efficient conver-gence guarantees under our smoothness assumptions (As-sumption 3.2), without requiring global maximization over 
+
+A. We do not assume global concavity; our guarantees are graph-local and hold under one-agent and two-agent deviations. In general, globally optimizing a nonlinear reward model over the combinatorial set A is intractable (Dong et al., 2021). Accordingly, our analysis targets efficient conver-3NonZero: Nonlinear Search for Multi-Agent RL 
+
+gence to graph-local optima, measured by gains in one-agent and two-agent deviations (Definition 3.1). This is the relevant notion for scalable multi-agent planning, where coordinated improvements may require deviations across agents. To achieve this, we need to augment the loss function so that our model satisfies η(ˆθt, a t) ≈ η(θ∗, a t), ∆uη(ˆθ, a t) ≈
+
+∆uη(θ∗, a t), and ∆2 
+
+> u,v
+
+η(ˆθ, a t) ≈ ∆2 
+
+> u,v
+
+η(θ∗, a t). It is im-plied that the virtual reward η(ˆθt, a t) will keep improving until at is a local maxima of η(θ∗, a t) if we optimize the learning process via taking greedy actions. Since the real environment provides only the realized reward for the executed joint action, we compute all counterfactual evaluations needed for discrete differences from the learned reward model at the node state (MuZero-style planning model): 
+
+∆uη(θ⋆, a ) := η(θ⋆, a (u)) − η(θ⋆, a ). (3) For discrete curvature, we compute the mixed second-order difference: 
+
+∆2 
+
+> u,v
+
+η(θ⋆, a ) := η(θ⋆, a (u,v )) − η(θ⋆, a (u))
+
+−η(θ⋆, a (v)) + η(θ⋆, a ). (4) where v is a random sampled direction independent of u.Note that the number of projections above does not scale with the exponential branching factor dn; it depends only on the statistical complexity of the learned surrogate class and the number of sampled deviation directions per update, since only the norm of the projections needs to be estimated. This action-dimension-free property ensures that the proposed NON UCT can achieve efficient exploration in the dn-large action space. 
+
+∆uη(θ, a ) measures the gain from a single-agent deviation, while ∆2 
+
+> u,v
+
+η(θ, a ) measures the non-additive interaction (synergy/anti-synergy) of two coordinated deviations. In cooperative MARL, local one-agent improvements may be negative even when a coordinated two-agent deviation is beneficial; ∆2 
+
+> u,v
+
+provides a principled signal for proposing such coordinated joint actions without enumerating A.Given x = ( a, u, v ), define the prediction target 
+
+ˆy(θ, x ) = η(θ, a ), η (θ, a (u)), ∆uη(θ, a ), ∆2 
+
+> u,v
+
+η(θ, a )
+
+(5) where a′ denotes the action perturbation used to produce the first and second order differences. The supervision is 
+
+y(x) = η(θ⋆, a ), η (θ⋆, a (u)), ∆uη(θ⋆, a ), ∆2 
+
+> u,v
+
+η(θ⋆, a )
+
+(6) And we note that ˆy(θ, x ), y (x) ∈ R4.
+
+In MCTS, we treat the learned reward head rψ (s, ·) at a fixed node state s as the planning-time reward function. All coun-terfactual quantities (e.g., rψ (s, a (u)) and rψ (s, a (u,v ))) are obtained by evaluating the learned model, without addi-tional environment interaction. Accordingly, θ⋆ denotes the best-in-class parameter (within our asinh-GLM family) that locally fits rψ (s, ·) around the candidate actions explored at node s. Only the selected legal joint action is executed in the real environment for data collection. The loss function that needs to be optimized is defined by 
+
+LNON UCT := min  
+
+> θ
+
+Ea,u,v 
+
+h 14
+
+ (η(θ, a ) − η(θ⋆, a )) 2
+
++ ( η(θ, a (u)) − η(θ⋆, a (u))) 2 + (∆ uη(θ, a ) − ∆uη(θ⋆, a )) 2
+
++ (∆ 2 
+
+> u,v
+
+η(θ, a ) − ∆2 
+
+> u,v
+
+η(θ⋆, a )) 2i
+
+.
+
+(7) 
+
+3.2. Analyzing Regret 
+
+In this section, we derive the theoretical guarantees of NON UCT. Unlike standard UCT, which relies on global optimism (often intractable in high-dimensional spaces, i.e., requiring O(end ) samples), N ON UCT exploits the curva-ture information of the asinh -activated reward landscape. Our analysis targets convergence to graph-local maximiz-ers under one-agent and two-agent deviations, which is the appropriate notion of optimality for scalable multi-agent planning. We quantify the performance via cumulative local regret, defined as the cumulative gap between the reward of the selected action at and the reward of the nearest approxi-mate local maximizer. We prove that N ON ZERO achieves a sub-linear regret ˆRT = ˜O(T 3/4), ensuring efficient conver-gence. The regret is measured with respect to the first time an (ε1, ε 2)-local maximizer is reached, counting only steps taken outside this set. 
+
+Geometric and Smoothness Assumptions. We first de-fine the convergence target and the regularity conditions of the reward landscape. 
+
+Definition 3.1 (Approximate local maximizer on the join-t-action graph) . Let ˜η(θ⋆, a ) be the objective over the dis-crete set A. Define the one-agent deviation gain G1(a) := max u ∆u ˜η(θ⋆, a ) and the best two-agent coordinated devi-ation gain G2(a) := max u̸=v
+
+ ˜η(θ⋆, a (u,v )) − ˜η(θ⋆, a ).We say a is an (ε1, ε 2)-approximate local maximizer if 
+
+G1(a) ≤ ε1 and G2(a) ≤ ε2.The role of the first and second order differences in Eq. 7 is to refine the node-specific parameter ˆθs so that the optimistic score η(ˆθs, a ) used in Eq. 2 is locally accurate around candidate actions, improving exploration efficiency without enumerating the full joint-action space. 4NonZero: Nonlinear Search for Multi-Agent RL 
+
+While finding global optima is generally NP-hard in non-convex settings, the invexity properties of the asinh -GLM landscape imply that approximate local maxima are effec-tively global or optimism-equivalent (Kalai & Sastry, 2009). Thus, convergence to the state defined above serves as a robust proxy for optimal planning. The choice of the asinh 
+
+link function is pivotal to our theoretical framework. Un-like sigmoidal activations that suffer from vanishing gradi-ents (saturation) or ReLU networks that lack higher-order smoothness, the asinh function, g(z) = c · asinh( αz ),is strictly increasing, unbounded, and infinitely differen-tiable. Crucially, its derivatives decay at a controlled poly-nomial rate, ensuring that the reward landscape is suffi-ciently smooth to allow curvature-based optimization. This structural property justifies the following smoothness as-sumptions, which are satisfied by the asinh -GLM class by design. 
+
+Assumption 3.2 (Discrete smoothness on A). There exist constants ζ1, ζ 2, ζ 3 > 0 such that for all θ ∈ Θ, all a ∈ A ,and all feasible directions u, v, w (with distinct agents when needed), 
+
+|∆uη(θ, a )| ≤ ζ1, |∆2 
+
+> u,v
+
+η(θ, a )| ≤ ζ2,
+
+|∆2 
+
+> u,v
+
+η(θ, a (w)) − ∆2 
+
+> u,v
+
+η(θ, a )| ≤ ζ3. (8) Assumption 3.2 formalizes the boundedness of discrete gains and interaction effects under single- and two-agent de-viations, which holds naturally for bounded reward models. We establish the regret bound by decomposing the regret into two parts: a geometric improvement term, which quan-tifies the guaranteed increase in reward towards an approx-imate local maximizer, and a statistical estimation term, which captures the prediction discrepancy controlled by the sequential Rademacher complexity. We denote the compos-ite prediction error at step t as a squared error over the four scalar supervision targets (value at a, value at a one-agent neighbor, one-agent directional difference, and two-agent mixed difference): 
+
+ξt :=  η(θt, a t) − η(θ⋆, a t)2
+
++  η(θt, a (ut) 
+
+> t
+
+) − η(θ⋆, a (ut) 
+
+> t
+
+)2
+
++  ∆ut η(θt, a t) − ∆ut η(θ⋆, a t)2
+
++  ∆2 
+
+> ut,v t
+
+η(θt, a t) − ∆2 
+
+> ut,v t
+
+η(θ⋆, a t)2.
+
+(9) which encompasses the discrepancies in reward values and in first-/second-order discrete differences used for local im-provement. 
+
+Lemma 3.3 (One-step Geometric Improvement) . Let 
+
+f (a) = ˜ η(θ∗, a ). Provided that the current action is not yet an approximate local maximizer (i.e., at /∈ A ϵ, 6√ζ3rd ϵ), the curvature-guided update yields a guaranteed reward ascent: 
+
+f (at+1 ) − f (at) ≥ ν(ϵ) − C1 · ξt+1 , (10) 
+
+where ν(ϵ) ≜ c1 min 
+
+ 
+
+> ϵ2
+> ζh+1
+
+, ϵ3/2
+
+> ζ1/23rd
+
+
+
+is the strictly positive improvement rate, C1 = 2 + ζg /ζ h is a constant. 
+
+Lemma 3.3 establishes a sufficient ascent property: the algorithm ensures a strict increase in the ground-truth reward at each step, modulo the online learner’s estimation error. We now provide bounds on the estimation error. 
+
+Lemma 3.4 (Estimation Error Control) . The cumulative prediction error is bounded by the generalization capacity of the learner: 
+
+> T
+
+X
+
+> t=1
+
+ξt ≤ pT · R T . (11) 
+
+In NON ZERO , we have RT = ˜O(√T ), which implies the cumulative error scales sub-linearly as ˜O(T 3/4).
+
+Now we verify the convergence. Summing the one-step improvement over T iterations relates the total reward gain to the cumulative estimation error: 
+
+˜η(θ∗, a T ) − ˜η(θ∗, a 0)
+
+| {z }
+
+> Total Gain
+
+= 
+
+> T−1
+
+X
+
+> t=0
+
+(˜ η(θ∗, a t+1 ) − ˜η(θ∗, a t)) 
+
+≥ 
+
+> T−1
+
+X
+
+> t=0
+
+ν(ϵ) · I(at /∈ A ϵ) − C1
+
+> T
+
+X
+
+> t=1
+
+ξt.
+
+(12) Since the reward is bounded, the total gain is finite. This inequality implies that the algorithm cannot stay outside the local maximizer set Aϵ for too long, unless the estima-tion error is large. Formalizing this intuition leads to the following regret bound. 
+
+Theorem 3.5 (Regret Bound of N ON UCT) . For any tol-erance ϵ ≤ min(1 , ζ 3rd /16) , the expected cumulative re-gret of NON UCT with respect to finding (ϵ, 6√ζ3rd ϵ)-local maxima is bounded by: 
+
+E[Regret T ] ≤ (1 + C1
+
+p4T R T ) · K (ϵ), (13) 
+
+where K(ϵ) = max(4 ζhϵ−2, √ζ3rd ϵ−3/2) encapsulates the complexity regarding the landscape curvature and target precision. 
+
+Corollary 3.6 (The Order of Regret Bound for N ON UCT) .
+
+Under the above conditions, the cumulative regret bound of 
+
+NON UCT satisfies: 
+
+E[Regret T ] = ˜O
+
+
+
+T 3/4
+
+. (14) 5NonZero: Nonlinear Search for Multi-Agent RL 
+
+The regret bound of N ON UCT in Theorem 3.5 is action-dimension free while sublinear. We quantify the efficiency gap as follows to demonstrate N ON ZERO ’s exploration effi-ciency. 
+
+Theorem 3.7 (Efficiency Separation) . Let TNonUCT (d, ϵ ) and 
+
+TUCB (d, ϵ ) denote the number of rounds required to output an approximate local maximizer. The separation ratio ζsep 
+
+satisfies: 
+
+ζsep ≜ TUCB (d, ϵ )
+
+TNonUCT (d, ϵ ) ≥ exp( c · nd )
+
+poly (nd, ϵ −1) , (15) 
+
+where c > 0 is a universal constant. 
+
+NON UCT achieves action-dimension-free convergence in the sense that its sample complexity scales polynomially with the model’s statistical capacity, whereas standard UCB suffers from an unavoidable curse of dimensionality in the joint action space. 
+
+3.3. Algorithm Framework 
+
+Integrated with curvature-aware learning, NON ZERO 
+
+achieves efficient exploitation and exploration in complex MCTS. The N ON ZERO model is unrolled with four key phases as standard MCTS and trained in an end-to-end man-ner like MuZero (Schrittwieser et al., 2020). The detailed pseudocode of NonZero is shown in Algorithm 1. NON ZERO augments the standard MCTS lifecycle by re-placing the UCB heuristic in selection with a curvature-aware optimization routine. In the Selection and Back-Propagation phase, rather than relying on scalar confidence bounds that scale poorly in combinatorial spaces, the algo-rithm selects among the currently expanded child actions using the learned surrogate optimized by N ON UCT. This step exploits the asinh -induced smoothness to efficiently navigate the joint-action space, guiding the search path to-ward the (ϵg , ϵ h)-approximate local maximizers defined in Section 3.2. This mechanism allows the agent to synthe-size complex multi-agent coordination strategies without exhaustively enumerating the exponential action space. To ensure the reward landscape η(ˆθ, ·) accurately reflects the ground truth, N ON ZERO incorporates a two-stage estima-tion strategy. Subsequently, during Back-propagation , the algorithm performs online adaptation to refine this estimate. By collecting the reward evaluations and estimating the lo-cal geometry via the random projection operators (Eq. 3 and 4), we update the node-specific parameter ˆθ by minimizing the curvature loss LNON UCT via gradient descent. This en-sures that the local approximation progressively aligns with the true environmental dynamics as the simulation depth increases. 
+
+Hypernetworks for parameter estimation warm-up. To achieve faster convergence of θ, the N ON ZERO model in-
+
+Algorithm 1 NON ZERO MCTS with Discrete Curvature-Guided Proposals  
+
+> 1:
+
+Input: root state s0 
+
+> 2:
+
+Hyperparameters: simulations Nsim , candidate budget 
+
+K, learning rate γ 
+
+> 3:
+
+for sim = 1 to Nsim do  
+
+> 4:
+
+path ← SELECT (s0) 
+
+> 5:
+
+leaf ← last (path ) 
+
+> 6:
+
+if leaf not terminal then  
+
+> 7:
+
+EXPAND (leaf)  
+
+> 8:
+
+end if  
+
+> 9:
+
+BACKUP (path)  
+
+> 10:
+
+end for  
+
+> 11:
+
+return π(s0) from visit counts  
+
+> 12:
+
+Procedure SELECT (node ) 
+
+> 13:
+
+while node has children do  
+
+> 14:
+
+a⋆ ← arg max a∈C (node ) η(θnode , a ) 
+
+> 15:
+
+node ← node. child (a⋆) 
+
+> 16:
+
+append node to path  
+
+> 17:
+
+end while  
+
+> 18:
+
+return path  
+
+> 19:
+
+Procedure EXPAND  
+
+> 20:
+
+Sample C(node ) with policy-prior samples  
+
+> 21:
+
+for all a ∈ C (node ) do  
+
+> 22:
+
+node ′ ← node.child (a) 
+
+> 23:
+
+θ ← HYPER NETWORK (node ′.state ) 
+
+> 24:
+
+Sample u = ( i ← j), v = ( k ← ℓ), i̸ = k 
+
+> 25:
+
+Form a(u), a(u,v ) 
+
+> 26:
+
+b∆u ← η(θ, a (u)) − η(θ, a ) 
+
+> 27:
+
+b∆2 
+
+> u,v
+
+← η(θ, a (u,v )) − η(θ, a ) 
+
+> 28:
+
+end for  
+
+> 29:
+
+Procedure BACKUP (path ) 
+
+> 30:
+
+for node in path (reversed) do  
+
+> 31:
+
+Update N (node, ·) and Q(node, ·) 
+
+> 32:
+
+Sample u = ( i ← j), v = ( k ← ℓ), i̸ = k 
+
+> 33:
+
+Pick a ∈ C (node ) 
+
+> 34:
+
+Compute r(a), r(a(u)), r(a(u,v )) 
+
+> 35:
+
+∆ur ← r(a(u)) − r(a) 
+
+> 36:
+
+∆2 
+
+> u,v
+
+r ← r(a(u,v )) − r(a(u)) − r(a(v)) + r(a) 
+
+> 37:
+
+θnode ← θnode − γ∇θ LNON UCT  
+
+> 38:
+
+end for 
+
+volves a hypernetwork (Ha et al., 2016) to predict the initial-ization of the state-wise θ when a new node is added to the search tree. Therefore, the gathered interaction information to estimate θ will be accumulated throughout the training process, which accelerates the convergence of N ON ZERO .Specifically, the hypernetwork takes the state st+k as the input and generates the parameter θ. The generated θ will be further optimized in the following MCTS iterations. 6NonZero: Nonlinear Search for Multi-Agent RL 
+
+## 4. Experiments 
+
+To empirically validate the effectiveness of N ON ZERO , we conduct extensive evaluations across three distinct multi-agent reinforcement learning benchmarks: MatGame, the StarCraft Multi-Agent Challenge (SMAC) (Samvelyan et al., 2019), and SMACv2 (Ellis et al., 2023). Specifically, MatGame serves as a fundamental testbed that generalizes the normal-form setting to n agents, where a shared reward is derived by querying a predefined payoff tensor for simul-taneous discrete actions. We compare N ON ZERO against a comprehensive suite of state-of-the-art baselines, stratified into model-based and model-free categories. The model-based baselines include MAZero (Liu et al., 2024), its prior-free variant MAZero-NP, and a multi-agent adaptation of MuZero (denoted as MA-AlphaZero). Furthermore, we benchmark against leading model-free algorithms, specif-ically MAPPO (Yu et al., 2022) and QMIX (Rashid et al., 2020b), to demonstrate the superiority of our approach. 
+
+Experiment setting. All experiments are conducted on a cluster equipped with NVIDIA RTX A6000. We im-plement a training framework following EfficientZero (Ye et al., 2021) to decouple interaction, reanalysis, and learn-ing stages. The hyperparameters for the MCTS are adjusted based on environment difficulty: for MatGame, we employ a budget of 50 simulations and sample 3 actions per node; for the SMAC and SMACv2 tasks, these parameters are scaled to 100 simulations and 7 sampled actions to accom-modate the higher dimensional action space. The details of baselines and benchmarks could be found in Appendix C and Appendix D. 
+
+Performance evaluation. NON ZERO consistently outper-forms all baselines across the 8 MatGame configurations reported in Table 1. While the gains are modest in lower-dimensional settings, the performance margin widens sig-nificantly as problem complexity scales, reaching an im-provement of approximately 14% in the 8-agent scenar-ios with a 10 8 joint action space. This trend supports the conclusion that projecting high-dimensional returns into a low-dimensional space effectively mitigates the curse of dimensionality. Crucially, N ON ZERO excels in nonlinear reward structures where standard methods struggle; by lever-aging curvature information via second-order estimation, our approach avoids the local-optima stagnation common in global-optimism-based baselines. Furthermore, this explo-ration efficiency is achieved without prohibitive computa-tional costs due to the action-dimension-free nature of the underlying bandit solver. Figure 1 illustrates the comparative performance on three representative SMAC maps. N ON ZERO establishes state-of-the-art among the compared baselines, achieving a win rate exceeding 96% across all tasks while consistently outper-forming both model-based (MAZero family) and model-free (MAPPO, QMIX) baselines. Beyond asymptotic perfor-mance, N ON ZERO demonstrates superior sample efficiency; it converges to optimal policies requiring 50% to 70% fewer environmental steps than its closest competitor, MAZero. This corresponds to a 2-3× acceleration in training dynam-ics. We attribute this efficiency to the N ON UCT mechanism, which exploits the curvature of the latent reward landscape to guide the search. Unlike standard baselines that may stall in local optima due to the combinatorial explosion of the joint action space, N ON ZERO effectively navigates the global geometry, rapidly identifying high-value coordina-tion strategies. The SMACv2 benchmark introduces significant stochastic-ity through randomized start positions and heterogeneous unit compositions, challenging the generalization capability of MARL algorithms. As depicted in Figure 2, the perfor-mance disparity between N ON ZERO and the baselines is further amplified in this setting. N ON ZERO exhibits remark-able robustness, nearly doubling the win rates on complex scenarios such as protoss 5 vs 5 and zerg 5 vs 5 
+
+compared to the best-performing baselines. While standard algorithms struggle to adapt to the highly non-stationary opponent formations, N ON ZERO ’s non-linear parameteriza-tion allows for adaptive modeling of diverse unit interactions. This confirms that capturing high-order dependencies via the learned parameter θ is crucial for effective generalization in multi-agent environments. 
+
+Ablation study. To rigorously assess the contribution of the core components within N ON ZERO , we conduct an ab-lation analysis by selectively removing the mixing net and the curvature-aware optimization mechanism. We perform this evaluation on two MatGame maps to test performance under varying complexity. As illustrated in Figure 3, we compare the full N ON ZERO model against three variants: (1) w/o Mixing Net , which removes the hypernetwork-based parameter initialization; (2) w/o Curvature , which falls back to first-order gradient updates without second-order estima-tion; and (3) w/o Both , which excludes both modules. The results unequivocally demonstrate that both components are indispensable. The variant w/o Both exhibits the poor-est performance, failing to achieve effective coordination. Notably, removing the curvature information results in a more severe performance degradation than removing the mixing net. This empirically validates our theoretical as-sertion: while the mixing net provides a valuable structural prior for initializing θ, the curvature-aware optimization is the primary driver for navigating the non-linear reward landscape. The full N ON ZERO model effectively integrates both mechanisms to achieve superior nonlinear modeling capability and sample efficiency. 7NonZero: Nonlinear Search for Multi-Agent RL 
+
+Table 1. Performance comparison on the MatGame benchmark across varying numbers of agents and action dimensions, encompassing both linear and non-linear reward landscapes. NonZero demonstrates superior sample efficiency and asymptotic performance compared to MCTS and MARL baselines, particularly in high-dimensional settings with limited simulation budgets. Notably, the performance gap is most pronounced in non-linear scenarios with to 14% improvement, as curvature-aware exploration effectively prevents the local stagnation observed in baseline methods. See Appendix D for detailed environmental specifications. 
+
+Agent Action Type Steps MAZero MAZero-NP MA-AlphaZero MAPPO QMIX NonZero(Ours) 2 3 Linear 500 51 .9 ± 2.3 49 .7 ± 3.9 50 .8 ± 3.2 50 .2 ± 2.9 50 .4 ± 3.5 54 .7 ± 0.8
+
+2 3 Linear 1000 57 .8 ± 2.4 53 .1 ± 3.3 55 .2 ± 2.7 56 .4 ± 3.1 54 .3 ± 3.17 59 .8 ± 0.3
+
+2 3 Non-Linear 500 49 .1 ± 15 .3 48 .9 ± 17 .2 49 .0 ± 16 .4 49 .1 ± 19 .1 48 .7 ± 18 .6 49 .7 ± 7.8
+
+2 3 Non-Linear 1000 47 .6 ± 14 .7 49 .3 ± 14 .3 49 .2 ± 12 .9 49 .5 ± 18 .1 49 .1 ± 17 .7 49 .9 ± 16 .3
+
+4 5 Linear 1000 175 .2 ± 4.4 171 .7 ± 5.6 172 .7 ± 4.1 173 .1 ± 5.4 171 .8 ± 4.9 186 .2 ± 4.1
+
+4 5 Linear 2000 191 .7 ± 2.3 190 .1 ± 1.2 190 .4 ± 1.9 189 .8 ± 2.1 190 .2 ± 1.8 198 .9 ± 2.3
+
+4 5 Non-Linear 1000 179 .4 ± 11 .7 173 .2 ± 10 .0 174 .5 ± 9.3 173 .1 ± 8.0 174 .7 ± 9.4 184 .1 ± 12 .2
+
+4 5 Non-Linear 2000 195 .4 ± 20 .0 192 .4 ± 12 .8 192 .7 ± 11 .4 191 .9 ± 12 .5 190 .3 ± 10 .7 199 .1 ± 20 .7
+
+6 8 Linear 1000 393 .7 ± 9.9 387 .2 ± 10 .1 389 .3 ± 8.4 390 .6 ± 9.2 386 .1 ± 10 .4 398 .2 ± 8.9
+
+6 8 Linear 2000 434 .2 ± 7.2 427 .3 ± 9.3 432 .6 ± 9.5 431 .8 ± 8.4 430 .1 ± 9.5 441 .3 ± 6.5
+
+6 8 Non-Linear 1000 399 .8 ± 13 .7 391 .3 ± 10 .3 393 .1 ± 12 .1 388 .8 ± 13 .1 390 .5 ± 12 .2 412 .5 ± 9.2
+
+6 8 Non-Linear 2000 443 .9 ± 12 .1 429 .1 ± 9.3 427 .1 ± 8.6 430 .1 ± 8.5 431 .7 ± 7.6 457 .2 ± 13 .7
+
+8 10 Linear 1000 618 .8 ± 16 .9 608 .8 ± 17 .6 613 .1 ± 13 .1 617 .1 ± 11 .1 612 .7 ± 15 .4 641 .3 ± 16 .4
+
+8 10 Linear 2000 692 .7 ± 14 .5 671 .5 ± 13 .9 654 .3 ± 14 .5 681 .8 ± 12 .5 679 .4 ± 12 .7 712 .4 ± 16 .2
+
+8 10 Non-Linear 1000 615 .2 ± 18 .7 536 .6 ± 24 .1 573 .2 ± 22 .7 561 .4 ± 20 .9 558 .7 ± 19 .1 637 .2 ± 17 .1
+
+8 10 Non-Linear 2000 672 .3 ± 16 .1 587 .2 ± 18 .4 633 .2 ± 15 .6 657 .1 ± 17 .3 648 .2 ± 18 .75 697 .1 ± 16 .40 10000 20000 30000 40000 50000           
+
+> Training Steps
+> 0.0
+> 0.2
+> 0.4
+> 0.6
+> 0.8
+> 1.0
+> Win Rate
+> 3m
+> NonZero
+> MAZero
+> MAZero-NP
+> MA-AlphaZero
+> QMIX
+> MAPPO 010000 20000 30000 40000 50000
+> Training Steps
+> 0.0
+> 0.2
+> 0.4
+> 0.6
+> 0.8
+> 1.0
+> Win Rate
+> so_many_baneling
+> NonZero
+> MAZero
+> MAZero-NP
+> MA-AlphaZero
+> QMIX
+> MAPPO 010000 20000 30000 40000 50000
+> Training Steps
+> 0.0
+> 0.2
+> 0.4
+> 0.6
+> 0.8
+> 1.0
+> Win Rate
+> 2m_vs_1z
+> NonZero
+> MAZero
+> MAZero-NP
+> MA-AlphaZero
+> QMIX
+> MAPPO
+
+Figure 1. Evaluations on 3 SMAC tasks/maps. Y-axis denotes the win rate and X-axis denotes training steps. Each algorithm is executed with 3 random seeds. NonZero achieves over 96% winning rate on all 3 maps, outperforming all baselines and also gets high winning rate much faster. 0.0 0.2 0.4 0.6 0.8 1.0              
+
+> Training Steps 1e6
+> 0.00
+> 0.05
+> 0.10
+> 0.15
+> 0.20
+> 0.25
+> 0.30
+> 0.35
+> 0.40
+> Win Rate
+> Terran_5_vs_5
+> NonZero
+> MAZero
+> MAZero-NP
+> MA-AlphaZero
+> QMIX
+> MAPPO 0.0 0.2 0.4 0.6 0.8 1.0
+> Training Steps 1e6
+> 0.0
+> 0.1
+> 0.2
+> 0.3
+> 0.4
+> 0.5
+> Win Rate
+> Zerg_5_vs_5
+> NonZero
+> MAZero
+> MAZero-NP
+> MA-AlphaZero
+> QMIX
+> MAPPO 0.0 0.2 0.4 0.6 0.8 1.0
+> Training Steps 1e6
+> 0.1
+> 0.2
+> 0.3
+> 0.4
+> Win Rate
+> Protoss_5_vs_5
+> NonZero
+> MAZero
+> MAZero-NP
+> MA-AlphaZero
+> QMIX
+> MAPPO
+
+Figure 2. Comparisons on 3 SMACv2 tasks/maps.Y-axis denotes the win rate and X-axis denotes the training steps. NonZero nearly doubles the winning rate on these challenging maps in SMACv2 and consistently outperforms all baselines. Each algorithm is executed with 3 random seeds. 
+
+## 5. Conclusion 
+
+We proposed N ON ZERO , a scalable multi-agent MCTS framework that avoids enumerating the exponential joint-action space |A| = dn by maintaining a small per-node candidate set and proposing new joint actions using discrete first-order and mixed second-order differences. We model joint-action returns with an asinh -GLM surrogate and cast candidate proposal as a nonlinear bandit subproblem, en-abling curvature-aware exploration through mixed second differences rather than continuous action gradients. Under our modeling assumptions, we establish a sublinear regret guarantee whose sample complexity does not scale with 
+
+|A| , and empirically demonstrate improved performance and sample efficiency on MatGame, SMAC, and SMACv2 compared to strong model-based and model-free baselines. 8NonZero: Nonlinear Search for Multi-Agent RL 0 200 400 600 800 1000 1200 1400 1600 1800          
+
+> Training Steps
+> 150
+> 200
+> 250
+> 300
+> 350
+> 400
+> 450
+> 500
+> Mean Score
+> Linear MatGame: 6 Agents, 8 Actions
+> NonZero
+> w/o Mixing Net
+> w/o Curvature
+> w/o Both 0200 400 600 800 1000 1200 1400 1600 1800
+> Training Steps
+> 200
+> 300
+> 400
+> 500
+> 600
+> 700
+> Mean Score
+> Non-Linear MatGame: 8 Agents, 10 Actions
+> NonZero
+> w/o Mixing Net
+> w/o Curvature
+> w/o Both
+
+Figure 3. Ablation study of NonZero by removing various design components, including the mixing net for initializing the parameter 
+
+θ and the Hessian for curvature-aware optimization. Full NonZero shows large performance gain compared with that without any of the key modules. 
+
+## Impact Statement 
+
+This paper presents work whose goal is to advance the field of Machine Learning. There are many potential societal consequences of our work, none which we feel must be specifically highlighted here. 
+
+## References 
+
+Browne, C. B., Powley, E., Whitehouse, D., Lucas, S. M., Cowling, P. I., Rohlfshagen, P., Tavener, S., Perez, D., Samothrakis, S., and Colton, S. A survey of monte carlo tree search methods. IEEE Transactions on Computa-tional Intelligence and AI in games , 4(1):1–43, 2012. Dong, K., Yang, J., and Ma, T. Provable model-based nonlinear bandit and reinforcement learning: Shelve op-timism, embrace virtual curvature. Advances in neural information processing systems , 34:26168–26182, 2021. Ellis, B., Cook, J., Moalla, S., Samvelyan, M., Sun, M., Mahajan, A., Foerster, J., and Whiteson, S. Smacv2: An improved benchmark for cooperative multi-agent re-inforcement learning. Advances in Neural Information Processing Systems , 36:37567–37593, 2023. Fang, Z., Lan, T., and Imani, M. Mint: Minimal informa-tion neuro-symbolic tree for objective-driven knowledge-gap reasoning and active elicitation. arXiv preprint arXiv:2602.05048 , 2026. Ha, D., Dai, A., and Le, Q. V. Hypernetworks. arXiv preprint arXiv:1609.09106 , 2016. Hernandez-Leal, P., Kartal, B., and Taylor, M. E. A survey and critique of multiagent deep reinforcement learning. 
+
+Autonomous Agents and Multi-Agent Systems , 33(6):750– 797, 2019. Hubert, T., Schrittwieser, J., Antonoglou, I., Barekatain, M., Schmitt, S., and Silver, D. Learning and planning in complex action spaces. In International Conference on Machine Learning , pp. 4476–4486. PMLR, 2021. Jiang, G., Imani, M., Bastian, N. D., and Lan, T. Agentic ai for cyber defense: Llm-guided hierarchical multi-agent reinforcement learning. In MILCOM 2025-2025 IEEE Military Communications Conference (MILCOM) , pp. 1518–1523. IEEE, 2025. Kalai, A. T. and Sastry, R. The isotron algorithm: High-dimensional isotonic regression. In COLT , volume 1, pp. 9, 2009. Kocsis, L. and Szepesv ´ari, C. Bandit based monte-carlo planning. In European conference on machine learning ,pp. 282–293. Springer, 2006. Kwak, Y., Hwang, I., Kim, D., Lee, S., and Zhang, B.-T. Efficient monte carlo tree search via on-the-fly state-conditioned action abstraction. arXiv preprint arXiv:2406.00614 , 2024. Leisiazar, S., Park, E. J., Lim, A., and Chen, M. An mcts-drl based obstacle and occlusion avoidance methodology in robotic follow-ahead applications. In 2023 IEEE/RSJ In-ternational Conference on Intelligent Robots and Systems (IROS) , pp. 221–228. IEEE, 2023. Li, Y., Tang, S., Chen, R., Yu, F. X., Jiang, G., Imani, M., Bastian, N. D., and Lan, T. Acdzero: Graph-embedding-based tree search for mastering automated cyber defense. 
+
+arXiv preprint arXiv:2601.02196 , 2026a. Li, Y., Tang, S., and Lan, T. Reason in chains, learn in trees: Self-rectification and grafting for multi-turn agent policy optimization. arXiv preprint arXiv:2604.07165 , 2026b. Liu, Q., Ye, J., Ma, X., Yang, J., Liang, B., and Zhang, C. Efficient multi-agent reinforcement learning by planning. 
+
+arXiv preprint arXiv:2405.11778 , 2024. Lowe, R., Wu, Y. I., Tamar, A., Harb, J., Pieter Abbeel, O., and Mordatch, I. Multi-agent actor-critic for mixed cooperative-competitive environments. Advances in neu-ral information processing systems , 30, 2017. Mei, Y., Zhou, H., Lan, T., Venkataramani, G., and Wei, P. Mac-po: Multi-agent experience replay via collective priority optimization. arXiv preprint arXiv:2302.10418 ,2023. Nesterov, Y. and Polyak, B. T. Cubic regularization of newton method and its global performance. Mathematical programming , 108(1):177–205, 2006. Oliehoek, F. A., Amato, C., et al. A concise introduction to decentralized POMDPs , volume 1. Springer, 2016. Rashid, T., Farquhar, G., Peng, B., and Whiteson, S. Weighted qmix: Expanding monotonic value function factorisation for deep multi-agent reinforcement learning. 
+
+Advances in neural information processing systems , 33: 10199–10210, 2020a. 9NonZero: Nonlinear Search for Multi-Agent RL 
+
+Rashid, T., Samvelyan, M., De Witt, C. S., Farquhar, G., Foerster, J., and Whiteson, S. Monotonic value function factorisation for deep multi-agent reinforcement learning. 
+
+Journal of Machine Learning Research , 21(178):1–51, 2020b. Samvelyan, M., Rashid, T., de Witt, C. S., Farquhar, G., Nardelli, N., Rudner, T. G. J., Hung, C.-M., Torr, P. H. S., Foerster, J., and Whiteson, S. The StarCraft Multi-Agent Challenge. CoRR , abs/1902.04043, 2019. Schrittwieser, J., Antonoglou, I., Hubert, T., Simonyan, K., Sifre, L., Schmitt, S., Guez, A., Lockhart, E., Hassabis, D., Graepel, T., et al. Mastering atari, go, chess and shogi by planning with a learned model. Nature , 588(7839): 604–609, 2020. Silver, D., Schrittwieser, J., Simonyan, K., Antonoglou, I., Huang, A., Guez, A., Hubert, T., Baker, L., Lai, M., Bolton, A., et al. Mastering the game of go without human knowledge. nature , 550(7676):354–359, 2017. Sironi, C. F., Liu, J., and Winands, M. H. Self-adaptive monte carlo tree search in general game playing. IEEE Transactions on Games , 12(2):132–144, 2018. Son, K., Kim, D., Kang, W. J., Hostallero, D. E., and Yi, Y. Qtran: Learning to factorize with transformation for cooperative multi-agent reinforcement learning. In Inter-national conference on machine learning , pp. 5887–5896. PMLR, 2019. Sunehag, P., Lever, G., Gruslys, A., Czarnecki, W. M., Zam-baldi, V., Jaderberg, M., Lanctot, M., Sonnerat, N., Leibo, J. Z., Tuyls, K., et al. Value-decomposition networks for cooperative multi-agent learning. arXiv preprint arXiv:1706.05296 , 2017. Tang, S., Chen, J., and Lan, T. Malinzero: Efficient low-dimensional search for mastering complex multi-agent planning. arXiv preprint arXiv:2511.06142 , 2025. Tang, S., Chen, R., and Lan, T. Agent alpha: Tree search uni-fying generation, exploration and evaluation for computer-use agents. arXiv preprint arXiv:2602.02995 , 2026. Wang, T., Wang, J., Zheng, C., and Zhang, C. Learning nearly decomposable value functions via communication minimization. arXiv preprint arXiv:1910.05366 , 2019. Wang, Y., Han, B., Wang, T., Dong, H., and Zhang, C. Dop: Off-policy multi-agent decomposed policy gradi-ents. In International conference on learning representa-tions , 2020. Xiao, Y., Liu, J., and Zhuo, H. H. Balmcts: Balancing objective function and search nodes in mcts for constraint optimization problems. arXiv preprint arXiv:2312.15864 ,2023. Ye, W., Liu, S., Kurutach, T., Abbeel, P., and Gao, Y. Mas-tering atari games with limited data. Advances in neural information processing systems , 34:25476–25488, 2021. Yu, C., Velu, A., Vinitsky, E., Gao, J., Wang, Y., Bayen, A., and Wu, Y. The surprising effectiveness of ppo in cooper-ative multi-agent games. Advances in neural information processing systems , 35:24611–24624, 2022. Zhang, T., Li, Y., Wang, C., Xie, G., and Lu, Z. Fop: Fac-torizing optimal joint policy of maximum-entropy multi-agent reinforcement learning. In International conference on machine learning , pp. 12491–12500. PMLR, 2021. Zhang, Z., Zhou, H., Imani, M., Lee, T., and Lan, T. Learn-ing to collaborate with unknown agents in the absence of reward. In Proceedings of the AAAI Conference on Artifi-cial Intelligence , volume 39, pp. 14502–14511, 2025. Zhang, Z., Tang, S., and Lan, T. Cochain perspectives on temporal-difference signals for learning beyond markov dynamics. arXiv preprint arXiv:2602.06939 , 2026. Zhou, H., Lan, T., and Aggarwal, V. Pac: Assisted value fac-torization with counterfactual predictions in multi-agent reinforcement learning. Advances in Neural Information Processing Systems , 35:15757–15769, 2022. 10 NonZero: Nonlinear Search for Multi-Agent RL 
+
+## A. Proofs 
+
+A.1. Justification of Assumption 3.2 
+
+In this section, we justify the existence of the smoothness constants ζ1, ζ 2, ζ 3 by modeling the discrete reward function 
+
+η(θ, a ) as a restriction of a smooth function operating on a continuous latent embedding space. This is a standard theoretical framework in discrete optimization and representation learning. 
+
+Continuous Latent Representation. Let ϕ : A → Z ⊆ Rd be an embedding function mapping discrete joint actions to a continuous compact domain Z. We assume the reward function admits a decomposition: 
+
+η(θ, a ) = F (θ, ϕ (a)) , (16) where F (θ, ·) : Rd → R is a C3-smooth function (e.g., a neural network with smooth activation functions like Softplus, SiLU, or Asinh). 
+
+Relation between Discrete Difference and Continuous Gradients. For any agent index i and action change u (moving from a to a(u)), let δu ≜ ϕ(a(u)) − ϕ(a) be the displacement vector in the embedding space. The discrete difference operator ∆u is linked to the directional derivative via the Mean Value Theorem. 
+
+I. Bound on First-Order Difference ( ζ1). By the first-order Taylor expansion with Lagrangian remainder: 
+
+∆uη(θ, a ) = F (θ, ϕ (a) + δu) − F (θ, ϕ (a)) = ∇z F (θ, ξ )T δu, (17) where ξ ∈ [ϕ(a), ϕ (a(u))] . Assuming F is L1-Lipschitz continuous with respect to the embedding: 
+
+|∆uη(θ, a )| ≤ sup 
+
+> z∈Z
+
+∥∇ z F (θ, z )∥2 · max  
+
+> a,u
+
+∥δu∥2. (18) Defining ζ1 ≜ L1 · Dmax where Dmax is the maximum embedding distance, the bound holds: 
+
+|∆uη(θ, a )| ≤ ζ1. (19) 
+
+II. Bound on Second-Order Difference ( ζ2). The second-order difference ∆2 
+
+> u,v
+
+captures the interaction between agent u
+
+and agent v.
+
+∆2 
+
+> u,v
+
+η(θ, a ) = ∆ v (∆ uη(θ, a )) = η(θ, a (u,v )) − η(θ, a (u)) − η(θ, a (v)) + η(θ, a ). (20) Using the second-order Taylor expansion for multivariate functions: 
+
+F (z + δu + δv ) − F (z + δu) − F (z + δv ) + F (z) = δTu ∇2 
+
+> z
+
+F (θ, ξ ′)δv , (21) where ∇2 
+
+> z
+
+F is the Hessian matrix and ξ′ is an intermediate point. If the spectral norm of the Hessian is bounded by L2 (i.e., 
+
+F is L2-smooth): 
+
+|∆2 
+
+> u,v
+
+η(θ, a )| ≤ ∥ δu∥2∥∇ 2 
+
+> z
+
+F (θ, ξ ′)∥2∥δv ∥2 ≤ L2D2max . (22) Thus, we set ζ2 ≜ L2D2max . This directly reflects the bounded pairwise interaction strength in the system. 
+
+III. Bound on Third-Order Difference ( ζ3). The term |∆2 
+
+> u,v
+
+η(θ, a (w)) − ∆2 
+
+> u,v
+
+η(θ, a )| represents the variation of the Hessian (interaction strength) when the state changes by direction w. This corresponds to the third-order directional derivative (involving the tensor ∇3F ). By the higher-order Mean Value Theorem: 
+
+∆w(∆ 2 
+
+> u,v
+
+η(θ, a )) = ∇3 
+
+> z
+
+F (θ, ξ ′′ )[ δu, δ v , δ w], (23) where [·, ·, ·] denotes the tensor-vector product. Assuming the Hessian is L3-Lipschitz (bounded third derivatives): 
+
+|∆3
+
+> u,v,w
+
+η(θ, a )| ≤ sup 
+
+> z
+
+∥∇ 3 
+
+> z
+
+F (θ, z )∥op · ∥ δu∥∥ δv ∥∥ δw∥. (24) Setting ζ3 ≜ L3D3max , the assumption is satisfied. The constants ζ1, ζ 2, ζ 3 are theoretically guaranteed to exist and are finite provided that: 11 NonZero: Nonlinear Search for Multi-Agent RL 
+
+1. The reward function η admits a smooth parameterization (e.g., asinh -GLM or Neural Networks). 2. The embedding space Z is compact. 3. The derivatives of the link function/activation function are bounded. This confirms that Assumption 3.2 is a direct consequence of standard smoothness properties in the continuous latent space. 
+
+A.2. Proof of Lemma 3.3 Lemma 3.3 (Restated). Let f (a) = ˜ η(θ∗, a ). Provided at /∈ A ϵ, 6√ζ3rd ϵ, the update yields: 
+
+f (at+1 ) − f (at) ≥ ν(ϵ) − C1 · ξt+1 , (25) 
+
+where ν(ϵ) ≜ c1 min 
+
+ 
+
+> ϵ2
+> ζh+1
+
+, ϵ3/2
+
+> ζ1/23rd
+
+
+
+and C1 = 2 + ζg /ζ h.Proof. Let zt = ϕ(at). Define the true gradient gt ≜ ∇z f (zt) and the surrogate gradient ˆgt ≜ ∇z ˆft(zt). Define the estimation error vector et ≜ ˆgt − gt. By the loss definition, ∥et∥2 ≤ ξt+1 . We analyze the update zt+1 = zt + dt in the latent space. 
+
+Case I: First-Order Dominance ( ∥gt∥ > ϵ ). The algorithm performs an approximate steepest ascent step using the surrogate gradient: dt = 1 
+
+> ζh
+
+ˆgt = 1 
+
+> ζh
+
+(gt + et). Applying the Descent Lemma to the ζh-smooth function f , we expand the reward increment: 
+
+f (at+1 ) − f (at) ≥ ⟨ gt, d t⟩ − ζh
+
+2 ∥dt∥2
+
+= 1
+
+ζh
+
+⟨gt, g t + et⟩ − ζh
+
+2
+
+gt + et
+
+ζh
+
+> 2
+
+= 1
+
+ζh
+
+ ∥gt∥2 + ⟨gt, e t⟩ − 12ζh
+
+ ∥gt∥2 + 2 ⟨gt, e t⟩ + ∥et∥2
+
+=
+
+ 1
+
+ζh
+
+− 1
+
+ζh
+
+
+
+⟨gt, e t⟩ + 1
+
+ζh
+
+∥gt∥2 − 12ζh
+
+∥gt∥2 − 12ζh
+
+∥et∥2
+
+= 12ζh
+
+∥gt∥2 − 12ζh
+
+∥et∥2. (26) 
+
+Remark: The exact cancellation of the linear error term ⟨gt, e t⟩ is due to the optimality of the step size 1/ζ h for the surrogate. Substituting ∥gt∥ > ϵ and ∥et∥2 ≤ ξt+1 :
+
+f (at+1 ) − f (at) ≥ ϵ2
+
+2ζh
+
+− 12ζh
+
+ξt+1 ≥ ϵ2
+
+2( ζh + 1) − 12ζh
+
+ξt+1 . (27) 
+
+Case II: Second-Order Dominance (Cubic Regime). Condition: ∥gt∥ ≤ ϵ and λmin (∇2f ) < −6√ζ3rd ϵ. The update follows the cubic regularization of the surrogate. Standard analysis (Nesterov & Polyak, 2006) on a manifold with 
+
+ζ3rd -Lipschitz Hessian guarantees that the optimal step d∗ 
+
+> ˆf
+
+for the surrogate satisfies: 
+
+ˆf (zt + d∗ 
+
+> ˆf
+
+) − ˆf (zt) ≥ ccubic 
+
+|λmin (∇2 ˆf )|3
+
+ζ23rd 
+
+≈ O(ϵ3/2). (28) Transferring this bound to the true function f involves the Hessian estimation error. Crucially, since d∗ 
+
+> ˆf
+
+is a stationary point of the cubic model of ˆf , the first-order error terms vanish, leaving only second-order degradation: 
+
+f (at+1 ) − f (at) ≥ ccubic 
+
+ϵ3/2
+
+√ζ3rd 
+
+− Ccurv · ∥ et∥2 ≥ ccubic 
+
+ϵ3/2
+
+√ζ3rd 
+
+− Ccurv · ξt+1 . (29) 12 NonZero: Nonlinear Search for Multi-Agent RL 
+
+Synthesis. We unify Eq. (27) and Eq. (29) . Define the unified coefficient c1 ≜ min {1/2, c cubic } and the error coefficient 
+
+Copt ≜ max { 12ζh , C curv }. The lower bound becomes: 
+
+f (at+1 ) − f (at) ≥ c1 min 
+
+ ϵ2
+
+ζh + 1 , ϵ3/2
+
+√ζ3rd 
+
+
+
+− Copt · ξt+1 
+
+= ν(ϵ) − Copt · ξt+1 . (30) Finally, we verify the constant C1. The Lemma defines C1 = 2 + ζg /ζ h. Assuming normalized smoothness ζh ≥ 0.5, we have C1 > 2 > 12ζh . Similarly, for standard cubic regularization constants, C1 is a loose upper bound for Ccurv . Subtracting a larger error term tightens the inequality (valid a fortiori ): 
+
+f (at+1 ) − f (at) ≥ ν(ϵ) − C1 · ξt+1 . (31) This concludes the proof. 
+
+A.3. Proof of Lemma 3.4 Notations and Problem Setting. Let Z = X × Y be the data space. We define the hypothesis class F = {fθ :
+
+θ ∈ Θ} with Θ ⊂ Rd. The algorithm generates a sequence of hypotheses f1, . . . , f T adapted to the filtration Ft−1 =
+
+σ(( x1, y 1), . . . , (xt−1, y t−1)) . The instantaneous loss is ℓt(f ) = P4
+
+> k=1
+
+(Dkf (xt) − yt,k )2, where Dk are linear difference operators. Let ξt = ℓt(ft) be the realized prediction error. We assume bounded targets and predictions, implying 
+
+ℓt(f ) ∈ [0 , B 2] almost surely. 
+
+Proof. The proof proceeds in three steps: (1) Martingale concentration to relate realized error to expected risk; (2) Symmetrization to introduce Sequential Rademacher Complexity; (3) Structural decomposition of the complexity for the NonZero architecture. 
+
+Step 1: Martingale Concentration and Online-to-Batch Conversion. We aim to bound the cumulative error ST =PTt=1 ξt. Let Rt(f ) = Ezt∼D t [ℓ(f, z t) | Ft−1] be the conditional expected risk. Define the martingale difference sequence 
+
+Mt = ξt − Rt(ft). Since |ξt| ≤ B2, by the Azuma-Hoeffding inequality, with probability 1 − δ/ 2:
+
+> T
+
+X
+
+> t=1
+
+(ξt − Rt(ft)) ≤ B2p2T log(2 /δ ). (32) Rearranging, we bound the realized error by the sum of risks: 
+
+> T
+
+X
+
+> t=1
+
+ξt ≤
+
+> T
+
+X
+
+> t=1
+
+Rt(ft) + ˜O(√T ). (33) Crucially, in the absence of strong convexity (the ”slow rate” regime), we cannot assume Rt(ft) decays as 1/t . Instead, we bound the cumulative excess risk against the best comparator f ∗ ∈ F . Let LT (F) = sup f ∈F 
+
+PTt=1 (Rt(ft) − ℓt(f )) . This leads to the standard regret bound form: 
+
+> T
+
+X
+
+> t=1
+
+Rt(ft) ≤ inf  
+
+> f∈F
+> T
+
+X
+
+> t=1
+
+ℓt(f ) + sup  
+
+> f∈F
+> T
+
+X
+
+> t=1
+
+(E[ℓt(f ) | Ft−1] − ℓt(f )) . (34) The second term is bounded by the Sequential Rademacher Complexity Rseq T (ℓ ◦ F ) via the ghost sample symmetrization technique (Rakhlin et al., 2010): 
+
+E
+
+"
+
+sup  
+
+> f∈F
+> T
+
+X
+
+> t=1
+
+(Rt(f ) − ℓt(f )) 
+
+#
+
+≤ 2Rseq T (ℓ ◦ F ). (35) 13 NonZero: Nonlinear Search for Multi-Agent RL 
+
+Step 2: Deriving the T 3/4 Bound. In the realizable setting ( inf Loss = 0 ), the cumulative error is dominated by the complexity. However, a direct application of Azuma yields an O(√T ) bound only if the complexity itself is constant. Here, the complexity grows. We invoke the refined bound for squared loss functions from Srebro et al. (2010) and Foster et al. (2018). For non-negative smooth losses, the cumulative error is bounded by the root of the complexity times the horizon: 
+
+> T
+
+X
+
+> t=1
+
+ξt ≤ pT · K (F), (36) where K(F) is the effective capacity. Identifying K(F) ≈ Rseq T (ℓ ◦ F ), we rigorously establish the form stated in the Lemma: TX
+
+> t=1
+
+ξt ≤
+
+q
+
+T · Rseq T (ℓ ◦ F ) + ˜O(√T ). (37) If Rseq T ∝ √T , this yields √T · T 1/2 = T 3/4.
+
+Step 3: Calculating the Complexity Rseq T (ℓ ◦ F ). We now strictly derive the complexity bound using operator theory. The loss ℓ(f ) = ∥h(f ) − y∥22 is Lℓ-Lipschitz wrt h = ( D1f, . . . , D4f ). By the vector-valued Talagrand’s Contraction Lemma: 
+
+Rseq T (ℓ ◦ F ) ≤ Lℓ
+
+> 4
+
+X
+
+> k=1
+
+Rseq T (Dk ◦ F ). (38) For any linear operator D (shift, difference), Rseq T (D ◦ F ) = Rseq T ({D f | f ∈ F} ). Since ∆uf (a) = f (a(u)) − f (a), we have R(∆ ◦ F ) ≤ 2R(F). Thus: 
+
+> 4
+
+X
+
+> k=1
+
+Rseq T (Dk ◦ F ) ≤ (1 + 1 + 2 + 4) Rseq T (F) = 8 Rseq T (F). (39) Recall f (a) = σ(⟨w, ϕ (a)⟩) with σ = c · asinh . Since σ is cα -Lipschitz: 
+
+Rseq T (F) ≤ cα · Rseq T (Flin ), (40) where Flin = {a 7 → ⟨ w, ϕ (a)⟩ : ∥w∥ ≤ W }. For the linear class with bounded norms W and X:
+
+Rseq T (Flin ) ≤ W X √T . (41) Substituting back up the chain: 
+
+Rseq T (ℓ ◦ F ) ≤ (8 LℓcαW X )
+
+| {z }
+
+> Cconst
+
+√T = ˜O(√T ). (42) Substituting Eq. (42) into Eq. (37): 
+
+> T
+
+X
+
+> t=1
+
+ξt ≤
+
+q
+
+T · Cconst 
+
+√T + ˜O(√T ) = pCconst T 3/4 + ˜O(√T ). (43) Since T 3/4 dominates √T for large T : TX
+
+> t=1
+
+ξt ≤ ˜O(T 3/4). (44) This completes the proof. 
+
+A.4. Proof of Theorem 3.5 
+
+This proof unifies the geometric landscape analysis (Lemma 3.3) and the statistical generalization bound (Lemma 3.4) to derive the convergence rate of the NonUCT algorithm. 
+
+1. Definitions and Problem Setup 
+
+14 NonZero: Nonlinear Search for Multi-Agent RL 
+
+• Let A∗ 
+
+> ϵ
+
+≜ Aϵ, 6√ζ3rd ϵ be the set of (ϵ, ϵ H )-approximate local maximizers. • Define the instantaneous regret indicator It ≜ I{at /∈ A ∗ 
+
+> ϵ
+
+}.• The cumulative regret (in terms of sample complexity to find a local optimum) is defined as the number of visits to non-optimal states: Regret T ≜ PTt=1 It.• Let f (a) ≜ ˜η(θ∗, a ) denote the ground-truth reward function. We assume bounded rewards, i.e., f (a) ∈ [0 , D f ] for all 
+
+a ∈ A . Without loss of generality, we normalize Df = 1 .• Let ξt+1 be the prediction error at step t + 1 , bounded in expectation by Lemma 3.4. 
+
+Proof. The derivation proceeds via a telescoping sum argument on the reward trajectory, analyzing the trade-off between guaranteed ascent and accumulated estimation error. 
+
+Step 1: One-Step Conditional Improvement. Recall Lemma 3.3 (One-step Geometric Improvement). At any step t, if the current action at is not a local maximizer (i.e., It = 1 ), the curvature-guided update ensures a reward increase, modulo the estimation error: 
+
+f (at+1 ) − f (at) ≥ ν(ϵ) − C1ξt+1 , if It = 1 . (45) If at is already a local maximizer ( It = 0 ), the algorithm may explore or oscillate. In the worst case, the reward could decrease, but since we are bounding the number of steps until convergence (or counting non-optimal steps), we focus on the contribution of It. Combining both cases, we write the conditional inequality: 
+
+f (at+1 ) − f (at) ≥ ν(ϵ)It − C1ξt+1 − ∆drop (1 − It), (46) where ∆drop accounts for potential value drops in optimal regions. However, for the purpose of bounding the ”hitting time” or the regret defined as visits to suboptimal states, we rearrange to isolate the positive indicator It:
+
+ν(ϵ)It ≤ (f (at+1 ) − f (at)) + C1ξt+1 + ∆ drop (1 − It). (47) 
+
+Remark: In standard non-convex analysis (e.g., finding stationary points), we bound the sum of indicators. The term (1 − It)
+
+corresponds to steps where we are already in the target set A∗ 
+
+> ϵ
+
+, contributing 0 to the specific definition of Regret used in ”finding” problems. Thus, we focus on summing the inequality over the trajectory. 
+
+Step 2: Telescoping Sum over Trajectory. Summing Eq. (46) from t = 1 to T :
+
+ν(ϵ)
+
+> T
+
+X
+
+> t=1
+
+It ≤
+
+> T
+
+X
+
+> t=1
+
+(f (at+1 ) − f (at)) + C1
+
+> T
+
+X
+
+> t=1
+
+ξt+1 . (48) The first term on the RHS is a telescoping sum: 
+
+> T
+
+X
+
+> t=1
+
+(f (at+1 ) − f (at)) = f (aT +1 ) − f (a1) ≤ max  
+
+> a
+
+f (a) − min  
+
+> a
+
+f (a) ≤ Df = 1 . (49) Substituting this back, we obtain a path-wise bound: 
+
+ν(ϵ) · Regret T ≤ 1 + C1
+
+> T
+
+X
+
+> t=1
+
+ξt+1 . (50) 
+
+Step 3: Integrating Statistical Complexity. We take the expectation of both sides with respect to the algorithm’s randomness and data generation process. By the linearity of expectation: 
+
+ν(ϵ) · E[Regret T ] ≤ 1 + C1E
+
+" TX
+
+> t=1
+
+ξt+1 
+
+#
+
+. (51) 15 NonZero: Nonlinear Search for Multi-Agent RL 
+
+We invoke Lemma 3.4 (Estimation Error Control), which states that the cumulative error is bounded by the sequential Rademacher complexity: 
+
+E
+
+" TX
+
+> t=1
+
+ξt+1 
+
+#
+
+≤ p4T RT . (52) (Note: The factor 4 accounts for the four components of the supervision signal yt ∈ R4 in the vector-valued Talagrand contraction). Substituting this bound: 
+
+ν(ϵ) · E[Regret T ] ≤ 1 + C1
+
+p4T RT . (53) 
+
+Step 4: Introducing the Landscape Complexity K(ϵ). We define the complexity term K(ϵ) as the inverse of the guaranteed improvement rate ν(ϵ). Recall from Lemma 3.3: 
+
+ν(ϵ) = c1 min 
+
+(
+
+ϵ2
+
+ζh + 1 , ϵ3/2
+
+ζ1/23rd 
+
+)
+
+. (54) Inverting this expression implies that the required steps scale with the maximum of the inverses: 
+
+K(ϵ) ≜ 1
+
+ν(ϵ) = 1
+
+c1
+
+max 
+
+ ζh + 1 
+
+ϵ2 ,
+
+√ζ3rd 
+
+ϵ3/2
+
+
+
+. (55) Absorbing the constant 1/c 1 into the notation (or setting c1 appropriately), we recover the definition in the Theorem statement: 
+
+K(ϵ) = max 
+
+
+
+4ζhϵ−2, pζ3rd ϵ−3/2
+
+. (56) 
+
+Step 5: Final Bound Derivation. Dividing the inequality from Step 3 by ν(ϵ) (equivalently, multiplying by K(ϵ)): 
+
+E[Regret T ] ≤ 1
+
+ν(ϵ)
+
+
+
+1 + C1
+
+p4T RT
+
+
+
+= K(ϵ)
+
+
+
+1 + C1
+
+p4T RT
+
+
+
+= (1 + C1
+
+p4T RT ) · K (ϵ). (57) This completes the proof. The regret scales linearly with the landscape difficulty K(ϵ) and sub-linearly with the time horizon 
+
+T (via the √T term in RT ), ensuring convergence to the set of approximate local maximizers. 
+
+A.5. Proof of Corollary 3.6 Prerequisites. From Theorem 3.5, the expected cumulative regret is bounded by: 
+
+E[Regret T ] ≤ (1 + C1
+
+p4T RT ) · K (ϵ). (58) From Lemma 3.4 (Proof Step 3), the Sequential Rademacher Complexity scales as: 
+
+RT ≜ Rseq T (ℓ ◦ F ) ≤ Cstat 
+
+√T , (59) where Cstat = 8 LℓcαW X is a problem-dependent constant independent of T .
+
+Proof. The proof follows by direct substitution and dominance analysis. 
+
+Step 1: Substitution of Complexity Bound. Substituting Eq. (59) into Eq. (58): 
+
+E[Regret T ] ≤ K (ϵ) + C1K(ϵ)
+
+q
+
+4T · Cstat 
+
+√T
+
+= K(ϵ) + C1K(ϵ)p4Cstat ·
+
+p
+
+T · T 1/2
+
+= K(ϵ) + 
+
+
+
+2C1
+
+pCstat K(ϵ)
+
+
+
+· T 3/4. (60) 16 NonZero: Nonlinear Search for Multi-Agent RL 
+
+Step 2: Aggregation of Constants. Let Cgeo ≜ K(ϵ) denote the geometric complexity constant (dependent on ϵ−2, ζ h). Let Ctotal ≜ 2C1
+
+√Cstat Cgeo denote the aggregate coefficient. The bound simplifies to: 
+
+E[Regret T ] ≤ C geo + Ctotal · T 3/4. (61) 
+
+Step 3: Asymptotic Analysis. For sufficiently large T , the term T 3/4 dominates the constant term Cgeo . We utilize the Soft-O notation ˜O(·) to suppress polylogarithmic factors and constants independent of the horizon T . Since ϵ, ζ h, ζ 3rd are fixed parameters of the problem instance and target precision: 
+
+lim  
+
+> T→∞
+
+E[Regret T ]
+
+T 3/4 ≤ lim  
+
+> T→∞
+
+ Cgeo 
+
+T 3/4 + Ctotal 
+
+
+
+= Ctotal . (62) Thus, strictly bounding the order with respect to T :
+
+E[Regret T ] = ˜O(T 3/4). (63) This confirms the sub-linear convergence rate characteristic of non-convex optimization under the ”slow rate” statistical regime. 
+
+A.6. Proof of Theorem 3.7 Definitions and Notations. Let A = Qni=1 Ai be the joint action space with cardinality K ≜ |A| = dn. We denote the class of unstructured reward functions by Eflat = {f : A → [0 , 1] }. We denote the class of asinh -GLM reward functions (NonZero hypothesis) by Estruct ⊂ E flat . The sample complexity TA(ϵ, δ ) of an algorithm A is defined as the minimal stopping time τ satisfying: 
+
+PA,f [f (a∗) − f (aout ) ≤ ϵ] ≥ 1 − δ, ∀f ∈ E . (64) 
+
+Proof. The proof derives the minimax lower bound for Eflat and contrasts it with the problem-dependent upper bound for 
+
+Estruct .
+
+Step 1: Minimax Lower Bound for Unstructured UCB. Any generic UCB algorithm treating actions as independent arms faces the minimax lower bound for Multi-Armed Bandits (MAB). We utilize the standard hypothesis testing construction. Construct a set of K hard instances {ν1, . . . , ν K } ⊂ E flat such that in instance i, action ai is optimal with mean μ + ∆ ,while all aj̸ =i have mean μ. By the Bretagnolle-Huber inequality applied to the canonical bandit model (Lattimore & Szepesv ´ari, 2020), distinguishing these hypotheses requires sufficient information gain. The minimax sample complexity is lower-bounded by the sum of inverse squared gaps: 
+
+inf  
+
+> A
+
+sup  
+
+> f∈E flat
+
+E[TA(ϵ)] ≥ c1
+
+X
+
+> a̸=a∗
+
+∆−2 ≈ c1
+
+Kϵ2 . (65) Substituting K = dn, we obtain the requisite lower bound for standard UCB: 
+
+TUCB (d, ϵ ) ≥ Ω  dnϵ−2 . (66) 
+
+Step 2: Structural Upper Bound for NonUCT. We convert the cumulative regret bound derived in Theorem 3.5 into a sample complexity bound. From Theorem 3.5 and Lemma 3.4, the cumulative regret scales as: 
+
+E[Regret T ] ≤ (1 + C1
+
+p4T RT )K(ϵ). (67) Substituting the explicit Rademacher complexity RT ≤ Cmodel 
+
+√nd √T (where √nd arises from the linear class complexity 
+
+W X ≈ √nd ): 
+
+E[Regret T ] ≤ Cconst · K (ϵ) ·
+
+q
+
+T · √nd · √T
+
+= Cconst · K (ϵ) · (nd )1/4 · T 3/4. (68) 17 NonZero: Nonlinear Search for Multi-Agent RL 
+
+Let the output policy be the uniform mixture over the trajectory. The expected sub-optimality is bounded by the average regret: 
+
+E[Gap ] ≤ E[Regret T ]
+
+T ≤ Cconst K(ϵ)( nd )1/4T −1/4. (69) Setting the RHS to ϵ and solving for T :
+
+T −1/4 ≤ ϵCconst K(ϵ)( nd )1/4 =⇒ T ≥
+
+ Cconst K(ϵ)
+
+ϵ
+
+4
+
+(nd ). (70) Thus, the sample complexity for NonUCT scales linearly with the dimension nd :
+
+TNonUCT (d, ϵ ) ≤ poly (ϵ−1) · O (nd ). (71) 
+
+Step 3: Derivation of the Separation Ratio ζsep . We define the ratio using Eq. (66) and Eq. (71): 
+
+ζsep ≜ TUCB 
+
+TNonUCT 
+
+≥ cL · dn · ϵ−2
+
+CU · nd · ϵ−4 · K (ϵ)4 . (72) We isolate the dimensionality terms from the precision terms: 
+
+ζsep ≥ C (ϵ) · dn
+
+nd , where C(ϵ) = cL
+
+CU
+
+ϵ2K(ϵ)−4. (73) We expand the term dn using the exponential identity x = eln x:
+
+dn = exp( n ln d) = exp 
+
+
+
+nd · ln dd
+
+
+
+. (74) Let c(d) ≜ ln dd . For discrete action spaces d ≥ 2, c(d) ≥ ln 2 2 > 0. Thus: 
+
+dn
+
+nd = exp( c(d) · nd )
+
+nd . (75) Since the exponential term dominates the linear denominator poly (nd ), we conclude: 
+
+ζsep ≥ exp( c · nd )
+
+poly (nd, ϵ −1) . (76) This formally proves the exponential separation in sample complexity. 
+
+## B. Implementation Details 
+
+B.1. Model Architecture 
+
+The proposed N ON ZERO framework is constructed using six distinct neural network modules: the representation function h,the communication function e, the dynamic function g, the reward function r, the value function v, and the policy function p.We define the relevant variables for each agent i as follows: sit,k represents the latent state, ait+k denotes the action, eit,k 
+
+indicates the cooperative feature, and pit,k is the policy prediction. The indices t and k refer to the real-world interaction step and the internal simulation rollout step, respectively. Additionally, rt,k and vt,k correspond to the predicted global reward and value. We also apply a hyper net-based mixing function m to predict the initialization of θ with the input of the node state. The workflow begins with the representation function sit, 0 = h(oi
+
+> ≤t
+
+), which encodes the individual observation history 
+
+oi 
+
+> ≤t
+
+into a latent embedding, thereby enabling planning without direct access to the underlying environmental rules. To facilitate coordination, the communication function {eit,k }i:1 ,...,n = e
+
+
+
+{eit,k }i:1 ,...,n , {ait+k}i:1 ,...,n 
+
+
+
+leverages an attention mechanism to synthesize cooperative features for every agent, taking the set of individual states and actions as input. State transitions are predicted by the dynamic function sit,k +1 = g(sit,k , a it+k, e it,k ). For evaluation, the reward function 18 NonZero: Nonlinear Search for Multi-Agent RL  
+
+> Table 2. Detailed hyper-parameters for NonZero across MatGame, SMAC, and SMACv2 environments.
+
+Hyper-Parameter Value Hyper-Parameter Value 
+
+Optimizer Adam Minibatch size 256 Learning rate 10 −4 Discount factor 0.99 Weight decay 0 Priority exponent 0.6 RMSprop epsilon 10 −5 Priority correction 0.4 → 1Max gradient norm 5 Dynamic generation ratio 0.6 Evaluation episodes 32 λ for initialization 10 −4
+
+Target network update interval 200 Quantile in MCTS value est. 0.75 Unroll steps 5 Decay λ in MCTS value est. 0.8 TD steps 5 Exp. factor in Weighted-Advantage 3Min replay size for sampling 300 Stacked observations 4
+
+rt,k = r
+
+
+
+{eit,k }i:1 ,...,n , {ait+k}i:1 ,...,n 
+
+
+
+and the value function vt,k = v
+
+
+
+{eit,k }i:1 ,...,n 
+
+
+
+estimate the reward for the global state-action pair and the value of the global state, respectively. The policy function pit,k = p(sit,k ) generates the policy distribution for each agent based on its current individual latent state. And the mixing function predicts the parameter θt,k 
+
+via θt,k = m
+
+
+
+{sit,k }i:1 ,...,n 
+
+
+
+.With the exception of the communication function e, all neural network components are instantiated as Multi-Layer Perceptron (MLP) architectures. Within these MLPs, each linear transformation is immediately followed by Layer Normalization (LN) and a Rectified Linear Unit (ReLU) activation function. Across the three benchmarks evaluated in the experiments, the input observations are processed as 1-dimensional vectors, mapped to a hidden state dimension of 128. To mitigate partial observability, the representation network h aggregates the four most recent local observations as input for each agent. Prior to this representation step, an LN layer is applied to normalize the raw observation features. To prevent gradient vanishing during the sequential unrolling of the latent dynamics, the dynamic function g incorporates a residual connection linking the current hidden state to the next. Furthermore, following the methodology of MuZero, we employ a categorical representation for value and reward targets, utilizing the invertible scaling transform f (x) = sign( x)√1 + x − 1 + 0 .001 x to stabilize predictions. The specific depth and configuration of the hidden layers for the MLP modules are detailed as follows: • Representation function h: [128 , 128] .• Dynamic function g: [128 , 128] .• Reward function r, Value function v, and Policy function p: [32] .• Mixing function m: [64 , 64] .
+
+B.2. Training Details 
+
+Our training infrastructure follows an asynchronous distributed paradigm inspired by EfficientZero (Ye et al., 2021), effectively decoupling the concurrent processes of trajectory generation, policy reanalysis, and network optimization. To maintain high throughput, distinct worker groups are allocated to manage these parallel tasks independently. Furthermore, we align our objective formulation—specifically the advantage estimation and loss calculation mechanism—strictly with the methodology established in MAZero (Liu et al., 2024). The computational experiments are executed on high-performance computing clusters equipped with NVIDIA RTX A6000 GPUs. Regarding the hyper-parameters for Monte Carlo Tree Search (MCTS), we tailor the search budget to the complexity of the environment. In the MatGame scenarios, we employ a simulation budget of 50, with a branching factor of 3 sampled actions per node. Conversely, for the more intricate SMAC and SMACv2 benchmarks, the simulation count is increased to 100, with 7 actions sampled during the expansion phase. A comprehensive list of additional hyper-parameters is provided in Table 2. 19 NonZero: Nonlinear Search for Multi-Agent RL  
+
+> Table 3. Hyper-parameters for MAZero, MAZero-NP, and MA-AlphaZero across MatGame, SMAC, and SMACv2 environments.
+
+Hyper-Parameter Value Hyper-Parameter Value 
+
+Optimizer Adam Minibatch size 256 Learning rate 10 −4 Discount factor 0.99 RMSprop epsilon 10 −5 Priority exponent 0.6 Weight decay 0 Priority correction 0.4 → 1Max gradient norm 5 Quantile in MCTS value est. 0.75 Evaluation episodes 32 Decay λ in MCTS value est. 0.8 Target network update interval 200 Exp. factor in Weighted-Advantage 3Unroll steps 5 Stacked observations 4TD steps 5 Min replay size for sampling 300 
+
+## C. Details of Baseline Algorithms 
+
+MAZero Family. We derive our implementations of MAZero (Liu et al., 2024) and its variant, MAZero-NP, from the official repository 1. The MAZero-NP variant is distinct in that it excludes prior information from the UCT bound calculation, while retaining the remainder of the architecture. Regarding the MCTS configuration, we employ 3 sampled actions and 50 simulations for MatGame tasks, whereas SMAC and SMACv2 experiments utilize 7 sampled actions and 100 simulations. Additionally, we evaluate MA-AlphaZero, which adapts the MAZero codebase to incorporate the scoring mechanism of AlphaZero (Silver et al., 2017). Specifically, the UCT selection criterion is modified to utilize raw Q-values rather than advantage scores. Given the structural similarities to MAZero, it shares the hyperparameter settings enumerated in Table 3. 
+
+Model-Free Baselines. The QMIX (Rashid et al., 2020b) baseline is established using the PyMARL framework 2, with configuration details provided in Table 4 (Left). Similarly, MAPPO (Yu et al., 2022) utilizes the official on-policy benchmark implementation 3, following the specifications detailed in Table 4 (Right).   
+
+> Table 4. Hyper-parameters for model-free baselines.
+> (a) QMIX Configuration
+
+Hyper-Parameter Value 
+
+Optimizer RMSProp Learning rate (Actor) 5 × 10 −4
+
+Learning rate (Critic) 5 × 10 −4
+
+Initial ϵ 1.0 Final ϵ 0.05 Batch size 32 Buffer size 5000 Discount factor 0.99 Exploration noise 0.1  
+
+> (b) MAPPO Configuration
+
+Hyper-Parameter Value 
+
+Optimizer Adam Learning rate 5 × 10 −4
+
+RMSprop epsilon 10 −5
+
+Recurrent chunk length 10 Gradient clipping 10 GAE parameter 0.95 Discount factor 0.99 Value loss Huber ( δ = 10 )Batch size Buffer × Agents 
+
+## D. Settings of Benchmarks 
+
+MatGame Environments. We evaluate the performance of NonZero and baseline algorithms on the MatGame benchmark under two distinct configurations. (1) Linear Setting : The joint reward is defined strictly as the summation of the indices of all agents within the system. (2) Non-linear Setting : We introduce stochastic perturbations to the linear reward structure. Specifically, the final joint reward represents the linear sum superimposed with a noise term composed of a Gaussian component u ∼ N (0 , 22) and a uniform component v ∼ U (−3, 3) .
+
+> 1https://github.com/liuqh16/MAZero
+> 2https://github.com/oxwhirl/pymarl
+> 3https://github.com/marlbenchmark/on-policy
+
+20 NonZero: Nonlinear Search for Multi-Agent RL  
+
+> Table 5. Summary of experimental configurations across MatGame, SMAC, and SMACv2 benchmarks.
+
+Benchmark Configuration / Map Type Key Characteristics Noise / Variation 
+
+MatGame Linear Sum of agent indices None Non-linear Linear sum + Noise u ∼ N (0 , 22) + v ∼ U (−3, 3) 
+
+SMAC Small, Medium, Large Homogeneous/Fixed 3 Random Seeds SMACv2 General Maps Heterogeneous Units Randomized Start Positions Modified Sight/Attack Ranges 
+
+StarCraft Multi-Agent Challenge (SMAC). Our experiments on the standard SMAC benchmark utilize the official implementation hosted at https://github.com/oxwhirl/smac . To ensure a comprehensive evaluation, we select three representative maps covering small, medium, and large scales of agent counts. All experimental results are reported as averages over 3 independent random seeds to guarantee reproducibility and statistical significance. 
+
+SMACv2. For the more complex SMACv2 environments, we adopt the codebase from https://github.com/ oxwhirl/smacv2 . Unlike the original SMAC, this version emphasizes generalization. In our experiments, we enforce high stochasticity by randomizing both the start positions and the heterogeneous unit types for each episode, even within the same map. Furthermore, to enhance agent diversity and tactical complexity, the unit sight ranges and attack ranges are modified compared to the original SMAC settings. 21

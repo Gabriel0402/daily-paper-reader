@@ -1,0 +1,609 @@
+Title: InterFuserDVS: Event-Enhanced Sensor Fusion for Safe RL-Based Decision Making
+
+URL Source: https://arxiv.org/pdf/2605.04355v1
+
+Published Time: Thu, 07 May 2026 00:17:35 GMT
+
+Number of Pages: 17
+
+Markdown Content:
+# InterFuserDVS: Event-Enhanced Sensor Fusion for Safe RL-Based Decision Making 
+
+## Mustafa Sakhai a, Kaung Sithu a, Min Khant Soe Oke a and Maciej Wielgosz a,b 
+
+> a
+
+Faculty of Computer Science, Electronics and Telecommunications, AGH University of Krakow, Krakow, 30-059, Poland 
+
+> b
+
+Academic Computer Centre AGH, Krakow, 30-950, Poland 
+
+A R T I C L E I N F O 
+
+Keywords :Autonomous Driving Sensor Fusion Dynamic Vision Sensor Event Camera Transformer Imitation Learning 
+
+A B S T R A C T 
+
+Autonomous driving systems rely heavily on robust sensor fusion to perceive complex envi-ronments. Traditional setups using RGB cameras and LiDAR often struggle in high-dynamic-range scenes or high-speed scenarios due to motion blur and latency. Dynamic Vision Sensors (DVS), or event cameras, offer a paradigm shift by capturing asynchronous brightness changes with microsecond temporal resolution and high dynamic range. In this paper, we propose an extended architecture of the state-of-the-art InterFuser model, integrating DVS as an additional modality to enhance perception reliability. We introduce a novel token-based fusion strategy that incorporates accumulated event frames into the transformer-based backbone of InterFuser. Our method leverages the complementary nature of RGB, LiDAR, and DVS data. We evaluate our approach on the Car Learning to Act (CARLA) Leaderboard benchmarks, demonstrating that the inclusion of DVS improves the robustness of the driving agent, achieving a competitive Driving Score of 77.2 and a superior Route Completion of 100%. The results indicate that event-based vision is a promising direction for improving safety and performance in adverse lighting and dynamic conditions. 
+
+## 1. Introduction 
+
+Autonomous driving perception requires robustness across a myriad of environmental conditions, ranging from ideal sunny days to challenging scenarios involving high-speed motion, sudden lighting changes, and adverse weather [8]. Conventional sensor suites, primarily composed of RGB cameras and LiDARs, have shown great success but face inherent limitations. Standard frame-based cameras suffer from motion blur during high-speed maneuvers and have limited dynamic range, causing blindness in scenarios like exiting a dark tunnel into bright sunlight [20, 61]. LiDARs provide accurate depth but are sparse and their performance degrades in heavy rain or fog. Dynamic Vision Sensors (DVS), or event cameras, offer a complementary modality. Instead of capturing absolute intensity frames at a fixed rate, DVS pixels operate asynchronously, triggering an "event" only when the log-intensity change exceeds a threshold [33]. This results in a microsecond-resolution stream of data with a high dynamic range (HDR) of over 120 dB and negligible motion blur. These properties make DVS ideal for capturing distinct edge information and motion dynamics that are often missed by standard cameras. In this paper, we present InterFuserDVS , a comprehensive extension of the state-of-the-art InterFuser architecture [52] that integrates event data as a first-class modality. Our work makes the following contributions: 1. Event-Enhanced Architecture : We integrate a dedicated DVS processing backbone into the InterFuser framework. We propose a transfer-learning strategy where the DVS encoder is initialized from a pre-trained RGB backbone, facilitating rapid convergence. 2. Token-Based Fusion : We employ a unified Transformer Encoder to fuse spatial features from RGB/LiDAR with high-frequency temporal features from DVS. The global attention mechanism allows the model to dynamically weight sensor importance based on environmental context. 3. Hybrid Safety Policy : We introduce a robust safety controller that combines the model’s end-to-end trajectory predictions with heuristic validation. This includes a state-machine for traffic light compliance and a model-based collision checker that uses predicted occupancy maps to override unsafe control commands. 4. State-of-the-Art Performance : We evaluate our method on the challenging CARLA Leaderboard (Town05, Long Routes). Our agent achieves a Driving Score of 77.2 and a 100% Route Completion rate, demonstrating exceptional robustness and reliability, outperforming many contemporary methods in route completion. 
+
+> ORCID
+
+(s): 
+
+Sakhai et al.: Preprint submitted to Elsevier Page 1 of 17 
+
+> arXiv:2605.04355v1 [cs.CV] 5 May 2026 InterFuserDVS
+
+We extensively evaluate our method on the CARLA Leaderboard [18], providing a detailed ablation study and failure analysis. Our results highlight the specific contribution of event data to collision avoidance and traffic rule compliance in high-dynamic scenarios. 
+
+## 2. Related Work 
+
+2.1. End-to-End Autonomous Driving 
+
+End-to-end autonomous driving aims to map raw sensor inputs directly to control commands, bypassing the traditional modular pipeline of perception, planning, and control [8, 59]. Early pioneering works like ALVINN [40] demonstrated the feasibility of training neural networks for lane following. With the advent of deep learning, this paradigm has evolved significantly. PilotNet [2] successfully learned steering commands from front-facing cameras. Recent works have focused on planning-oriented architectures [25] and vectorized representations [28] to improve interpretability and performance. More recently, Imitation Learning (IL) has become the dominant approach. Conditional Imitation Learning (CIL) [12] introduced high-level navigational commands (e.g., Turn Left, Turn Right) to resolve ambiguity at intersections. CILRS [13] improved upon this by incorporating speed prediction and residual learning. However, these methods often struggled with the "causal confusion" problem and failed to generalize to dense traffic. To address these limitations, Knowledge Distillation and Privileged Learning have been explored. Roach [63] used a privileged expert with access to ground-truth states to supervise a sensor-motor student. [7] proposed a "learning by cheating" framework. A recent review centered on the CARLA ecosystem further systematizes RL and IL formulations in terms of state, action, reward, and integration design, while emphasizing persistent challenges in robustness, scalability, and generalization [14]. Despite these advances, single-modality (RGB-only) agents often lack the geometric understanding required for safety-critical maneuvers. 
+
+2.2. Multi-Modal Sensor Fusion 
+
+Merging complementary sensor modalities is essential for robust perception. Fusion strategies are generally categorized into early, late, and intermediate fusion. Early Fusion stacks raw data (e.g., RGB + Depth) at the input level. While simple, it suffers from modality alignment issues and can lead to the "modality collapse" phenomenon where the network ignores the weaker modality. Late Fusion processes each modality independently and ensembles the high-level decisions. This approach preserves modularity but fails to exploit low-level feature correlations. 
+
+Intermediate Fusion , particularly using Transformers, has emerged as the state-of-the-art [31, 58]. TransFuser [41] uses attention modules to fuse geometric features from LiDAR with semantic features from RGB at multiple scales. NEAT [10] compresses 2D features into a unified Bird’s Eye View (BEV) representation. Recent BEV fusion methods [34, 32, 26] demonstrate the power of unified representations. Early multi-view works [9] laid the groundwork for these approaches. Our work builds upon the InterFuser [52] architecture, which employs a global Transformer to fuse tokenized features from cameras and LiDAR. We extend this by introducing DVS as a third time-domain modality. 
+
+2.3. Safe and Interpretable Driving 
+
+Safety has long been studied in the traditional planning/control community. However, in autonomous driving, uncertain behaviors, diverse driving preferences of drivers, and numerous driving situations deteriorate the safety concern [30]. Traditional rule-based methods usually hand-crafted different delicate rules to tackle different driving situations. However, such hand-crafted designs usually require heavy human engineering effort and it is hard to enumerate on all possible cases. In comparison, learning-based methods aim at learning diverse driving behaviors from data without heavy human design labor. However, their lack of interpretability becomes a new puzzle in the way [29]. There are efforts taking a bypass, verifying the functioning conditions of neural network models instead of directly understanding them. However, feedback on the failure causes and solutions are still wanted. Some works design auxiliary tasks to output interpretable semantic features [54], which is showing a great improvement on both the performance and interpretability. Beyond nominal driving performance, recent CARLA-based security evaluations also show that sensor robustness under cyberattacks matters, and that DVS can provide complementary resilience when combined with anomaly detection and tailored filtering defenses [48]. 
+
+2.4. Event-based Vision in Robotics 
+
+Event cameras (DVS) represent a paradigm shift in visual perception. By measuring pixel-wise brightness changes asynchronously, they offer high dynamic range (>120 dB), microsecond temporal resolution, and low power   
+
+> Sakhai et al.: Preprint submitted to Elsevier Page 2 of 17 InterFuserDVS
+
+consumption [20]. In the domain of robotics and SLAM, event cameras have been widely adopted for high-speed tracking and visual odometry [57, 44]. For automotive applications, [35] utilized DVS for steering angle prediction using a simplified event surface. [62] proposed a method to fuse events and frames for object detection, showing significant gains in night-time scenarios. Other works explore video reconstruction [24, 50], depth estimation [21], and unsupervised learning [64] with events. Sparse convolutional networks [36] have also shown promise. At the dataset level, DVS-PedX extends the event-based automotive ecosystem with paired synthetic CARLA sequences and JAAD-to-DVS conversions targeted at pedestrian detection and crossing-intention analysis under normal and adverse conditions [49]. However, most existing works focus on specific perception sub-tasks. Comprehensive end-to-end driving policies that leverage event data for complex urban navigation remain scarce. Our paper bridges this gap by demonstrating a closed-loop DVS-enabled driving agent. 
+
+## 3. Methodology 
+
+3.1. Overall Architecture 
+
+The proposed architecture builds upon InterFuser [52], a transformer-based sensor fusion model. Our extended model takes inputs from three modalities: multi-view RGB cameras, LiDAR, and Dynamic Vision Sensors (DVS). Figure 1 illustrates the overall pipeline. The core component is a transformer that processes tokenized features from all sensors to reason about the scene globally and output safe driving trajectories. 
+
+3.2. Input Representation 
+
+RGB Images The model consumes RGB images from three perspectives: Left, Front, and Right. Additionally, a central crop of the Front view is used to focus on distant traffic lights obstacles. 
+
+LiDAR LiDAR point clouds are voxelized and projected into a Bird’s Eye View (BEV) representation, which is then processed by a 2D CNN backbone. 
+
+Dynamic Vision Sensor (DVS) Raw events are a stream of (𝑥, 𝑦, 𝑡, 𝑝 ) tuples. Directly processing asynchronous events in a frame-based transformer is challenging. We accumulate events into fixed-time windows to generate "event frames". These frames capture the motion dynamics and edges of the scene. We employ a single-channel representation where pixel values correspond to the normalized count or polarity sum of events. 
+
+3.2.1. RGB and LiDAR 
+
+We utilize three RGB cameras with a field of view (FOV) of 100 ◦, covering the front, left, and right sectors. The images are cropped to 800 × 600 resolution. For LiDAR, we use a 64-channel sensor. The point cloud is projected into a 2-bin histogram (above and below ground plane) to form a Bird’s Eye View (BEV) pseudo-image of size 224 × 224 ,following [52]. 
+
+3.3. Mathematical Formulation 
+
+3.3.1. Transformer Attention 
+
+The core of our fusion engine is the Multi-Head Self-Attention (MSA) mechanism. Given a sequence of tokens 𝑆 
+
+from all sensors, we project them into Queries ( 𝑄 ), Keys ( 𝐾 ), and Values ( 𝑉 ) using learnable matrices 𝑊 𝑄 , 𝑊 𝐾 , 𝑊 𝑉 .The scaled dot-product attention is computed as: Attention (𝑄, 𝐾, 𝑉 ) = softmax 
+
+(
+
+𝑄𝐾 𝑇 
+
+√𝑑 𝑘 
+
+)
+
+𝑉 (1) [56] where 𝑑 𝑘 is the dimension of the key vectors. This operation is performed in parallel across ℎ = 8 heads, allowing the model to attend to different subspaces of the sensor representations simultaneously. 
+
+3.3.2. Positional Encoding 
+
+Since the transformer is permutation-invariant, we inject spatial structure using sinusoidal positional encodings. For a token at position (𝑝𝑜𝑠 ) in a 2D grid, the encoding is: 
+
+𝑃 𝐸 (𝑝𝑜𝑠, 2𝑖 ) = sin( 𝑝𝑜𝑠 ∕10000 2𝑖 ∕𝑑 𝑚𝑜𝑑𝑒𝑙 )
+
+𝑃 𝐸 (𝑝𝑜𝑠, 2𝑖 +1) = cos( 𝑝𝑜𝑠 ∕10000 2𝑖 ∕𝑑 𝑚𝑜𝑑𝑒𝑙 ) (2)   
+
+> Sakhai et al.: Preprint submitted to Elsevier Page 3 of 17
+
+InterFuserDVS 
+
+Figure 1: Overview of the InterFuserDVS Architecture. The model fuses RGB images, LiDAR point clouds, and DVS event frames. Specific backbones (ResNet for RGB/DVS, PointNet for LiDAR) extract features which are tokenized and processed by a global Transformer Encoder. The Decoder predicts waypoints, traffic light states, and occupancy maps, which are used by the Safety Controller to generate final control commands. 
+
+These structure-aware embeddings allow the fusion layer to understand that a DVS event frame from the left camera is spatially adjacent to the left-side of the central RGB image. 
+
+3.4. Path Planning and Tracking 
+
+3.4.1. Global vs. Local Planning 
+
+The agent receives a sparse high-level route 𝑔𝑙𝑜𝑏𝑎𝑙 = { 𝑤 1, 𝑤 2, … , 𝑤 𝑁 } from the CARLA server. Our local planner, implemented as a RoutePlanner module, periodically selects the next target waypoint 𝑤 𝑡𝑎𝑟𝑔𝑒𝑡 . The selection 
+
+Sakhai et al.: Preprint submitted to Elsevier Page 4 of 17 InterFuserDVS 
+
+logic is distance-based: we search for the furthest waypoint 𝑤 𝑖 ∈ 𝑔𝑙𝑜𝑏𝑎𝑙 such that: 
+
+𝑑 𝑚𝑖𝑛 ≤ ‖𝑤 𝑖 − 𝑝 𝑒𝑔𝑜 ‖2 ≤ 𝑑 𝑚𝑎𝑥 (3) where 𝑑 𝑚𝑖𝑛 = 4 .0𝑚 and 𝑑 𝑚𝑎𝑥 = 50 .0𝑚 . This ensures that the agent always has a valid short-term goal, even if the global route is complex. 
+
+3.4.2. Object Tracking 
+
+To maintain temporal consistency of detected objects across frames, we employ a heuristic tracker. The tracker maintains a list of TrackedObjects , each with state 𝑠 𝑡 = [ 𝑥, 𝑦, 𝑣 𝑥 , 𝑣 𝑦 ]. In each frame, detected bounding boxes from the model detector are matched to existing tracks using the Euclidean distance metric. We apply a confidence-weighted merging strategy to smooth the predicted speed and heading of other vehicles, where the smoothing factor 𝛼 is derived from the detection confidence: 
+
+𝑣 (𝑡 ) 
+
+> 𝑠𝑚𝑜𝑜𝑡ℎ
+
+= 𝛼𝑣 (𝑡 ) 
+
+> 𝑚𝑒𝑎𝑠𝑢𝑟𝑒𝑑
+
++ (1 − 𝛼 )𝑣 (𝑡 −1)  
+
+> 𝑠𝑚𝑜𝑜𝑡ℎ
+
+(4) where 𝛼 = 0 .4 × confidence. This filtering is crucial for the safety controller, as noisy velocity estimates could trigger false-positive emergency braking. 
+
+3.5. Control Algorithm 
+
+The final control output 𝑢 (𝑡 ) = [ 𝛿, 𝜏, 𝛽 ]𝑇 (steering, throttle, brake) is generated by two PID controllers. Lateral Control : The steering angle 𝛿 is computed based on the heading error 𝜃 𝑒 towards the target waypoint: 
+
+𝛿 (𝑡 ) = 𝐾 𝑝 𝜃 𝑒 (𝑡 ) + 𝐾 𝑖 ∫
+
+> 𝑡
+> 0
+
+𝜃 𝑒 (𝜏 )𝑑𝜏 + 𝐾 𝑑 
+
+𝑑𝜃 𝑒 (𝑡 )
+
+𝑑𝑡 (5) where 𝐾 𝑝 , 𝐾 𝑖 , 𝐾 𝑑 are tunable gains. Longitudinal Control : The target velocity 𝑣 𝑡𝑎𝑟𝑔𝑒𝑡 is dynamically adjusted based on the curvature of the path and the distance to the nearest obstacle. The throttle 𝜏 and brake 𝛽 are then set to minimize velocity error 𝑣 𝑒 = 𝑣 𝑡𝑎𝑟𝑔𝑒𝑡 − 𝑣 𝑐𝑢𝑟𝑟𝑒𝑛𝑡 .
+
+3.6. Algorithmic Description 
+
+To provide a clearer understanding of the agent’s decision-making process, we present the high-level control loop and the safety validation logic in Figures 2 and 3. 
+
+3.7. Feature Extraction and Fusion 
+
+3.7.1. Modality-Specific Backbones 
+
+Each sensor modality is processed by a dedicated CNN backbone. For RGB and DVS inputs, we employ ResNet variants (e.g., ResNet-26, ResNet-50) [23] pre-trained on ImageNet. A key design choice in our DVS branch is Cross-Modal Transfer Initialization : we initialize the DVS backbone weights using the pre-trained RGB backbone weights. This strategy exploits the spatial correlation between intensity edges (RGB) and temporal edges (DVS), significantly stabilizing early training. The standard layers of the ResNet are used to extract a multi-scale feature pyramid, extracting high-level semantic features. For LiDAR, we use PointNet++ [43] or similar point-based encoders [42] adapted for BEV. 
+
+3.7.2. Tokenization and Transformer Encoder 
+
+The feature maps from the backbones are flattened and projected into 𝐷 -dimensional tokens via a 1×1 convolution. To preserve spatial context, learnable 2D positional embeddings are added to each token. The tokens from all sensors, RGB (front, left, right), LiDAR (BEV), and DVS (front, left, right) are concatenated into a single sequence 𝑆 ∈ ℝ𝑁 ×𝐷 .This sequence is fed into a pure Transformer Encoder with 𝐿 = 6 layers. The self-attention mechanism enables global reasoning across modalities. For instance, a token from the DVS-front view representing a moving pedestrian can attend to LiDAR tokens to resolve depth, or to RGB tokens to identify color attributes.   
+
+> Sakhai et al.: Preprint submitted to Elsevier Page 5 of 17 InterFuserDVS
+
+3.8. Safety Controllers and Decoding 
+
+The Transformer Decoder takes a set of learnable query embeddings and attends to the fused memory from the encoder. It outputs: 
+
+• Waypoints : A sequence of 2D coordinates in the ego-vehicle frame, predicted by a GRU-based decoder conditioned on the high-level navigational command (e.g., Turn Left, Follow Lane). 
+
+• Traffic Light State : A classification head predicting the status of traffic lights (Red, Green, Yellow) affecting the ego-lane. 
+
+• Junction Detection : A binary classifier predicting if the vehicle is entering an intersection. 
+
+• Object Density Maps : Auxiliary heads that predict the presence of vehicles and pedestrians in a BEV grid, used for safety enforcement. Specifically, the object density map 𝑀 ∈ ℝ𝑅 ×𝑅 ×7 covers 𝑅 meters in front of the ego vehicle and 𝑅 ∕2 meters on its two sides. The 7 channels in each grid cell represent: 1) probability of object existence, 2) 2D offset from the grid center, 3) object bounding box size, 4) object heading, and 5) object velocity. This rich semantic output enables precise collision checking. 
+
+3.9. Heuristic Safety Policy 
+
+While the end-to-end model provides the primary driving trajectory, we integrate a robust rule-based safety controller to handle critical edge cases and enforce traffic rules. This hybrid approach significantly reduces collision rates. 
+
+3.9.1. Traffic Light Violation Handler 
+
+We maintain a state machine for traffic light compliance. If the model’s traffic light classification head predicts a "Red" or "Yellow" state with a probability 𝑃 𝑟𝑒𝑑 > 0.7, a counter incremented. To prevent false positives from indefinitely stalling the vehicle, we implement a timeout mechanism: if the vehicle has been stopped for a red light for over 50 seconds (1000 simulation steps), a "Forced Crossover" mode is triggered to clear the intersection. 
+
+3.9.2. Model-Based Collision Avoidance 
+
+To prevent collisions, we utilize the object density maps predicted by the model (Traffic Meta-Data). We render the predicted dynamic obstacles into a local occupancy grid. The ego-vehicle’s planned trajectory is checked against this grid at multiple future time steps ( 𝑡 = 0 𝑠, 0.5𝑠, 0.75 𝑠, 1.0𝑠, 1.5𝑠, 2.0𝑠 ). The safety distance 𝑑 𝑠𝑎𝑓 𝑒 is dynamically computed: 
+
+𝑑 𝑠𝑎𝑓 𝑒 = min  
+
+> 𝑡
+
+(𝑑 𝑜𝑏𝑠𝑡𝑎𝑐𝑙𝑒 (𝑡 ) − 𝑑 𝑏𝑢𝑓 𝑓 𝑒𝑟 ) (6) where 𝑑 𝑜𝑏𝑠𝑡𝑎𝑐𝑙𝑒 (𝑡 ) is the distance to the nearest obstacle along the path at time 𝑡 , and 𝑑 𝑏𝑢𝑓 𝑓 𝑒𝑟 is a safety margin (typically 2.5m). If 𝑑 𝑠𝑎𝑓 𝑒 falls below a velocity-dependent threshold ( max(3 .0, 𝑣 𝑒𝑔𝑜 )), the PID controller is overridden, and emergency braking is applied. 
+
+3.9.3. PID Control 
+
+The final waypoints are converted into steering, throttle, and brake commands using two separate PID controllers: one for lateral control (steering) and one for longitudinal control (speed). The target speed is dynamically adjusted based on the curvature of the path and the safety distance 𝑑 𝑠𝑎𝑓 𝑒 . This ensures smooth lane keeping while enabling rapid deceleration in emergencies. Figure 2 illustrates the overall control loop, showing how sensor data flows through the transformer to generate waypoints, which are then processed by the PID controller. Crucially, the Safety Validation module (detailed in Figure 3) acts as a gatekeeper, taking the raw PID commands, Traffic Light State, and Occupancy Map to enforce safety constraints. 
+
+3.10. Loss Functions 
+
+We train the model end-to-end using a weighted sum of multiple loss terms: 
+
+ = 𝜆 𝑤𝑝 𝑤𝑝 + 𝜆 𝑡𝑟𝑎𝑓 𝑓 𝑖𝑐 𝑡𝑟𝑎𝑓 𝑓 𝑖𝑐 + 𝜆 𝑐𝑙𝑠 𝑐𝑙𝑠 (7)    
+
+> Sakhai et al.: Preprint submitted to Elsevier Page 6 of 17 InterFuserDVS
+> Figure 2: InterFuserDVS Control Loop: High-level overview of the sensor fusion, transformer processing, and control generation pipeline. Note that the Safety Validation block takes the PID command as input and can override it.
+
+where 𝑤𝑝 is the 𝓁 1 loss between predicted and ground-truth waypoints. 𝑡𝑟𝑎𝑓 𝑓 𝑖𝑐 is a specialized Multi-View Traffic Loss (MVTL) that enforces consistency between the predicted object density maps and the ground truth derived from the simulator’s actor list. 𝑐𝑙𝑠 denotes Cross-Entropy losses for traffic light state and junction classification. We use 
+
+𝜆 𝑤𝑝 = 0 .2, 𝜆 𝑡𝑟𝑎𝑓 𝑓 𝑖𝑐 = 0 .5, and smaller weights for auxiliary classifications, optimizing the entire network with the AdamW optimizer. 
+
+## 4. Experiments 
+
+4.1. Experimental Setup 
+
+We evaluate our model on the CARLA Leaderboard benchmark (Town05 Long Routes), which represents one of the most challenging urban driving scenarios. The evaluation consists of complex navigation tasks involving lane changing, intersection negotiation, and interaction with dense traffic (vehicles and pedestrians). We draw on recent methodologies for evaluating synthetic versus real event data [47] to ensure our simulation metrics are robust. We use the official CARLA Leaderboard metrics:    
+
+> Sakhai et al.: Preprint submitted to Elsevier Page 7 of 17 InterFuserDVS
+> Figure 3: Safety Validation Logic: The hybrid controller logic that overrides PID proposals based on traffic light states and predicted future occupancy. It specifically checks if the vehicle is close to a junction before enforcing red light stops, preventing deadlocks.
+
+• Driving Score (DS) : The primary metric, calculated as the product of Route Completion and (1 - Infraction Penalty). 
+
+• Route Completion (RC) : The percentage of the route distance completed by the agent. 
+
+• Infraction Score (IS) : A geometric series of penalty coefficients for various infractions (collisions, red light violations, etc.). 
+
+4.2. Implementation Details and Training Protocol 
+
+4.2.1. Network Architecture 
+
+The Transformer Encoder consists of 6 layers with 8 attention heads each, and a hidden dimension of 𝐷 = 256 .The Feed-Forward Networks (FFN) have an expansion factor of 4. We use sinusoidal positional encodings for the tokens. The DVS backbone (ResNet-18 or ResNet-50) is initialized with weights from the RGB backbone. This transfer                                   
+
+> Sakhai et al.: Preprint submitted to Elsevier Page 8 of 17 InterFuserDVS
+> Table 1
+> Performance comparison on the public CARLA leaderboard. Our InterFuserDVS achieves competitive driving scores and perfect route completion, showing superior reliability compared to other state-of-the-art methods like M2DA and ReasonNet.
+> Rank Method Driving Score Route Completion Infraction Score
+> 1M2DA [60] 85.34 --2ReasonNet [53] 79.95 89.89 0.89
+> 3InterFuserDVS (Ours) 77.20 100.00 0.77
+> 4InterFuser [52] 76.18 88.23 0.84 5TCP [59] 75.14 85.63 0.87 6LAV [6] 61.85 94.46 0.64 7TransFuser [11] 61.18 86.69 0.71
+
+learning step is critical; without it, we observed that the DVS branch struggles to learn meaningful semantic features in the early epochs, leading to instability. 
+
+4.2.2. Data Augmentation 
+
+To prevent overfitting, we apply a rigorous data augmentation pipeline. 1. Geometric Transforms : Random horizontal flips ( 𝑝 = 0 .5), random scaling ( 0.9× to 1.1× ), and rotations (±10 ◦). These are applied synchronously to RGB, DVS, and ground-truth labels (waypoints/heatmaps) to enforce spatial consistency. 2. Photometric Transforms : We apply Color Jitter (brightness, contrast, saturation) to RGB images. For DVS event frames, we apply random channel masking (dropping positive or negative events) to simulate sensor noise or sparsity. 
+
+4.2.3. Training Parameters 
+
+The model is trained using the AdamW optimizer with a weight decay of 0.01 and a gradient clip norm of 0.1. We use a batch size of 32 distributed across 4 NVIDIA A100 GPUs. The initial learning rate is set to 5 × 10 −4 and follows a cosine decay schedule with a 5-epoch linear warmup. The total training duration is 50 epochs. The loss weights are empirically tuned: 𝜆 𝑤𝑝 = 0 .2, 𝜆 𝑡𝑟𝑎𝑓 𝑓 𝑖𝑐 = 0 .5, 𝜆 𝑐𝑙𝑠 = 0 .1. The higher weight on the traffic loss reflects the importance of accurate obstacle detection for the safety controller. 
+
+4.3. Quantitative Analysis 
+
+Table 2 presents the evaluation results on the CARLA Leaderboard. 
+
+4.3.1. Driving Score and Route Completion 
+
+Our agent achieves a Driving Score (DS) of 77.20 , which is a composite metric penalizing infractions. The Route Completion (RC) is 100% , meaning the agent never got stuck, lost, or timed out. This is a significant achievement in the Town05 Long benchmarks, where dense traffic often causes blockages for less robust agents. Table 1 provides a comparison with state-of-the-art methods. While recent works like M2DA [60] and ReasonNet [53] achieve higher driving scores, our InterFuserDVS maintains a competitive position and distinguishes itself with perfect route completion, indicating superior navigational reliability. 
+
+4.3.2. Safety and Infractions 
+
+The agent demonstrates exceptional safety: 
+
+• Collision Rate : The collision rate with pedestrians is extremely low ( 0.008 /km). This highlight’s the DVS sensor’s ability to detect biological motion (pedestrians) which often have high temporal contract but low static visual saliency. Collisions with vehicles are slightly higher ( 0.036 /km) but still within a highly competitive range. 
+
+• Traffic Rules : The Red Light Infraction rate is 0.01 /km. This occasional failure might be due to the "Forced Crossover" logic in our safety controller, which permits running a red light if the agent is stuck for over 50 seconds—a necessary trade-off in simulation to ensure route completion.               
+
+> Sakhai et al.: Preprint submitted to Elsevier Page 9 of 17 InterFuserDVS
+> Table 2
+> Detailed Quantitative Results on CARLA Leaderboard (Town05 Long).
+> Metric Value Driving Score (DS) 77.200 Route Completion (RC) 100.000%
+> Infraction Score (IS) 0.772 Collision (Pedestrian) 0.008 /km Collision (Vehicle) 0.036 /km Collision (Layout) 0.000 /km DVS DataProcessing Red Light Infraction 0.010 /km Stop Sign Infraction 0.000 /km Route Deviation 0.000 /km Route Timeout 0.000 /km Vehicle Blocked 0.000 /km
+
+4.4. Qualitative Analysis 
+
+To better understand the agent’s behavior, we analyze three distinct scenarios from the evaluation set. These case studies illustrate how the DVS-enhanced system handles complex interactions that challenge baseline RGB-only models. 
+
+4.4.1. Scenario A: Unprotected Left Turn at Intersection 
+
+In this scenario, the ego-vehicle attempts to turn left at a busy intersection with oncoming traffic. This requires accurate depth estimation to judge gaps and precise timing to execute the turn. 1. Setup : The agent approaches the intersection. The traffic light is green, but oncoming traffic flow is heavy. 2. Behavior : The agent enters the intersection and yields. The DVS backbone detects the rapid lateral motion of oncoming cars (high event density in the center of the FOV). The transformer attention map shows a strong focus on these moving agents. 3. Outcome : Once a sufficient gap appears (detected by the absence of near-field obstacles in the occupancy map), the agent accelerates. The turn is completed smoothly without causing a collision or blocking the box. 
+
+4.4.2. Scenario B: Overtaking Static Vehicles 
+
+Here, the agent encounters a double-parked vehicle blocking its lane. This requires a lane-change maneuver into the oncoming lane, which is inherently risky. 1. Setup : A static vehicle is detected 20m ahead. The road is a two-way single lane. 2. Behavior : The agent slows down. The object tracking module identifies zero velocity for the obstacle. The path planner generates a candidate trajectory that swerves into the opposing lane. 3. Outcome : The agent checks the DVS-left and DVS-front sensors. Seeing no incoming high-frequency events (which would indicate an approaching car), it proceeds to overtake. This specific reliance on DVS for "clearance validation" highlights the benefit of temporal sensing—an approaching car would trigger a distinct event signature even at a distance. 
+
+4.4.3. Scenario C: Emergency Braking for Pedestrians 
+
+This critical safety scenario involves a pedestrian jaywalking from behind an occluded area (e.g., a parked truck). 1. Setup : The agent is cruising at 30 km/h. A pedestrian suddenly steps out from the right occlusion zone. 2. Behavior : The RGB perception is challenged due to the shadow cast by the truck. However, the DVS sensor immediately picks up the pedestrian’s limb motion (high contrast change). 3. Outcome : The safety controller computes a Time-To-Collision (TTC) of 1.2s. The "Model-Based Collision Avoidance" logic triggers, overriding the PID throttle command and applying 100% braking. The vehicle stops 0.5m from the pedestrian. This reaction time is significantly faster than the RGB-only baseline, which required an additional 3 frames to resolve the pedestrian’s bounding box from the shadow.   
+
+> Sakhai et al.: Preprint submitted to Elsevier Page 10 of 17 InterFuserDVS
+
+4.5. Ablation Analysis: Why DVS Matters 
+
+The integration of DVS provides two critical advantages: 1. High Dynamic Range : In scenarios with harsh shadows or sun glare, RGB cameras can be blinded. DVS, measuring change, remains robust. This ensures that the Transformer always has at least one reliable source of features for lane and obstacle detection. 2. Temporal Resolution : Fast moving objects (e.g., crossing pedestrians) generate a dense stream of events. The DVS backbone captures this motion explicitly. Our confusion matrix analysis shows that the "DVS-Front" tokens often have high attention weights during dynamic maneuvers, confirming that the model learns to rely on event data for motion planning. 
+
+## 5. Future Architecture: Asynchronous Event Fusion 
+
+Current approaches, including InterFuserDVS, typically convert asynchronous event streams into synchronous frames to make them compatible with standard CNN backbones. While effective, this "frame-based" conversion quantizes the temporal dimension, potentially discarding the microsecond-level motion information that makes DVS sensors unique. To fully exploit the high motion detection capabilities of DVS, we propose a novel architecture centered around Spiking Neural Networks (SNN) and an Asynchronous Fusion Transformer (AFT), as illustrated in Figure 4. 
+
+5.1. Spiking Neural Networks (SNN) for DVS 
+
+Instead of accumulating events into frames, the future architecture processes the raw event stream directly using a Spiking Neural Network. As shown in the system design (Figure 4), the Event Integration Temporal block feeds into an SNN which extracts Spike Features . SNNs operate on sparse, asynchronous spikes, aligning perfectly with the output of DVS sensors. This ensures that high-speed motion dynamics are preserved and processed with minimal latency, rather than being averaged out over a frame integration period. Neuromorphic hardware such as Loihi [15] offers massive energy efficiency gains for such workloads [45, 51]. Recent advances in SNN training [39, 16, 19] and application in real-time detection [46] make this approach increasingly viable. 
+
+5.2. Asynchronous Fusion Transformer (AFT) 
+
+Integrating asynchronous spike features with synchronous RGB frames and LiDAR point clouds requires a fundamental redesign of the fusion mechanism. We introduce the Asynchronous Fusion Transformer (AFT) . Key components of this architecture include: 
+
+• Discretizer and Timestamp Processing : This module handles the temporal alignment between the continuous time-domain of spikes and the discrete time-domain of camera frames. 
+
+• Source Encoding : Explicit encodings for sensor type and position help the transformer distinguish between modalities and their spatial configurations. 
+
+• Cross-Modal Fusion : The AFT performs attention mechanisms across these aligned representations, allowing the model to dynamically weigh the importance of "fast" event features versus "slow" semantic features from RGB/LiDAR. By moving to this SNN-AFT paradigm, we aim to unlock the full potential of DVS sensors, particularly for safety-critical maneuvers where millisecond-level reaction times are decisive. 
+
+## 6. Conclusion 
+
+In this paper, we presented InterFuserDVS , a comprehensive sensor fusion architecture that effectively integrates event cameras into an end-to-end autonomous driving pipeline. By treating event streams as high-fidelity temporal inputs and fusing them via a global Transformer, we achieved state-of-the-art performance (DS 77.2) on the CARLA Leaderboard. We extensively detailed the system’s safety mechanisms, including a hybrid neural-heuristic controller that leverages model predictions for run-time collision checking. Our results validate that event cameras are not just a niche sensor but a vital modality for the next generation of robust autonomous vehicles. Future work will investigate end-to-end training with Spiking Neural Networks (SNNs) to further capitalize on the energy-efficiency of neuromorphic hardware. Code and trained models are available; see Section 7.   
+
+> Sakhai et al.: Preprint submitted to Elsevier Page 11 of 17
+
+InterFuserDVS 
+
+## 7. Code availability 
+
+The source code and framework are available at https://github.com/MustafaSakhai/InterFuserDVS.git .
+
+## Declaration of generative AI and AI-assisted technologies in the manuscript preparation process 
+
+During the preparation of this work the author(s) used AI assistant ChatGPT 5.2 in order to check and correct language in this manuscript. After using this tool/service, the author(s) reviewed and edited the content as needed and take(s) full responsibility for the content of the published article. 
+
+## Declaration of competing interest 
+
+The authors declare that they have no known competing financial interests or personal relationships that could have appeared to influence the work reported in this paper. 
+
+## A. Loss Function Design 
+
+The loss function of our method is designed to encourage better prediction of the desired waypoints ( 𝑝𝑡 ), object density map ( 𝑚𝑎𝑝 ), and traffic information ( 𝑡𝑓 ): 
+
+ = 𝜆 𝑝𝑡 pt + 𝜆 𝑚𝑎𝑝 𝑚𝑎𝑝 + 𝜆 𝑡𝑓 𝑡𝑓 , (8) where 𝜆 is used to balance the three loss terms. In this section, We will introduce these three loss terms in detail. 
+
+A.1. Waypoint loss function 
+
+In the waypoints loss ( 𝑝𝑡 ), we expect to generate waypoints 𝐰 𝑙 as close to the waypoint sequence generated by expert agent 𝐰 𝑝 𝑙 as possible, by 𝐿 1 norm as in [62]: 
+
+𝑝𝑡 =
+
+> 𝐿
+
+∑
+
+> 𝑙 =1
+
+‖‖‖𝐰 𝑙 − 𝐰 𝑝 𝑙 
+
+‖‖‖1 , (9) where the 𝐿 denotes the sequence length. 
+
+A.2. Object density loss function 
+
+The object density map is a ℝ𝑅 ×𝑅 ×7 grid map with 𝑅 rows, 𝑅 columns, and 7 channels including 1 object probability channel and 6 object meta feature channels. The object density loss ( 𝑚𝑎𝑝 ) thus consists of a probability prediction loss 𝑝𝑟𝑜𝑏 and a meta feature prediction loss 𝑚𝑒𝑡𝑎 :
+
+𝑚𝑎𝑝 = 𝑝𝑟𝑜𝑏 + 𝑚𝑒𝑡𝑎 (10) The probability prediction aims at predicting the existence of objects in each map grid. To avoid mostly zero probability predictions due to sparse positive labels, we further construct a balanced loss function by calculating the average loss for positive and negative labels respectively and merging them together: 
+
+𝑝𝑟𝑜𝑏 = 12 (0 
+
+> 𝑝𝑟𝑜𝑏
+
++ 1
+
+> 𝑝𝑟𝑜𝑏
+
+), (11) where 0 
+
+> 𝑝𝑟𝑜𝑏
+
+and 1 
+
+> 𝑝𝑟𝑜𝑏
+
+denote the loss for negative and positive labels respectively: 
+
+0 
+
+> 𝑝𝑟𝑜𝑏
+
+= 1
+
+𝐶 0
+
+> 𝑅
+
+∑
+
+> 𝑖 𝑅
+
+∑
+
+> 𝑗
+
+(𝟏 [̌𝑀 𝑖𝑗 0=0] 
+
+|||̌𝑀 𝑖𝑗 0 − 𝑀 𝑖𝑗 0
+
+|||1), (12) 
+
+1 
+
+> 𝑝𝑟𝑜𝑏
+
+= 1
+
+𝐶 1
+
+> 𝑅
+
+∑
+
+> 𝑖 𝑅
+
+∑
+
+> 𝑗
+
+(𝟏 [̌𝑀 𝑖𝑗 0=1] 
+
+|||̌𝑀 𝑖𝑗 0 − 𝑀 𝑖𝑗 0
+
+|||1), (13) 
+
+Sakhai et al.: Preprint submitted to Elsevier Page 12 of 17 InterFuserDVS 
+
+where ̌ 𝑀 𝑖𝑗 0 and 𝑀 𝑖𝑗 0 denote the ground-truth and predicted object probability (channel 0) at the gird of 𝑖 𝑡ℎ row and 
+
+𝑗 𝑡ℎ column respectively. 𝟏 [̌𝑀 𝑖𝑗 0=0∕1] ∈ {0 , 1} denotes the indicator function. 𝐶 0 and 𝐶 1 denote the counts of positive and negative labels respectively: 
+
+𝐶 0 =
+
+> 𝑅
+
+∑
+
+> 𝑖 𝑅
+
+∑
+
+> 𝑗
+
+𝟏 [̌𝑀 𝑖𝑗 0=0] (14) 
+
+𝐶 1 =
+
+> 𝑅
+
+∑
+
+> 𝑖 𝑅
+
+∑
+
+> 𝑗
+
+𝟏 [̌𝑀 𝑖𝑗 0=1] (15) The other 6 meta feature channels describe 6 meta information: offset x, offset y, heading, velocity x, velocity y, bounding box x, and bounding box y. The goal of meta feature prediction is to minimize the error between predicted and ground-truth meta features. Consequently, the meta feature prediction loss is designed as: 
+
+𝑚𝑒𝑡𝑎 = 1
+
+𝐶 1
+
+> 𝑅
+
+∑
+
+> 𝑖 𝑅
+
+∑
+
+> 𝑗
+> 6
+
+∑
+
+> 𝑘 =1
+
+(𝟏 [̌𝑀 𝑖𝑗 0=1] 
+
+|||̌𝑀 𝑖𝑗𝑘 − 𝑀 𝑖𝑗𝑘 
+
+|||1) (16) where ̌ 𝑀 𝑖𝑗𝑘 and 𝑀 𝑖𝑗𝑘 denote ground-truth and predicted 𝑘 𝑡ℎ -channel meta feature of the object at the grid of 𝑖 𝑡ℎ row and 𝑗 𝑡ℎ column respectively. 
+
+A.3. Traffic information loss function 
+
+When predicting the traffic information ( tf ), we expect to recognize the traffic light status ( 𝑙 ), stop sign ( 𝑠 ), and whether the vehicle is at junction of roads ( 𝑗 ): 
+
+𝑡𝑓 = 𝜆 𝑙 𝑙 + 𝜆 s𝑠 + 𝜆 𝑗 𝑗 , (17) where 𝜆 balances the three loss terms, which are calculated by binary cross-entropy loss. 
+
+## B. Safety Controller - Desired Speed Optimization 
+
+The desired velocity is optimized to ensure collision avoidance while maximizing efficiency. Instead of solving a computationally expensive Linear Programming problem at each step, we implement a real-time heuristic controller that analytically solves for the safe velocity based on the predicted future occupancy. The controller considers the maximum safe distances 𝑑 𝑡 at multiple future time horizons 𝑡 ∈ {0 .5𝑠, 1.0𝑠, 1.5𝑠, 2.0𝑠 }.Let 𝑑 𝑡 be the distance to the nearest obstacle along the predicted path at time 𝑡 , minus a safety buffer of 2.0 meters: 
+
+𝑑 𝑡 = max(0 , dist (𝑝 𝑒𝑔𝑜 (𝑡 ), 𝑝 𝑜𝑏𝑠 (𝑡 )) − 2 .0) (18) The desired speed 𝑣 𝑐𝑚𝑑 is then computed as the minimum of several safety constraints derived from the kinematic limits of the vehicle: 
+
+𝑣 𝑐𝑚𝑑 = max 
+
+⎛⎜⎜⎜⎝
+
+0, min 
+
+⎧⎪⎨⎪⎩
+
+𝑣 𝑚𝑎𝑥 
+
+4 ⋅ 𝑑 0.5 − 𝑣 𝑐𝑢𝑟𝑟𝑒𝑛𝑡 − max(0 , 𝑣 𝑐𝑢𝑟𝑟𝑒𝑛𝑡 − 2 .5) 2 ⋅ 𝑑 1.0 − 0 .5 ⋅ 𝑣 𝑐𝑢𝑟𝑟𝑒𝑛𝑡 − max(0 , 𝑣 𝑐𝑢𝑟𝑟𝑒𝑛𝑡 − 2 .5) 
+
+⎞⎟⎟⎟⎠
+
+(19) where 𝑣 𝑚𝑎𝑥 is the global speed limit (set to 6.5 m/s or 23 km/h in urban settings), and 𝑣 𝑐𝑢𝑟𝑟𝑒𝑛𝑡 is the current ego-velocity. The terms involving 𝑑 0.5 and 𝑑 1.0 ensure that the vehicle can brake comfortably to avoid a collision predicted at 𝑡 = 0 .5𝑠 and 𝑡 = 1 .0𝑠 respectively. The term max(0 , 𝑣 𝑐𝑢𝑟𝑟𝑒𝑛𝑡 − 2 .5) acts as an additional damping factor at higher speeds. If the immediate safe distance 𝑑 0 (at 𝑡 = 0 ) is critically low ( 𝑑 0 < max(3 .0, 𝑣 𝑐𝑢𝑟𝑟𝑒𝑛𝑡 )), the controller triggers an emergency brake ( 𝑣 𝑐𝑚𝑑 = 0 ). This heuristic approach guarantees safety while maintaining a low computational footprint (<1ms), which is crucial for the high-frequency control loop (20Hz). 
+
+Sakhai et al.: Preprint submitted to Elsevier Page 13 of 17 InterFuserDVS Input Sensors     
+
+> RGB Cameras
+> Frames
+> LiDAR
+> Point clouds
+> DVS
+> Events
+> Encoders
+> CNN Backbone 3D Processing Event Integration
+> Temporal
+> Multi-Scale 3D Features Spiking Neural
+> Network
+> Spike Features
+
+Discretizer 
+
+Timestamp Processing 
+
+Source Encoding 
+
+Sensor Type & Position 
+
+Asynchronous Fusion Transformer (AFT) 
+
+Temporal Alignment + Cross-Modal Fusion      
+
+> Decoder
+> Uni fi ed Latent Representation
+> Object Density
+> Map 3D Occupancy Tra ffi c Rule Waypoints
+> (GRU)
+> Occupancy Tra ffi cego waypoints
+> Planning and Control
+> Multi-Task
+> Safety
+> Controller
+> Trajectory
+> Evaluation
+> Policy Network
+> Final Actions
+> Steering / Throttle /
+> Brake
+> Density
+
+Figure 4: Future Architecture Design: Integrating Spiking Neural Networks (SNN) and Asynchronous Fusion Transformer (AFT). The pipeline preserves the asynchronous nature of DVS events through the SNN backbone, using a Discretizer to align spike features with synchronous RGB and LiDAR data before fusion. Sakhai et al.: Preprint submitted to Elsevier Page 14 of 17 InterFuserDVS 
+
+## References 
+
+[1] , 2021. Expert drivers for autonomous driving. urlhttps://kait0.github.io/files/master_thesis_bernhard_jaeger.pdf. [2] Bojarski, M., Del Testa, D., Dworakowski, D., Firner, B., Flepp, B., Goyal, P., Jackel, L.D., Monfort, M., Muller, U., Zhang, J., et al., 2016. End to end learning for self-driving cars. arXiv preprint arXiv:1604.07316 URL: https://arxiv.org/abs/1604.07316 .[3] Caesar, H., Bankiti, V., Lang, A.H., Vora, S., Liong, V.E., Xu, Q., Krishnan, A., Pan, Y., Baldan, G., Beijbom, O., 2019. nuscenes: A multimodal dataset for autonomous driving. CoRR abs/1903.11027. URL: http://arxiv.org/abs/1903.11027 , arXiv:1903.11027 .[4] Chekroun, R., Toromanoff, M., Hornauer, S., Moutarde, F., 2021. Gri: General reinforced imitation and its application to vision-based autonomous driving. arXiv preprint arXiv:2111.08575 . [5] Chen, D., Koltun, V., Krähenbühl, P., 2021. Learning to drive from a world on rails, in: Proceedings of the IEEE/CVF International Conference on Computer Vision, pp. 15590–15599. [6] Chen, D., Krähenbühl, P., 2022. Learning from all vehicles, in: Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition, pp. 17222–17231. [7] Chen, D., Zhou, B., Koltun, V., Krähenbühl, P., 2020. Learning by cheating, in: Conference on Robot Learning, PMLR. pp. 66–75. URL: 
+
+https://arxiv.org/abs/1912.12294 .[8] Chen, L., Wu, P., Chitta, K., Jaeger, B., Geiger, A., Li, H., 2024. End-to-end autonomous driving: Challenges and frontiers. arXiv preprint arXiv:2306.16927 URL: https://arxiv.org/abs/2306.16927 , arXiv:2306.16927 .[9] Chen, X., Ma, H., Wan, J., Li, B., Xia, T., 2016. Multi-view 3d object detection network for autonomous driving. CoRR abs/1611.07759. URL: http://arxiv.org/abs/1611.07759 , arXiv:1611.07759 .[10] Chitta, K., Prakash, A., Geiger, A., 2021. Neat: Neural attention fields for end-to-end autonomous driving, in: Proceedings of the IEEE/CVF International Conference on Computer Vision, pp. 15793–15803. URL: https://arxiv.org/abs/2109.04456 .[11] Chitta, K., Prakash, A., Jaeger, B., Yu, Z., Renz, K., Geiger, A., 2022. Transfuser: Imitation with transformer-based sensor fusion for autonomous driving. arXiv preprint arXiv:2205.15997 URL: https://arxiv.org/abs/2205.15997 , arXiv:2205.15997 .[12] Codevilla, F., Müller, M., López, A., Koltun, V., Dosovitskiy, A., 2018. End-to-end driving via conditional imitation learning, in: 2018 IEEE International Conference on Robotics and Automation (ICRA), IEEE. pp. 4693–4700. URL: https://arxiv.org/abs/1710.02410 .[13] Codevilla, F., Santana, E., Lopez, A., Gaidon, A., 2019. Exploring the limitations of behavior cloning for autonomous driving, in: 2019 IEEE/CVF International Conference on Computer Vision (ICCV), pp. 9328–9337. doi: 10.1109/ICCV.2019.00942 .[14] Czechowski, P., Kawa, B., Sakhai, M., Wielgosz, M., 2025. Deep reinforcement and il for autonomous driving: A review in the carla simulation environment. Applied Sciences 15, 8972. URL: https://doi.org/10.3390/app15168972 , doi: 10.3390/app15168972 .[15] Davies, M., Srinivasa, N., Lin, T.H., Chinya, G., Cao, Y., Choday, S.H., Dimou, G., Joshi, P., Imam, N., Jain, S., Liao, Y., Lin, C.K., Lines, A., Liu, R., Mathaikutty, D., McCoy, S., Paul, A., Tse, J., Venkataramanan, G., Weng, Y.H., Wild, A., Yang, Y., Wang, H., 2018. Loihi: A neuromorphic manycore processor with on-chip learning. IEEE Micro 38, 82–99. doi: 10.1109/MM.2018.112130359 .[16] Deng, S., Li, Y., Zhang, S., Gu, S., 2022. Temporal efficient training of spiking neural network via gradient re-weighting. URL: https: //openreview.net/forum?id=_XNtisL32jv .[17] Dosovitskiy, A., Beyer, L., Kolesnikov, A., Weissenborn, D., Zhai, X., Unterthiner, T., Dehghani, M., Minderer, M., Heigold, G., Gelly, S., Uszkoreit, J., Houlsby, N., 2020. An image is worth 16x16 words: Transformers for image recognition at scale. CoRR abs/2010.11929. URL: 
+
+https://arxiv.org/abs/2010.11929 , arXiv:2010.11929 .[18] Dosovitskiy, A., Ros, G., Codevilla, F., Lopez, A., Koltun, V., 2017. CARLA: An open urban driving simulator, in: Levine, S., Vanhoucke, V., Goldberg, K. (Eds.), Proceedings of the 1st Annual Conference on Robot Learning, PMLR. pp. 1–16. URL: https://proceedings. mlr.press/v78/dosovitskiy17a.html .[19] Fang, W., Yu, Z., Chen, Y., Masquelier, T., Huang, T., Tian, Y., 2021. Incorporating Learnable Membrane Time Constant to Enhance Learning of Spiking Neural Networks , in: 2021 IEEE/CVF International Conference on Computer Vision (ICCV), IEEE Computer Society, Los Alamitos, CA, USA. pp. 2641–2651. URL: https://doi.ieeecomputersociety.org/10.1109/ICCV48922.2021.00266 , doi: 10. 1109/ICCV48922.2021.00266 .[20] Gallego, G., Delbruck, T., Orchard, G., Bartolozzi, C., Taba, B., Censi, A., Leutenegger, S., Davison, A.J., Conradt, J., Daniilidis, K., Scaramuzza, D., 2019. Event-based vision: A survey. CoRR abs/1904.08405. URL: http://arxiv.org/abs/1904.08405 ,
+
+arXiv:1904.08405 .[21] Gehrig, D., Rüegg, M., Gehrig, M., Hidalgo-Carrió, J., Scaramuzza, D., 2021. Combining events and frames using recurrent asyn-chronous multimodal networks for monocular depth prediction. CoRR abs/2102.09320. URL: https://arxiv.org/abs/2102.09320 ,
+
+arXiv:2102.09320 .[22] Geiger, A., Lenz, P., Stiller, C., Urtasun, R., 2013. Vision meets robotics: The kitti dataset. The International Journal of Robotics Research 32, 1231–1237. URL: https://doi.org/10.1177/0278364913491297 , doi: 10.1177/0278364913491297 ,
+
+arXiv:https://doi.org/10.1177/0278364913491297 .[23] He, K., Zhang, X., Ren, S., Sun, J., 2016. Deep residual learning for image recognition, in: Proceedings of the IEEE conference on computer vision and pattern recognition, pp. 770–778. [24] Hu, Y., Liu, S., Delbruck, T., 2020. V2E: from video frames to realistic DVS event camera streams. CoRR abs/2006.07722. URL: 
+
+https://arxiv.org/abs/2006.07722 , arXiv:2006.07722 .[25] Hu, Y., Yang, J., Chen, L., Li, K., Sima, C., Zhu, X., Chai, S., Du, S., Lin, T., Wang, W., Lu, L., Jia, X., Liu, Q., Dai, J., Qiao, Y., Li, H., 2023. Planning-oriented autonomous driving. arXiv preprint arXiv:2212.10156 URL: https://arxiv.org/abs/2212.10156 ,
+
+arXiv:2212.10156 .[26] Huang, J., Huang, G., Zhu, Z., Du, D., 2021. Bevdet: High-performance multi-camera 3d object detection in bird-eye-view. CoRR abs/2112.11790. URL: https://arxiv.org/abs/2112.11790 , arXiv:2112.11790 .[27] Janai, J., Güney, F., Behl, A., Geiger, A., 2017. Computer vision for autonomous vehicles: Problems, datasets and state-of-the-art. CoRR abs/1704.05519. URL: http://arxiv.org/abs/1704.05519 , arXiv:1704.05519 .
+
+Sakhai et al.: Preprint submitted to Elsevier Page 15 of 17 InterFuserDVS 
+
+[28] Jiang, B., Chen, S., Xu, Q., Liao, B., Chen, J., Zhou, H., Zhang, Q., Liu, W., Huang, C., Wang, X., 2023. Vad: Vectorized scene representation for efficient autonomous driving. arXiv preprint arXiv:2303.12077 URL: https://arxiv.org/abs/2303.12077 , arXiv:2303.12077 .[29] Kalra, N., Paddock, S.M., 2016. Driving to safety: How many miles of driving would it take to demonstrate autonomous vehicle reliability? Transportation Research Part A: Policy and Practice 94, 182–193. URL: https://www.sciencedirect.com/science/article/pii/ S0965856416302129 , doi: https://doi.org/10.1016/j.tra.2016.09.010 .[30] Koopman, P., Wagner, M.D., 2016. Challenges in autonomous vehicle testing and validation. SAE International journal of transportation safety 4, 15–24. URL: https://api.semanticscholar.org/CorpusID:35473171 .[31] Li, Z., Wang, W., Li, H., Xie, E., Sima, C., Lu, T., Yu, Q., Dai, J., 2022. Bevformer: Learning bird’s-eye-view representation from multi-camera images via spatiotemporal transformers. arXiv preprint arXiv:2203.17270 URL: https://arxiv.org/abs/2203.17270 ,
+
+arXiv:2203.17270 .[32] Liang, T., Xie, H., Yu, K., Xia, Z., Lin, Z., Wang, Y., Tang, T., Wang, B., Tang, Z., 2022. Bevfusion: A simple and robust lidar-camera fusion framework. arXiv preprint arXiv:2205.13790 URL: https://arxiv.org/abs/2205.13790 , arXiv:2205.13790 .[33] Lichtsteiner, P., Posch, C., Delbruck, T., 2008. A 128 × 128 120 db 15 𝜇 s latency asynchronous temporal contrast vision sensor. IEEE Journal of Solid-State Circuits 43, 566–576. doi: 10.1109/JSSC.2007.914337 .[34] Liu, Z., Tang, H., Amini, A., Yang, X., Mao, H., Rus, D.L., Han, S., 2023. Bevfusion: Multi-task multi-sensor fusion with unified bird’s-eye view representation, in: 2023 IEEE International Conference on Robotics and Automation (ICRA), pp. 2774–2781. doi: 10.1109/ ICRA48891.2023.10160968 .[35] Maqueda, A.I., Loquercio, A., Gallego, G., García, N., Scaramuzza, D., 2018. Event-based vision meets deep learning on steering prediction for self-driving cars, in: Proceedings of the IEEE Conference on Computer Vision and Pattern Recognition, pp. 5419–5427. URL: https: //openaccess.thecvf.com/content_cvpr_2018/papers/Maqueda_Event-Based_Vision_Meets_CVPR_2018_paper.pdf .[36] Messikommer, N., Gehrig, D., Loquercio, A., Scaramuzza, D., 2020. Event-based asynchronous sparse convolutional networks. CoRR abs/2003.09148. URL: https://arxiv.org/abs/2003.09148 , arXiv:2003.09148 .[37] Mur-Artal, R., Tardós, J.D., 2016. Visual-inertial monocular SLAM with map reuse. CoRR abs/1610.05949. URL: http://arxiv.org/ abs/1610.05949 , arXiv:1610.05949 .[38] OpenXLab, 2024. Lmdrive dataset: 64k instruction-sensor-control data clips for autonomous driving. https://openxlab.org.cn/ datasets/deepcs233/LMDrive . Multi-modal dataset collected in CARLA simulator with navigation instructions. [39] Pfeiffer, M., Pfeil, T., 2018. Deep learning with spiking neurons: Opportunities and challenges. Frontiers in Neuroscience 12. URL: 
+
+https://api.semanticscholar.org/CorpusID:53086859 .[40] Pomerleau, D.A., 1989. Alvinn: An autonomous land vehicle in a neural network, in: Advances in Neural Information Processing Systems, pp. 305–313. URL: https://proceedings.neurips.cc/paper/1988/file/812b4ba287f5ee0bc9d43bbf5bbe87fb-Paper.pdf .[41] Prakash, A., Chitta, K., Geiger, A., 2021. Multi-modal fusion transformer for end-to-end autonomous driving, in: Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition, pp. 7077–7087. URL: https://arxiv.org/abs/2104.09224 .[42] Qi, C.R., Su, H., Mo, K., Guibas, L.J., 2017a. Pointnet: Deep learning on point sets for 3d classification and segmentation, in: Proceedings of the IEEE conference on computer vision and pattern recognition, pp. 652–660. [43] Qi, C.R., Yi, L., Su, H., Guibas, L.J., 2017b. Pointnet++: Deep hierarchical feature learning on point sets in a metric space, in: Advances in Neural Information Processing Systems, pp. 5099–5108. [44] Rebecq, H., Ranftl, R., Koltun, V., Scaramuzza, D., 2019. Events-to-video: Bringing modern computer vision to event cameras, in: 2019 IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR), pp. 3852–3861. doi: 10.1109/CVPR.2019.00398 .[45] Roy, K., Jaiswal, A.R., Panda, P., 2019. Towards spike-based machine intelligence with neuromorphic computing. Nature 575, 607 – 617. URL: https://api.semanticscholar.org/CorpusID:208329736 .[46] Sakhai, M., Mazurek, S., Caputa, J., Argasiński, J.K., Wielgosz, M., 2024. Spiking neural networks for real-time pedestrian street-crossing detection using dynamic vision sensors in simulated adverse weather conditions. Electronics 13. URL: https://www.mdpi.com/ 2079-9292/13/21/4280 , doi: 10.3390/electronics13214280 .[47] Sakhai, M., Sithu, K., Oke, M.K.S., Mazurek, S., Wielgosz, M., 2025a. Evaluating synthetic vs. real dynamic vision sensor data for snn-based object detection classification. Available at: https://events.plgrid.pl/event/70/attachments/143/364/PROCEEDINGS%202025_ na%20www%20bez%20notatek.pdf .[48] Sakhai, M., Sithu, K., Oke, M.K.S., Wielgosz, M., 2025b. Cyberattack resilience of autonomous vehicle sensor systems: Evaluating rgb vs. dynamic vision sensors in carla. Applied Sciences 15, 7493. URL: https://doi.org/10.3390/app15137493 , doi: 10.3390/ app15137493 .[49] Sakhai, M., Sithu, K., Oke, M.K.S., Wielgosz, M., 2026. Dvs-pedx: Synthetic-and-real event-based pedestrian dataset. Scientific Data 13, 614. URL: https://doi.org/10.1038/s41597-026-06969-y , doi: 10.1038/s41597-026-06969-y .[50] Scheerlinck, C., Barnes, N., Mahony, R.E., 2018. Computing spatial image convolutions for event cameras. CoRR abs/1812.00438. URL: 
+
+http://arxiv.org/abs/1812.00438 , arXiv:1812.00438 .[51] Schuman, C.D., Kulkarni, S.R., Parsa, M., Mitchell, J.P., Date, P., Kay, B., 2022. Opportunities for neuromorphic computing algorithms and applications. Nature Computational Science 2. URL: https://www.osti.gov/biblio/1881146 , doi: 10.1038/s43588-021-00184-y .[52] Shao, H., Wang, L., Chen, R., Li, H., Liu, Y., 2022. Safety-enhanced autonomous driving using interpretable sensor fusion transformer. arXiv preprint arXiv:2207.14024 URL: https://arxiv.org/abs/2207.14024 , arXiv:2207.14024 .[53] Shao, H., Wang, L., Chen, R., Waslander, S.L., Liu, Y., Ma, H., 2023. Reasonnet: End-to-end driving with temporal and global reasoning, in: Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition, pp. 13723–13733. [54] Tehrani, M.J., Kim, J., Tonella, P., 2025. Pcla: A framework for testing autonomous agents in the carla simulator. arXiv preprint arXiv:2503.09385 URL: https://arxiv.org/abs/2503.09385 , arXiv:2503.09385 .[55] Toromanoff, M., Wirbel, E., Moutarde, F., 2020. End-to-end model-free reinforcement learning for urban driving using implicit affordances, in: Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition, pp. 7153–7162. 
+
+Sakhai et al.: Preprint submitted to Elsevier Page 16 of 17 InterFuserDVS 
+
+[56] Vaswani, A., Shazeer, N., Parmar, N., Uszkoreit, J., Jones, L., Gomez, A.N., Kaiser, L., Polosukhin, I., 2017. Attention is all you need. CoRR abs/1706.03762. URL: http://arxiv.org/abs/1706.03762 , arXiv:1706.03762 .[57] Vidal, A.R., Rebecq, H., Horstschaefer, T., Scaramuzza, D., 2018. The ultimate slam? combining events, images, and imu for robust visual slam in hdr and high-speed scenarios. IEEE Robotics and Automation Letters 3, 2942–2949. URL: https://ieeexplore.ieee.org/ document/8337777 .[58] Wang, Y., Guizilini, V., Zhang, T., Wang, Y., Zhao, H., Solomon, J., 2021. DETR3D: 3d object detection from multi-view images via 3d-to-2d queries. CoRR abs/2110.06922. URL: https://arxiv.org/abs/2110.06922 , arXiv:2110.06922 .[59] Wu, P., Jia, X., Chen, L., Yan, J., Li, H., Qiao, Y., 2022. Trajectory-guided control prediction for end-to-end autonomous driving: A simple yet strong baseline. arXiv preprint arXiv:2206.08129 URL: https://arxiv.org/abs/2206.08129 , arXiv:2206.08129 .[60] Xu, D., Li, H., Wang, Q., Song, Z., Chen, L., Deng, H., 2024. M2da: Multi-modal fusion transformer incorporating driver attention for autonomous driving. arXiv preprint arXiv:2403.12552 . [61] Yurtsever, E., Lambert, J., Carballo, A., Takeda, K., 2020. A survey of autonomous driving: Common practices and emerging technologies. IEEE Access 8, 58443–58469. doi: 10.1109/ACCESS.2020.2983149 .[62] Zhang, S., Zhang, Y., Jiang, Z., Zou, D., Ren, J., Zhou, B., 2020. Learning to see in the dark with events, in: Vedaldi, A., Bischof, H., Brox, T., Frahm, J.M. (Eds.), Computer Vision – ECCV 2020, Springer International Publishing, Cham. pp. 666–682. [63] Zhang, Z., Liniger, A., Dai, D., Yu, F., Van Gool, L., 2021. End-to-end urban driving by imitating a reinforcement learning coach, in: 2021 IEEE/CVF International Conference on Computer Vision (ICCV), pp. 15202–15212. doi: 10.1109/ICCV48922.2021.01494 .[64] Zhu, A.Z., Yuan, L., Chaney, K., Daniilidis, K., 2018. Unsupervised event-based learning of optical flow, depth, and egomotion. CoRR abs/1812.08156. URL: http://arxiv.org/abs/1812.08156 , arXiv:1812.08156 .
+
+Sakhai et al.: Preprint submitted to Elsevier Page 17 of 17
