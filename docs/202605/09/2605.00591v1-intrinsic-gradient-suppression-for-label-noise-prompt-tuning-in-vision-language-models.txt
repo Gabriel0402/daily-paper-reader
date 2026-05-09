@@ -1,0 +1,1152 @@
+Title: Intrinsic Gradient Suppression for Label-Noise Prompt Tuning in Vision-Language Models
+
+URL Source: https://arxiv.org/pdf/2605.00591v1
+
+Published Time: Mon, 04 May 2026 01:06:14 GMT
+
+Number of Pages: 18
+
+Markdown Content:
+# Intrinsic Gradient Suppression for Label-Noise Prompt Tuning in Vision–Language Models 
+
+Jiayu Li * 1 Jiaxin Qi * 3 Sheng Zhou 1 Jiaqiang Huang 3 4 Xiansheng Hua 2 dummy    
+
+> 1234
+
+## Abstract 
+
+Contrastive vision-language models like CLIP ex-hibit remarkable zero-shot generalization. How-ever, prompt tuning remains highly sensitive to la-bel noise, as mislabeled samples generate dispro-portionately large gradients that can overwhelm pre-trained priors. We argue that because CLIP al-ready provides a near-optimal initialization, adap-tation should be inherently conservative, partic-ularly against the extreme gradient updates com-mon in noisy settings. To this end, we pro-pose Double-Softmax Prompt Tuning (DSPT), a hyperparameter-free method for intrinsic gradient suppression. By applying a sequential probabilis-tic normalization, DSPT induces a self-adaptive saturation zone that suppresses gradients from high-error noisy samples while maintaining in-formative updates. We also provide both the-oretical analysis and empirical evidence about how this mechanism achieves adaptive suppres-sion. This design transforms “gradient vanishing”, traditionally a training bottleneck, into a princi-pled noise-filtering shield for label-noise prompt tuning. Extensive experiments confirm that this simple, drop-in design achieves state-of-the-art robustness across various noisy benchmarks, out-performing methods with complex architectures and handcrafted hyperparameters. 
+
+## 1. Introduction 
+
+Contrastively trained large-scale vision–language models, such as CLIP (Radford et al., 2021), align images and cap-tions in a shared embedding space by pulling matched im-age–caption pairs together and pushing negatives apart. This 
+
+> *
+
+Equal contribution 1Zhejiang University, Hangzhou, China 
+
+> 2
+
+Tongji University, Shanghai, China 3Computer Network Infor-mation Center, Beijing, China 4University of Chinese Academy of Sciences, Beijing, China. Correspondence to: Jiaqiang Huang <jianqiang.jqh@gmail.com >, Xiansheng Hua <huaxi-ansheng@gmail.com >.
+
+Preprint. May 4, 2026. 0.0 0.2 0.4 0.6 0.8 
+
+> Noise Rate
+> 60
+> 70
+> 80
+> 90
+> Accuracy(%)
+> CoOp
+> Ours
+> Zero-s
+
+(a) Caltech101-Sym noise 0.0 0.1 0.2 0.3 0.4 0.5  
+
+> Noise Rate
+> 50
+> 60
+> 70
+> 80
+> 90
+> Accuracy(%)
+> CoOp
+> Ours
+> Zero-s
+
+(b) Caltech101-Pair noise 0.0 0.2 0.4 0.6 0.8 
+
+> Noise Rate
+> 30
+> 45
+> 60
+> 75
+> Accuracy(%)
+> CoOp
+> Ours
+> Zero-s
+
+(c) OxfordPets-Sym noise 0.0 0.1 0.2 0.3 0.4 0.5  
+
+> Noise Rate
+> 50
+> 60
+> 70
+> 80
+> 90
+> Accuracy(%)
+> CoOp
+> Ours
+> Zero-s
+
+(d) OxfordPets-Pair noise 
+
+Figure 1. Accuracy curve of prompt-tuning(CoOp), our method, and zero-shot predictions with increasing noise rate under different settings. CoOp suffers from a significant performance drop and falls below zero-shot predictions, while our double-softmax cross-entropy loss yields consistent noise robustness. 
+
+alignment enables zero-shot image classification, where class names are inserted into prompts (e.g., “a photo of a [ class ]”) and the model can predict the class whose prompted text embedding is most similar to the image embedding without training on the target images. To im-prove classification performance while mitigating overfit-ting, CLIP-specific prompt tuning (Zhou et al., 2022b) keeps the backbone frozen and learns a set of continuous tokens, [vi], i = 1 , 2, . . . , l , that are concatenated to the class name (e.g., “[ v1] [ v2] . . . [vl] [ class ]”), producing task-specific textual prototypes better aligned with the target images. For example, in fine-grained car classification, the learned prompts can implicitly emphasize car-specific attributes (e.g., grille, headlight shape), thereby improving image–text alignment and classification accuracy. However, the presence of label noise severely disrupts this adaptation. In standard prompt tuning, the cross-entropy objective generates disproportionately large gradients for mislabeled samples, allowing them to dominate the adap-tation updates. For example, when an image of a “car” is 1
+
+> arXiv:2605.00591v1 [cs.CV] 1 May 2026
+
+Intrinsic Gradient Suppression for Label-Noise Prompt Tuning in Vision–Language Models (a) CLIP for Prompt Tuning         
+
+> Image
+> Encoder
+> Text
+> Encoder 𝐀 𝐀 𝐀 𝐀 …𝐀 𝐀 [cls]
+> dog cat car fish
+> Frozen
+> Tunable
+> Softmax
+> CLIP
+> CLIP
+> Text Features
+> Image
+> Features
+> Tunable Prompts
+> Cosine
+> Similarity
+> Logit
+> Output
+
+(b) P-Tuning 
+
+(c) Ours 
+
+> Image
+> Input
+> dog
+> CE
+
+L    
+
+> Wrong
+> Label
+> Gradient Surge from
+> Mislabeled Samples
+> Nullified Gradient from
+> Mislabeled Samples
+> Softmax Softmax
+> Prediction-Label Mismatch
+> dog cat car fish
+> dog
+> CE
+
+L         
+
+> Wrong
+> Label
+> dog cat car fish
+> dog cat car fish
+> dog cat car fish
+> Prediction-Label Mismatch
+
+Figure 2. Overview of the proposed method. (a) CLIP backbone model for prompt-tuning. (b) We observe that prompt-tuning generates gradient surges in samples with confident predictions inconsistent with noisy labels with respect to output logit terms, which are likely to be mislabeled and will therefore harm the training process. (c) Our double-softmax cross-entropy loss nullifies the influence of mismatch samples by suppresing gradient, which mitigates overall overfitting. 
+
+mislabeled as a “dog”, CLIP’s strong prior correctly identi-fies the mismatch, resulting in a near-zero prediction proba-bility for the noisy label. Paradoxically, since the gradient magnitude of the cross-entropy loss is proportional to the residual between the ground truth label and the prediction, the more “incorrect” a label appears to the pre-trained prior, the larger the gradient surge it produces. These surges ag-gressively overrule the pre-trained priors, forcing the model to rapidly fit errors and leading to progressive performance degradation. As shown in Figure 1, the model eventually falls below the zero-shot baseline, rendering vanilla prompt tuning detrimental. This creates a fundamental conflict be-tween CLIP’s reliable prior and label noise, motivating a more principled denoising design for prompt tuning. Given that CLIP already provides a near-optimal starting point, we argue that the adaptation process should be in-herently conservative, prioritizing the preservation of origi-nal knowledge over aggressive reconfiguration. In this pa-per, we propose Double-Softmax Prompt Tuning (DSPT), a hyperparameter-free framework designed for intrinsic gradi-ent suppression for pre-trained models’ label-noise prompt tuning. Our core insight is that for pre-trained models like CLIP, “gradient vanishing”, traditionally a critical defect in training from scratch, can be re-purposed as a principled noise-filtering shield. By applying two sequential probabilis-tic normalizations, DSPT induces a self-adaptive saturation zone that targets the extreme gradients produced by mis-labeled samples. Specifically, for highly unreliable noisy samples, the double-softmax pushes logits into the satura-tion region, effectively “zeroing out” their high-magnitude gradients. Conversely, for informative samples, those where the model is uncertain but the signals are potentially reli-able, the gradients remain within the active learning zone. While these informative gradients are also slightly tempered, they are permitted to pass through, enabling the subtle re-finements necessary for robust CLIP-based prompt tuning. More details are in the theoretical analysis and Figure 3. Different from current denoising methods, such as Logit-Norm (Wei et al., 2022) or LogitCLIP (Wei et al., 2023), which often rely on complex, handcrafted hyperparame-ters for logit clamping, DSPT offers a more elegant and robust solution. Existing methods typically employ static geometric constraints or global logit scaling that fail to dis-tinguish between samples adaptively. Furthermore, they often require extensive tuning of hyperparameters that are highly sensitive to specific noise rates and datasets. In con-trast, DSPT is an extremely simple, drop-in design that requires no hyperparameter tuning. Through in-depth exper-imental and theoretical analysis, we demonstrate that our intrinsic gradient suppression is far more effective for CLIP-based adaptation than complex, hand-designed corrections. Extensive experiments across various benchmarks confirm that DSPT consistently achieves state-of-the-art robustness, providing a simple yet powerful direction for label-noise prompt tuning in vision–language models Our main contributions can be summarized as follows: • We provide a systematic analysis of CLIP’s gradient dynamics under label noise. We reveal a gradient surge paradox, where CLIP possesses a strong pre-trained prior and will produce disproportionately large gradi-ents for “incorrect” noisy samples, which aggressively overrule the original knowledge. • We propose Double-Softmax Prompt Tuning (DSPT), a hyperparameter-free framework that re-purposes “gra-dient vanishing” as a principled noise-filtering shield. By inducing a self-adaptive saturation zone, DSPT acts as an intrinsic gradient gatekeeper that zeros out dis-ruptive surges from noise while selectively permitting informative updates from reliable samples. • We provide theoretical evidence and conduct exten-2Intrinsic Gradient Suppression for Label-Noise Prompt Tuning in Vision–Language Models 
+
+sive experiments across diverse benchmarks. Our re-sults show that this simple, drop-in design consistently achieves state-of-the-art robustness without requiring complex architecture or dataset-specific hyperparame-ter tuning, offering a new direction for robust vision-language model adaptation. 
+
+## 2. Related Works 
+
+2.1. Prompt Tuning for Vision-Language Models 
+
+Pre-trained vision-language models such as CLIP (Radford et al., 2021) have achieved promising results by aligning visual and linguistic features with initially hand-crafted prompts. However, identifying suitable prompts for specific downstream tasks remains a labor-intensive and non-trivial challenge. To address this issue, CoOp (Zhou et al., 2022b) has been proposed as an automatic prompt generator. CoOp model initializes continuous prompt vectors randomly and treats them as learnable parameters, which are then opti-mized using a few-shot training dataset. To improve CoOp’s generalization ability on unseen categories, CoCoOp (Zhou et al., 2022a) introduces a small neural network that extracts visual information from image features and integrates it into the prompt, creating instance-dependent context for each image. BLIP (Li et al., 2022) introduces a unified encoder-decoder architecture that can easily transfer across different tasks. It also proposes a data augmentation approach that enhances the diversity of training data, improving model robustness. MaPLe (Khattak et al., 2023) designs a coupling function that generates visual prompts for the vision encoder from textual prompts. UPL (Huang et al., 2022) introduces unsupervised prompt tuning for VLMs by assigning pseudo-labels to unlabeled data, which are generated through the model’s own zero-shot predictions. This method is further enhanced by Robust UPL (Wu et al., 2023), which incorpo-rates random sample training and applies Generalized Cross Entropy (Zhang & Sabuncu, 2018) loss. 
+
+2.2. Learning with Noisy labels 
+
+Deep neural networks (DNNs) have been extensively stud-ied and widely applied due to their powerful learning capa-bilities. However, this strength also makes them susceptible to training data with incorrect labels, leading to overfitting and performance degradation. Learning with noisy labels, or noisy label learning (NLL), focuses on mitigating the negative effects of label noise while preserving useful infor-mation during training. Common NLL approaches include selecting samples with correct labels (Li et al., 2020; Shu et al., 2019; Patel & Sastry, 2023; Wang et al., 2024; Zheng et al., 2021), correcting loss using intermediate information (Zheng et al., 2020; Yao et al., 2020; Xia et al., 2019), de-signing noise-robust model architectures (Reed et al., 2015; Lukasik et al., 2020; Xia et al., 2021; Chen et al., 2021), and revising loss functions to be more resistant to noise (Ghosh et al., 2017b; Zhang & Sabuncu, 2018; Ma et al., 2020; Zhou et al., 2021). Notably, LogitClip (Wei et al., 2023) and LogitNorm (Wei et al., 2022) introduce robust loss functions that constrain the magnitude of the logit vector, aiding in noisy label learning and out-of-distribution detection. To study the effect of label noise in VLM fine-tuning, Wu et al. (Wu et al., 2023) conduct experiments testing various fine-tuning methods with the presence of noisy labels, draw-ing the conclusion that prompt tuning is more noise-resistant compared to other fine-tuning strategies. Inspired by Wu et al., JoAPR (Guo & Gu, 2024) proposes a label-noise prompt-tuning approach by modeling the loss of training data with Gaussian Mixture Model(GMM) to form a self-adaptive threshold that distinguishes clean and noisy sam-ples. Label correction is subsequently applied to mislabeled data through data augmentation and mixup (Zhang et al., 2018). Fang et. al (Fang et al., 2025) also utilize GMM-based sample selection for prompt tuning, while adopting class-specific prompts for label rectification. However, these two methods both introduce complicated mechanisms and involve time-consuming algorithms (retraining and BLIP model, respectively). NLPrompt (Pan et al., 2025) employs optimal transport to formulate pseudo label for sample se-lection, and introduces MAE loss for low confidence data. 
+
+## 3. Methodology 
+
+3.1. Preliminaries CLIP-Based Prompt Tuning . Rather than relying on hand-crafted textual templates, prompt tuning learns a sequence of continuous prompt embeddings. For example, CoOp (Zhou et al., 2022b) introduces a shared learnable prompt for all classes, parameterized as vθ = [ v1, v2, . . . , vl] of length l,which is concatenated to each class embedding ec. Given the image classification dataset D = {(xi, y i)}ni=1 , where 
+
+yi ∈ { 1, . . . , C } is the ground-truth index, and a pre-trained CLIP model f = {fimg , f text }, the objective for prompt tun-ing can be written as the standard cross-entropy loss: 
+
+zi,c = fimg (xi) · ftext ([ vθ ; ec]) ,
+
+Lpt = − 1
+
+n
+
+> n
+
+X
+
+> i=1
+
+log  softmax (zi)yi
+
+ (1) where [vθ ; ec] is the concatenated embedding for class c, · is the inner product, zi is the logits over C classes for sample 
+
+i, and softmax (zi)yi = exp( zi,y i )  
+
+> P
+> cexp( zi,c )
+
+denotes the predicted probability for the ground-truth class yi.
+
+Noisy Label Classification . Consider the same classifica-tion task under noisy labels. Let ˜D = {(xi, ˜yi)}ni=1 denote the corrupted training set, where ˜yi ∈ { 1, . . . , C } is a poten-tially incorrect label obtained from the clean label yi. We 3Intrinsic Gradient Suppression for Label-Noise Prompt Tuning in Vision–Language Models 
+
+introduce the corruption process characterized by a transi-tion matrix T ∈ RC×C with entries: 
+
+Tjk = Pr(˜ yi = j | yi = k), (2) so that the distribution of the noisy label depends only on the true class and is independent of xi.Instance-independent label noise is typically instantiated in two forms: (1) Symmetric noise , where each true label can be flipped to any other class with equal probability: 
+
+∀k, T kk = 1 − η, T jk = ηC−1 , j ̸ = k, where η ∈ [0 , 1] is the noise rate. (2) Asymmetric noise , where the corruption is biased toward semantically similar classes. In practice, we adopt the common pair-flip model to simulate asymmetric noise, where each class can only be flipped to one particular other class: ∀k, T kk = 1 − η, ∃ j̸ = k, T jk = η, and all remaining off-diagonal entries are zero. Formally, the goal in CLIP-based noisy label classification is to fine-tune the pre-trained CLIP on the noisy dataset ˜D
+
+to outperform its zero-shot counterpart. As discussed above, prompt tuning provides some robustness to label noise, but its performance still degrades severely under high noise rates, motivating a more principled denoising method. 
+
+3.2. Our Method 
+
+Motivated by the insight that CLIP’s strong priors cause noisy labels to generate disproportionately large gradients, we propose the Double-Softmax Prompt Tuning (DSPT) method for CLIP-based noisy prompt tuning: 
+
+Lours = − 1
+
+n
+
+> n
+
+X
+
+> i=1
+
+log  softmax (softmax (zi)) ˜yi
+
+, (3) where zi denotes prompt-tuned logits and ˜yi denotes the noisy label. Compared to the standard objective in Eq. (1) ,our formulation introduces a sequential softmax normaliza-tion prior to the final prediction. Despite this minimalist design, the method induces an intrinsic gradient suppres-sion mechanism, which adaptively targets and suppresses the extreme gradient surges typical of mislabeled samples, while allowing informative samples within the active learn-ing zone to propagate. In the following sections, we provide theoretical and em-pirical analyses demonstrating that this simple formulation effectively induces a gradient saturation zone, acting as an intrinsic filter against label noise. 
+
+3.3. Theoretical Analysis 
+
+Cross-entropy loss is widely applied for classification, but it is known to be fragile under label noise. Ghosh et al. (Ghosh et al., 2017a) show that, as an asymmetric loss, cross-entropy is less noise-robust than symmetric losses such as MAE. Moreover, for a model fθ , the gradient of the per-sample cross-entropy loss with respect to the logit z is: 
+
+∂Lpt (fθ (x), ˜y)
+
+∂zi
+
+= pi − δ˜yi (4) where p = sof tmax (z) and δij is the kronecker delta. For a model that gives inhomogeneous prediction on a noisy sample, in other words, argmax i(zi)̸ = ˜ y, cross-entropy loss accumulates large gradients on zi and z˜y , causing ma-jor disturbance for model training. This effect is amplified for high-confidence pre-trained vision-language models in prompt tuning, where large logits produce extremely sharp distributions, so mismatched samples induce larger gradi-ents than correctly labeled samples. Since pre-trained vision-language models can give relatively accurate predictions, these samples are likely to be mislabeled and will mislead the model in the training process. In the following, we show that the proposed double-softmax prompt-tuning mechanism can restrict the overall gradient propagation to reduce overfitting and nullify the learning process of noisy samples. The proofs for all propositions and theorems can be found in the appendix. 
+
+Proposition 3.1. let the double softmax cross-entropy loss for a paticular sample be Lours = − log( q˜y ), where q =
+
+sof tmax (p) ,p = sof tmax (z), and z is the VLM’s output logits. Then, the gradient of the loss with respect to z is: 
+
+∂Lours 
+
+∂z i
+
+= pi
+
+(qi − δ˜yi ) + ( p˜y − X
+
+> j
+
+pj qj )
+
+
+
+The First term pi in the above equation restricts the absolute value of the overall gradients across all logit terms to be not greater than 1, suppressing the general prompt updates to achieve conservative adaptation for VLM prompts. The first term in the square brackets: (qi − δyi ) is the softened alignment signal, which enables the model to learn from supervision information with smoother curves. The second term: (py − P 
+
+> j
+
+pj qj ) acts as a balancer for the confidence of the model that measures the difference between the on the noisy label and the weighted average confidence across all classes. Further studies on the double-softmax cross-entropy gradi-ent in Theorem 3.1 reveal its gradient nullification mecha-nism under mislabeled data for high-confidence prediction. 
+
+Theorem 3.2. For high confidence single-softmax predic-tion inconsistent with noisy label y, i.e., ∃ˆy̸ = ˜ y, pˆy → 1, its total gradient quantity under double-softmax cross-entropy loss with respect to logit z will converge to 0: 
+
+lim   
+
+> pˆy→1,ˆy̸=˜ y
+
+X
+
+> i
+
+∂Lours 
+
+∂z i
+
+= 0 
+
+4Intrinsic Gradient Suppression for Label-Noise Prompt Tuning in Vision–Language Models 
+
+Theorem 3.2 reveals that the double-softmax cross-entropy loss can effectively suppress the gradient from samples with predictions that are highly confident, but discordant with the noisy label. For VLMs with strong prior knowledge, these excluded samples are likely to be mislabeled, which would have harmed the prompt tuning process. As double-softmax cross-entropy shares the same property of produc-ing small gradients for prediction highly accordant with noisy labels as in Equation (4), our method encourages the VLM prompts to learn from ambiguous samples that receive low confidence predictions from the model, magnifying the memorization of novel samples absent in the prior knowl-edge. By this means, our double-softmax cross-entropy achieves selective gradient suppression self-adaptively. 
+
+Proposition 3.3. In a C class classification problem, for any classification model f , its double-softmax cross-entropy loss defined in Equation (3) is bounded by: 
+
+log(1 + C − 1
+
+e ) ≤ L ours ≤ log( e + C − 1) 
+
+Theorem 3.3 proves that double-softmax cross-entropy shares the similar property of loss boundedness of other denoising methods, such as LogitClip (Wei et al., 2023), which limits the influence of extremely hard or mislabeled samples, suppressing the tendency of overfitting. Based on Theorem 3.3, we further analyze the robustness of the double-softmax loss in terms of its generalization risk between clean and noisy distributions. Let f be the classi-fier to be optimized by the loss function L, let RL(f ) = 
+
+E(x,y ) ∼ P clean (L(f (x, y )) be the expected risk of f under clean data, RT 
+
+> L
+
+(f ) = E(x,˜y) ∼ P noisy (L(f (x, ˜y)) be the expected risk of f under instance-independent label noise with transition matrix T , and f ⋆ and ˜f ⋆ denote the global minimizer of RL(f ) and RT 
+
+> L
+
+(f ) respectively. 
+
+Theorem 3.4. For any symmetric label noise with noise rate 
+
+η < 1 − 1 
+
+> C
+
+, the expected risk difference in the clean data distribution between the clean and noisy global optimizer is bounded by : 
+
+0 ≤ R Lours ( ˜f ⋆) − R Lours (f ⋆) ≤ log( e + C − 11 + e−1(C − 1) )Mη
+
+where Mη = η 
+
+> 1−η
+
+.
+
+Theorem 3.5. Under asymmetric noise with Tjk ≤
+
+Tkk , ∀j̸ = k, the expected risk in noisy data distribution of clean and noisy global optimizer is bounded by : 
+
+0 ≤ R T 
+
+> Lours
+
+(f ⋆)−R T 
+
+> Lours
+
+( ˜f ⋆) ≤ C log( e + C − 11 + e−1(C − 1) )PT
+
+where PT = E(x,y ) ∼ P clean (Tkk ) is a constant that de-pends on noise pattern. 
+
+The theorems above bound the discrepancy between the optimal classifiers under clean and noisy labels, thereby ensuring consistent performance across these settings. 
+
+## 4. Experiments 
+
+4.1. Experimental Setup Dataset and Settings . To evaluate the performance of our method, we conduct extensive experiments on sev-eral datasets, including Caltech101 (Fei-Fei et al., 2004), StanfordCars(Krause et al., 2013), OxfordPets(Parkhi et al., 2012), Flowers102(Nilsback & Zisserman, 2008), Food101(Bossard et al., 2014), FGVCAircraft(Maji et al., 2013), DTD(Cimpoi et al., 2014), EuroSAT(Helber et al., 2019), and UCF101(Soomro et al., 2012). These datasets cover classification tasks across generic objects, fine-grained objects, scenes, textures, and actions. We use the same dataset splitting strategy as in CoOp(Zhou et al., 2022b). In our experiments, we introduce two different types of noise as mentioned in the preliminary, with noise rates set to {40%, 60%, 80% } for symmetric noise and { 20%, 30%, 40% } for pair-flip noise to simulate moderate and heavy noise scenarios. 
+
+Baselines We compare our method with multiple base-lines, each adopting distinct noise-robust learning strategies. These baselines include: 
+
+• Zero-Shot: Using CLIP’s zero-shot prediction directly without prompt-tuning. 
+
+• CoOp(Zhou et al., 2022b): A basic prompt-tuning method for vision-language models inherently robust to label noise. 
+
+• LogitNorm(Wei et al., 2022): A learning method that bounds the magnitude of the model’s logit output via 
+
+ℓ2-normalization with an adjustable hyper-parameter. 
+
+• Smoothing(Lukasik et al., 2020): A classic noisy label learning tactic which mixes the one-hot ground-truth label with a uniform distribution for regularization. 
+
+• NLPrompt(Pan et al., 2025): A specialized noisy label learning algorithm for prompt-tuning that generates pseudo-label via optimal transport for clean sample se-lection, and introduces MAE loss (Ghosh et al., 2017a) for wrongly labeled samples. 
+
+Implementation Details In our experiment, we use pre-trained CLIP (Radford et al., 2021) as the backbone model, with the ViT-B/16 (Dosovitskiy et al., 2021) as the im-age encoder. Following the same setting as CoOp(Zhou et al., 2022b), we introduce a randomly initialized prompt of length 16 as learnable parameters shared across all classes 5Intrinsic Gradient Suppression for Label-Noise Prompt Tuning in Vision–Language Models 
+
+Table 1. Final accuracy (%) of tested methods on different datasets and various noise conditions. The bolded number indicates the performance of the best model, and the underlined number indicates the second-best model. All results are the averaged accuracy in the last five epochs and AVG denotes the average accuracy among nine datasets. METHOD DATASET NOISE TYPE : SYM NOISE TYPE : PAIR DATASET NOISE TYPE : SYM NOISE TYPE : PAIR 
+
+40% 60% 80% 20% 30% 40% 40% 60% 80% 20% 30% 40% ZERO SHOT 
+
+CALTECH 
+
+101 81.43 FGVC AIRCRAFT 
+
+24.37 COOP 91.06 89.37 80.00 86.14 76.38 63.21 34.67 25.84 12.27 37.83 34.03 29.72 SMOOTHING 92.82 90.54 81.29 90.39 83.77 70.47 33.33 26.02 11.80 36.98 33.27 29.28 LOGIT NORM 83.06 82.14 80.21 86.44 85.27 82.71 26.73 23.07 17.56 29.01 26.41 25.26 NLP ROMPT 95.36 94.42 91.85 95.56 95.21 93.63 34.74 33.38 14.86 36.71 34.45 33.60 DSPT 95.07 95.31 94.01 96.06 95.85 93.71 36.46 33.53 29.12 38.46 35.93 33.60 
+
+ZERO SHOT 
+
+STANFORD CARS 
+
+65.33 DTD 42.73 COOP 71.56 61.76 40.48 69.38 59.99 49.47 64.55 56.73 36.99 64.73 56.69 47.53 SMOOTHING 70.58 61.45 40.90 71.61 65.21 52.51 67.77 57.15 39.95 68.60 59.98 49.94 LOGIT NORM 57.05 56.97 54.05 57.96 56.49 51.48 66.84 61.81 49.07 69.43 66.50 59.30 NLP ROMPT 79.70 77.21 71.98 80.90 78.48 75.01 65.97 59.17 41.25 70.17 70.07 65.70 DSPT 79.64 76.78 71.50 81.14 78.82 75.15 68.84 63.85 55.50 71.03 69.93 66.74 
+
+ZERO SHOT 
+
+OXFORD 
+
+PETS 
+
+88.19 EURO SAT 42.91 COOP 89.17 83.05 60.43 83.22 72.96 60.76 93.09 90.75 76.03 89.75 82.43 69.77 SMOOTHING 89.38 85.85 62.76 87.97 79.41 65.58 92.03 91.00 77.41 92.56 86.99 73.65 LOGIT NORM 90.75 84.18 79.02 89.73 83.46 72.27 92.30 91.33 81.00 90.75 84.18 79.02 NLP ROMPT 92.41 88.97 84.18 93.63 92.85 91.27 92.04 88.83 72.01 93.93 93.19 82.00 DSPT 93.00 92.60 91.25 93.19 92.83 91.74 93.39 92.64 82.06 94.42 93.81 92.38 
+
+ZERO SHOT 
+
+FLOWERS 
+
+102 66.19 UCF101 65.19 COOP 91.03 84.54 66.40 86.27 74.99 59.39 79.88 75.33 62.89 73.20 65.53 54.78 SMOOTHING 91.89 83.89 66.91 91.09 81.44 65.28 79.97 76.31 63.57 78.99 72.26 59.06 LOGIT NORM 90.75 84.18 79.02 76.01 72.89 65.15 75.73 72.43 64.89 76.31 73.90 69.30 NLP ROMPT 93.29 84.80 80.08 90.37 91.47 88.39 83.00 82.04 77.40 83.75 82.72 81.55 
+
+DSPT 91.12 88.15 80.35 91.01 86.93 90.07 83.56 81.19 76.48 83.37 83.01 81.13 ZERO SHOT 
+
+FOOD 101 85.46 AVG 62.50 COOP 87.76 86.63 84.45 79.58 70.71 58.60 78.09 72.67 57.77 74.46 65.97 54.80 SMOOTHING 87.71 86.76 84.66 84.01 77.77 64.24 78.39 73.22 58.81 78.02 71.12 58.89 LOGIT NORM 85.32 85.61 84.73 84.71 83.86 79.05 72.32 69.61 63.49 73.37 70.33 64.84 NLP ROMPT 88.50 88.08 85.78 89.05 88.65 88.41 80.56 77.43 68.82 81.56 80.79 77.73 DSPT 88.86 88.62 87.73 89.03 88.96 88.77 81.10 79.19 74.22 81.97 80.67 79.25 
+
+while keeping the entire vision and text encoder frozen through the training process. The total number of training epochs is set to 50 for all datasets. The starting learning rate is set to 0.002 with cosine annealing, and the final learning rate decreases to zero. The hyperparameter is set to 0.2 for label smoothing and 1 for LogitNorm. To ensure experimen-tal stability, the reported results are the average test accuracy of the last five epochs. All experiments are implemented by PyTorch (Paszke et al., 2019) and conducted on NVIDIA A800 80GB GPU. Notably, our experiments are conducted on the entire training set with the batch size of 32; this dif-fers from previous prompt-tuning approaches for noisy label learning, which use 16-shot few-shot training. 
+
+4.2. Experimental Results 
+
+The results of our comparative studies are presented in Ta-ble 1, and the AVG column indicates the average accuracy of a specific setting among nine datasets. Our method achieves the best performance in most cases, while achieving the second-best performance and being compatible with the NLPrompt in the remaining cases, with an accuracy differ-ence of less than 1% except on Flowers102. Our method also has the best averaged accuracy, which is 0.4% to more than 5% higher than NLPrompt, except on 30% pair-flip noise, in which the difference in accuracy is nearly negligi-ble. Experiments on more noise settings on Caltech101 and OxfordPets are shown in Figure 1. Beyond the overall performance gain of our method, it can also be derived from Table 1 that CoOp demonstrates a de-gree of noise robustness as it maintains high accuracy under moderate noise levels on simple datasets such as Catltech 101, in which it still acquires 80% accuracy in 80% sym noise. However, as the noise level increases, CoOp experi-ences a significant degradation, with an accuracy drop of more than 20% when the symmetric noise rate rises from 40% to 80 % in StanfordCars and FGVCAircraft. In con-trast, LogitNorm performs poorly under low noise settings, but receives relatively high averaged accuracy under 80% symmetric noise and 40% pair noise, which is more than 5% higher than Label Smoothing. Meanwhile, the sample-6Intrinsic Gradient Suppression for Label-Noise Prompt Tuning in Vision–Language Models 
+
+Table 2. Final accuracy (%) of different methods on Caltech101 and DTD datasets with extremely heavy symmetric and pair-flip noise. The bolded number indicates the performance of the best model, and the underlined number indicates the second-best model. DATASET NOISE TYPE COOP SMOOTHING BOOTSTRAP LOGIT NORM SELECT NLP ROMT DSPT CALTECH 101 SYM 90% 53.75 61.36 58.10 78.67 78.89 87.80 86.68  
+
+> PAIR
+
+80% 10.53 5.94 9.41 4.60 12.76 80.32 80.73 
+
+DTD SYM 90% 21.19 19.75 22.36 29.08 29.91 36.60 40.02  
+
+> PAIR
+
+80% 8.58 5.78 6.99 1.48 5.44 30.93 33.66 0.00 0.25 0.50 0.75 1.00 1.25 1.50 1.75 2.00 
+
+> gradient
+> 10 0
+> 10 1
+> 10 2
+> 10 3
+> frequency
+> corr-samples
+> incorr-samples
+
+(a) Gradient for logits through Single-Softmax 0.0 0.1 0.2 0.3 0.4 0.5 
+
+> gradient
+> 10 0
+> 10 1
+> 10 2
+> 10 3
+> frequency
+> corr-samples
+> incorr-samples
+
+(b) Gradient for logits through Double-Softmax 
+
+Figure 3. Overall gradient propagated to logit z of each correctly labeled and mislabeled sample loss in the first training epoch without parameter update on Caltech101. 
+
+selection-based method NLPrompt exhibits strong noise robustness under both small and large noise rates. 
+
+4.3. Further Analysis 
+
+Q1.Does Double-Softmax Cross-Entropy Loss Suppress Gra-dient Propagation Selectively and Bound the Loss Function? A1 .The gradient suppression and boundedness of double-softmax cross-entropy are examined by experiments. We record the sum of the absolute gradient propagated from each correctly labeled and mislabeled sample loss to logit 
+
+z in the training process in the first training epoch without parameter updates. This experiment is conducted on Cal-tech101 under 60% symmetric noise. As shown in Figure 3, the model trained with either single or double softmax cross-entropy loss shows a relatively smooth gradient distribution for samples with correct labels. However, the model with standard cross-entropy loss has disproportionately large gra-dients for “incorrect” noisy samples near the maximum value of 2. Conversely, our method not only has a smaller average gradient for clean samples but can also suppress the gradient of mislabeled samples to approximately zero, allowing the correctly labeled samples to dominate the train-0 5 10 15 20 
+
+> epoch
+> 0
+> 2
+> 4
+> 6
+> Average loss
+> corr-samples
+> incorr-samples
+
+(a) CoOp-Sym noise 0 5 10 15 20  
+
+> epoch
+> 0
+> 2
+> 4
+> 6
+> Average loss
+> corr-samples
+> incorr-samples
+
+(b) DSPT-Sym noise 0 5 10 15 20 
+
+> epoch
+> 0
+> 2
+> 4
+> 6
+> Average loss  corr-samples
+> incorr-samples
+
+(c) CoOp-Pair noise 0 5 10 15 20  
+
+> epoch
+> 0
+> 2
+> 4
+> 6
+> Average loss
+> corr-samples
+> incorr-samples
+
+(d) DSPT-Pair noise 
+
+Figure 4. Loss curves of correctly labeled and mislabeled samples in the training process on Caltech101. 
+
+ing process. Additional studies in the appendix confirm that this phenomenon is consistent throughout the early stage of the training process. In addition, we record the average loss among samples with correct and incorrect labels in the first 20 epochs in the training process, with 40% symmetric and pair-flip noise on the Caltech101 dataset. The results can be found in Figure 4. The CoOp model shows large differences between the losses of correctly and incorrectly labeled samples, while both the correct and incorrect average losses of our method stay near the value of 4 persistently, qualifying its robustness. 
+
+Q2 .Does Double-Softmax Cross-Entropy Loss Work Under Severe Label Noise? A2 .Our approach still works under high noise ratios. To fur-ther analyze the noise robustness of our method, we conduct additional experiments introducing extremely high-level la-bel noise, i.e, 90% sym noise and 80% pair-flip noise on Caltech101 and DTD datasets. The baselines include sev-eral noisy label learning approaches and the naive sample-selection strategy, in which the inconsistent samples with 
+
+argmax i(zi)̸ = ˜ y are excluded in the current epoch. Note that the noise becomes dominant for 80% pair-flip noise, creating a challenging task for prompt-tuning. As shown in 7Intrinsic Gradient Suppression for Label-Noise Prompt Tuning in Vision–Language Models                                             
+
+> Table 3. Final accuracy (%) of different methods on Caltech101 and OxfordPets dataset with similar loss smoothing and bounding approaches. The bolded number indicates the performance of the best model. DATASET NOISE TYPE SMOOTHING LOGIT NORM SQUARE BOOTSTRAP NCE LOGIT CLIP DSPT CALTECH 101 SYM 60% 90.54 82.14 93.69 92.55 91.18 49.31 95.31
+> PAIR 30% 83.77 85.27 81.59 77.80 78.31 47.47 95.85
+> OXFORD PETS SYM 60% 85.85 84.18 87.52 84.69 77.05 84.96 92.60
+> PAIR 30% 79.41 83.46 75.94 74.96 71.91 75.02 92.83
+
+Table 2, the prompt-tuning method CoOp, label smoothing, and Logit norm are severely dampened, especially under 80% pair noise, in which the accuracy of these three meth-ods drops to lower than 12%. Though still being interfered by label noise, our method demonstrates high performance, outperforming NLPrompt by 0.5%-3% in most cases, and only about 1% lower than NLPrompt in Caltech101 with symmetric noise. In addition, our method shows a signifi-cant advantage compared to naive selection, confirming that our method is not totally equivalent to simply picking out consistant sample. 
+
+Q3 .Can Similar NLL Methods Achieve Compatible Perfor-mance for Prompt-Tuning? A3 .Our method shows advantages compared with similar de-signs in prompt-tuning with noisy labels. Numerous related studies also introduce bounded loss or similar loss-based smoothing and normalization strategies for NLL. Therefore, we introduce comparative studies involving several related approaches. Apart from Label Smoothing and LogitNorm, which have already been introduced in the previous experi-ments, this experiment also includes: NCE (Ma et al., 2020), the normalized cross entropy loss, which divides the cross entropy loss by the sum of losses under all classes to fit the symmetric loss pattern. Bootstrapping (Reed et al., 2015), which mixes the model’s own prediction into the ground truth label to smooth the training process. Additionally, we introduce a square normalization approach in which the logit is normalized before a quadratic multiplication. This experiment is conducted on Caltech101 and Oxfordpets datasets, with 60% symmetric noise and 30% pair flip noise. The outcome of this experiment is presented in Table 3, in which our model shows its superiority by outperforming all other methods by approximately 2% on Caltech101 with symmetric noise and more than 5% in all other cases. 
+
+Q4 .Why Is LogitClip Not Tested in The Main Experiment? A4 .LogitClip is too sensitive to hyperparameters to be tested. LogitClip (Wei et al., 2023) normalizes output logits whose 
+
+ℓ2-norm exceeds a predefined threshold τ , which serves as a hyperparameter. In our CLIP prompt-tuning scenario, we observe that although LogitClip shares similar strategies and characteristics with our approach, its performance is highly sensitive to the choice of this hyperparameter. Furthermore, the optimal threshold value varies across different datasets and noise settings, making it difficult to adapt LogitClip 0.01 0.1 1 10 100           
+
+> 55
+> 60
+> 65
+> Accuracy(%)
+> LigitCLip
+> Ours
+> (a) DTD-Sym noise 0.01 0.1 110 100
+> 70
+> 80
+> 90
+> Accuracy(%)
+> LigitCLip
+> Ours (b) OxfordPets-Pair noise
+> Figure 5. Accuracy of LogitClip affected by τcompared to ours.
+
+consistently in diverse scenarios. As shown in Figure 5, we present the accuracy of LogitClip and our method on DTD with 40% symmetric noise and OxfordPets with 40% pair noise. The optimal threshold in the first setting is ap-proximately 0.1, whereas it exceeds 1 in the second set-ting. In Figure 5a, the change of τ causes accuracy drop of more than 15%. These results demonstrate that our method achieves not only superior performance but also greater flexibility compared to LogitClip. 
+
+## 5. Conclusion 
+
+In this paper, we introduced Double-Softmax Prompt Tun-ing (DSPT), a simple yet effective framework for vision-language models in prompt tuning with label noise. By leveraging additional normalization, DSPT transforms the traditionally problematic phenomenon of ”gradient vanish-ing” into a principled noise-filtering shield. Our method induces a self-adaptive saturation zone that effectively ”ze-ros out” disruptive gradients from high-error noisy samples while selectively permitting informative updates for reli-able adaptation. Our extensive experimental results across various benchmarks demonstrate that DSPT achieves state-of-the-art robustness. Theoretical analysis further confirms that the double-softmax cross-entropy loss provides intrinsic gradient suppression and ensures loss boundedness, prevent-ing the model from fitting incorrect labels. Looking ahead, our future work is to extend double-softmax prompt tuning beyond CLIP-based classification to large vision–language models (LVLM), exploring its effectiveness for LVLM-based downstream noisy label learning. We believe that the simplicity, generality, and strong empirical robustness of double-softmax make it a promising building block for future noisy label learning frameworks for finetuning multi-modal foundation models. 8Intrinsic Gradient Suppression for Label-Noise Prompt Tuning in Vision–Language Models 
+
+## Impact Statement 
+
+This paper presents work in the field of Machine Learning. There are many potential societal consequences of our work, none of which we feel must be highlighted here. 
+
+## References 
+
+Bossard, L., Guillaumin, M., and Gool, L. V. Food-101 -mining discriminative components with random forests. In Fleet, D. J., Pajdla, T., Schiele, B., and Tuytelaars, T. (eds.), Computer Vision - ECCV 2014 - 13th European Conference, Zurich, Switzerland, September 6-12, 2014, Proceedings, Part VI , volume 8694 of Lecture Notes in Computer Science , pp. 446–461. Springer, 2014. Chen, P., Ye, J., Chen, G., Zhao, J., and Heng, P. Beyond class-conditional assumption: A primary attempt to com-bat instance-dependent label noise. In Thirty-Fifth AAAI Conference on Artificial Intelligence, AAAI 2021, Thirty-Third Conference on Innovative Applications of Artificial Intelligence, IAAI 2021, The Eleventh Symposium on Ed-ucational Advances in Artificial Intelligence, EAAI 2021, Virtual Event, February 2-9, 2021 , pp. 11442–11450. AAAI Press, 2021. Cimpoi, M., Maji, S., Kokkinos, I., Mohamed, S., and Vedaldi, A. Describing textures in the wild. In 2014 IEEE Conference on Computer Vision and Pattern Recog-nition, CVPR 2014, Columbus, OH, USA, June 23-28, 2014 , pp. 3606–3613. IEEE Computer Society, 2014. Dosovitskiy, A., Beyer, L., Kolesnikov, A., Weissenborn, D., Zhai, X., Unterthiner, T., Dehghani, M., Minderer, M., Heigold, G., Gelly, S., Uszkoreit, J., and Houlsby, N. An image is worth 16x16 words: Transformers for image recognition at scale. In 9th International Conference on Learning Representations, ICLR 2021, Virtual Event, Austria, May 3-7, 2021 . OpenReview.net, 2021. Fang, C., Ma, H., Li, Z., Cheng, D., Zhang, Y., and Li, G. Screening, rectifying, and re-screening: A unified framework for tuning vision-language models with noisy labels. In Proceedings of the Thirty-Fourth International Joint Conference on Artificial Intelligence, IJCAI 2025, Montreal, Canada, August 16-22, 2025 , pp. 5101–5109. ijcai.org, 2025. doi: 10.24963/IJCAI.2025/568. Fei-Fei, L., Fergus, R., and Perona, P. Learning generative visual models from few training examples: An incremen-tal bayesian approach tested on 101 object categories. In 
+
+IEEE Conference on Computer Vision and Pattern Recog-nition Workshops, CVPR Workshops 2004, Washington, DC, USA, June 27 - July 2, 2004 , pp. 178. IEEE Computer Society, 2004. Ghosh, A., Kumar, H., and Sastry, P. S. Robust loss func-tions under label noise for deep neural networks. In Singh, S. and Markovitch, S. (eds.), Proceedings of the Thirty-First AAAI Conference on Artificial Intelligence, February 4-9, 2017, San Francisco, California, USA , pp. 1919–1925. AAAI Press, 2017a. Ghosh, A., Kumar, H., and Sastry, P. S. Robust loss func-tions under label noise for deep neural networks. In Singh, S. and Markovitch, S. (eds.), Proceedings of the Thirty-First AAAI Conference on Artificial Intelligence, February 4-9, 2017, San Francisco, California, USA , pp. 1919–1925. AAAI Press, 2017b. Guo, Y. and Gu, X. Joapr: Cleaning the lens of prompt learn-ing for vision-language models. In IEEE/CVF Conference on Computer Vision and Pattern Recognition, CVPR 2024, Seattle, WA, USA, June 16-22, 2024 , pp. 28695–28705. IEEE, 2024. doi: 10.1109/CVPR52733.2024.02711. He, K., Zhang, X., Ren, S., and Sun, J. Deep residual learning for image recognition. In 2016 IEEE Conference on Computer Vision and Pattern Recognition, CVPR 2016, Las Vegas, NV, USA, June 27-30, 2016 , pp. 770–778. IEEE Computer Society, 2016. Helber, P., Bischke, B., Dengel, A., and Borth, D. Eurosat: A novel dataset and deep learning benchmark for land use and land cover classification. IEEE Journal of Se-lected Topics in Applied Earth Observations and Remote Sensing , 12(7):2217–2226, 2019. Huang, T., Chu, J., and Wei, F. Unsupervised prompt learn-ing for vision-language models. CoRR , abs/2204.03649, 2022. doi: 10.48550/ARXIV.2204.03649. Khattak, M. U., Rasheed, H. A., Maaz, M., Khan, S. H., and Khan, F. S. Maple: Multi-modal prompt learning. In 
+
+IEEE/CVF Conference on Computer Vision and Pattern Recognition, CVPR 2023, Vancouver, BC, Canada, June 17-24, 2023 , pp. 19113–19122. IEEE, 2023. Krause, J., Stark, M., Deng, J., and Fei-Fei, L. 3d object rep-resentations for fine-grained categorization. In 2013 IEEE International Conference on Computer Vision Workshops, ICCV Workshops 2013, Sydney, Australia, December 1-8, 2013 , pp. 554–561. IEEE Computer Society, 2013. Krizhevsky, A. and Hinton, G. Learning multiple layers of features from tiny images. Handbook of Systemic Autoimmune Diseases , 1(4), 2009. Li, J., Socher, R., and Hoi, S. C. H. Dividemix: Learning with noisy labels as semi-supervised learning. In 8th International Conference on Learning Representations, ICLR 2020, Addis Ababa, Ethiopia, April 26-30, 2020 .OpenReview.net, 2020. 9Intrinsic Gradient Suppression for Label-Noise Prompt Tuning in Vision–Language Models 
+
+Li, J., Li, D., Xiong, C., and Hoi, S. C. H. BLIP: boot-strapping language-image pre-training for unified vision-language understanding and generation. In Chaudhuri, K., Jegelka, S., Song, L., Szepesv ´ari, C., Niu, G., and Sabato, S. (eds.), International Conference on Machine Learn-ing, ICML 2022, 17-23 July 2022, Baltimore, Maryland, USA , volume 162 of Proceedings of Machine Learning Research , pp. 12888–12900. PMLR, 2022. Lukasik, M., Bhojanapalli, S., Menon, A. K., and Kumar, S. Does label smoothing mitigate label noise? In Pro-ceedings of the 37th International Conference on Ma-chine Learning, ICML 2020, 13-18 July 2020, Virtual Event , volume 119 of Proceedings of Machine Learning Research , pp. 6448–6458. PMLR, 2020. Ma, X., Huang, H., Wang, Y., Romano, S., Erfani, S. M., and Bailey, J. Normalized loss functions for deep learning with noisy labels. In Proceedings of the 37th International Conference on Machine Learning, ICML 2020, 13-18 July 2020, Virtual Event , volume 119 of Proceedings of Machine Learning Research , pp. 6543–6553. PMLR, 2020. Maji, S., Rahtu, E., Kannala, J., Blaschko, M. B., and Vedaldi, A. Fine-grained visual classification of aircraft. 
+
+CoRR , abs/1306.5151, 2013. Nilsback, M. and Zisserman, A. Automated flower clas-sification over a large number of classes. In Sixth In-dian Conference on Computer Vision, Graphics & Image Processing, ICVGIP 2008, Bhubaneswar, India, 16-19 December 2008 , pp. 722–729. IEEE Computer Society, 2008. Pan, B., Li, Q., Tang, X., Huang, W., Fang, Z., Liu, F., Wang, J., Yu, J., and Shi, Y. Nlprompt: Noise-label prompt learn-ing for vision-language models. In IEEE/CVF Conference on Computer Vision and Pattern Recognition, CVPR 2025, Nashville, TN, USA, June 11-15, 2025 , pp. 19963–19973. Computer Vision Foundation / IEEE, 2025. Parkhi, O. M., Vedaldi, A., Zisserman, A., and Jawahar, C. V. Cats and dogs. In 2012 IEEE Conference on Computer Vision and Pattern Recognition, Providence, RI, USA, June 16-21, 2012 , pp. 3498–3505. IEEE Computer Society, 2012. Paszke, A., Gross, S., Massa, F., Lerer, A., Bradbury, J., Chanan, G., Killeen, T., Lin, Z., Gimelshein, N., Antiga, L., Desmaison, A., K ¨opf, A., Yang, E. Z., DeVito, Z., Raison, M., Tejani, A., Chilamkurthy, S., Steiner, B., Fang, L., Bai, J., and Chintala, S. Pytorch: An imperative style, high-performance deep learning library. In Wallach, H. M., Larochelle, H., Beygelzimer, A., d’Alch ´e-Buc, F., Fox, E. B., and Garnett, R. (eds.), Advances in Neural In-formation Processing Systems 32: Annual Conference on Neural Information Processing Systems 2019, NeurIPS 2019, December 8-14, 2019, Vancouver, BC, Canada , pp. 8024–8035, 2019. Patel, D. and Sastry, P. S. Adaptive sample selection for robust learning under label noise. In IEEE/CVF Winter Conference on Applications of Computer Vision, WACV 2023, Waikoloa, HI, USA, January 2-7, 2023 , pp. 3921– 3931. IEEE, 2023. Radford, A., Kim, J. W., Hallacy, C., Ramesh, A., Goh, G., Agarwal, S., Sastry, G., Askell, A., Mishkin, P., Clark, J., Krueger, G., and Sutskever, I. Learning transferable visual models from natural language supervision. In Meila, M. and Zhang, T. (eds.), Proceedings of the 38th International Conference on Machine Learning, ICML 2021, 18-24 July 2021, Virtual Event , volume 139 of 
+
+Proceedings of Machine Learning Research , pp. 8748– 8763. PMLR, 2021. Reed, S. E., Lee, H., Anguelov, D., Szegedy, C., Erhan, D., and Rabinovich, A. Training deep neural networks on noisy labels with bootstrapping. In Bengio, Y. and Le-Cun, Y. (eds.), 3rd International Conference on Learning Representations, ICLR 2015, San Diego, CA, USA, May 7-9, 2015, Workshop Track Proceedings , 2015. Shu, J., Xie, Q., Yi, L., Zhao, Q., Zhou, S., Xu, Z., and Meng, D. Meta-weight-net: Learning an explicit mapping for sample weighting. In Wallach, H. M., Larochelle, H., Beygelzimer, A., d’Alch ´e-Buc, F., Fox, E. B., and Garnett, R. (eds.), Advances in Neural Information Processing Systems 32: Annual Conference on Neural Information Processing Systems 2019, NeurIPS 2019, December 8-14, 2019, Vancouver, BC, Canada , pp. 1917–1928, 2019. Soomro, K., Zamir, A. R., and Shah, M. UCF101: A dataset of 101 human actions classes from videos in the wild. 
+
+CoRR , abs/1212.0402, 2012. Wang, H., Xiao, R., Li, Y., Feng, L., Niu, G., Chen, G., and Zhao, J. Pico+: Contrastive label disambiguation for robust partial label learning. IEEE Trans. Pattern Anal. Mach. Intell. , 46(5):3183–3198, 2024. Wei, H., Xie, R., Cheng, H., Feng, L., An, B., and Li, Y. Mitigating neural network overconfidence with logit normalization. In Chaudhuri, K., Jegelka, S., Song, L., Szepesv ´ari, C., Niu, G., and Sabato, S. (eds.), Interna-tional Conference on Machine Learning, ICML 2022, 17-23 July 2022, Baltimore, Maryland, USA , volume 162 of Proceedings of Machine Learning Research , pp. 23631–23644. PMLR, 2022. Wei, H., Zhuang, H., Xie, R., Feng, L., Niu, G., An, B., and Li, Y. Mitigating memorization of noisy labels by clip-ping the model prediction. In Krause, A., Brunskill, E., 10 Intrinsic Gradient Suppression for Label-Noise Prompt Tuning in Vision–Language Models 
+
+Cho, K., Engelhardt, B., Sabato, S., and Scarlett, J. (eds.), 
+
+International Conference on Machine Learning, ICML 2023, 23-29 July 2023, Honolulu, Hawaii, USA , volume 202 of Proceedings of Machine Learning Research , pp. 36868–36886. PMLR, 2023. Wu, C., Tian, Y., Yu, H., Wang, H., Morgado, P., Hu, Y. H., and Yang, L. Why is prompt tuning for vision-language models robust to noisy labels? In IEEE/CVF Interna-tional Conference on Computer Vision, ICCV 2023, Paris, France, October 1-6, 2023 , pp. 15442–15451. IEEE, 2023. Xia, X., Liu, T., Wang, N., Han, B., Gong, C., Niu, G., and Sugiyama, M. Are anchor points really indispensable in label-noise learning? In Wallach, H. M., Larochelle, H., Beygelzimer, A., d’Alch ´e-Buc, F., Fox, E. B., and Garnett, R. (eds.), Advances in Neural Information Processing Systems 32: Annual Conference on Neural Information Processing Systems 2019, NeurIPS 2019, December 8-14, 2019, Vancouver, BC, Canada , pp. 6835–6846, 2019. Xia, X., Liu, T., Han, B., Gong, C., Wang, N., Ge, Z., and Chang, Y. Robust early-learning: Hindering the memo-rization of noisy labels. In 9th International Conference on Learning Representations, ICLR 2021, Virtual Event, Austria, May 3-7, 2021 . OpenReview.net, 2021. Yao, Y., Liu, T., Han, B., Gong, M., Deng, J., Niu, G., and Sugiyama, M. Dual T: reducing estimation error for tran-sition matrix in label-noise learning. In Larochelle, H., Ranzato, M., Hadsell, R., Balcan, M., and Lin, H. (eds.), 
+
+Advances in Neural Information Processing Systems 33: Annual Conference on Neural Information Processing Systems 2020, NeurIPS 2020, December 6-12, 2020, vir-tual , 2020. Zhang, H., Ciss ´e, M., Dauphin, Y. N., and Lopez-Paz, D. mixup: Beyond empirical risk minimization. In 6th Inter-national Conference on Learning Representations, ICLR 2018, Vancouver, BC, Canada, April 30 - May 3, 2018, Conference Track Proceedings . OpenReview.net, 2018. Zhang, Z. and Sabuncu, M. R. Generalized cross entropy loss for training deep neural networks with noisy labels. In Bengio, S., Wallach, H. M., Larochelle, H., Grauman, K., Cesa-Bianchi, N., and Garnett, R. (eds.), Advances in Neural Information Processing Systems 31: Annual Conference on Neural Information Processing Systems 2018, NeurIPS 2018, December 3-8, 2018, Montr ´eal, Canada , pp. 8792–8802, 2018. Zheng, G., Awadallah, A. H., and Dumais, S. T. Meta la-bel correction for noisy label learning. In Thirty-Fifth AAAI Conference on Artificial Intelligence, AAAI 2021, Thirty-Third Conference on Innovative Applications of Artificial Intelligence, IAAI 2021, The Eleventh Sympo-sium on Educational Advances in Artificial Intelligence, EAAI 2021, Virtual Event, February 2-9, 2021 , pp. 11053– 11061. AAAI Press, 2021. Zheng, S., Wu, P., Goswami, A., Goswami, M., Metaxas, D. N., and Chen, C. Error-bounded correction of noisy labels. In Proceedings of the 37th International Confer-ence on Machine Learning, ICML 2020, 13-18 July 2020, Virtual Event , volume 119 of Proceedings of Machine Learning Research , pp. 11447–11457. PMLR, 2020. Zhou, K., Yang, J., Loy, C. C., and Liu, Z. Condi-tional prompt learning for vision-language models. In 
+
+IEEE/CVF Conference on Computer Vision and Pattern Recognition, CVPR 2022, New Orleans, LA, USA, June 18-24, 2022 , pp. 16795–16804. IEEE, 2022a. Zhou, K., Yang, J., Loy, C. C., and Liu, Z. Learning to prompt for vision-language models. Int. J. Comput. Vis. ,130(9):2337–2348, 2022b. Zhou, X., Liu, X., Jiang, J., Gao, X., and Ji, X. Asymmetric loss functions for learning with noisy labels. In Meila, M. and Zhang, T. (eds.), Proceedings of the 38th Inter-national Conference on Machine Learning, ICML 2021, 18-24 July 2021, Virtual Event , volume 139 of Proceed-ings of Machine Learning Research , pp. 12846–12856. PMLR, 2021. 11 Intrinsic Gradient Suppression for Label-Noise Prompt Tuning in Vision–Language Models 
+
+## A. Proofs for Theoretical analysis 
+
+In this section, we provide detailed proofs for Propositions and Theorems in our paper. 
+
+Proof for Proposition 3.1 
+
+Proof. 
+
+∂Lours 
+
+∂zi
+
+= X
+
+> j
+
+∂Lours 
+
+∂qj
+
+X
+
+> k
+
+∂qj
+
+∂pk
+
+· ∂pk
+
+∂zi
+
+!
+
+= − 1
+
+qy
+
+X
+
+> k
+
+∂q˜y
+
+∂pk
+
+· ∂pk
+
+∂zi
+
+For s = sof tmax (a), the derivative is ∂sm 
+
+> ∂an
+
+= sm(δmn − sn). Therefore: 
+
+∂Lours 
+
+∂zi
+
+= − 1
+
+q˜y
+
+X
+
+> k
+
+(q˜y (δ˜yk − qk)) · (pk(δki − pi)) = − X
+
+> k
+
+(δ˜yk − qk) · (pk(δki − pi)) = − X
+
+> k
+
+δ˜yk pk(δki − pi) − qkpk(δki − pi)= −(p˜y (δ˜yi − pi) − pi(qi − X
+
+> k
+
+pkqk)) = piqi − pi
+
+X
+
+> k
+
+pkqk − p˜y δ˜yi + p˜y pi
+
+Because ∀i, p˜y δ˜yi = piδ˜yi :
+
+∂Lours 
+
+∂zi
+
+= piqi − pi
+
+X
+
+> k
+
+pkqk − piδ˜yi + pip˜y
+
+= pi
+
+(qi − δ˜yi ) + ( p˜y − X
+
+> j
+
+pj qj )
+
+
+
+Which concludes the proof. 
+
+Proof for Theorem 3.2 
+
+Proof. Let pˆy = 1 − δ where δ > 0, then: For ∀i̸ = ˆ y:
+
+| ∂Lours 
+
+∂zi
+
+| = pi
+
+(qi − δ˜yi ) + ( p˜y − X
+
+> j
+
+pj qj )
+
+
+
+≤ 2|pi|
+
+Therefore: 
+
+X
+
+> i̸=ˆ y
+
+∂Lours 
+
+∂z i
+
+≤ X
+
+> i̸=ˆ y
+
+|pi| = 2 δ
+
+12 Intrinsic Gradient Suppression for Label-Noise Prompt Tuning in Vision–Language Models 
+
+For i = ˆ y:
+
+| ∂Lours 
+
+∂zi
+
+| = | ∂Lours 
+
+∂zˆy
+
+|
+
+= pˆy
+
+qˆy + ( p˜y − X
+
+> j
+
+pj qj )
+
+
+
+≤
+
+qˆy + ( p˜y − X
+
+> j
+
+pj qj )
+
+
+
+= |δqˆy + p˜y − X 
+
+> j̸=ˆ y
+
+pj qj |≤ δqˆy + p˜y + X 
+
+> j̸=ˆ y
+
+pj qj
+
+≤ δqˆy + p˜y + X 
+
+> j̸=ˆ y
+
+pj
+
+= δqˆy + p˜y + δ
+
+≤ 3δ
+
+Therefore: 
+
+X
+
+> i
+
+∂Lours 
+
+∂z i
+
+≤ 5δ
+
+Then, for all ϵ > 0, there always exists 0 < δ < ϵ 
+
+> 5
+
+such that: 
+
+X
+
+> i
+
+∂Lours 
+
+∂z i
+
+≤ ϵ
+
+which concludes the proof. 
+
+Proof for Proposition 3.3 
+
+Proof. For any softmaxed vector q, its exponential ℓ1-norm reaches the maximum when it is a one-hot vector, where 
+
+∃i, qi = 1 and ∀j̸ = i, qi = 0 . In this case: 
+
+|| eq || 1 = e + C − 1
+
+where C is the length of q.and because the maximum and minimum value for ∀i, qi, is 1 and 0, which are both accessible when q is a one-hot vector, therefore: 
+
+1
+
+e + C − 1 ≤ pi ≤ ee + C − 1 , ∀i
+
+where p = sof tmax (q).Consequently, we have that: 
+
+log(1 + C − 1
+
+e ) ≤ L ours ≤ log( e + C − 1) 
+
+which concludes the proof. 
+
+Proof for Theorem 3.4 
+
+13 Intrinsic Gradient Suppression for Label-Noise Prompt Tuning in Vision–Language Models 
+
+Proof. For any classifier model f , its expected risk under symmetric label noise and double-softmax cross-entropy loss can be rewritten as: 
+
+RT Lours (f )=E(x,˜y) ∼ P noisy [Lours (f (x, ˜y)] =E(x,y ) ∼ P clean [E˜y|y [Lours (f (x, ˜y))]] =E(x,y ) ∼ P clean [(1 − η)Lours (f (x, y )) + X
+
+> i̸=y
+
+ηC − 1 Lours (f (x, i ))] =(1 − η)RLours (f ) + E(x,y ) ∼ P clean [X
+
+> i̸=y
+
+ηC − 1 Lours (f (x, i ))] 
+
+From Theorem 3.3, we have that: 
+
+log(1 + C − 1
+
+e ) ≤ L ours ≤ log( e + C − 1) 
+
+Therefore: 
+
+(1 − η)RLours (f ) + η log(1 + C − 1
+
+e ) ≤ R T 
+
+> Lours
+
+(f ) ≤ (1 − η)RLours (f ) + η log( e + C − 1) 
+
+This inequality can be reformed as: 
+
+11 − η (RT 
+
+> Lours
+
+(f ) − η log( e + C − 1)) ≤ R Lours (f ) ≤ 11 − η (RT 
+
+> Lours
+
+(f ) − η log(1 + C − 1
+
+e )) 
+
+Thus: 
+
+RLours ( ˜f ⋆) − R Lours (f ⋆) ≤ 11 − η (RT 
+
+> Lours
+
+( ˜f ⋆) − R T 
+
+> Lours
+
+(f ⋆) + η log( e + C − 11 + e−1(C − 1) )) 
+
+Since RLours ( ˜f ⋆) − R Lours (f ⋆) ≥ 0 and RT 
+
+> Lours
+
+( ˜f ⋆) − R T 
+
+> Lours
+
+(f ⋆) ≤ 0 as f ⋆ and ˜f ⋆ are the global minimizer of RLours (f ) and 
+
+RT 
+
+> Lours
+
+(f ) respectively, we have: 
+
+0 ≤ R Lours ( ˜f ⋆) − R Lours (f ⋆) ≤ η
+
+1 − η log( e + C − 11 + e−1(C − 1) )
+
+which concludes the proof. 
+
+Proof for Theorem 3.5 
+
+Proof. For any classifier model f , its expected risk under asymmetric label noise and double-softmax cross-entropy loss can be rewritten as: 
+
+RT Lours (f )=E(x,˜y) ∼ P noisy [Lours (f (x, ˜y)] =E(x,y ) ∼ P clean [E˜y|y [Lours (f (x, ˜y))]] =E(x,y ) ∼ P clean [Tyy Lours (f (x, y )) + X
+
+> i̸=y
+
+Tyi Lours (f (x, i ))] 
+
+≤E(x,y ) ∼ P clean [Tyy (C log( e + C − 1) − X
+
+> i̸=y
+
+Lours (f (x, i )) + X
+
+> i̸=y
+
+Tyi Lours (f (x, i ))] =C log(1 + e(C − 1)) · E(x,y ) ∼ P clean [Tyy ] − E(x,y ) ∼ P clean [X
+
+> i̸=y
+
+(Tyy − Tyi )Lours (f (x, i ))] 
+
+14 Intrinsic Gradient Suppression for Label-Noise Prompt Tuning in Vision–Language Models 
+
+On the other hand, we also have that: 
+
+RT Lours (f ) ≥ C log(1 + C − 1
+
+e ) · E(x,y ) ∼ P clean [Tyy ] − E(x,y ) ∼ P clean [X
+
+> i̸=y
+
+(Tyy − Tyi )Lours (f (x, i ))] 
+
+Therefore: 
+
+RT Lours (f ⋆) − R T 
+
+> Lours
+
+( ˜f ⋆) ≤
+
+C log( e + C − 11 + e−1(C − 1) ) · E(x,y ) ∼ P clean [Tyy ]+ E(x,y ) ∼ P clean [X
+
+> i̸=y
+
+(Tyy − Tyi )( Lours ( ˜f ⋆(x, i )) 
+
+− L ours (f ⋆(x, i )))] 
+
+Let z′⋆ be the softmaxed output logit of f ⋆ for sample (x, y ). Because f ⋆ is the global minimizer of clean empirical risk, it is the minimizer of Lours (f (x, y )) , where z′⋆y = 1 and ∀i̸ = y, z′⋆i = 0 , which is also the maximizer of ∀i̸ = y, Lours (f (x, i )) ,and as Tyy − Tyi > 0, consequently: 
+
+E(x,y ) ∼ P clean [X
+
+> i̸=y
+
+(Tyy − Tyi )( Lours ( ˜f ⋆(x, i )) − L ours (f ⋆(x, i )))] ≤ 0
+
+Thus: 
+
+0 ≤ R T 
+
+> Lours
+
+(f ⋆) − R T 
+
+> Lours
+
+( ˜f ⋆) ≤ C log( e + C − 1) 1 + e−1(C − 1) ) · E(x,y ) ∼ P clean [Tyy ]
+
+which concludes the proof. 
+
+## B. Details of Our datasets 
+
+In our experiments, we introduce nine datasets, including classification tasks in different domains. These initially reliable datasets are then corrupted by manually adding noise into sample labels. In this section, we provide a detailed introduction to these datasets, including their original tasks, their class numbers, features of their samples, and the size of their training and testing sets. • Caltech101: An object recognition dataset comprising 101 different types of generic categories, with each photo’s resolution being roughly 300 × 200. The size of the training set is 4128, and the size of the training set is 2465. • StanfordCars: A fine-grained car recognition dataset that includes 196 different kinds of cars, with class labels depicting their brands, models, and years. The training size of StanfordCars is 6509, and the testing size is 8041. • OxfordPets: A fine-grained pets breeds recognition dataset including pictures of 37 kinds of cats and dogs, with large variations in scale, pose, and lighting. The training size of StanfordCars is 2944, and the testing size is 3669. • Flowers102: A fine-grained flower recognition dataset consists of 102 kinds of flowers, with the training size of 4093 and testing size of 2463. • Food101: A large-scale food classification dataset containing food pictures from 101 categories, with a maximum width of 512 pixels. The size of the training set in our experiment is 50500 and the size of the testing set is 30300. • FGVCAircraft: A fine-grained aircraft classification dataset consisting of 102 types of airplanes with distinct variants, families, and manufacturer names. The 102,100 samples are split evenly for training, validating, and testing. This dataset is challenging due to the large size of the pictures and the difficulty of distinguishing different aircraft models. 15 Intrinsic Gradient Suppression for Label-Noise Prompt Tuning in Vision–Language Models 
+
+Table 4. Accuracy (%) of zero-shot prediction and robust unsupervised prompt-tuning method on nine datasets. The AVG indicates the average accuracy among all datasets. 
+
+Dataset Caltech101 StanfordCars Oxfordpets Flowers102 Food101 Zero-shot 81.43 65.33 88.19 66.99 85.46 Robust-UPL 82.85 65.74 88.39 70.34 86.08 Dataset FGVCAircraft DTD EuroSAT UCF101 AVG Zero-shot 24.27 42.73 42.91 65.19 62.50 Robust-UPL 22.47 44.93 43.08 67.07 63.43 0.0 0.2 0.4 0.6 0.8 
+
+> Noise Rate
+> 45
+> 60
+> 75
+> Accuracy(%)
+> CoOp
+> Ours
+> Zero-s
+
+(a) UCF101-Sym noise 0.0 0.1 0.2 0.3 0.4 0.5  
+
+> Noise Rate
+> 40
+> 50
+> 60
+> 70
+> 80
+> Accuracy(%)
+> CoOp
+> Ours
+> Zero-s
+
+(b) UCF101-Flip noise 0.0 0.1 0.2 0.3 0.4 0.5 0.6 0.7 0.8  
+
+> Noise Rate
+> 80
+> 85
+> 90
+> Accuracy(%)
+> CoOp
+> Ours
+
+(c) EuroSAT-Sym noise 0.0 0.1 0.2 0.3 0.4 0.5  
+
+> Noise Rate
+> 50
+> 60
+> 70
+> 80
+> 90
+> Accuracy(%)
+> CoOp
+> Ours
+> Zero-s
+
+(d) EuroSAT-Flip noise 
+
+Figure 6. Additional studies on the accuracy curve of prompt-tuning(CoOp), our method, and zero-shot predictions with increasing noise rate under different settings on UCF101 and EuroSAT datasets. 0 5 10 15 20 
+
+> epoch
+> 1.3
+> 1.4
+> 1.5
+> 1.6
+> 1.7
+> 1.8
+> 1.9
+> 2.0
+> Average Gradient
+> corr-samples
+> incorr-samples
+
+(a) CoOp on Caltech101 0 5 10 15 20  
+
+> epoch
+> 0.00
+> 0.02
+> 0.04
+> 0.06
+> 0.08
+> 0.10
+> 0.12
+> Average Gradient
+> corr-samples
+> incorr-samples
+
+(b) DSPT on Caltech101 0 5 10 15 20  
+
+> epoch
+> 1.6
+> 1.7
+> 1.8
+> 1.9
+> Average Gradient
+> corr-samples
+> incorr-samples
+
+(c) CoOp on DTD 0 5 10 15 20  
+
+> epoch
+> 0.02
+> 0.04
+> 0.06
+> 0.08
+> 0.10
+> 0.12
+> 0.14
+> Average Gradient
+> corr-samples
+> incorr-samples
+
+(d) DSPT on DTD 
+
+Figure 7. Studies on the gradient curve of prompt-tuning(CoOp) and our method with respect to CLIP’s output logits on Caltech101 and DTD datasets with 60% symmetric noise 
+
+• DTD: A texture recognition dataset with 47 classes of textual images. The training size of this dataset is 2820, and the testing size is 1692. • EuroSAT: A fine-grained satellite recognition dataset containing 10 types of different landscapes, with the size of each picture being 64 × 64. The training size of this dataset is 13500, and the testing size is 8100. • UCF101: A video action recognition dataset including 101 kinds of human movements. The input picture is acquired by cutting midframes from these videos with a resolution of 320 × 240. The training set of this dataset is 7639, with testing set of size 3783. 
+
+## C. Additional Experiments 
+
+C.1. Experiments on Zero-shot Prediction Methods 
+
+Unlike supervised learning methods, which can be heavily degraded by label noise, zero-shot prediction and unsupervised prompt-tuning rely solely on the knowledge learned in the pre-training stage, therefore being unaffected by label noise in the fine-tuning process. In our experiments, we examine the accuracy of zero-shot prediction, which uses the pretrained model for classification directly, and the robust unsupervised prompt-tuning method (Robust-UPL), which treats the zero-shot 16 Intrinsic Gradient Suppression for Label-Noise Prompt Tuning in Vision–Language Models 0.01 0.1 1 10 100 
+
+> 50
+> 55
+> 60
+> 65
+> Accuracy(%)
+> LigitClip
+> Ours
+
+(a) UCF101-Sym noise 0.01 0.1 1 10 100  
+
+> 60
+> 70
+> 80
+> 90
+> Accuracy(%)
+> LigitClip
+> Ours
+
+(b) UCF101-Flip noise 
+
+Figure 8. Additional studies on the effects of hyperparameter τ of LogitClip compared to ours on UCF101 dataset. 0 5 10 15 20 
+
+> epoch
+> 0
+> 2
+> 4
+> 6
+> Average loss
+> corr-samples
+> incorr-samples
+
+(a) CoOp 0 5 10 15 20  
+
+> epoch
+> 0
+> 2
+> 4
+> 6
+> Average loss
+> corr-samples
+> incorr-samples
+
+(b) DSPT 
+
+Figure 9. Additional studies on the accuracy curve of prompt-tuning(CoOp) and our method in the early training stage on Catltech101 dataset with 80% symmetric noise. 
+
+Table 5. Accuracy (%) on CIFAR10 dataset with symmetric and pair-flip noise. The bolded number indicates the performance of the best model. The NLPrompt method cannot work in this setting. 
+
+Dataset Noise Type Noise Rate CE LogitLcip Bootstrap GCE Smoothing NLPrompt DSPT CIFAR10 Sym 20% 74.01 84.70 74.80 84.47 76.29 - 82.34 50% 57.79 74.56 54.86 64.77 52.34 - 77.77 
+
+80% 25.18 22.88 32.54 36.03 36.36 - 37.93 
+
+Pair 20% 81.35 82.07 80.45 83.18 81.48 - 81.53 40% 72.14 81.02 70.31 73.27 72.09 - 57.07 predictions as ground-truth labels for prompt tuning. The results in Table 4 show that a pre-trained CLIP model can achieve moderate performance on all datasets, but is still outperformed by robust prompt-tuning methods. Compared with zero-shot prediction, Robust-UPL offers only limited improvement, since it does not introduce additional supervised samples or other useful information. These experiments justify the necessity of using labeled samples, even if the labels are unreliable. 
+
+C.2. Additional Experiments on The effect of Label Noise 
+
+In this section, we present further exploration on the learning curves of CoOp, our method, and zero-shot predictions with increasing noise rate on UCF101 and EuroSAT datasets with symmetric and pair-flip label noise. The results can be found in Figure 6. Our method exhibits significant accuracy improvements compared to CoOp, especially under high noise ratios. 
+
+C.3. Experiments on the Gradient Curves in the Training Process 
+
+To verify that the double-softmax cross-entropy loss effectiveness of zeroing out the gradient from mislabeled samples, we conduct further experiments that record the average gradient from each correctly and mislabeled propagated to the output logits z on Caltech101 and DTD datasets with 60% symmetric noise in the first 20 training epochs. The results can be found in Figure 7. Our method exhibits continuous noisy gradient suppression compared to CoOp. 
+
+C.4. Additional Experiments on LogitClip’s Hyperparameter 
+
+To study the effect of hyperparameter τ on the LogitClip approach, we carried out further experiments on the UCF101 dataset with 80% symmetric noise and 40% flip noise. The results are shown in Figure 8. The accuracy curve is consistent 17 Intrinsic Gradient Suppression for Label-Noise Prompt Tuning in Vision–Language Models 
+
+with our conclusion drawn in Section 4.3, confirming that LogitClip is sensitive to its hyperparameter. 
+
+C.5. Additional Experiments on The Learning Curve of CoOp and Our Method 
+
+In this section, we present further exploration of average losses for correct and incorrect predictions in the early training stage, where CoOp and our method are trained on the Caltech101 dataset with 80% symmetric noise. The results are shown in Figure 9. 
+
+C.6. Additional Experiments on Whether Double-Softmax is Suitable for Classical Noisy Label Learning Tasks 
+
+To testify double-softmax cross-entropy loss under classical NLL tasks, we conduct experiments on the CIFAR10 (Krizhevsky & Hinton, 2009) image classification datasets with symmetric noise of {20%, 50%, 80% }, and pair-flip noise of {20%, 40% }. We compare our method with other NLL-robust loss functions and mechanisms, including learning with standard cross-entropy loss, Label Smoothing, LogitClip, Bootstrapping (Reed et al., 2015), and Generalized Cross Entropy (GCE) loss (Zhang & Sabuncu, 2018). ResNet34 (He et al., 2016) is used as the backbone, and all models are trained for 200 epochs. As shown in Tab. 5, our double-softmax method does not perform as well as it does in VLM prompt-tuning. Although our model reaches the highest performance on CIFAR10 with Sym 50% and 80% by the advantage of 1%-3%, it is still outmatched by LogitClip or GCE in other cases, with the accuracy of more than 20% lower than LogitClip on 40% pair-flip noise. This is because double-softmax is specially designed for confident models with strong prior knowledge. It is also worth noticing that NLPrompt (Pan et al., 2025) does not apply to single-modal tasks, as it relies on pseudo-labels generated from text-image feature similarities. 
+
+## D. Additional Discussions 
+
+Q1.Why Are The Experiments Conducted on The Full Training Set, Instead of Using Few-Shot Learning? A1. This work mainly focuses on noisy label learning rather than few-shot learning, and simply mixing up these two settings will introduce unexpected interference. For example, in a 50% symmetric noise scenario, for a dataset with 1000 samples and 10 classes, the number of correctly labeled samples is approximately 50 for each class, while for 4-shot learning, this number can vary from 0 to 4. Previous studies investigating the effect of label noise on few-shot prompt-tuning have to fix the correct number to 2 for stability, which violates the randomness of label noise. 
+
+Q2.Why Is The Double-Softmax Cross-Entropy Loss Unsuitable for Classic Noisy Label Learning? A2. Double-softmax cross-entropy works by suppressing noisy gradient by model’s confident predictions and restricting the loss magnitude. For classical noisy label learning backbone models that are trained from scratch, this mechanism will hinder the learning process in the early training stage. In addition, the values of the logit outputs of the backbone model in traditional NLL are different from those in VLMs, creating over-smoothed output distributions. 
+
+Q3.Can The Double-Softmax Cross-Entropy Be Improved? A3. As shown in Table 1, although our method has demonstrated state-of-the-art performance on various datasets, it is not always superior to other approaches, especially under moderate label noise cases. To solve this issue, self-adjustive hyperparameters need to be introduced to control the smoothness of the softmaxed logit according to the specific features of the task. In addition, it is also necessary to extend double-softmax prompt-tuning beyond CLIP-based classification to large vision–language models (LVLM), exploring its effectiveness for LVLM-based downstream noisy label learning. We believe that the simplicity, generality, and strong empirical robustness of double-softmax make it a promising building block for future noisy label learning frameworks for finetuning multi-modal foundation models. 18
