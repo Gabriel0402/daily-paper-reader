@@ -1,0 +1,727 @@
+Title: Fast Strategy Solving for the Informed Player in Two-Player Zero-Sum Linear-Quadratic Differential Games with One-Sided Information
+
+URL Source: https://arxiv.org/pdf/2605.03112v1
+
+Published Time: Wed, 06 May 2026 00:10:17 GMT
+
+Number of Pages: 6
+
+Markdown Content:
+# Fast Strategy Solving for the Informed Player in Two-Player Zero-Sum Linear-Quadratic Differential Games with One-Sided Information 
+
+Mukesh Ghimire, Zhe Xu, Yi Ren 
+
+Abstract — We study finite-horizon two-player zero-sum dif-ferential games with one-sided payoff information ( G), where the informed player (P1) knows the game payoff, while P2 only has a public belief over a finite set of possible payoffs. In this case, P1’s Nash equilibrium (NE) behavioral strategy may control the release of the type information or even resort to manipulate P2’s belief. Previous studies revealed an atomic structure of the NE of G with general nonlinear dynamics and payoffs, leading to tractable NE approximation. Implementing such approximation schemes for real-time sub-game solving, however, has not been achieved, yet is desired for applications where sim-to-real gaps exist and robust control is required. This paper improves the computational efficiency of sub-game solving for P1 during G with linear dynamics and quadratic losses. Specifically, we show that P1’s NE computation can be formulated as a bi-level optimization problem where the outer level optimizes the “signaling” strategy, i.e., when and how to reveal information through control, and the inner level is a game-tree LQR that solves for the optimal closed-loop control. This bi-level problem is solved via an adjoint-enabled backpropagation scheme: A “backward” LQR pass is followed by a “forward” gradient descent pass for improving the signaling. We apply the proposed algorithm to approximate NEs for variants of a homing problem with a 8D state space, 2D action spaces, and a discrete time horizon of K = 10 . The algorithm achieves ≈10Hz sub-game solving, enabling robust game-theoretic planning under information asymmetry and random disturbances. 
+
+I. INTRODUCTION Two-player zero-sum differential games with one-sided in-formation ( G) arise in safety-critical scenarios in defense [1], [2], [3], cybersecurity [4], [5], [6], [7], and finance [8], [9], [10]. When only one player observes the payoff type, optimal play involves both control and information design :the informed player may act cautiously to avoid revealing its type too early, or deliberately reveal to induce advantageous responses. Existing algorithms for solving G [11], [12] iden-tified the atomic NE structure of G, but real-time subgame solving, e.g., in robotics applications where sim-to-real gap exists, is not yet achieved. To this end, this work focuses on a subclass of G with linear dynamics, quadratic costs and where the number of payoff types I is small (denoted LQ 
+
+G). We investigate the effectiveness of a game solver that combines the two structural insights to enable sub-second strategy computation in LQ G: (1) the atomic NE structure reduces the game tree branching factor from the action size (infinite for a continuous action space) to at most I per infostate (tree node), resulting in sub-game solving as a  
+
+> M. Ghimire, Z. Xu, and Y. Ren are with the Department of Mechanical and Aerospace Engineering at Arizona State University, Tempe, AZ 85281, USA.
+
+{mghimire, xzhe1, yiren }@asu.edu 
+
+minimax problem on an I-ary game tree, and (2) the LQ structure ensures that the minimax problem can be solved via a differentiable Riccati recursion. The main contributions are: 1) The formulation of P1’s NE strategy learning as a bi-level optimization problem where a belief-induced LQ game is nested in signaling optimization. 2) An adjoint-enabled backpropagation algorithm that dif-ferentiates the Riccati recursion to optimize signaling policy, resulting in ≈10Hz sub-game solving for ahoming game with an 8D state space, 2D action spaces, and a time horizon of K = 10 .3) Two case studies of the homing game: we use Hexner’s game with an analytical NE to verify the correctness of our algorithm, and a “drone landing under attack” scenario to demonstrate the value of fast sub-game solving under P2’s random velocity disturbances. II. RELATED WORK Games with incomplete information have been stud-ied extensively since Harsanyi’s foundational work on Bayesian games [13]. In the zero-sum setting, Aumann and Maschler [14] characterized optimal strategies in repeated games with one-sided information, establishing that there are scenarios when the informed player should reveal informa-tion gradually through a carefully designed signaling scheme. For differential games, Cardaliaguet [15], [16] established value existence and characterized the value functions for games with asymmetric information using viscosity solution methods. Ghimire et al. [11] built on these ideas to propose a scalable solver for games with one-sided information and nonlinear dynamics and costs. The key insight from these studies is that the optimal strategy for the informed (resp. uninformed) player entails randomizing from at most I (resp. 
+
+I + 1 ) actions at any game tree node, enabling efficient strategy computation for large-scale games such as football. Hexner [17] independently studied LQ G through a homing game, where an evader with a private target attempts to minimize terminal distance, while a pursuer infers the target and maximizes it. With an LQ structure, Hexner derived the analytical solution to optimal signaling and feedback control. III. PROBLEM FORMULATION 
+
+A. Game Setup and Information 
+
+We consider LQ G on a finite time horizon [0 , T ], and approximate its NE through time discretization with a time step τ > 0. Let K := T /τ and tk := kτ for k ∈ [K]. At 
+
+t = 0 , a payoff type θ is drawn from Θ = {θi}i∈[I] with 
+
+> arXiv:2605.03112v1 [cs.GT] 4 May 2026
+
+A. Optimization Loop B. Inner Belief Tree 
+
+Outer Optimizer 
+
+Minimize V0,∅
+
+ϕ ← ϕ − η∇ϕV0,∅
+
+Outer Variables 
+
+Logits ϕ → Split αα ∈ ∆( A)
+
+Inner Problem 
+
+Evaluate V0,∅(x0)
+
+and ∇ϕV0,∅
+
+(Tree Recursion)                      
+
+> Update ϕ
+> Fix α
+> Return V, ∇V
+> Public Root
+> (0 ,∅)
+> Belief p0
+> Node
+> (1 ,1)
+> p1,1
+> Node
+> (1 ,2)
+> p1,2
+> Leaf
+> (2 ,11)
+> Leaf
+> (2 ,12)
+> Leaf
+> (2 ,21)
+> Leaf
+> (2 ,22)
+> a0= 1
+> λ1a0= 2
+> λ2
+> 1212
+> ←Forward Pass
+> Bayes Update using α
+> ←Backward Pass
+> Tree Riccati / Saddle Aggregating Values
+
+Fig. 1. Bilevel structure used in the solver. (A) The outer level optimizes belief-splitting coefficients α (parameterized by logits ϕ). (B) Given α, the inner level constructs the public belief tree (forward Bayes propagation), computes belief-averaged costs, and evaluates the induced tree of LQ saddle subgames via a tree-structured Riccati recursion, returning the root value and its gradient. 
+
+a public prior p0 ∈ ∆(Θ) . P1 observes θ; P2 only knows 
+
+p0. In continuous time, the joint state x(t) ∈ Rn evolves according to linear dynamics 
+
+˙x(t) = Acx(t) + B1,c u(t) + B2,c v(t),
+
+where u(t) ∈ Rm1 is P1’s control and v(t) ∈ Rm2 is P2’s control. The corresponding discrete-time dynamics is: 
+
+xk+1 = Ax k + B1uk + B2vk, (1) with A = I + τ A c, Bi = τ B i,c + AcBi,c τ 2 
+
+> 2
+
+for i ∈ [2] .The public belief about θ is denoted by p(t) in continuous time and pk in discrete time, and is updated by Bayes’ rule. Throughout the game both players observe the state, action, and belief trajectories. 
+
+B. Strategy and Payoff Structures 
+
+We denote by {H ir }I the joint sets of I behavioral strate-gies of P1 1. A type-θi behavioral strategy ηi ∈ H ir maps the current public information (e.g., (t, x, p ) in continuous time or (k, x k, p k) in discrete time) to a probability measure over 
+
+Rm1 . Similarly, P2’s behavioral strategy ζ ∈ Z r produces a probability measure over Rm2 . The subscript r highlights the randomness of behavioral strategies. Let XT be the random terminal state induced by (ηi, ζ )
+
+under the continuous-time dynamics. Type-θi P1 minimizes 
+
+Jθi (t0, x 0) := Eηi,ζ 
+
+"
+
+gθi (XT ) + 
+
+Z Tt0
+
+ℓθi (ηi(s), ζ (s)) ds 
+
+#
+
+,
+
+(2) where the running cost is quadratic and strictly convex-concave in controls 
+
+ℓθi (u, v ) = 12 u⊤Riu − 12 v⊤Siv, Ri ≻ 0, S i ≻ 0, (3) 
+
+> 1
+
+We define “behavioral strategy” as the time-delayed non-anticipative strategies standard for differential games [18]. 
+
+and the terminal cost is convex in P1’s state and concave in P2’s: 
+
+gθi (x) = 12 x⊤Qix+q⊤ 
+
+> i
+
+x+ci, Qi = Q⊤ 
+
+> i
+
+, q i ∈ Rn, c i ∈ R.
+
+(4) P2 maximizes the expected payoff J(t0, x 0, p 0) =
+
+Eθ∼p0 [Jθ (t0, x 0)] . The upper and lower values are defined as V +(t0, x 0, p 0) = inf {ηi} sup ζ J and V −(t0, x 0, p 0) = sup ζ inf {ηi} J, respectively. The game has a value V if 
+
+V = V +(t0, x 0, p 0) = V −(t0, x 0, p 0). Existence of V in 
+
+G is proved in [16], notably under the Isaacs’ condition which holds for LQ G. [11] develops a discrete-time primal-dual reformulation of the game to approximate NE strategies. Specifically, P1 solves a Stackelberg primal game where P2 best responses to P1 via the following Bellman backup: 
+
+Vτ (k, x k, p k) = min  
+
+> {ηi}∈{H r}I
+
+Eθi∼pk ,u k ∼ηi
+
+h
+
+max 
+
+> vk
+
+Vτ (k + 1 ,xk+1 , p k+1 ) + τ ℓ θi (uk, v k)
+
+i
+
+,
+
+(5) with boundary Vτ (K, x, p ) = P 
+
+> θi
+
+pθi gθi (x). Here pk+1 is obtained after observing action u: pk+1 (i) ∝ pk(i) P(u | θ =
+
+θi) under P1’s strategy set {ηi}.The rest of the paper focuses on efficiently solving (5) at all game tree nodes. Specifically, we approximate {ηi}
+
+by separating (i) a signaling component that governs the evolution of the public belief (i.e., how pk is split into posteriors pk+1 ), and (ii) a control component that specifies the corresponding optimal state-feedback actions given the public belief. The next subsection makes this separation explicit via an I-branch public belief-tree representation. 
+
+C. Reparameterization of {ηi}
+
+Our goal is to decompose {ηi} into variables for signaling and those for control. We start with a critical property of G:It is proved that P1’s NE strategies in (5) are atomic [11]: 
+
+ηi for i ∈ [I] randomizes over at most I common action prototypes at each tree node, and thus the primal game can be considered a tree-structured minimax problem, with each node consisting of I branches. See visualization in Fig. 1B for I = 2 and K = 2 .Let A := {1, 2, . . . , I } be the index set for action proto-types, and ω ∈ A k denote P1’s length-k action sequence. Each tree node can be uniquely identified by (k, ω ). At each node (k, ω ) and for each private type θi, P1 selects the next action index a ∈ A according to a distribution specified by 
+
+ηi:
+
+αak,ω,i = P(ak = a | θ = θi, public node (k, ω )) ,αak,ω,i ≥ 0, X
+
+> a∈A
+
+αak,ω,i = 1 . (6) We call the collection α = {αak,ω,i } the signaling policy as it governs how the public belief evolves: Given a public belief p ∈ ∆(Θ) at node (k, ω ), the probability of observing prototype a is 
+
+λak,ω (p) := 
+
+> I
+
+X
+
+> i=1
+
+pi αak,ω,i . (7) After observing a, Bayes’ rule yields the posterior belief at child node (k+1 , ωa ):
+
+pk+1 ,ωa (i) = αak,ω,i pk,ω (i)
+
+λak,ω (pk,ω ) (λak,ω (pk,ω ) > 0) . (8) As a result, belief p across the game tree follows a martingale determined by α: P 
+
+> a∈A
+
+λak,ω (pk,ω ) pk+1 ,ωa = pk,ω .Now we describe the LQ game for fixed α. Denote the value at (k, ω ) as Vk,ω (x). At leaves, we have: 
+
+VK,ω (x) = 
+
+> I
+
+X
+
+> i=1
+
+pK,ω (i) gi(x). (9) Consider an edge (k, ω, a ) from node (k, ω ) to child (k +1, ωa ). Conditioned on observing a, the posterior belief is 
+
+pk+1 ,ωa by (8). Taking expectation of the type-dependent running cost (3) under this posterior yields a standard quadratic stage cost with belief-averaged matrices 
+
+¯Rak,ω := 
+
+> I
+
+X
+
+> i=1
+
+pk+1 ,ωa (i) Ri, ¯Sak,ω := 
+
+> I
+
+X
+
+> i=1
+
+pk+1 ,ωa (i) Si.
+
+(10) Let λak,ω := λak,ω (pk,ω ) for brevity. The edge value condi-tioning on a solves an LQ subgame: 
+
+V ak,ω (x) := min 
+
+> u∈Rm1
+
+max 
+
+> v∈Rm2
+
+n
+
+τ
+
+ 12 u⊤ ¯Rak,ω u − 12 v⊤ ¯Sak,ω v
+
+
+
++ Vk+1 ,ωa 
+
+ Ax + B1u + B2vo
+
+.
+
+(11) Since Isaacs’ condition holds for LQ G, each edge subprob-lem (11) has a unique solution. This will be formalized in Theorem 1. The node value is an expectation over branches: 
+
+Vk,ω (x) = X
+
+> a∈A
+
+λak,ω V ak,ω (x), k = 0 , . . . , K − 1. (12) To summarize, the equilibrium computation of (5) across the game tree can be viewed as a bilevel program: the outer level chooses the signaling α, while the inner level solves the induced game (9)–(12) to define an evaluation map α 7 →
+
+V0,∅(x0, p 0). With initial state x0 and prior p0, the outer signaling problem is 
+
+min  
+
+> α
+
+V0,∅(x0, p 0) s.t. αk,ω,i ∈ ∆( A) ∀k, ω, i. (13) In Section IV we show how to (i) evaluate V0,∅(x0, p 0) effi-ciently for a fixed α via a tree-structured Riccati recursion, and (ii) differentiate through this evaluation to optimize α.IV. DIFFERENTIABLE RICCATI SOLVER We now describe a differentiable tree-structured Riccati recursion composed of (1) edge steps that solve the local LQ games (11) to obtain feedback laws and edge values V ak,ω 
+
+given the values at child nodes Vk+1 ,ωa , and (2) node steps 
+
+(12) that average edge values using branch probabilities λak,ω 
+
+to obtain the quadratic value at parent node. 
+
+A. Quadratic Value Representation on Nodes 
+
+A key enabler of the Riccati recursion is Theorem 1, which states that node values are quadratic and convex in state: 
+
+Vk,ω (x) = 12 x⊤Pk,ω x + r⊤ 
+
+> k,ω
+
+x + ck,ω , (14) where coefficients (Pk,ω , r k,ω , c k,ω ) depend on pk,ω (hence on α) and can be computed by backward induction. 
+
+Theorem 1 (Quadratic closure on the public tree): For fixed α, Vk,ω (·) at any (k, ω ) is quadratic convex in state. Proof: We prove by induction. At a leaf node (K, ω )
+
+(9), since gi is quadratic and strictly convex in state, VK,ω 
+
+is also quadratic and convex. Using (4), leaf coefficients are 
+
+PK,ω =
+
+> I
+
+X
+
+> i=1
+
+pK,ω (i) Qi, rK,ω =
+
+> I
+
+X
+
+> i=1
+
+pK,ω (i) qi,cK,ω =
+
+> I
+
+X
+
+> i=1
+
+pK,ω (i) ci.
+
+(15) For induction, fix an edge (k, ω, a ) with child node (k +1, ωa ). Let the child value be 
+
+Vk+1 ,ωa (x) = 12 x⊤P +x + r+⊤x + c+, P + := Pk+1 ,ωa ,r+ := rk+1 ,ωa , c+ := ck+1 ,ωa .
+
+On this edge, the posterior belief-averaged running matrices are ¯R := ¯Rak,ω and ¯S := ¯Sak,ω from (10). The edge value (11) can therefore be written as 
+
+V ak,ω (x) = min  
+
+> u
+
+max 
+
+> v
+
+n 12 u⊤(τ ¯R) u − 12 v⊤(τ ¯S) v
+
++ 12 x+⊤P +x+ + r+⊤x+ + c+o
+
+,
+
+(16) where x+ = Ax + B1u + B2v.Define the stacked input w = u v⊤ and the input matrix B = [ B1 B2]. The saddle stage Hessian is 
+
+¯Rw := 
+
+τ ¯R 00 −τ ¯S
+
+
+
+. (17) Then the objective inside (16) becomes a quadratic function of (w, x ):
+
+Φak,ω (w; x) = 12 w⊤ ¯Rww + 12 (Ax + Bw )⊤P +(Ax + Bw )+ r+⊤(Ax + Bw ) + c+.
+
+(18) Expanding (18) and collecting terms in w yields 
+
+Φak,ω (w; x) = 12 w⊤   ¯Rw + B⊤P +B| {z }
+
+> Hak,ω
+
+w
+
++ w⊤B⊤(P +Ax + r+)+ 12 x⊤A⊤P +Ax + ( A⊤r+)⊤x + c+.
+
+(19) We first verify that the minimax problem is well-posed and admits a unique saddle. Let ∥ · ∥ denote the Euclidean norm for vectors and the induced (spectral) operator norm for matrices, and since P + = P +⊤, ∥P +∥ = max i |λi(P +)|,where λ(M ) is the eigenvalue of M . From (19), 
+
+Hak,ω =
+
+Huu Huv 
+
+H⊤ 
+
+> uv
+
+Hvv 
+
+
+
+,
+
+with Huu = τ ¯R + B⊤ 
+
+> 1
+
+P +B1, Hvv = −τ ¯S + B⊤ 
+
+> 2
+
+P +B2.Since ¯R, ¯S are posterior convex combinations of {Ri ≻ 0}
+
+and {Si ≻ 0}, λmin ( ¯R) ≥ r := min i λmin (Ri) > 0 and 
+
+λmin ( ¯S) ≥ s := min i λmin (Si) > 0. Thus, for any δu, δv ,
+
+δu ⊤Huu δu ≥  τ r − ∥ P +∥ ∥ B1∥2∥δu ∥2, (20) 
+
+δv ⊤Hvv δv ≤   − τ s + ∥P +∥ ∥ B2∥2∥δv ∥2, (21) with δu ⊤ ¯Rδu ≥ r∥δu ∥2, y⊤P +y ≥ −∥ P +∥∥ y∥2, and 
+
+∥Bj δ∥ ≤ ∥ Bj ∥ ∥ δ∥. Let ¯P := sup k,ω ∥Pk,ω ∥ < ∞ and assume a standard discretization so that ∥Bj (τ )∥ ≤ βj τ for all τ ∈ (0 , τ 0] and some βj , τ 0 > 0. Then Huu ≻ 0 and 
+
+Hvv ≺ 0 for any τ ∈ (0 , τ ∗), where 
+
+τ ∗ := min 
+
+ r
+
+¯P β 21
+
+, s
+
+¯P β 22
+
+, τ 0
+
+
+
+.
+
+Hence Φak,ω (·; x) is strictly convex in u and strictly concave in v, and the edge game (16) admits a unique saddle point. Therefore, we have 
+
+∇wΦak,ω (w; x) = Hak,ω w + B⊤(P +Ax + r+) = 0 .
+
+The unique saddle point is then the following: 
+
+wa∗ 
+
+> k,ω
+
+(x) = Kak,ω x + κak,ω , Kak,ω = − Hak,ω 
+
+−1B⊤P +A, κak,ω = − Hak,ω 
+
+−1B⊤r+.
+
+(22) Partitioning w = u v⊤ gives the edge-specific affine feedback laws 
+
+ua∗ 
+
+> k,ω
+
+(x) = Kau,k,ω x + κau,k,ω , (23) 
+
+va∗ 
+
+> k,ω
+
+(x) = Kav,k,ω x + κav,k,ω , (24) where (Ku, κ u) and (Kv , κ v ) are the blocks of (K, κ ). Let 
+
+b(x) := B⊤(P +Ax + r+) be the affine term in (19). Then (19) can be written as 
+
+Φak,ω (w; x) = 12 (w + H−1b(x)) ⊤H(w + H−1b(x)) 
+
+− 12 b(x)⊤H−1b(x) + 12 x⊤A⊤P +Ax 
+
++ ( A⊤r+)⊤x + c+,
+
+where H ≡ Hak,ω . At the saddle point 
+
+w = w∗(x) = −H−1b(x),
+
+the squared term vanishes and we obtain 
+
+V ak,ω (x) = 12 x⊤A⊤P +Ax + ( A⊤r+)⊤x + c+
+
+− 12 b(x)⊤ Hak,ω 
+
+−1b(x).
+
+(25) Expanding the last term with b(x) = B⊤(P +Ax + r+)
+
+and collecting quadratic, linear, and constant parts in x gives the quadratic coefficients of the edge value: 
+
+P ak,ω = A⊤P +A − A⊤P +B Hak,ω 
+
+−1B⊤P +A, (26) 
+
+rak,ω = A⊤r+ − A⊤P +B Hak,ω 
+
+−1B⊤r+, (27) 
+
+cak,ω = c+ − 12 r+⊤B Hak,ω 
+
+−1B⊤r+. (28) Returning to the node recursion (12), since each V ak,ω (x)
+
+is quadratic in x, the node coefficients are simply the λ-weighted averages: 
+
+Pk,ω = X
+
+> a∈A
+
+λak,ω P ak,ω , rk,ω = X
+
+> a∈A
+
+λak,ω rak,ω ,ck,ω = X
+
+> a∈A
+
+λak,ω cak,ω . (29) 
+
+Remark 1: In our case studies, the dynamics are player-separable: x = [x(1) , x (2) ], A = diag (A1, A 2), B1 =[ ˜B1; 0] , B2 = [0; ˜B2], and the terminal quadratic has the signed block form Qi = diag (Q(1)  
+
+> i
+
+, −Q(2)  
+
+> i
+
+) with 
+
+Q(1)  
+
+> i
+
+, Q (2)  
+
+> i
+
+⪰ 0. The tree recursion preserves Pk,ω =
+
+diag (P (1)  
+
+> k,ω
+
+, −P (2)  
+
+> k,ω
+
+) with P (1)  
+
+> k,ω
+
+, P (2)  
+
+> k,ω
+
+⪰ 0, hence Huv =
+
+B⊤ 
+
+> 1
+
+P +B2 = 0 and Huu = τ ¯R + ˜B⊤ 
+
+> 1
+
+P (1) ˜B1 ≻ 0, Hvv =
+
+−τ ¯S − ˜B⊤ 
+
+> 2
+
+P (2) ˜B2 ≺ 0 for all τ > 0. Therefore every edge subproblem is strictly convex–concave and has a unique saddle without requiring τ < τ ∗.
+
+B. The Solver 
+
+For fixed α, the tree Riccati recursion has two steps: The forward (Bayes) pass propagates beliefs {pk,ω } and branch weights {λak,ω } using (7)-(8), and compute averaged edge matrices { ¯Rak,ω , ¯Sak,ω } via (10). Then backward (Riccati) pass initializes leaf quadratics by (15); then for k = K −
+
+1, . . . , 0 computes edge updates (22)-(28) and aggregate to nodes via (29). To enforce simplex constraints in (6), we parameterize α
+
+via logits ϕ and a softmax: 
+
+αak,ω,i = exp( ϕak,ω,i )
+
+P 
+
+> b∈A
+
+exp( ϕbk,ω,i ) . (30) Alternatively, α can also be modeled by a neural network 
+
+F : Rn × ∆(Θ) → α. Given logits ϕ, we compute α(ϕ) and run the tree Riccati recursion to obtain the root quadratic 
+
+(P0,∅, r 0,∅, c 0,∅). The scalar objective is then 
+
+L(ϕ) := V0,∅(x0, p 0) = 12 x⊤ 
+
+> 0
+
+P0,∅x0 + r⊤
+
+> 0,∅
+
+x0 + c0,∅. (31) All operations are differentiable, and thus gradients ∇ϕL can be obtained via automatic differentiation and used in first-or second-order optimizers. We can further accelerate the optimization by leveraging adjoint-enabled gradient descent [19]. The solver is summarized in Algorithm 1. 
+
+Algorithm 1 LQ G Solver  
+
+> 1:
+
+Input: Game data {Ri, S i, Q i, q i, c i}Ii=1 , (A, B 1, B 2),horizon K, time step τ , initial state x0, prior p0. 
+
+> 2:
+
+Initialize logits {ϕak,ω,i }, choose optimizer and step size.  
+
+> 3:
+
+for outer iterations t = 0 , 1, 2, . . . do  
+
+> 4:
+
+Compute α(ϕ) via softmax (30).  
+
+> 5:
+
+(Forward) Build belief tree {pk,ω , λ ak,ω } (7)–(8).  
+
+> 6:
+
+(Forward) Compute ¯Rak,ω , ¯Sak,ω (10).  
+
+> 7:
+
+(Backward) Initialize (PK,ω , r K,ω , c K,ω ) at leaf (15).  
+
+> 8:
+
+for k = K − 1, . . . , 0 do  
+
+> 9:
+
+for each node ω ∈ A k and prototype a ∈ A do  
+
+> 10:
+
+Compute edge feedback (Kak,ω , κ ak,ω ) via (22).  
+
+> 11:
+
+Compute (P ak,ω , r ak,ω , c ak,ω ) via (26)–(28).  
+
+> 12:
+
+end for  
+
+> 13:
+
+Aggregate to node (Pk,ω , r k,ω , c k,ω ) via (29).  
+
+> 14:
+
+end for  
+
+> 15:
+
+Compute loss L(ϕ) = V0,∅(x0) via (31).  
+
+> 16:
+
+Backpropagate to obtain ∇ϕL from root to leaf.  
+
+> 17:
+
+Optimizer step on ϕ. 
+
+> 18:
+
+end for  
+
+> 19:
+
+Output: Optimized α and edge feedback {Kak,ω , κ ak,ω }
+
+to compose {ηi}.V. C ASE STUDIES 
+
+We implement the proposed method to solve two LQ Gs. Both games use 2D double integrator dynamics and have a time horizon of K = 10 with τ = 0 .1. Game-specific parameters are discussed as follows. 
+
+A. Case 1: Hexner’s Game 
+
+We use Hexner’s game [17] with an analytical NE to verify the correctness of the learned policies. The game has a type-dependent terminal cost and type-independent running costs. P1 has two potential targets at (0 , θ ) with θ = {− 1, 1}. The terminal cost function is: 
+
+gθi (x) = ( x(1) − zθ i)⊤ ˜Qi(x(1) − zθ i)−
+
+(x(2) − zθ i)⊤ ˜Qi(x(2) − zθ i), (32) where x(1) and x(2) represent the states of P1 and P2. z =0 1 0 0⊤. ˜Qi = ˜Q = diag (1 , 1, 0, 0) is the terminal cost matrix. Rewriting (32) in the form of (4), we get, 
+
+Qi = Q = 2 · diag ( ˜Q, − ˜Q),qi = 2 −θi( ˜Q⊤z) θi( ˜Q⊤z)⊤ ,ci = θ2 
+
+> i
+
+(z⊤ ˜Qz − z⊤ ˜Qz ) = 0 
+
+The control penalty matrices for P1 and P2 are R =
+
+diag (0 .05 , 0.025) and S = diag (0 .05 , 0.1) , respectively.           
+
+> Fig. 2. Comparisons between ground-truth NEs (“GT”) of Hexner’s game and learned policies for θ=−1(left) and θ= 1 (right) under incom-plete information. Dotted lines are NEs for the corresponding complete-information games. P1 is able to improve significantly by exploiting its information advantage.
+
+The analytical solution for Hexner’s game is studied in [11], [17]: P1 plays non-revealing (i.e., its strategy is same across types) until a game-dependent critical time tr when they completely reveal the target. [11] reported a cold-solve time of 5 minutes on a Macbook M1 Pro for P1’s NE along with P2’s best responses. In comparison, our algorithm achieves the same in under 1 minute. Results are visualized in Fig. 2, where the learned policies match the analytical ground-truth, recovering the critical time of tr ≈ 0.5. We also compare the NEs against those for the corresponding complete-information games (where P2 knows P1’s targets) along with the value improvement percentages to show the necessity of information control in strategic planning. 
+
+B. Case 2: Drone Landing Under Attack 
+
+In this game, a drone (P1) has two possible landing zones 
+
+(−1, −1) and (1 , 1) in a horizontal and a vertical orienta-tion, and is evading from an adversary (P2). Final penalty matrices are type-dependent and shared by both players: 
+
+˜Q1 = diag (1 , 20 , 0, 0) and ˜Q2 = diag (20 , 1, 0, 0) , i.e., type 1 focuses on homing in y coordinate and type 2 in 
+
+x. Running penalty matrices are type-independent: R =
+
+diag (0 .05 , 0.025) , and S = diag (0 .02 , 0.04) . Dynamics, running and terminal cost functions follow Hexner’s game, with z = 1 1 0 0⊤.
+
+1) Optimal policy under nominal conditions: First we present the result when the deployment and offline train-ing share same condition. We highlight that, unlike in the Hexner’s game, the optimal policy in this case is state- and belief-dependent. Fig. 3A-B compare NE interactions for complete- and incomplete-info settings for different targets (columns) and different initial states (rows). 
+
+2) Optimal policy under stochastic disturbance: Next, we introduce noise in P2’s velocity during deployment, and argue that by re-solving the sub-game at each time-step, P1 can play more robustly. The noise is added from an i.i.d. Normal distribution N (0 , Σ2). To better reflect the underlying problem, P1 considers stochastic LQ during online play, which results in an accumulation of additional cost tr (PkΣ) due to noise at every time step. However, note that the feedback gain remains unchanged in stochastic LQ Fig. 3. Sample trajectories for the drone landing under attack case. A-B: Comparison between complete vs incomplete information games. P1 is better off in expectation when playing the incomplete-info game. Improvements for specific realizations are labeled in the plots. B-C: Comparison between re-solved vs offline policy when P2’s dynamics is stochastic. On average, resolving helps P1. 
+
+with zero-mean noise. We use Σ = diag (0 , 0, 0.25 , 0.25) 
+
+in our results. We compare the cost of the game realized by re-solving the sub-games to that realized without re-solving. We report this difference in addition to the mean resolve time (milliseconds) per time step reported from 1600 runs in Tab. I. Sample trajectories are shown in Fig. 3C-D. 
+
+TABLE I 
+
+∆COST OF P1 AND MEAN SUBGAME SOLVING TIME 
+
+∆ cost (↓) 95% Confidence Interval resolve time (ms) 
+
+−0.1051 ± 0.3656 [−0.1232 , −0.0877] 71 .51 ± 59 .57 
+
+VI. C ONCLUSION 
+
+We provided an efficient gradient-based algorithm for solving the informed player’s strategy in two-player zero-sum linear-quadratic differential games with one-sided infor-mation by leveraging its equilibrium structure. Future work will explore methods to improve algorithmic efficiency for the uninformed player, which solves a dual game that cannot exploit the LQ structure as much as the primal, yet may leverage the optimal signaling from the latter. REFERENCES [1] E. Garcia, D. W. Casbeer, and M. Pachter, “Design and analysis of state-feedback optimal strategies for the differential game of active defense,” IEEE Transactions on Automatic Control , vol. 64, no. 2, pp. 553–568, 2018. [2] E. Garcia, D. W. Casbeer, and M. Pachter, “The complete differential game of active target defense,” Journal of Optimization Theory and Applications , vol. 191, no. 2, pp. 675–699, 2021. [3] L. Liang, F. Deng, Z. Peng, X. Li, and W. Zha, “A differential game for cooperative target defense,” Automatica , vol. 102, pp. 58–71, 2019. [4] K. Durkota, V. Lis` y, C. Kiekintveld, K. Hor´ ak, B. Boˇ sansk` y, and T. Pevn` y, “Optimal strategies for detecting data exfiltration by internal and external attackers,” in International Conference on Decision and Game Theory for Security , pp. 171–192, Springer, 2017. [5] S. M. Mc Carthy, A. Sinha, M. Tambe, and P. Manadhata, “Data exfiltration detection and prevention: Virtually distributed pomdps for practically safer networks,” in International Conference on Decision and Game Theory for Security , pp. 39–61, Springer, 2016. [6] K. Hor´ ak and B. Boˇ sansk` y, “A point-based approximate algorithm for one-sided partially observable pursuit-evasion games,” in International conference on decision and game theory for security , pp. 435–454, Springer, 2016. [7] M. Van Dijk, A. Juels, A. Oprea, and R. L. Rivest, “Flipit: The game of “stealthy takeover”,” Journal of Cryptology , vol. 26, no. 4, pp. 655– 713, 2013. [8] A. S. Kyle, “Continuous auctions and insider trading,” Econometrica: Journal of the Econometric Society , pp. 1315–1335, 1985. [9] K. Back, “Insider trading in continuous time,” The Review of Financial Studies , vol. 5, no. 3, pp. 387–409, 1992. [10] X. Wang and M. P. Wellman, “Market manipulation: An adversarial learning framework for detection and evasion,” in 29th International Joint Conference on Artificial Intelligence , 2020. [11] M. Ghimire, L. Zhang, Z. Xu, and Y. Ren, “Solving football by exploiting equilibrium structure of 2p0s differential games with one-sided information,” 2025. [12] M. Ghimire, L. Zhang, Z. Xu, and Y. Ren, “State-constrained zero-sum differential games with one-sided information,” in Forty-first International Conference on Machine Learning .[13] J. C. Harsanyi, “Games with incomplete information played by “bayesian” players, i–iii part i. the basic model,” Management science ,vol. 14, no. 3, pp. 159–182, 1967. [14] R. J. Aumann, M. Maschler, and R. E. Stearns, Repeated games with incomplete information . MIT press, 1995. [15] P. Cardaliaguet, “Differential games with asymmetric information,” 
+
+SIAM journal on Control and Optimization , vol. 46, no. 3, pp. 816– 838, 2007. [16] P. Cardaliaguet, “Numerical approximation and optimal strategies for differential games with lack of information on one side,” Advances in Dynamic Games and Their Applications: Analytical and Numerical Developments , pp. 1–18, 2009. [17] G. Hexner, “A differential game of incomplete information,” Journal of Optimization Theory and Applications , vol. 28, pp. 213–232, 1979. [18] R. J. Elliott and N. J. Kalton, The existence of value in differential games , vol. 126. American Mathematical Soc., 1972. [19] B. Amos, I. Jimenez, J. Sacks, B. Boots, and J. Z. Kolter, “Differen-tiable mpc for end-to-end planning and control,” Advances in neural information processing systems , vol. 31, 2018.

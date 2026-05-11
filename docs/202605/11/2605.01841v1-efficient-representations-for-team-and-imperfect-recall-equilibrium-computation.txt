@@ -1,0 +1,2317 @@
+Title: Efficient representations for team and imperfect-recall equilibrium computation
+
+URL Source: https://arxiv.org/pdf/2605.01841v1
+
+Published Time: Tue, 05 May 2026 01:21:26 GMT
+
+Number of Pages: 47
+
+Markdown Content:
+# Efficient representations for team and imperfect-recall equilibrium computation 
+
+## Luca Carminati ∗1, Brian Hu Zhang ∗2, Federico Cacciamani 1, Junkang Li 3,4 , Gabriele Farina 2,Nicola Gatti 1, and Tuomas Sandholm 5,6 1DEIB, Politecnico di Milano 
+
+> 2
+
+MIT 
+
+> 3
+
+NukkAI 
+
+> 4
+
+GREYC, Université Caen Normandie 
+
+> 5
+
+Computer Science Department, Carnegie Mellon University 
+
+> 6
+
+Additional affiliations: Strategy Robot, Inc., Strategic Machine, Inc., Optimized Markets, Inc. 
+
+Abstract 
+
+Equilibrium finding in two-player zero-sum games with perfect recall is a well-studied topic that has led to many breakthroughs in computational game theory. This paper aims to generalize such techniques to (timeable) two-player zero-sum games with imperfect recall, or equivalently to two-team zero-sum games. In this setting, the problem of computing a mixed-strategy Nash equilibrium (or, equivalently, a team maxmin equilibrium with correlation ) is known to be NP -hard. We connect the imperfect-recall setting with its perfect-recall counterpart through a novel construction we call the belief game . This is a perfect-recall game equivalent to a given (timeable) two-player zero-sum game with imperfect recall. The belief game may be exponentially larger than the original game but can be solved using any standard method. We then show that the strategy spaces of the two players in the belief game can be directly 
+
+represented as a DAG, leading to a possibly exponential speedup. We call this the team belief DAG 
+
+(TB-DAG). The TB-DAG simultaneously enjoys essentially optimal parameterized complexity bounds and the advantages of efficient regret minimization techniques. Along the way, we show ∆P 
+
+> 2
+
+-completeness and ΣP 
+
+> 2
+
+-completeness of finding Nash equilibria in both mixed and behavioral strategies for the class of games we consider. Experimentally, we show that the TB-DAG, when paired with existing learning techniques, yields state-of-the-art performance on a wide variety of benchmark team games. 
+
+# 1 Introduction 
+
+Two-player zero-sum imperfect-information extensive-form games are a classic setting within the game theory literature with a rich history of notable achievements. They represent sequential interactions between two adversaries where any utility gained by one player implies a loss for the other. A crucial component is that players may have imperfect information , that is, they may not be able to distinguish the current node of the game from others. In this setting, Nash equilibria in mixed strategies are the most natural solution concept for modeling rational value-maximizing players. Mixed strategies specify the behavior of a player as a distribution over pure (deterministic) strategies . However, the exponential number of such strategies makes the computation of Nash equilibria potentially inefficient. A key assumption to circumvent this issue is perfect recall . In a perfect-recall game, the players never forget previously received information or played actions. When this assumption is satisfied, 
+
+> ∗
+
+Equal contribution; author order randomized 
+
+1
+
+> arXiv:2605.01841v1 [cs.GT] 3 May 2026
+
+1. Kuhn’s theorem [ 32 ] states that mixed strategies are equivalent to behavioral strategies , which are the strategies expressible as a product of distributions over actions at each decision point. 2. The sequence-form representation [ 52 , 43 ] of the strategy spaces enables efficient computation of Nash equilibria via a wide variety of different methods. In particular, uncoupled learning dynamics such as 
+
+counterfactual regret minimization (CFR) [ 67 ] converge to a Nash equilibrium by employing a regret minimizer at each decision point of the strategy tree. There have been significant recent speed improvements to CFR-based techniques [ 49 , 5, 17 , 63 ], and other techniques have been built on top of CFR-based techniques, for example, abstraction algorithms [ 45 , 46 ], subgame solving [ 20 , 19 , 38 , 3, 39 , 4, 6], further enhancing scalability. Notable results on large-scale games include poker [2, 39, 4, 6], Stratego [41], and Diplomacy [1]. This work seeks to extend these techniques beyond the perfect-recall two-player zero-sum setting. In particular, we focus on computing mixed Nash equilibria in the two equivalent settings of imperfect-recall games and adversarial team games 1, for which it is known that computing a Nash equilibrium is NP-hard [28]. Two-player zero-sum imperfect-recall games are characterized by players who may forget information at some point in the game. In this case, a mixed strategy corresponds to a distribution over pure strategies, while a behavioral strategy corresponds to a distribution that performs an independent sampling procedure at each decision point. Unlike for perfect-recall games, Kuhn’s theorem does not apply in imperfect-recall games: mixed strategies can in general be more expressive than behavioral strategies. Imperfect-recall games have been employed in the literature to compress a game representation through forgetfulness (this is the case of some abstraction techniques [ 56 , 35 , 31 ]), or by considering human-like agents with imperfect memories [ 7 ]. Adversarial team games portray two teams of agents facing each other adversarially. Each team member has utilities identical to their teammates and opposite to members of the opposing team. Effective team coordination is a non-trivial challenge in this setting because team members may have different imperfect information about the current node and no communication channels are available during the game. Intuitively, a player cannot distinguish nodes that are different due to private information revealed to a teammate (such as private cards revealed to them solely). In this case, mixed strategies correspond to strategies coordinated 
+
+before the start of the game through ex-ante coordination , while behavioral strategies represent strategies that are not coordinated, in the sense that each agent samples their actions independently from other teammates. Recreational and non-recreational examples of team games include Bridge, security games with multiple defenders and attackers [25], and poker with colluding agents. Overall, team games are a more common application setting than imperfect-recall games; they have many competing works in the equilibrium computation literature and allow a more intuitive game description. On the other hand, imperfect-recall games yield a cleaner formalism. As these two perspectives are equivalent for our purposes, we choose to adopt an imperfect-recall perspective throughout the rest of the paper to simplify the notation, while using team games to make more intuitive examples for some of the notions introduced. The main objective of this paper is to propose a novel representation for team/imperfect-recall games by constructing an equivalent perfect-recall two-player zero-sum game. This enables the use of all the solving techniques previously developed for perfect-recall two-player zero-sum games. We now summarize the contributions of the paper. In Sections 4.1 and 4.2, we present an algorithm that converts any two-player zero-sum imperfect-recall game into a strategically-equivalent perfect-recall game 
+
+which we call the belief game . In Section 4.3 we formally prove the equivalence between the two games, and in Section 4.4 we show worst-case bounds on the size of the belief game in terms of the number of histories of the original game. In particular, we show that in the worst case the number of histories of the belief game is 
+
+O(bdk ), where b is the maximum branching factor of the original game, d is its depth, and k is a parameter we introduce called the information complexity , which intuitively measures the amount of information that can be forgotten by the player—or, in the case of team games, the amount of information asymmetry between players on the team. 
+
+> 1This equivalence is formalized in Section 2.7.
+
+2In Section 5, we introduce a notion of DAG-form decision-making that we use to generalize counterfactual regret minimization (CFR) beyond tree-form games. While we introduce it for the purpose of applying it to imperfect-recall games, we believe it to be of independent interest as well. In Section 6, we use DAG-form decision problems to efficiently represent each player’s strategy space in the belief game through a construction we call the team-belief DAG (TB-DAG). We show that the TB-DAG representation of a game with imperfect recall can be exponentially smaller than the size of the belief game and that it can be constructed directly from the original game without first constructing the belief game, thus leading to exponentially faster algorithms in the worst case. This construction improves the worst-case efficiency 2 of our technique to O(|H| (b + 1) k+1 ), where |H| is the number of nodes in the original game. We also show that this bound is essentially optimal: under reasonable computational assumptions (namely, the exponential time hypothesis), we show that there cannot exist an algorithm for solving even single-player games of imperfect recall the runtime of which is of the form f (k)poly (|H| ) (that is, with no dependence on 
+
+b), for any function f .In Section 7 we investigate the computational complexity of computing mixed Nash equilibria with imperfect recall. We prove that computing a max-min strategy in mixed or behavioral strategies in games where both players have imperfect recall is ∆P 
+
+> 2
+
+-complete and ΣP 
+
+> 2
+
+-complete respectively. In Section 8, we evaluate our methods empirically by benchmarking our construction on a standard testbed of imperfect-information games, compared to state-of-the-art baselines. We find that our technique allows much faster equilibrium computation when the information complexity k of the game is low. 
+
+# 2 Preliminaries 
+
+In the following, we introduce the concepts of game , strategy , and equilibrium with a focus on classic results regarding strategy representation. We remark that the paper’s main contribution is to extend these results from the setting of perfect-recall games to imperfect-recall and adversarial team games. 
+
+## 2.1 Extensive-form games 
+
+A canonical representation for sequential games is the one of extensive-form games . In the following, we introduce the notation adopted to describe their different components. A crucial aspect is that players have imperfect information about the state of the game during gameplay. That is, they may not know the exact point of the game that has been reached; instead, they have to consider a set of possible candidates that fit the information they know. These sets are called information sets (in short infosets ). 
+
+Definition 2.1 (Extensive-form game) . An extensive-form game G is a tuple (N , H, Z, A, I, p, u ) that describes a sequential game, where 
+
+• N is the set of players in the game. A special symbol 0 ∈ N is used to indicate Nature player (also called chance ). Nature encodes all the stochasticity of the environment known a priori, and therefore it picks actions according to a fixed probability distribution. We will commonly use a letter i to indicate any player i ∈ N and −i to indicate N \ i.
+
+• H is a rooted tree of nodes (also called histories ) of the game. Terminal nodes Z ⊂ H represent possible game endings after which nobody plays anymore. At every non-terminal node in H \ Z , there is exactly one active player who picks an action. H \ Z is partitioned into sets {H i}i∈N , where Hi contains all nodes at which player i is the active player. We use h to indicate a generic node h ∈ H , z to indicate a generic terminal node z ∈ Z , and ∅ to indicate the root node of the game tree. Moreover, we use the symbol H−i to indicate the nodes at which player i is inactive , that is, nodes at which another player 
+
+j ∈ N \ i is playing.   
+
+> 2By efficiency here we mean the size of the representation of the strategy spaces of the players. Algorithms such as CFR have per-iteration complexity that scales linearly in this size.
+
+3• A is the set of actions in the game. A non-empty set of actions Ah ⊆ A is available to i at any node 
+
+h ∈ H i. By assumption, each player knows the actions available at each node. Playing an action a at h
+
+leads to a node h′ which we denote as ha ≡ h′.
+
+• I is the set of all information sets. An information set I ⊆ H i is a set of nodes that are indistinguishable by the active player i. It is assumed that players know the actions available to them whenever they are active, so it is required that for each I ∈ I , all h ∈ I have identical Ah. This common action set is denoted by AI . I is partitioned into {I i}i∈N \ 0, where Ii is the set of information sets of player i.Every node h ∈ H i where player i is active is contained in exactly one information set Ih ∈ I i.
+
+• p ∈ [0 , 1] Z is a vector encoding Nature’s fixed strategy. p[z] denotes the probability that Nature plays all the actions leading to z ∈ Z .
+
+• For every player i ∈ N \ 0, ui : Z → R is the utility function of player i, which associates each terminal node to the payoff that player i receives when the game reaches this terminal node. In the rest of this paper, we will use the following notation. 
+
+• The symbol | · | denotes the length of a node h, that is, the depth of the node from the root. The root node ∅ has length 0 and for each h ∈ H \ Z and a ∈ A h, it holds that |ha | = |h| + 1 . The depth d of G
+
+is the length of the longest history in G. The branching factor b of a game is the maximum number of actions available at any information set: b = max h∈H\Z |Ah|.
+
+• A set of nodes S (usually S will be an information set) precedes another set S′, denoted by S ⪯ S′, if there are nodes h ∈ S, h ′ ∈ S′ such that h′ is a descendant of h (or h′ = h). If one of S and S′ is a singleton, we omit the braces; for example, h ⪯ I means there is a path from h to some node h′ ∈ I.The analysis of the information structure of an extensive-form game requires the introduction of specific concepts called sequences and connectedness . Sequences characterize the structure of the information revealed to a player at any node of the game. 
+
+Definition 2.2 (Sequence) . The sequence σi(h) of player i at node h is the ordered list of pairs of infosets reached and actions played, by player i, on the ∅ → h path, excluding the information set of h. A special sequence ∅ corresponding to an empty list is also considered for each player. The set containing all sequences of all players and of a single player are respectively denoted by Σ and Σi,with Σ ≡ S 
+
+> i∈N \ 0
+
+Σi. We use the notation σi + ( I, a ) to indicate the sequence obtained by extending σi by adding an (infoset, action) pair (I, a ).This paper focuses on extensive-form games that satisfy some regularity properties. 
+
+Definition 2.3 (Timeability) . An extensive-form game G is timeable if any path from the root to any node in the same infoset has the same length (equivalently, all histories belonging to the same infoset have the same depth). Formally, G is timeable if for every infoset I ∈ I and every h, h ′ ∈ I, we have |h| = |h′|.As an assumption, we will consider timeable games throughout the paper. Intuitively, this corresponds to assuming that all players know the number of actions played in the game whenever they play. 
+
+Definition 2.4 (Perfect recall) . A player i has perfect recall if all histories in the same infoset of that player have the same sequence. Formally, player i has perfect recall if for every infoset I ∈ I i and every h, h ′ ∈ I,we have σi(h) = σi(h′). The common sequence is denoted by σI .When a player has perfect recall, their nonempty sequences are uniquely identified by the last infoset-action pair contained within them. Thus, when player i has perfect recall, we will use Ia ∈ Σi to indicate the sequence of player i that ends with playing action a at infoset I. Intuitively, assuming that all the players have perfect recall corresponds to assuming that each of them never forgets information they previously acquired during the game’s unfolding. A game is said to be perfect-recall when all players in the game have 4perfect recall. We say that a player or a game is imperfect-recall whenever the perfect recall condition does not hold. We remark that the timeability assumption excludes absentmindedness . That is, players never have nodes on the same path belonging to an identical information set. Intuitively, knowing the number of actions played in the game allows the player to distinguish nodes on the same path. 
+
+## 2.2 Strategies 
+
+Extensive-form games represent the sequential interaction among players that are required to take an action given a specific information state. The description of a possibly stochastic behavior of a player in a game is called a strategy . In this section, we will define the various kinds of strategy that we need for this paper. 
+
+Definition 2.5 (Pure strategy) . A pure strategy π for player i is a vector π ∈×I∈I i AI . The realization form of a pure strategy is the vector x ∈ { 0, 1}Z where x[z] = 1 if and only if the pure strategy prescribes all player actions on the path ∅ → z.The definition of a pure strategy includes some redundancy. Suppose that I is an information set such that x[h] = 0 for every h ∈ I, that is, no node in I is played by π. Then the value of π[I] does not matter, that is, the realization form does not depend on π[I]. We are thus motivated to define the reduced pure strategy. 
+
+Definition 2.6. A sequence σi(h) is played or reached by pure strategy π for player i if for all (I′, a ′) ∈ σi(h)
+
+we have π[I′] = a′. A node h ∈ H i is played if σi(h) is played. An infoset I is played if some h ∈ I is played. 
+
+Definition 2.7. The reduced form of a pure strategy is the vector π ∈×I∈I i AI ∪ {⊥} , for which π[I] is replaced by ⊥ if and only I is not played by π.Two pure strategies with the same reduced form also have the same realization form, and are thus equivalent for all purposes in this paper. Thus, for the rest of the paper, we will use only the reduced form. 
+
+Definition 2.8 (Mixed strategy) . A mixed strategy is a distribution over pure strategies. The realization form of a mixed strategy is the vector x ∈ [0 , 1] Z obtained through the convex combination of realization forms of pure strategies according to the probabilities in the mixed strategy. It is to be noted that a realization-form strategy, in general, is not a probability distribution over Z.Instead, xi[z] is only player i’s contribution to this probability distribution. The product Q 
+
+> i∈N
+
+xi[z], however, 
+
+is a probability distribution representing the probability that a terminal node z is reached when each player plays strategy xi.
+
+Definition 2.9 (Behavioral strategy) . A behavioral strategy is a mixed strategy for which the actions selected at different information sets are mutually independent. We will use the following notation: for each player i, Πi, Xi, and ˆXi denote the sets of pure, mixed, and behavioral strategies respectively, all in realization form. Similarly, Π := Q 
+
+> i∈N \ 0
+
+Πi, X = Q
+
+> i∈N \ 0
+
+, and 
+
+ˆX = Q 
+
+> i∈N \ 0
+
+ˆXi denote the sets of pure, mixed, and behavioral strategy profiles , respectively. A classic question is to characterize the strategy spaces given their different definitions and to find conditions to guarantee the equivalence of these different notions. In particular, the local decomposability at each infoset of behavioral strategies offers efficiency advantages over mixed strategies for describing strategies in an extensive-form game. Luckily, a sufficient condition for their equivalence is that the considered game is perfect-recall, as stated in the following classic theorem. 
+
+Theorem 2.10 (Kuhn’s theorem, [ 34 ]) . In every extensive-form game with perfect recall, ˆXi = Xi, that is, for each mixed strategy, there is a behavioral strategy with the same realization form, and vice versa. 
+
+Kuhn [34] also showed that perfect recall is a necessary condition for ˆXi = Xi; in imperfect-recall games (but without absentmindedness; cf. Section D.1), only ˆXi ⊆ X i holds. 52.3 Tree-form decision problems and representation of realization-form strategies 
+
+This subsection describes tree-form decision problems , originally introduced by Farina et al. [15] . They are highly efficient representations of the strategy space of a specific player in the game. In perfect-recall games, tree-form decision problems lead to the sequence-form representation of the strategy space, first noted by Romanovskii [43] and later rediscovered by von Stengel [52] . The tree-form decision problem will later be generalized to DAG structures arising from imperfect-recall games. 
+
+Definition 2.11 (Tree-form decision problem) . A tree-form decision problem is a rooted tree of nodes representing an interaction between a player and an environment . Each node s is one of the following types: 
+
+• decision points s ∈ D , at which the player takes an action, and 
+
+• observation points s ∈ S , at which the environment selects the next state. We will assume WLOG that the root node ( ∅) and all terminal nodes are observation points and that decision points and observation points alternate. At a decision point s, the set of legal actions will be denoted by As. Each action a ∈ A s leads to a different observation node, denoted by sa . The parent observation node of s is denoted by ps. For notational simplicity, when x ∈ RS is any vector indexed by observation points and 
+
+s is a decision point, we will use x[s∗] ∈ RAs to denote the subvector of x indexed only by the children of s.Similar definitions of strategy notions as those from extensive-form games hold in tree-form decision problems. A pure strategy is an assignment of one action to each decision node. Pure strategies are associated with vectors x ∈ { 0, 1}S in the following way: for a node s ∈ S , x[s] = 1 if and only if the player plays every action on the path from the root to s. We will call such vectors tree-form (pure) strategies . A tree-form mixed strategy x ∈ Q is a convex combination of tree-form pure strategies. The set of tree-form mixed strategies has a natural description as a set of linear constraints. Namely: 
+
+Proposition 2.12. Q is the set of nonnegative vectors q ∈ RS satisfying the following constraints: 
+
+
+
+q[∅] = 1 (1a) 
+
+q[ps] = X
+
+> a∈A s
+
+q[sa ] for all s ∈ D . (1b) The tree-form constraints are probability flow constraints: the probability of reaching a node starts at 1
+
+at the root (1a), and is split at each decision point on the available actions (1b). Whenever a player i has perfect recall in an extensive-form game, a tree-form decision problem can be extracted from the game by considering the point of view of player i. In this tree-form decision problem, we have D = Ii and S = Σ i, i.e. decision points are given by information sets of player i, and every observation point corresponds to a sequence of player i. In this case, tree-form mixed strategies correspond to the so-called 
+
+sequence-form strategies, which are in natural correspondence with realization-form strategies. 
+
+Definition 2.13 (Sequence-form strategies) . In a perfect-recall game, a sequence-form strategy of player i is a nonnegative vector q ∈ Q , where Q is defined as in Proposition 2.12 with D = Ii and S = Σ i.By definition, a sequence-form strategy q ∈ Q of player i associates to each sequence σ ∈ Σi the probability that the player plays all the actions in σ. In particular, the realization-form strategy of the sequence-form strategy q is xi ∈ X i where xi[z] = q[σi(z)] .This yields a much more compact representation of mixed strategies than the naive one offered by their definition. Indeed, mixed strategies are a probability distribution over an exponential number of pure strategies, while their corresponding sequence-form strategies have one element per sequence (which is uniquely identified by its last infoset-action pair), similar to behavioral strategies. 62.4 Two-player zero-sum games and max-min strategies 
+
+A (mixed) strategy profile is a tuple x = ( x1, . . . , xn) ∈ X 1 × · · · × X n consisting of one mixed strategy in realization form for each player. The expected utility of player i is ui(x) := Ez∼x ui(z), where z ∼ x denotes sampling a terminal node z by following the profile x, that is, ui(x) := P 
+
+> z∈Z
+
+ui(z)p[z] Q 
+
+> j∈N \ 0
+
+xj [z]. A crucial property of the realization form, which we will use repeatedly, is that the utility functions ui : X1 × . . . Xn → R
+
+are linear in each xi.After deciding the most suitable representation for strategies in a given problem, an objective to be optimized to find the optimal strategy is required. This is provided by solution concepts , which describe the characteristics that make a strategy optimal in a context. One solution concept relevant for the paper is the 
+
+Nash equilibrium :
+
+Definition 2.14 (Nash equilibrium) . A Nash equilibrium is a mixed strategy profile x such that no player has a profitable deviation. That is, for every player i and every x′ 
+
+> i
+
+∈ X i, we have ui(x′
+
+> i
+
+, x−i) ≤ ui(x).The most studied type of extensive-form games are two-player zero-sum games . In this class of games, two players face each other in a setting where a payoff for one is a cost for the other. In this section, we define two-player zero-sum games and explore some basic solution concepts for them. 
+
+Definition 2.15 (Two-player zero-sum game) . An extensive-form game is two-player zero-sum if 
+
+• the player set contains Nature and two players, called ▲ and ▼, namely N = {0, ▲, ▼}, and 
+
+• the utilities of the two players are opposite, namely u▲ = −u▼.In this case, we will use a single utility function u = u▲ = −u▼ and use X and Y to represent the two players’ set of realization-form mixed strategies, respectively. In two-player zero-sum games, Nash equilibria 
+
+(x, y) ∈ X × Y are the saddle-point solutions to the bilinear saddle-point problem 
+
+max  
+
+> x∈X
+
+min  
+
+> y∈Y
+
+x⊤U y = min  
+
+> y∈Y
+
+max  
+
+> x∈X
+
+x⊤U y (2) where U = diag ({u(z)p[z]}z∈Z ) so that x⊤U y = Ez∼(x,y) u(z). In addition, in all Nash equilibria of a two-player zero-sum game, ▲ has the same expected utility [ 51 ], which is called the Nash value of the game. As discussed in the previous subsection, in games with perfect recall , mixed and behavioral strategies are equivalent by Theorem 2.10. In games without perfect recall, the above definition of Nash equilibrium is still valid; however, it will also be useful to define the behavioral max-min strategy: 
+
+Definition 2.16 (Behavioral max-min strategy) . In a two-player zero-sum game, a behavioral max-min strategy x ∈ ˆX is a solution to the optimization problem 
+
+max  
+
+> x∈ˆX
+
+min  
+
+> y∈ˆY
+
+x⊤U y .
+
+The behavioral max-min value is the optimal value of the above problem. Since ˆX and ˆY are not necessarily convex sets, the minimax theorem does not apply, so the maximization and minimization cannot be swapped. Therefore, the behavioral max-min strategy is not an equilibrium . Further, in games with imperfect recall, the tree-form decision problem is not a valid representation of the set of realization-form strategies. Therefore, we will need different techniques to tackle such games. 
+
+## 2.5 Online learning in tree-form decision problems and extensive-form games 
+
+In this work, we will leverage the online convex optimization [66 ] (OCO) framework for modeling repeated interactions between a player and an arbitrary environment. According to this model, the player iteratively interacts with the environment by selecting at each timestep t a strategy xt from a convex, compact set 
+
+Q ⊆ Rm and observes a linear utility function chosen (possibly adversarially) by the environment. These linear 7Algorithm CFR : Counterfactual regret minimization on tree-form decision problems Q. For each decision point s, Rs is a regret minimizer on ∆( As). 
+
+> 1:
+
+procedure NextStrategy  
+
+> 2:
+
+xt[∅] ← 1 
+
+> 3:
+
+for each decision point s, in top-down order do  
+
+> 4:
+
+rts ← R s.NextStrategy()  
+
+> 5:
+
+xt[s∗] ← xt[ps]rts 
+
+> 6:
+
+return xt 
+
+> 7:
+
+procedure ObserveUtility (ut) 
+
+> 8:
+
+vt ← ut 
+
+> 9:
+
+for each decision point s, in bottom-up order do  
+
+> 10:
+
+Rs.ObserveUtility (vt[s∗]) 
+
+> 11:
+
+vt[ps] ← vt[ps] + ⟨rts, vt[s∗]⟩ 
+
+> 12:
+
+t ← t + 1 
+
+utility functions will be represented as ut(x) = ⟨ut, x⟩, where ut ∈ [−1, +1] m. Considering an interaction repeated over T steps, the objective of the player is to minimize the cumulative regret , which is defined as 
+
+RT 
+
+> Q
+
+:= max 
+
+> x∈Q
+> T
+
+X
+
+> t=1
+
+ut, x − xt
+
+We say that an algorithm is a regret minimizer if it guarantees that the cumulative regret grows sublinearly with T , that is, RT = o(T ).Regret minimization and equilibrium computation in two-player zero-sum games are tightly connected. In particular, consider the scenario of a repeated two-player zero-sum game in which ▲ and ▼ sequentially interact for T timesteps. Both players use regret minimizers over their strategy sets X and Y respectively. Let, at each timestep t, the utility vectors observed by the two players be ut 
+
+> ▲
+
+= U y t for ▲ and ut 
+
+> ▼
+
+= −U x t
+
+for ▼. Then, it follows directly by summing the regrets and dividing by T that the equilibrium gap computed w.r.t. the average strategies ¯x := PTt=1 xt/T , ¯y := PTt=1 yt/T is equal to the total regret: 
+
+0 ≤ max  
+
+> x∈X
+
+x⊤U ¯y − min  
+
+> y∈Y
+
+¯x⊤U y = RT 
+
+> ▲
+
++ RT
+
+> ▼
+
+T .
+
+Thus, if the two players pick their strategies according to a no-regret algorithm, this property guarantees the convergence of the average strategies ¯x and ¯y to a Nash Equilibrium as T → ∞ .We now show how to construct regret minimizers for arbitrary tree-form decision problems (and thus, in particular, also for perfect-recall zero-sum games). For this problem, we use the counterfactual regret minimization (CFR ) framework [ 67 , 15 ]. Intuitively, CFR allows one to build a regret minimizer on a tree-form strategy set Q by running local regret minimizers at each decision point and combining them in a clever way. The guarantee given by CFR can be expressed as follows. Call a subset P ⊆ D playable if there is a pure strategy that reaches every decision point in P , that is, there is a pure strategy x ∈ Q such that x[ps] = 1 for every s ∈ P .
+
+Theorem 2.17 ([ 67 , 15 ]) . After the execution of CFR for T timesteps on the mixed strategy set Q, the cumulative regret is at most max P
+
+P 
+
+> s∈P
+
+[RTs ]+, where RTs is the regret of the local regret minimizer Rs and the maximum is taken over all playable sets P .
+
+Local regret minimizers on simplices ∆( m) the regret of which scales as O(√mT ) or even O(√T log m)
+
+are well known; two examples are regret matching [23 ], which has the former guarantee, and multiplicative weights , which has the latter guarantee. Picking either of these algorithms (or, indeed, any of many regret minimizers with similar guarantees), we have: 8Corollary 2.18. If both players in an extensive-form zero-sum game with perfect recall use CFR with any efficient local regret minimizer, then after T timesteps, the average strategy profile ( ¯x, ¯y) will be an 
+
+O(|Σ▲| + |Σ▼|)/√T -approximate Nash equilibrium. 
+
+We refer the interested reader to [ 5, 17 ] for further reading on practical state-of-the-art no-regret-based solvers for two-player zero-sum games. 
+
+## 2.6 Equivalence across games 
+
+The contributions presented in this paper will rely on auxiliary games to represent strategy optimization problems. In order for the results obtained in the auxiliary game to map to the original one we want to solve, we need to define what it means for two games to be equivalent. Let G = ( N , H, Z, A, I, p, u ) and 
+
+G′ = ( N , H′, Z′, A′, I′, p′, u ′) be extensive-form games with the same set of players. Let Πi and Π′ 
+
+> i
+
+be player 
+
+i’s pure strategy set in G and G′, respectively, and similarly let ui and u′ 
+
+> i
+
+be player i’s utility function in G
+
+and G′, respectively. 
+
+Definition 2.19 (Strategic Equivalence) . Two games G and G′ are strategically equivalent if there are bijective strategy maps ρi : Π i → Π′ 
+
+> i
+
+for each player i such that, for every profile π ∈ Π and every player i we have ui(π) = u′
+
+> i
+
+(ρ(π)) where ρ(π) := ( ρi(πi)) i∈N \ 0.This definition is a very strong notion of equivalence: if two extensive-form games are equivalent in the above sense, then every strategy πi in one game is equivalent to some strategy ρ(πi) in the other game. Thus, in particular, a solution to one game will give a solution to the other game. 
+
+## 2.7 Adversarial team games 
+
+The general framework of adversarial team games has first been studied by von Stengel and Koller [54] in the context of normal-form games, while Celli and Gatti [9] first addressed them in an extensive-form setting. Adversarial team games describe situations where multiple agents are organized in two teams, receiving zero-sum payoffs. Like the above papers, ours focuses on the setting in which no extra communication channel is available to the players during the game, but they are allowed to communicate freely before the start of the game. This means that the only form of coordination across players’ strategies available is preplay coordination ; that is, any coordination has to be prepared before the start of the game. Adversarial team games can be modeled as extensive-form games as follows. 
+
+Definition 2.20 (Adversarial team game) . An extensive-form, perfect-recall game (N , H, Z, A, I, p, u ) is said to be an adversarial team game (ATG), or two-team zero-sum game if 
+
+• the player set is partitioned in two sets called teams , symbolized by 
+
+> ▽▽▽
+
+and ▽▽▽. Formally, N =
+
+> ▽▽▽
+
+∪▽▽▽∪ { 0},and 
+
+• the utilities of the players belonging to the same team are identical, and the total utilities of the two team are opposites. Formally, 
+
+ui = uj for all i, j ∈
+
+> ▽▽▽
+
+ui = uj for all i, j ∈ ▽▽▽
+
+X
+
+> i∈
+> ▽▽▽
+
+ui = − X
+
+> j∈▽▽▽
+
+uj .
+
+In adversarial team games, the Nash equilibrium fails to consider that teams can coordinate among themselves. Indeed, it is possible for there to be a Nash equilibrium in which two teammates could profit by 
+
+jointly switching strategies, but no individual player can profit from a unilateral deviation. To consider these joint deviations, it is most natural to reformulate an adversarial team game as a two-player zero-sum game of imperfect recall, in which a team coordinator plays on behalf of all team members. In this manner, deviations of the team coordinator correspond to simultaneous, joint deviations of all team members. We now formalize this conversion. 91
+
+> 2
+> 3
+
++1 –1 
+
+–1 
+
+> 2
+
+–1 3
+
+–1 +1 
+
+> 1
+> 2
+> 3
+
++1 –1 
+
+–1 
+
+> 2
+
+–1 3
+
+–1 +1    
+
+> ℓLrR
+
+Figure 1: An example of an adversarial team game. There are three players: (1) and (2) are on team 
+
+> ▽▽▽
+
+, and (3) is on team ▽▽▽. Dotted lines connect nodes in the same information set. The (total) utility of 
+
+> ▽▽▽
+
+is listed on each terminal node. The root node is a chance node, at which Nature selects uniformly at random. Actions at the first level nodes are labeled for easier reference. 
+
+Definition 2.21 (Coordinator game) . Let G = ( N , H, Z, A, I, p, u ) be an adversarial team game. The 
+
+coordinator game G′ corresponding to G is the two-player zero-sum imperfect-recall game defined G′ =({0, ▲, ▼}, H, Z, A, I′, p, u ′), where 
+
+I′ 
+
+> ▲
+
+= [
+
+> i∈
+> ▽▽▽
+
+Ii, I′ 
+
+> ▼
+
+= [
+
+> i∈▽▽▽
+
+Ii, u′ 
+
+> ▲
+
+= X
+
+> i∈
+> ▽▽▽
+
+ui, and u′ 
+
+> ▼
+
+= X
+
+> i∈▽▽▽
+
+ui.
+
+The coordinator game merges all members of a team ( 
+
+> ▽▽▽
+
+or ▽▽▽) into a coordinator ( ▲ or ▼). Therefore: 
+
+• Pure strategies of a coordinator correspond to pure profiles of the team. 
+
+• Behavioral strategies of a coordinator correspond to behavioral profiles of the members of the team. Since behavioral strategies enforce actions at different infosets to be independently sampled, this means that team members can privately sample randomness for their own personal use but cannot share that randomness with teammates. 
+
+• Mixed strategies of a coordinator correspond to correlated strategy profiles of the members of the team. In a correlated profile, team members may jointly sample randomness that they use to correlate their actions. We remark on the role that preplay coordination has in allowing the coordination capabilities modeled by the coordinator game. In fact, before starting the game, players are allowed to jointly sample a pure profile from their coordinator’s mixed strategy and then individually play the specified actions at the infosets in which they play. This allows the team to play any randomized strategy of the coordinator effectively. The coordinator game allows us to define notions of equilibrium specialized for team games: 
+
+Definition 2.22. A team max-min equilibrium with correlation (TMECor) of an ATG G is a mixed-strategy Nash equilibrium of G′.
+
+Definition 2.23. A team max-min equilibrium (TME) of an ATG G is a behavioral max-min strategy of G′.The TMECor value and TME value are defined analogous to the Nash value and behavioral max-min value. As discussed before, behavioral max-min strategies in G′ are not equilibria in G′, so one may wonder about the name “team max-min equilibrium”. However, there is a sense in which TMEs are equilibria: von Stengel and Koller [54] showed that, at least in the case where |▽▽▽| = 1 , the TMEs are precisely the Nash equilibria of the team in G that maximize the utility of team 
+
+> ▽▽▽
+
+.An example adversarial team game in which the difference between TME and TMECor is relevant can be found in Figure 1. The coordinator game is constructed simply by erasing the player labels, creating a 10 Adversarial Team Games Imperfect-Recall Games 
+
+Team 
+
+> ▽▽▽
+
+▽▽▽ Player ▲▼ 
+
+Correlated team strategy Mixed strategy Uncorrelated team strategy Behavioral strategy TMECor Mixed-strategy Nash Equilibrium TME Behavioral max-min strategy Table 1: Translation table between terms commonly employed in the adversarial team games and two-player imperfect-recall games. The translation happens through the introduction of coordinator games (Definition 2.21). two-player zero-sum game. The coordinator game is indeed an imperfect-recall game: at the P2-infosets, the coordinator forgets the Nature bit, which they knew at the P1-infosets. This game is a simple signaling game: Nature selects a bit, which is privately revealed to P1. P1 then communicates a single bit, which is publicly revealed. Then P2 and P3 both attempt to guess Nature’s selected bit, and 
+
+> ▽▽▽
+
+wins if and only if P2’s guess is correct and P3’s is wrong. Therefore, the goal of P1 and P2 is for P1 to “securely” communicate the bit to P2 without also revealing it to P3. With a behavioral profile, this is impossible since P1 and P2 cannot correlate their strategies; therefore, the TME value is −1/2. However, if P1 and P2 are allowed to correlate their strategies, they can do the following: jointly flip a coin. If that coin landed heads, P1 communicates the true bit, and P2 plays what P1 communicates. If that coin landed tails, P1 communicates the opposite of the true bit, and P2 plays the opposite of what P1 communicates. In this way, P2 will always play the true bit, but P3 (who does not know the outcome of the correlating coin flip) does not learn any information. Therefore, the value of this strategy for 
+
+> ▽▽▽
+
+is 0 (since P3 wins half the time by randomly guessing the bit). We have defined equilibrium concepts for team games by constructing a coordinator game that is a two-player zero-sum imperfect-recall game. It turns out that the “converse” also holds: 
+
+Proposition 2.24. Every two-player zero-sum imperfect-recall game G′ has an ATG G whose coordinator game is G′.Proof. Consider the ATG G constructed by starting with G′, dividing each player’s utility by the number of information sets of that player, and then assigning every information set to a different player. By construction, the coordinator game of G is G′.Therefore, team games and imperfect-recall games are equivalent in a very strong sense. All of the results of this paper, unless otherwise stated, therefore apply equally to team games and to two-player zero-sum imperfect-recall games. In the remainder of the paper, we consider the point of view of two-player zero-sum games with imperfect recall. A summary of the different equivalent terms that are used in the two settings can be found in Table 1. 
+
+# 3 Related research 
+
+This section describes the most important related works on computing Nash equilibria in imperfect-recall games and team games. We start with a review of the results in the literature on imperfect-recall games. To the best of our knowledge, there are no previous works concerned specifically with efficient algorithms for computing mixed-strategy Nash equilibria in imperfect-recall and timeable games, which is the main objective of this paper. A similar approach to ours is taken by Tewolde et al. [50] , investigating imperfect-recall games without the timeability assumption; that is, they include the absent-minded case; however, their solution concept is weaker than ours, and their setting is more difficult. There is a stream of works studying the computational complexity of finding Nash equilibria in imperfect-recall games. Koller and Megiddo [28] study the NP-hardness of computing mixed Nash equilibria in imperfect-recall games. In particular, they proved that computing Nash equilibria in imperfect-recall games is NP-hard and that computing a max-min equilibrium in pure strategies is ΣP 
+
+> 2
+
+-complete. Our results from 11 Section 7 refine those results proving ∆P 
+
+> 2
+
+-completeness and ΣP 
+
+> 2
+
+-completeness of computing Nash equilibria in mixed or behavioral strategies, respectively. Gimbert et al. [21] study imperfect-recall games with or without absentmindedness and one or two players. In particular, they connect the problem of computing optimal values in behavioral strategies with polynomial optimization. They also make use of their results on imperfect-recall games to characterize the complexity of the bidding phase of the team game of Bridge, acknowledging the equivalence of team games and imperfect-recall games. Our complexity results from Section 7 focus on the computation of mixed-strategy Nash equilibria in two-player imperfect recall without absentmindedness and can be thought of as a refined (more powerful) version of the results of Gimbert et al. [21]. Similarly, previous uses of imperfect recall for abstractions in two-player zero-sum games make use of behavioral strategies with the aim of computing an approximate Nash equilibrium in the original perfect-recall game [ 56 , 35 , 31 , 10 ]. In this case, the imperfect-recall game is used as a compressed representation to compute behavioral strategies that are then mapped to a hopefully good strategy in the original game. Our work is distinguished from theirs as our approach targets imperfect-recall games per se, and we are not interested in mapping optimal strategies to a perfect-recall game from which the game is generated. Some works, in particular, are interested in A-loss imperfect-recall games. The A-loss condition was originally introduced by Kaneko and Kline [27] and is related to imperfect recall due to a player forgetting their own actions played in the past. Our results generalize theirs in the sense that, since A-loss games are those that inflate to games with perfect recall, Proposition D.2 guarantees that our algorithm will run in polynomial time for games with A-loss recall. On the other hand, the adversarial team game literature presents many works interested in finding TMECors (Definition 2.22), corresponding to mixed-strategy Nash equilibria in imperfect-recall games. Past works typically overcome the issue of coordination among team members by directly optimizing over the space of coordinated strategies, that is, the space of mixed strategies of the coordinator game. The algorithm commonly adopted is that of column generation (CG) , which for games essentially amounts to the double oracle [37 ] algorithm. CG is an iterative approach that considers only a subset of pure strategies for the team at a time and progressively expands it in order to best approximate the support of the TMECor. Each CG iteration is composed of two steps: firstly, a TMECor restricted to the current set of pure strategies is computed; secondly, a joint best response to the current equilibrium is computed for each team, and these strategies are added to the sets of available strategies. Different variants of this algorithm have been developed in the literature. Celli and Gatti [9] first defined TMECors in the extensive-form games setting and proposed a CG algorithm based on integer linear programming for the best response computation and linear programming for the equilibrium computation. Successive works [ 14 , 65 , 17 , 59 ] further refined the results in terms of execution speed and scalability while still operating in the CG framework. Similarly, Zhang and An [64] , Zhang et al. [65] focused on the computation of TMEs (Definition 2.23), which are behavioral-strategy equilibria for the settings in which no coordination signals are shared among the team. Contrary to the direction followed by previous works, the purpose of this paper is to enable a sequence-form-like description of the strategy space of each team, thus bridging the gap in the literature between two-player zero-sum games and adversarial team games and empirically evaluating the tradeoff imposed by the solution proposed. A technique based on a belief-prescription scheme was originally proposed by Nayyar et al. [40] in the field of decentralized stochastic control in a cooperative setting. The term prescriptions was later proposed by Foerster et al. [18] in the setting of cooperative reinforcement learning to indicate the meta-actions played when coordinating multiple agents. Our construction of the auxiliary game in Section 4.2 can be seen as a generalization of those approaches to a two-team adversarial setting. In addition, the adoption of observations (defined in Section 4.1) in place of public states and the DAG approach from Section 6 are novel contributions that refine the efficiency of our methods compared to theirs. A more detailed comparison between observations and public states is given in Section D.2. Lastly, Lanctot et al. [35] introduced the idea of a well-formed game of imperfect recall, which in essence is a game for which CFR will return the same sequence of iterates on the imperfect-recall game as it would on the perfect-recall refinement; therefore CFR can be safely applied to the imperfect-recall game to find an 12 equilibrium. However, not all imperfect-recall games are well formed; as such, their technique is restricted to a small class of games, whereas ours applies to an arbitrary imperfect-recall game. Indeed, this can be clearly seen because well-formed games can be solved in polynomial time, whereas general imperfect-recall games, even against one player, are NP-hard [ 28 ]. Nonetheless, there is an interesting connection between well-formed games and our techniques: the idea that infosets on “identical” paths of play can be merged while maintaining equivalence of the game is the fundamental idea behind well-formed games. We take the idea one step further, compressing all paths resulting from identical infosets to create a DAG structure, and giving an algorithm that creates this DAG structure without even building the entire tree beforehand. In other words, the DAG-form decision problem that we construct can be thought of as a well-formed abstraction of the belief game for each player. The main advantage of our approach is that we directly construct this DAG-form decision problem from the original (much smaller) team game, without needing the intermediate step of creating the belief game, which can be much larger than the DAG-form decision problems in both theory and practice. 
+
+# 4 Mixed Nash computation through beliefs and observations 
+
+We introduce the paper’s fundamental contribution: a novel technique for computing a mixed Nash equilibrium in two-player zero-sum imperfect-recall games (or, equivalently, for computing a TMECor in adversarial team games) based on the construction of an equivalent two-player zero-sum game with perfect recall. Our technique attains the perfect recall condition by suitably changing the information available to the players and their action sets. The main intuition behind the belief game is to consider the point of view of a perfect recall player in place of the imperfect recall one. Differently from the imperfect-recall player, this player reasons only using information the player would never forget due to imperfect recall and chooses an action for every possible information set the imperfect-recall player may be in. The game then transitions by applying the action corresponding to the information set of the current node. Crucially, the perfect-recall player can strategically refine the set of reached nodes over time by carefully considering reachable nodes given the played strategy and the perfect-recall results of their actions. After introducing the main concepts and the construction algorithm, we prove that the original and the belief games are strategically equivalent. This means that the perfect-recall player we introduce is an equivalent representation of both the imperfect-recall player and the corresponding preplay coordinated team (thanks to the considerations from Section 2.7). 
+
+## 4.1 Beliefs and Observations 
+
+The main purpose of this section is to formally define beliefs , which are sets of nodes B ⊆ H derived from information sets Ii of player i ∈ { ▲, ▼}. Informally, beliefs are the “information sets” that i would have if they could not distinguish nodes that cannot be distinguished using information from a later stage. This notion is formalized by putting in the same belief any two nodes that have descendent nodes in the same information set (even if they belong to different information sets). 3 Similarly to information sets: i) nodes in the same belief would be indistinguishable to i,ii) one action is chosen at each belief, and then this action is followed in all nodes in the belief, and iii) if the player knows that the current node of the game h lies in a set H, and the player observes that their current belief is B, then the player knows that the current node lies in B ∩ H (that is, beliefs correspond to observations over the state of the game). Crucially, beliefs can be organized in the tree-like structure needed by algorithms finding Nash equilibria in two-player zero-sum games, as we will see in Sections 4.2 and 4.5. This is thanks to the guarantee that once       
+
+> 3We remark that this is a condition of imperfect recall equivalent to Definition 2.4, because information sets I, I ′at the same level of the game having descendent nodes in the same information set Jimplies that Jhas nodes with different sequences.
+
+13 a
+
+> b
+> d
+> h
+
+z1 z2
+
+z3
+
+> e
+
+z4 i
+
+z5 z6
+
+> c
+> f
+> l
+
+z7 z8
+
+z9
+
+> g
+
+z10 m
+
+z11 z12 
+
+Figure 2: The connectivity graph for player ▲ and ▼ in the example game from Figure 1. The nodes in the two figures correspond in position, and letter identifiers are added to each node for easier reference. We highlight using the black color the connection between nodes b and c, which is due to the infoset connecting 
+
+d and e.a group of nodes is split among two different beliefs, then any group of descendent nodes from one belief will be distinguishable from any group of descendants from the other. In the following, we formalize the notion of beliefs and observations. We consider a two-player zero-sum game with imperfect recall G.
+
+Connectivity graph We say that two nodes h and h′ are unforgettably distinguished by i if they do not belong to the same infoset and no pair of descendants of those two nodes belong to the same infoset, that is, 
+
+i will never be in an information set where these two ancestors are both possible. This condition guarantees that if the set of candidates is H = {h, h ′}, then the player can discern h from h′ and will never forget which of the two nodes has been reached in the next steps of the game. 4
+
+For the purpose of our definitions, we are concerned with pairs of nodes that are not distinguishable. This can be represented through a connectivity graph over H as follows. 
+
+Definition 4.1 (Connectivity graph) . The connectivity graph Gi = ( H, Ei) for player i ∈ { ▲, ▼} is the graph with nodes H and edges Ei, where (h, h ′) ∈ E i if h and h′ are at the same depth in G and there exists I ∈ I i
+
+such that h ⪯ I and h′ ⪯ I.Figure 2 is an example of a connectivity graph in adversarial team games. Blue edges connect nodes of player ▲ at the same depth and in the same infoset, while black edges connect nodes preceding an identical infoset at deeper depth. For example, the black edge b-c in Figure 2 is due to d and e belonging to the same infoset. Note that in Figure 1, d is a child of b and e is a child of c.
+
+Beliefs Consider now a set H of nodes such that the induced subgraph Gi[H] is connected. Player i cannot distinguish any subset of H from the others because no node can be distinguished from its neighbors. Beliefs 
+
+are defined as these sets of indistinguishable nodes. 
+
+Definition 4.2 (Belief) . A set of nodes B ⊆ H is a belief for player i if the induced subgraph Gi[B] is connected. Since only nodes of the same depth can be connected via edges in Gi, all nodes in the same belief have the same depth. A direct consequence of the definition of beliefs is that {∅} and {z} for z ∈ Z are singleton beliefs for both players.       
+
+> 4In particular, any team member in the corresponding team game can always recall, after reaching hor h′, whether hor h′
+> has been reached.
+
+14 Observations Consider a set H of nodes such that the induced subgraph Gi[H] has multiple connected components. In this case, player i can distinguish those components one from the other, thus partitioning 
+
+H into multiple beliefs. Intuitively, the unforgettable information is enough to distinguish every node in a component from any node in other components. The player can, therefore, exclude nodes from components that are distinguishable from the current reached node. We say that upon reaching a node h among possible candidates H, player i observes belief B ⊆ H, meaning that player i uses the newly acquired unforgettable information acquired in h to refine their imperfect information from H to B. We formalize this notion of observation through the function SplitBelief i:5
+
+Definition 4.3 (Observation) . The observation for player i ∈ { ▲, ▼} when reaching node h ∈ H of candidate nodes is: 
+
+SplitBelief i(H, h ) := the connected component of Gi[H] containing h. 
+
+The set of all possible observations at H is thus the set of all connected components of Gi[H], and will be denoted by BH .6
+
+An example of observations can be given by considering the team game depicted in Figure 2 and a candidate set H = {d, e, f }, which is possible when player 1 plays a mixed strategy that excludes g from being reached. What team-public information can player 2 use to distinguish the current node of the game? Player 2 knows that the current node h in the game is in H because they know the strategy of player 1. However, player 2 also observes their current information set I = {d, e } if h ∈ { d, e }, or J = {f, g } if h ∈ { f, g }.This observation can be used to split the team-public belief H since there is no future infoset of the team containing both descendants of {d, e } and {f }; indeed, there are no future infosets for ▲ at all in this game. Thus, d and e are unforgettably distinguished from f by ▲.The reasoning from this example is generalized by Definition 4.3: we have 
+
+SplitBelief ▲(H, d ) = SplitBelief ▲(H, e ) = {d, e }
+
+and SplitBelief ▲(H, f ) = {f }.
+
+Team public states We compare our notion of beliefs with public states , an alternative customarily used in the related literature. A public state P for player i is a connected component of the connectivity graph Gi.The set of all public states of i is denoted by Pi.Public states identify sets of nodes that are distinguishable to a player without considering a possibly pruned subgraph of Gi as instead done for team observations. Therefore, every belief is contained in a public state. In Figure 2 we have that P▲ = {{ a}, {b, c }, {d, e }, {f, g }, {h}, {i}, {l}, {m}} ∪ {{ z} : z ∈ Z} .Public states are the customarily adopted alternative to observations when partitioning a set H of candidates in beliefs by splitting H in {H ∩ P : P ∈ P i}. However, public states may return a coarser partition than the one returned by observations, as the absence of specific nodes from H may disconnect components in G. We will, therefore, use observations in place of public states whenever possible. An example illustrating the difference between the two definitions is available in Section D.2. 
+
+Prescriptions Restricting the information available to player i to their beliefs also affects the set of actions available. In fact, multiple infosets may intersect a given belief. In the belief game, the player only knows the current belief, and in particular does not know which infoset within the current belief is the true infoset. Therefore, the player cannot just specify a single action at the true infoset.                
+
+> 5In team games, the belief returned by SplitBelief iis the team-common knowledge update happening when reaching h
+> among a set of candidates H. That is, upon SplitBelief ireturning a belief B, it is team-common knowledge that the game reached a node in B.
+> 6We remark that the belief-based constructions employed by the paper would also work when considering a coarser set of beliefs, that is, pretending that more edges existed in Gi[H]. For example, to align with the framework of factored-observation games [29 ], one could define SplitBelief iusing the explicitly-given public observations. However, since the efficiency of the proposed algorithms depends on the size of the beliefs employed, we opt not to allow the use of beliefs larger than needed. As we show in Section 4.4, any reduction in the size of the beliefs in a game brings exponential benefits in the size of the belief game obtained.
+
+15 We overcome this issue by associating to each belief B a set of meta-actions AiB such that an action is specified for every infoset that intersects the belief. We call such structured meta-actions prescriptions and use a symbol a to indicate them. The concept is formally defined as follows. 
+
+Definition 4.4 (Prescription) . Consider a belief B of a player i ∈ { ▲, ▼}. A prescription a is a selection of one action at each infoset having a nonempty intersection with B:
+
+a ∈ ×I∈I i[B]
+
+AI where Ii[B] = {I ∈ I i : I ∩ B̸ = ∅}.
+
+Given a prescription a for a belief B and an infoset I such that I ∩ B̸ = ∅, we denote as a[I] the action relative to infoset I which is specified by prescription a. Note that we have empty prescriptions at beliefs containing no active nodes for a player. As we will see in the next section, our equivalent belief game introduces one perfect-recall player per team, with information sets associated with beliefs corresponding to the perfect-recall part of the information available to this unique player. Prescriptions will allow this player to have an identical expressive power in terms of actions without accessing the exact information set of the player, which is their imperfect-recall information. Moreover, specifying a prescription at each reached belief for i incrementally defines a pure strategy of player i. This allows us to consider a reduced set of candidate nodes H for the reached node 
+
+h from which the belief is observed, as a non-played action implies that all the descendant nodes are not reached and, therefore, excluded from the candidates. We now give a complete example of the concepts introduced so far. Consider a 3-player poker instance where two players collude to form a team. At any time of the game, we can consider the point of view of a team coordinator, who acts as the single imperfect recall player. We can imagine this coordinator as sitting at the same table as the players, and therefore, they cannot access the private cards given to the players but can access the same public information as the players, that is, the bet, fold, and check actions of the players. Their belief at any point regards the private cards that each team member has. At the start of the game, this belief is uniform over all pairs of cards, as no information regarding these cards is available from an external point of view. The coordinator emits prescriptions for the players to follow as the game progresses. Since the coordinator does not know the card held by a player, they have to prescribe an action for each possible card the current player may hold. The player receives this prescription and follows the part of it that matches the private card. By observing the action played by the player, the coordinator can exclude from their belief the cards for which they prescribed different actions. While there are no means of communicating prescriptions during play at the poker table, this mechanism can be implemented ex ante ; that is, each team of players jointly samples a pure strategy of this coordinator before the start of the game, and each member simulates the coordinator locally. 
+
+Information complexity We quantify the number of information sets reaching a belief through the notion of information complexity k. This quantity will allow us to bound the size of the belief games in Sections 4.4 and 6.1. We first characterize the notion of remembered information sets and the set of last-infosets at a node. Intuitively, an infoset J remembers another infoset I if reaching a node in J implies traversing a node in 
+
+I and picking a specific action. Therefore, knowing to be at a node in J allows the player to recall having traversed I and have played action a there. The last-infosets of player i at h are the information sets traversed by i on the path to h and not remembered by any following information set of the player up to h.7 This set quantifies the knowledge lost by the player at a node due to imperfect recall. Intuitively, the set of last-infosets at a node h completely characterizes all the information ever presented to the imperfect-recall player: if Ih remembers J, then keeping J in the set of last-infosets would be redundant. If K̸ = Ih is a last-infoset at h, that means that player i at h has forgotten that they have traversed K in the      
+
+> 7In an adversarial team game, the only possible last-infosets at a node hfor a given team tare the most recent infosets of each player in t: every other infoset belongs to one of these players, and therefore, by perfect recall, is remembered by the most recent infoset of that player.
+
+16 past. For the team setting, the set of last-infosets completely characterizes the common knowledge of the team at node h.
+
+Definition 4.5. An infoset J remembers another infoset I if there exists an action a ∈ AI such that, for every h ∈ J, we have h′a ⪯ h for some h′ ∈ I.
+
+Definition 4.6. The set of last-infosets at node h for player i is the set of infosets I ∈ I i such that I ⪯ h
+
+and there is no other infoset J ∈ I i such that J ⪯ h and J remembers I.We will use LI i(h) to denote the set of last-infosets at h for player i. Note that if h ∈ H i then Ih ∈ LI i(h).Now define the information complexity k of a two-player game G as follows. 
+
+k = max  
+
+> i∈{ ▲,▼},P∈P i
+
+[
+
+> h∈P
+
+LI i(h)
+
+Intuitively, k is a representation of how much information can be worst-case forgotten by player i. In the team game interpretation, k is a representation of how asymmetric the information is among team members: if k is small, then all team members have approximately the same information; in particular if k = 1 then all team members have the same information, that is, the “imperfect-recall” team coordinator actually has perfect recall. The information complexity characterizes both the number of beliefs in a public state P , and the number of prescriptions that are available at such beliefs. In fact, the actions played at information sets in S 
+
+> h∈P
+
+LI i(h) determine which nodes in P are reached (that is, a belief B ⊆ P ); these actions upper-bound the number of worst-case information sets available, which can be used to bound the worst-case amount of prescriptions at a belief. In fact, the number of prescriptions at a public state P is upper-bounded by 
+
+(b + 1) | S   
+
+> h∈P|LI i(h)|
+
+≤ (b + 1) k, where b is the branching factor , which is the worst-case number of actions at an information set: for each possible information set, either that information set is not reached, or it is reached and one of the b available actions is played. Specifying one of these b + 1 possibilities at each of the (at most) k last-infosets uniquely determines the prescription. This analysis will be formalized in the proof of Theorem 6.2. Since LI i(h) ⊆ I i, a trivial bound on k is k ≤ max i |I i| ≤ |Z| ≤ bd, where b is the branching factor and d
+
+is the depth. Later in the paper we will show that our algorithms have exponential dependence on k, which in the worst case according to this bound will lead to exponential time in |Z| . This exponential dependence is inevitable: as we will discuss in depth in Section 7, there cannot exist efficient algorithms for representing general imperfect-recall decision problems under reasonable complexity assumptions. However, there are many classes of game in which k ≪ max i |I i|. As an example, consider four-player Texas hold’em (THE) poker, where the four players are partitioned into two teams of two. Then a public state is defined by the betting history and any public cards. Given a public state, each player only has at most  52 2
+
+ = 1326 different possible last-infosets, one for each possible choice of hole cards. Thus, we have k ≤ 2 · 1326 = 2652 , which is much smaller than the number of histories. 8 In some sense (which we will make precise in Section 7), information complexity precisely characterizes the hardness of representing the strategy set of a player with imperfect recall. As an example, consider the game from Figure 2, whose public states for ▲ are: 
+
+P▲ = {{ a}, {b, c }, {d, e }, {f, g }, {h}, {i}, {l}, {m}} ∪ {{ z} : z ∈ Z} .
+
+The information complexity in this case is k = 3 . Indeed, for public state P = {d, e } of player ▲, we have 
+
+[
+
+> h′∈{ d,e }
+
+LI ▲(h′) = LI ▲(d) ∪ LI ▲(e) = {Ib, I d} ∪ { Ic, I e} = {Ib, I c, I d}.              
+
+> 8For example, in two-player no-limit THE, |Z| >10 160 [26 ]. This example applies more generally to games in which player actions are public, and the only private information is due to one of t“private types” ( t= 1326 for THE) being assigned to each player. In such games, we have k≤nt , where nis the size of the larger team.
+
+17 Algorithm MakeBeliefGame : Belief game construction  
+
+> 1:
+
+procedure MakeBeliefGame (G) 
+
+> 2:
+
+MakeNode ▲(∅, {∅}, {∅}, ∅, ∅) 
+
+> 3:
+
+procedure MakeNode ▲(h, B ▲, B ▼, ˜σ▲, ˜σ▼) 
+
+> 4:
+
+create node ˜h ∈ ˜H▲ 
+
+> 5:
+
+add ˜h to infoset labeled (˜ σ▲, B ▲) 
+
+> 6:
+
+for each prescription a▲ ∈ A ▲ 
+
+> B▲
+
+do  
+
+> 7:
+
+˜ha▲ ← MakeNode ▼(h, B ▲, B ▼, ˜σ▲, ˜σ▼, a ▲) 
+
+> 8:
+
+return ˜h 
+
+> 9:
+
+procedure MakeNode ▼(h, B ▲, B ▼, ˜σ▲, ˜σ▼, a▲) 
+
+> 10:
+
+create node ˜ha▲ ∈ ˜H▼ 
+
+> 11:
+
+add ˜ha▲ to infoset labeled (˜ σ▼, B ▼) 
+
+> 12:
+
+for each prescription a▼ ∈ A ▼ 
+
+> B▼
+
+do  
+
+> 13:
+
+˜ha▲a▼ ← MakeNode 0(h, B ▲, B ▼, ˜σ▲, ˜σ▼, a▲, a▼) 
+
+> 14:
+
+return ˜ha▲ 
+
+> 15:
+
+procedure MakeNode 0(h, B ▲, B ▼, ˜σ▲, ˜σ▼, a▲, a▼) 
+
+> 16:
+
+if h is terminal node then  
+
+> 17:
+
+create new terminal node ˜ha▲a▼ ∈ ˜Z 
+
+> 18:
+
+ui(˜ha▲a▼) ← ui(h) for each player i 
+
+> 19:
+
+p[˜ha▲a▼] ← p[h] 
+
+> 20:
+
+return ˜ha▲a▼ 
+
+> 21:
+
+create new chance node ˜ha▲a▼ ∈ H 0 
+
+> 22:
+
+if h is a chance node then S ← { ha : a ∈ Ah} 
+
+> 23:
+
+else S ← { hai[Ih]} where h ∈ H i 
+
+> 24:
+
+for each node ha ∈ S do  
+
+> 25:
+
+B′ 
+
+> i
+
+← SplitBelief i(Biai, ha ) for each player i 
+
+> 26:
+
+˜ha▲a▼a ← MakeNode ▲(ha, B ▲′, B ▼′, ˜σ▲ + (˜ σ▲, a ▲), ˜σ▼ + (˜ σ▼, a ▼))  
+
+> 27:
+
+return ˜ha▲a▼
+
+This information complexity can be used to bound the number of possible prescriptions for player ▲ given a public state. At P = {d, e }, the actions played at the three information sets Ib, I c, I d are enough to characterize which belief B ⊆ P is reached during the game and which prescription was played at B. In fact, the action at Ib decides whether d is reached, and the action at Ic decides whether e is reached. Overall, we bound the number of prescriptions in the public state as (b + 1) k = (2 + 1) 3 = 27 . The bound of (b + 1) k is not tight in this example because all three information sets are always played by ▲—indeed, the true number of prescriptions at P is bk = 8 .
+
+## 4.2 Belief game construction 
+
+We now introduce an algorithm that explicitly constructs a belief game given any two-player game. We will use ˜G to denote the belief game and distinguish components of the original game G from components of the belief game by writing tildes: for example, a generic history is ˜h ∈ ˜H, a generic information set is ˜Ii ∈ ˜Ii,and so on. A node ˜h ∈ ˜H in the belief game is identified by a tuple (h, B ▲, B ▼) such that h ∈ B▲ ∩ B▼, where h ∈ H 
+
+is the corresponding node in the original game describing the underlying state of the game, B▲, B ▼ are the current beliefs of ▲ and ▼ respectively. At ˜h, each player i ∈ { ▲, ▼} has a (possibly empty) collection of infosets, I[Bi], at which they needs to prescribe an action. The two players simultaneously submit prescriptions ai ∈ AiBi . The next belief game node is (ha, B ′
+
+> ▲
+
+, B ′
+
+> ▼
+
+), where the action a and the next beliefs 
+
+(B′
+
+> ▲
+
+, B ′
+
+> ▼
+
+) are defined as follows. 18 (i) The action a is the one taken by the player at h: if h is chance node, then a is sampled from chance’s action distribution at h; otherwise, a = ai[Ih].(ii) The beliefs evolve as follows. For each player i, the set of candidate next histories in the original game compatible with i’s current belief Bi and their prescription ai is given by: 
+
+Biai := {ha : h ∈ Bi ∩ H i, a = a[Ih]}
+
+| {z }  
+
+> when player iacts, it must be according to the prescription
+
+∪ { ha : h ∈ Bi \ H i, a ∈ Ah}
+
+| {z }   
+
+> when player idoes not act,
+> idoes not know what action is taken
+
+,
+
+Next, player i observes the information revealed by the next history ha , thus arriving at belief: 
+
+˜B′ 
+
+> i
+
+:= SplitBelief i(Biai, ha ).
+
+We remark some characteristics of ˜G := MakeBeliefGame (G).
+
+• The belief game is a game with simultaneous moves: ▲, ▼, and chance simultaneously chooses prescriptions and chance actions. Algorithm MakeBeliefGame describes the procedure that constructs an extensive-form game (without simultaneous moves) that is equivalent to it. 9
+
+• The depth of the belief game is exactly three times that of the original game. That is, each move in the original game becomes three moves in the belief game: one where ▲ chooses their prescription (this node is trivial if it is not ▲’s turn in the original game), one where ▼ chooses their prescription (again, trivial if it is not ▼’s turn), and one node where Nature chooses its action. 
+
+• Multiple different tree nodes ˜h can correspond to the same (h, B ▲, B ▼) tuple. In particular, for each terminal node z ∈ Z there is only one possible (z, {z}, {z}), but yet many different tree nodes can lead to the same z.
+
+• Information sets in ˜G are associated to sequences of beliefs and prescriptions. In particular, such infosets can be described by tuples of the form (B1 
+
+> i
+
+= {∅}, a1 
+
+> i
+
+, B 2 
+
+> i
+
+, a2 
+
+> i
+
+, . . . , B Li ), where aℓi ∈ ABℓi and 
+
+Bℓ+1  
+
+> i
+
+= SplitBelief i(Bℓi aℓi , h ) for some h ∈ Bℓi aℓi .
+
+• By construction of MakeBeliefGame we have that ˜G is a perfect-recall game. In fact, nodes with different sequences are associated to different information sets thanks to including sequences in each information set’s label; 
+
+• When h is terminal, the belief game does not stop until both players have observed the trivial belief {h}
+
+at h and then submitted their empty prescriptions at that belief. This is for notational convenience: it ensures that terminal sequences for a player i will always end with singleton beliefs, which will make the later analysis cleaner. 
+
+• Modulo trivial reformulations (namely, the insertion of nodes with a single child), if G is perfect recall, then ˜G is identical to G.Given a pure strategy ˜πi ∈ ˜Πi, we say that ˜πi plays to a belief Bi of player i if ˜πi plays to some node corresponding to (h, B i, B −i).As an example, the belief game for the game in Figure 2 can be found in Figure 3.    
+
+> 9Following the usual technique for converting games with simultaneous moves into extensive-form games without simultaneous moves, we implement simultaneous actions by representing each step in the game as a sequence of one node per player ▲,▼,0
+> where everyone acts; the effects of the actions taken are applied at the end.
+
+19 b
+
+> d
+> k
+
+z1 z2
+
+z3
+
+> d
+> k
+
+z1 z2
+
+z3
+
+> e
+
+z4 i
+
+z5 z6
+
+> e
+
+z4 i
+
+z5 z6
+
+> c
+> f
+> l
+
+z7 z8
+
+z9
+
+> g
+
+z10 m
+
+z11 z12 
+
+> f
+> l
+
+z7 z8
+
+z9
+
+> g
+
+z10 m
+
+z11 z12        
+
+> ℓLℓRrL rR ℓLℓRrL rR
+
+Figure 3: The belief game constructed by applying MakeBeliefGame to the adversarial team game in Figure 1. To improve clarity, nodes with single actions have been removed. Note how the imperfect recall between nodes b and c from Figure 2 is solved by merging them and using prescription to express an action for each node. Prescriptions have been labeled with the actions prescribed for each node in the belief. 
+
+## 4.3 Strategic equivalence 
+
+The main result of this section is the following. 
+
+Theorem 4.7. Let G be any two-player imperfect-recall extensive-form game, and ˜G be the belief game constructed by MakeBeliefGame . G and ˜G are strategically equivalent. 
+
+We use the remainder of the subsection to prove this result. The requirements for strategic equivalence as per Definition 2.19 that we will show are: i) there exists a function ρ mapping pure strategies in the two games ii) ρ is a bijective function iii) ρ is value-preserving, that is, the mapped strategies have the same expected utilities. We first construct the strategy maps ρi : Π i → ˜Πi. A pure strategy πi ∈ Πi in G assigns one action to each information set. 10 From such a strategy we construct a strategy ˜πi = ρi(πi) which plays prescriptions consistent with πi. At belief Bi, ˜πi plays the prescription ai given by ai[I] = πi[I] for each I ∈ I Bi reached by ˜π.We now show that ρi is injective. This will follow from the following lemma. 
+
+Lemma 4.8. Let ˜πi = ρi(πi) ∈ ˜Πi. Then for every z ∈ Z , ˜πi plays to belief {z} if and only if πi plays to z.Proof. First suppose ˜πi = ρi(πi) ∈ ˜Πi plays to {z}. Thus ˜πi plays some sequence of beliefs and prescriptions 
+
+(B1 
+
+> i
+
+= {∅}, a1 
+
+> i
+
+, . . . , B 2 
+
+> i
+
+, a2 
+
+> i
+
+, . . . , B Li = {z}). But then, by construction, every ancestor h ≺ z is included in one of the Bℓi s, and for ha ⪯ z to appear in Bℓi aℓi , if h ∈ H i, it must be the case that πi plays a. Thus πi
+
+plays to z.Conversely suppose πi plays to z. Then, construct a sequence of beliefs and prescriptions as follows. Let aℓi be the prescrption played by ˜πi at belief Bℓi , and Bℓ+1  
+
+> i
+
+= SplitBelief i(Bℓi aℓi , h ) where h ∈ Bℓi aℓi
+
+and h ⪯ z. (The fact that πi plays to z ensures that such h must exist). Then, by induction, ˜πi plays to this sequence, and the sequence must eventually terminate at {z} because it always contains at least one predecessor of z. Thus ˜πi plays to {z}.Since different pure strategies (by definition) play to different sets of terminal nodes, this immediately shows that ρ is injective. We now show that ρi is a surjection (and hence a bijection), that is, any ˜πi ∈ ˜Πi is the image of some πi ∈ Πi. We remark that a pure strategy ˜πi ∈ ˜Πi assigns one prescription to every reached infoset of player i in ˜G.We will require the following lemma. Informally, it states that no player can play to two nodes with intersecting beliefs.  
+
+> 10 At infosets not reached by πi, actions can be selected arbitrarily.
+
+20 Lemma 4.9. Let ˜πi ∈ ˜Πi be any pure strategy. Let ˜I, ˜I′ ∈ ˜Ii be two distinct infosets of player i that are simultaneously reached by ˜πi. Let Bi and B′ 
+
+> i
+
+be the beliefs for player i at ˜I and ˜I′ respectively. Then Bi and 
+
+B′ 
+
+> i
+
+are not connected and do not intersect. That is, there do not exist nodes h ∈ Bi, h ′ ∈ B′ 
+
+> i
+
+with (h, h ′) ∈ E i
+
+or h = h′.Proof. Consider the tree-form decision problem ˜T of player i in ˜G. Since ˜G is perfect-recall, ˜T is indeed a valid representation of player i’s strategy set in ˜G. Let s be the lowest common ancestor of ˜I and ˜I′ in ˜T .Since ˜πi plays to both ˜I and ˜I′, the node s must be an observation point, as a pure strategy plays a single action at each decision point. At observation points, the next observation made by player i is the next belief. Let Ci and C′ 
+
+> i
+
+be the different observed beliefs at node s that lead to ˜I and ˜I′, respectively. Then, by construction of SplitBelief i, Ci and C′ 
+
+> i
+
+are disconnected and disjoint. Since every node in Bi is a descendant of some node in Ci (and the same for C′
+
+> i
+
+), it follows that Bi and B′ 
+
+> i
+
+are also disconnected and disjoint. Thus, in particular, for any infoset I ∈ I i in the original game, ˜πi can only play to one infoset ˜I ∈ ˜Ii
+
+whose belief Bi overlaps I. At Bi, the prescription chosen by ˜πi includes an action a[I] at I (by construction of prescriptions at a node). Thus, consider the strategy πi defined such that πi[I] = a[I] for every infoset I
+
+such that πi plays to a belief Bi overlapping I.
+
+Lemma 4.10. πi is a well-defined strategy. That is, if πi plays to a node h ∈ H i, then ˜πi plays to a belief 
+
+Bi ∋ h, and hence, if h ∈ I ∈ I i then πi[I] is defined. Proof. By induction on the length of the history h. For h = ∅ this is trivial. Now let h = h′a′ be a non-root node, and suppose πi plays to h. Then by inductive hypothesis, ˜πi plays to a belief Bi ∋ h′. Let a be the prescription played by ˜πi at Bi.
+
+• If h′ ∈ I ∈ I i, then by construction of πi, it must be the case that ˜πi’s prescription a at Bi satisfies 
+
+a[I] = a′, so Bia ∋ h.
+
+• If h′ /∈ H i, then for any prescription a at Bi we have that h ∈ Bia.In either case, we have Bia ∋ h. Thus, ˜πi must also play to the belief SplitBelief i(Bia, h ) ∋ h.Further, from the definition of ρi it follows immediately that ρi(πi) = ˜πi. It only remains to show that ρi
+
+is value-preserving. But this is easy: ρi(πi) prescribes the same actions as πi. Thus, for any pure strategy profile π ∈ Π, following profile π through G will yield exactly the same trajectory as following profile ρ(π)
+
+through ˜G. Thus, their expected utilities will also coincide, and the proof is complete. 
+
+## 4.4 Worst-case dimension of the belief game 
+
+The per-iteration time complexity of CFR depends linearly on the size of the game on which the algorithm is applied. Thus, it is critical for complexity analysis to bound the size of the belief game produced by 
+
+MakeBeliefGame .
+
+Lower Bound We first present a lower bound of the worst-case size of the belief game by describing a worst-case game whose belief game has a large number of histories. 
+
+Theorem 4.11. There exists a game G with depth d, information complexity k, and maximum branching factor at a node b such that the number of nodes in the belief game ˜G is | ˜H| ≥ b2k(d−4) .Proof. We construct a parametric game for depth d ≥ 4, information complexity k, and branching factor 
+
+b ≥ k + 1 .Consider a game that consists of d − 3 repetitions of the following mini-game . There is a "root" chance node with k nodes of ▲, k nodes of ▼ and the root of the next repetition of the mini-game as children. Each of ▲’s and ▼’s nodes belong to different information sets. Each of those is the root of subgames with identical 21 1
+
+> 2
+
+z 2
+
+z
+
+> 1
+> 2
+
+z 2
+
+z
+
+> 1
+> 2
+
+z 2
+
+z
+
+> 1
+> 2
+
+z 2
+
+z
+
+> 1
+> 2
+
+z 2
+
+z
+
+> 1
+> 2
+
+z 2
+
+z         
+
+> 1. . . b −1
+> 1. . . k
+> depth 0
+> depth 1
+> mini-game
+> depth d−4
+> subgame
+
+Figure 4: An example of imperfect-recall game derived from a team game whose rationale is described in the proof of Theorem 4.11. Given that the terminal values of this game are not relevant, we use z to indicate a generic payoff. The boxes indicated by mini-game and subgame correspond to the terms used in the description. structures. Their children are b − 1 player nodes followed by a single terminal node, and there is a chance node followed by a player node and then a single terminal node. These player nodes belong to the same player as the root of the subtree, namely ▲ for the first k children and ▼ for the second k children of the 
+
+"root" of the mini-game. All nodes of ▲ and ▼ at the same level of the subgames apart from the 2k nodes belong to the same information set. A representation of such a game for k = 2 , b = 2 , d = 6 is given in Figure 4, where nodes of ▼ have been omitted to improve clarity. Those have the same structure as the nodes of ▲. The main point of this game is that at any level l = 1 , . . . , d − 3, both ▲ and ▼ have a public state containing the k infosets corresponding to the nodes after 0’s "root" of the mini-game at depth l − 1. At each of those public states, both ▲ and 
+
+▼ have a single belief containing k information sets and the chance node that leads to the next mini-game .Therefore, there are bk prescriptions at this belief, and each prescription played leads, among the others, to the belief containing k information sets of the next mini-game .Multiplying this factor for each step of the level gives |H ′| ≥  b2kd−4.
+
+Upper Bound We now present an upper bound on the number of histories of the belief game. 
+
+Theorem 4.12. Let G be a game with depth d, information complexity k, and maximum branching factor b.The number of nodes in the belief game ˜G is | ˜H| ≤ b2kd +d.Proof. Consider the algorithm MakeBeliefGame . Grouping levels of the belief game ˜G three by three, we have that ▲, ▼, and 0 each play at a different level in each group, and we have d groups. Moreover, no more than b actions for the chance player and bk prescriptions are available to each player. We, therefore, have that the number of nodes in-game tree ˜G is | ˜H| ≤ bd(2 k+1) .
+
+Discussion The bounds presented in this section highlight the main computational limitation of Al-gorithm MakeBeliefGame , the explicit dependence on depth introduced by explicitly using sequences to distinguish information sets in the belief game. We remark that we can replace k here with the maximum number of infosets (not the last-infosets) in any public state. We opted not to introduce two different notions of information complexity to have bounds 22 Algorithm DAG-Generic : Generic construction of a regret minimizer R on Q from a regret minimizer ˆR on its tree form ˆQ. 
+
+> 1:
+
+procedure NextStrategy  
+
+> 2:
+
+ˆxt ← ˆR.NextStrategy()  
+
+> 3:
+
+return D ˆxt 
+
+> 4:
+
+procedure ObserveUtility (ut) 
+
+> 5:
+
+ˆR.ObserveUtility( D⊤ut)
+
+comparable with the TB-DAG ones in Section 6.1. We will explore the effects of introducing the different definitions of k in Section D.4. 
+
+## 4.5 Regret minimization on team games 
+
+This section shows how to find a mixed Nash equilibrium in a generic two-player zero-sum game with imperfect recall G by applying CFR on the belief game ˜G obtained by running Algorithm MakeBeliefGame on G.Let ˜X and ˜Y be the realization-form strategy spaces for ▲ and ▼ in ˜G derived from the sequence-form representation as in Section 2.3. Specifically, vectors ˜x ∈ ˜X are indexed by terminal sequences for ▲ in 
+
+˜G (similarly for ▼). Such a sequence σ can be identified by a list of beliefs and prescriptions, ending in a singleton belief {z} for terminal node z ∈ Z . For any terminal node z, let Σz 
+
+> ▲
+
+be the set of terminal sequences for ▲ that end at belief {z}. Then computing a Nash equilibrium in ˜G (and hence a mixed Nash in G) can be done by solving the max-min problem 
+
+max  
+
+> ˜x∈˜X
+
+min  
+
+> ˜y∈˜Y
+
+X
+
+> z∈Z
+
+u(z) X
+
+> ˜σ▲∈Σz
+> ▲
+
+˜x[˜ σ▲] X
+
+> ˜σ▼∈Σz
+> ▼
+
+˜y[˜ σ▼]. (3) This is equivalent to the max-min problem for the coordinator game (Eq. (2) ) by setting x[z] := P 
+
+> ˜σ▲∈Σz
+> ▲
+
+˜x[ ˜σ▲]
+
+(and similar for y). That is, from an optimization perspective, what has happened is that we have constructed sets ˜X and ˜Y that are described by linear constraints, just like the sequence form, and project onto X and Y
+
+respectively, allowing the reformulation and equivalence of problems. We now analyze the time complexity and regret of running CFR on ˜G. Fix a player, say, ▲. (The same analysis will apply to ▼.) First, recall from Section 2.3 that, in a decision problem, a set P of ▲-decision points is called playable if there exists a pure strategy of ▲ that plays to all the decision points in P . But by Lemma 4.9, the size of any playable set P of ▲ is at most |H| . Further, the branching factor of ˜G is at most 
+
+bk, where b is the branching factor of G and k is the information complexity (see Section 4.4). Thus, applying multiplicative weights ( MWU ) as the local regret minimizer at each decision point and using Theorem 2.17, we have: 
+
+Theorem 4.13. After T iterations of CFR on ˜G with MWU as the local regret minimizer, the average strategy profile ( ¯ x, ¯y) is an O(ε)-Nash equilibrium of G, where 
+
+ε = |H| 
+
+r k log bT .
+
+The per-iteration complexity is linear in the size of ˜G.
+
+While the regret above is polynomial in H, the per-iteration complexity depends on the size of ˜G, which is worst-case exponentially larger than G, as shown in Section 4.4. 
+
+# 5 DAG decision problems 
+
+In this section, we will develop a general theory of DAG-form decision problems and regret minimization on them, analogous to the tree-form theory in Section 2. Although our main interest in DAG-form decision-making is its application to two-player imperfect-recall games (which we will develop in Section 6), the 23 Algorithm DAG-CFR : Counterfactual regret minimization on DAG-form decision problems Q. For each decision point s, Rs is a regret minimizer on ∆( As). 
+
+> 1:
+
+procedure NextStrategy  
+
+> 2:
+
+xt[∅] ← 1 
+
+> 3:
+
+for each decision point s, in top-down order do  
+
+> 4:
+
+rts ← R s.NextStrategy()  
+
+> 5:
+
+xt[s∗] ← X
+
+> p∈Ps
+
+xt[p]rts 
+
+> 6:
+
+return xt 
+
+> 7:
+
+procedure ObserveUtility (ut) 
+
+> 8:
+
+vt ← ut 
+
+> 9:
+
+for each decision point s, in bottom-up order do  
+
+> 10:
+
+Rs.ObserveUtility (vt[s∗]) 
+
+> 11:
+
+for p ∈ Ps do vt[p] ← vt[p] + ⟨rts, vt[s∗]⟩ 
+
+> 12:
+
+t ← t + 1 
+
+observations made in this section also have general applicability beyond this setting. For example, since the publications of earlier versions of the present paper, DAG-form decision-making has been applied toward the efficient computation of many other solution concepts, including linear correlated equilibria and optimal extensive-form correlated equilibria [57, 59, 60, 61, 62]. As one may expect, DAG-form decision problems are identical to tree-form decision problems except that the graph of nodes is allowed to be a DAG, albeit with some restrictions. 
+
+Definition 5.1. A DAG-form decision problem is a DAG with a unique source (root node) ∅, wherein each node s is either a decision point (s ∈ D ) or an observation point (s ∈ S ), with the following properties. 1. Observation points other than the root have exactly one incoming edge. 2. For any two paths p1 and p2 from the root that end at the same node, the last node in common between 
+
+p1 and p2 is a decision point. As with tree-form decision problems, we will also assume (WLOG) that decision and observation points alternate along every path and that both the root node and all terminal nodes are observation points. A 
+
+pure strategy is once again an assignment of one action to each decision point. The DAG form of a pure strategy is the vector x ∈ { 0, 1}S , where x[s] = 1 if there is some ∅ → s path along which the player plays all actions. A mixed strategy x ∈ Q is a convex combination of pure strategies. Since decision points can now have multiple parents, we will use Ps to denote the set of parents of a decision point s.Like tree-form decision problems, the mixed strategy set in a DAG-form decision problem has a convenient representation using linear constraints, namely: 
+
+
+
+x[∅] = 1 
+
+X
+
+> p∈Ps
+
+x[p] = X
+
+> a∈A s
+
+x[sa ] for all s ∈ D . (4) DAG-form decision problems and tree-form decision problems are closely related. Of course, all tree-form decision problems are DAG-form decision problems. Conversely, any DAG-form decision problem can be thought of as a “compressed” representation of the tree-form decision problem whose paths correspond to all the different paths through the DAG. While this tree will generally be exponentially larger than the DAG, we will find it useful to compare the DAG and tree representations. We now formulate a general theory of regret minimization for DAG-form decision problems. We will use hats ( ˆQ, ˆD, ˆS, ˆx) to denote components of the tree form of a generic DAG-form regret minimizer. For each 24 Algorithm ConstructTB-DAG : Constructing the TB-DAG. Inputs: imperfect-recall game G, player i 
+
+> 1:
+
+procedure MakeDecisionPoint (B) ▷ B ⊆ H is a belief  
+
+> 2:
+
+if a decision point s with belief B already exists then return s 
+
+> 3:
+
+if B = {z} for z ∈ Z then return new terminal node with belief {z} 
+
+> 4:
+
+s ← new decision point with belief B 
+
+> 5:
+
+for each prescription a ∈ AiB do  
+
+> 6:
+
+add edge s → MakeObservationPoint (Ba) 
+
+> 7:
+
+return s 
+
+> 8:
+
+procedure MakeObservationPoint (H) 
+
+> 9:
+
+s ← new observation point  
+
+> 10:
+
+for each B ∈ SplitBelief i(H) do  
+
+> 11:
+
+add edge s → MakeDecisionPoint (B) 
+
+> 12:
+
+return s
+
+tree-form observation point s ∈ ˆS, let δ(s) ∈ S be the corresponding observation point in S. Note that, by construction, δ is surjective but not injective unless the DAG happens to be a tree. We now show how tree-form strategies and utilities correspond to DAG-form strategies and utilities. Concretely, we define a matrix D ∈ RS× ˆS by D ˆx[s] = P 
+
+> ˆs:δ(ˆ s)= s
+
+ˆx[ ˆs] for all ˆx ∈ R ˆS . This is the matrix of the linear map that transforms tree-form strategies to their corresponding DAG-form strategies. That is, 
+
+D : ˆX → X is a bijection. Dually, for DAG-form utility vectors u ∈ RS , the vector D⊤u ∈ R ˆS is a utility vector on the tree form, with the property that D⊤u, ˆx = ⟨u, D ˆx⟩ by definition of the inner product. That is, the DAG-form strategy D ˆx achieves the same utility against DAG-form utility vector u as the tree-form strategy ˆx achieves against the utility D⊤ ˆu.The relationship between trees and DAGs allows us to use any regret minimizer on ˆQ to construct a regret minimizer with the same guarantee on Q. We do this in Algorithm DAG-Generic .
+
+Proposition 5.2. Let R and ˆR be as in Algorithm DAG-Generic . Then the regret of R with utility sequence 
+
+u1, . . . , uT is equal to the regret of ˆR with utility sequence D⊤u1, . . . , D⊤uT .
+
+Proofs of results in this section are deferred to Section A. Applying the transformation DAG-Generic with CFR as the tree-form regret minimizer ˆR, we arrive at a DAG form of CFR, which can be simulated efficiently: Algorithm DAG-CFR . One can think of DAG-CFR as a more efficient implementation of CFR when the decision problem happens to have a DAG structure. Of course, the regret bound O(|S| √T ) is only a worst-case bound; in special cases (such as Theorem 4.13), CFR 
+
+does much better than its worst case, and therefore so will DAG-CFR .Call a utility vector ˆu consistent if it is in the image of D⊤. That is (by definition of D⊤), ˆu ∈ R ˆO is consistent if ˆu[ ˆs] = ˆu[ ˆs′] if δ( ˆs) = δ( ˆs′). In essence, a DAG-form regret minimizer is able to “simulate” a tree-form regret minimizer so long as the tree-form regret minimizer’s utilities are always consistent. We now formalize this idea. 
+
+Theorem 5.3 (DAG regret minimization via CFR) . DAG-CFR produces the same iterates as DAG-Generic 
+
+with CFR as ˆR. Therefore, in particular, the regret of DAG-CFR with utility sequence u1, . . . , uT is the same as that of CFR on the tree form with utility sequence ˆu1 := D⊤u1, . . . , ˆut := D⊤uT . Moreover, the per-iteration runtime of DAG-CFR is linear in the number of edges in the DAG. In particular, taking any reasonably efficient regret minimizer over simplices, the regret of DAG-CFR after T iterations is at most O(|S| √T ).
+
+# 6 DAG decision problems in team games 
+
+In Section 4.5, it emerged that applying the CFR procedure to the belief game produced by MakeBeliefGame 
+
+suffers from the size of the game to solve, which may grow exponentially fast as shown in Section 4.4. In this 25 section, we show how DAG decision problems can greatly reduce the inefficiencies caused by the previous construction. The main observation is that MakeBeliefGame enforces perfect recall of the belief game by including the players’ sequences in the infoset definition. On the other hand, the strategic aspect of the game is governed solely by the nodes contained in beliefs. Once the set of possible nodes is fixed, the exact sequence of prescriptions and observations is not relevant, as the game will evolve identically from that point onwards. This observation leads to considering a DAG structure for the decision problems, where decision nodes are identified by beliefs. The Nash equilibrium problem in ˜G, namely (3) , indeed guarantees that both players’ utility vectors will be consistent with respect to these DAG-form decision problems. We will call the resulting DAG decision problems the team belief DAGs (TB-DAGs) 11 . Therefore, using DAG-CFR as the regret minimizer for both players, we recover the regret guarantee of Theorem 4.13 with per-iteration complexity proportional to the total size of both DAGs. However, this proposed algorithm still depends on the size of ˜G, because, naively, to construct the DAG representations, one first constructs the augmented game ˜G, and only then does the merging of decision points to create the DAGs. We therefore describe an algorithm ConstructTB-DAG that recursively constructs the team belief DAGs directly from the original game G, thus bypassing the construction of ˜G. Therefore, we have the following result. For each player i ∈ { ▲, ▼}, let Ei be the number of edges in the TB-DAG of player 
+
+i.
+
+Theorem 6.1 (TB-DAG and CFR) . Suppose that both players run the algorithm ConstructTB-DAG to construct their strategy spaces ˜X , ˜Y, and then run DAG-CFR . Then their average strategy profile converges at the rate shown in Theorem 4.13, and the per-iteration runtime complexity is O(E▲ + E▼).Proof. ConstructTB-DAG is designed to construct a DAG-form decision problem whose tree form corresponds precisely to the decision problem faced by player i in the belief game. Thus, it only remains to show that Theorem 5.3 applies. That is, we need to show that, in the belief game ˜G, the utility vectors ˆu that would be observed by CFR for ▲ (the same proof would hold for ▼) are such that ˆu[ ˜z] = ˆu[ ˜z′] whenever histories 
+
+˜z, ˜z′ ∈ ˜Z of the belief game represent the same history z ∈ Z of the original game. But indeed, for any pure strategy ˜y ∈ ˜Y, by Theorem 4.7 there is a pure strategy y ∈ ˜Y such that ˜y[ ˜z] = ˜y[ ˜z′] = y[z]. Thus, if ▼ plays 
+
+˜y, the utility observed by ▲ will be given by 
+
+ˆu[˜ z] = ˜ p[˜ z] ˜ y[˜ z] = p[z]y[z] = ˜ p[˜ z′] ˜ y[˜ z′] = ˆ u[˜ z′]
+
+which is indeed consistent in the required sense. An example of TB-DAG is shown in Figure 5. 
+
+## 6.1 Size analysis of the TB-DAG 
+
+The per-iteration runtime above depends on the number of edges in the TB-DAGs, so it is important to bound this number. We will do so now. Here, we use the same notation as in Section 4.4. 
+
+Theorem 6.2. For each player i, we have Ei ≤ |H| (b + 1) k+1 .Proof. At any given public state P of player i, let Ii(P ) = S 
+
+> h∈P
+
+Ii(h) be the set of last-infosets. Consider a pure strategy π ∈ Πi. For each last-infoset I ∈ I i(P ), let πP be the partial strategy defined only on infosets 
+
+I ∈ I i(P ), by πP [I] = π[I] ∈ AI if π plays to at least one node in I, and πP [I] = ⊥ if it does not. There are thus at most (b + 1) k such possible partial strategies, since |I i(h)| ≤ k by definition. By construction, each partial strategy πP completely determines which nodes in P are reached by π, as well as the actions played at any such nodes. Thus, πP induces a disjoint collection of observation points S ⊆ S such that we have Ba ∈ S for each observation point B ⊆ P . Now, each observation point Ba has at most one incoming   
+
+> 11 We keep the name team belief DAG for continuity with previous versions of the work, even though it applies equally well in the team and imperfect recall settings.
+
+26 a
+
+a
+
+bc 
+
+df 
+
+d
+
+h
+
+h
+
+z1 z2
+
+z3
+
+dg 
+
+f
+
+l
+
+l
+
+z7 z8
+
+z9
+
+ef 
+
+g
+
+z10 m
+
+m
+
+z11 z12 
+
+eg 
+
+e
+
+z4 i
+
+i
+
+z5 z6     
+
+> ℓLℓRrL rR
+
+Figure 5: The TB-DAG corresponding to the adversarial team game in Figure 1. Decision and observation nodes are represented in black and white respectively. Note how subgames and terminal nodes that were repeated in the belief game from Figure 3 are now merged into a subgraph which can be reached through different trajectories of play. edge and at most |Ba| outcoming edges. Since the observation points Ba are disjoint and have a total size at most |P |b, the total number of edges at public state P is at most |P |(b + 1) k+1 . The proof finishes by summing over public states, noting that every history is in exactly one public state. Thus, from Theorem 6.1 and Theorem 6.2, it follows that: 
+
+Theorem 6.3 (Main theorem) . Any given imperfect-recall game G can be solved by constructing the TB-DAGs using ConstructTB-DAG and running DAG-CFR . After T iterations, the average strategy profile will be an 
+
+O(ε)-Nash equilibrium where ε is as in Theorem 4.13. The per-iteration complexity is O(|H| (b + 1) k+1 ).
+
+Before proceeding, it is instructive to briefly compare Theorem 6.3 to Theorem 4.12. The latter result gives a per-iteration complexity that is O(bd(2 k+1) ). Thus, Theorem 6.3 is strictly superior: for Theorem 4.12 to be superior, we would need to have bd(2 k+1) < |H| (b + 1) k+1 , which is impossible for d ≥ 1, k ≥ 1, b ≥ 2.We give a more detailed comparison between the two bounds in Section D.4. 
+
+## 6.2 Fixed-parameter hardness 
+
+Given the above result, one may ask whether the b can be removed more generally. It turns out that it cannot. Before proceeding, we need to introduce some basic concepts surrounding fixed-parameter tractability .
+
+Definition 6.4. A problem is fixed-parameter tractable with respect to a parameter k if it admits an algorithm whose runtime on inputs of length N is f (k)poly (N ), for some arbitrary function f .The k-CLIQUE problem is to, given a graph G and an integer k, decide whether G has a k-clique. The computational assumption FPT ̸ = W[1] states that k-CLIQUE is not fixed-parameter tractable. It is implied by the commonly-believed exponential time hypothesis (ETH) [11]. 12 
+
+Theorem 6.5. Assuming FPT ̸ = W[1] , there is no algorithm for computing the mixed Nash value of a 
+
+one-player game of imperfect recall with information complexity k whose runtime is f (k)poly (|H| ) for some arbitrary function f .   
+
+> 12 The exponential time hypothesis states that deciding 3-SAT requires time 2Ω( n), where nis the number of variables.
+
+27 Team vs Player Team vs Team TMECor NP -complete [28] ∆P    
+
+> 2-complete (This paper, Theorems 7.5 and 7.6) TME NP -complete [28] ΣP
+> 2-complete (This paper, Theorems 7.3 and 7.4)
+
+Table 2: Summary of most of the complexity results shown in Section 7. The proof via a reduction from k-CLIQUE is available in Section B. Thus, it is impossible to replace the 
+
+b in Theorem 6.3 with any absolute constant. 
+
+## 6.3 Branching factor reduction 
+
+Despite the worst-case hardness of removing the b in Theorem 6.3, it turns out that, for a natural class of games, we can remove b. In this subsection we will discuss games with action recall , and prove that in such games, it is without loss of generality to assume that the branching factor is 2. Intuitively, a player i
+
+has action recall if they remember the full sequence of actions they have taken in the past (including the timesteps at which such actions were taken). More formally: 
+
+Definition 6.6. At a node h ∈ H , let (a1, . . . , a L) ∈ A L be the list of actions taken on the ∅ → h path. Define the action sequence of player i as the sequence (a′
+
+> 1
+
+, . . . , a ′
+
+> L
+
+) ∈ (A ⊔ {⊥} )L where a′ 
+
+> ℓ
+
+= aℓ if action aℓ
+
+was taken by player i, and a′ 
+
+> ℓ
+
+= ⊥ otherwise. We say that player i has action recall if, for every infoset I of player i, every node in I shares the same action sequence. 
+
+Theorem 6.7. Given a two-player imperfect-recall game G where both players have perfect action recall, there exists another strategically-equivalent game G′ such that the branching factor of G′ is at most 2 at each 
+
+h ∈ H ▲ ∪ H ▼, the parameter k in G′ is the same as it in G, and the size of the game has increased by a factor of O(log |A| ).Proof. To every action a ∈ A we associate a unique bitstring of length at most ℓ = O(log |A| ). Assume without loss of generality, for simplicity of notation, that all such bitstrings end with a 0. We will call bitstrings ˜a ∈ { 0, 1}<ℓ “partial actions”. We replace every internal node h ∈ H \ Z with a binary tree of depth ℓ, where bitstrings that are not prefixes of any action a ∈ Ah are pruned. If h and h′ are in the same infoset I, then for every partial action 
+
+˜a ∈ { 0, 1}<ℓ we connect h˜a and h′˜a in an infoset, which we will call I˜a. This creates a new game G′, whose parameters we must now analyze. For each node h ∈ H \ Z and action a, G′ has createad at most O(log |A| ) additional nodes (namely, the nodes h˜a where ˜a is a prefix of a). Thus, the size of G′ is at most O(|H| log |A| ).It thus remains only to bound the information complexity of G′. Let P be a public state of player i in G′.By construction of action sequences, P contains either only nodes in Hi, or only nodes not in Hi. In the latter case there is nothing to check. In the former case, we have P ⊆ { h˜a : h ∈ P ′} for some public state 
+
+P ′ of G, and partial action ˜a ∈ { 0, 1}<ℓ . Now let I be a last-infoset of P ′ in G. Then I induces at most one last-infoset in P : namely, if I overlaps P , then this infoset is simply I˜a; otherwise, it is the infoset I˜a′
+
+where ˜a′ ∈ { 0, 1}ℓ−1 is the partial action such that action ˜a′0 leads to P (which must be uniquely defined by definition of action recall). Thus, P has as many last-infosets as P ′, so the information complexity of G′ is, at most, the information complexity of G.
+
+Corollary 6.8. In games where both players have action recall, Theorem 6.3 applies with the per-iteration runtime replaced with O(3 k|H| log |A| ).
+
+# 7 Complexity of adversarial team games 
+
+Here, we state and prove several results about the complexity of finding various equilibria in timeable two-player zero-sum games of imperfect recall. 28 In all cases, the goal is to solve the following promise problem: given game G, threshold value v, and error 
+
+ε > 0 (where all the numbers are rational), determine whether the (mixed or behavioral) value of the game is ≥ v, or < v − ε. The allowance of an exponentially-small error is to circumvent issues of bit complexity that arise due to the fact that exact behavioral max-min strategies may not have rational coefficients [ 28 ]. Throughout this section, it will often be convenient to formulate the hardness gadgets in terms of adversarial team games. We will thus freely utilize the analogy between adversarial team games and coordinator games. For mixed Nash and behavioral Nash respectively, we will refer to the problems as Mixed and Behavioral .Although we do not explicitly state it in the theorem statements, all the hardness results are proven by constructing adversarial team games in which both teams have a constant number of players. Proofs of all theorems in this section are available in Section C. 
+
+Theorem 7.1 (28 , 12 , 53 ). Finding the optimal strategy in a one-player, timeable game of imperfect recall is 
+
+NP -hard, even when the desired precision ε is an absolute constant. 
+
+For completeness, Section C includes a self-contained proof. The proof of the above theorem also implies the following corollary. 
+
+Corollary 7.2. Assuming the exponential time hypothesis [ 11 ], there is no 2o(k) · poly (n)-time algorithm for finding the optimal strategy in a one-player timeable game of imperfect recall. 
+
+## 7.1 Behavioral max-min strategies 
+
+We first show results for BehavioralMaxMin . In particular, we will show that it is ΣP 
+
+> 2
+
+-complete, first by showing inclusion and then constructing a gadget game to show completeness. (Recall that the inclusion will require an ε-approximation because exact behavioral max-min strategies may contain irrational values.) 
+
+Theorem 7.3. BehavioralMaxMin is in ΣP 
+
+> 2
+
+. If ▼ has perfect recall, it is in NP .
+
+Theorem 7.4. BehavioralMaxMin is ΣP 
+
+> 2
+
+-hard, even when the number of players is constant and there is no chance. 
+
+We remark that 
+
+> ▽▽▽
+
+has A-loss recall in the construction with no chance. This means BehavioralMaxMin 
+
+is also ΣP 
+
+> 2
+
+-hard for team games of no chance in which 
+
+> ▽▽▽
+
+has A-loss recall. 
+
+## 7.2 Mixed Nash equilibria 
+
+We now show results for MixedNash , namely, we will show that MixedNash is ∆P 
+
+> 2
+
+-complete, again by showing inclusion first and then completeness. Unlike for BehavioralMaxMin (Theorem 7.3), here we will directly construct a separation oracle, and thus be able to recover algorithms for exact computation. 
+
+Theorem 7.5. MixedNash is in ∆P 
+
+> 2
+
+, even for exact computation (ε = 0) .
+
+Theorem 7.6. MixedNash is ∆P 
+
+> 2
+
+-hard, even when the number of players is constant and there is no chance. 
+
+# 8 Experiments 
+
+This section investigates the empirical benefits brought about by applying the TB-DAG when computing mixed-Nash equilibria. As highlighted in Sections 1 and 3, the literature on team games has been the one most concerned with the efficient computation of mixed Nash, with different works establishing benchmarks and proposing algorithms. We will, therefore, focus on comparing our approach against those previous related works. Our main results are reported in Table 3, which reports the size of the original games and our derived representations, and in Table 4, which reports the time required to solve those instances up to an approximation factor. 29 Original game G Belief Game ˜G Team ▲’s DAG Team ▼’s DAG Nodes Infosets Sequences Information Nodes Infosets Sequences Vertices Edges Vertices Edges                                                                                                                                                                                                                                                                                                                                                        
+
+> G|H| |I ▲||I ▼||Σ▲||Σ▼|max P|P|k|˜H| |˜I▲||˜I▼||˜Σ▲||˜Σ▼||D ▲∪ S ▲||E▲||D ▼∪ S ▼||E▼|
+> 3K3 {3} 151 24 12 48 24 662119 486 12 1062 24 487 918 37 36
+> 3K4 {3} 601 32 16 64 32 12 845 ,049 4487 16 9800 32 2100 6711 49 48
+> 3K6 {3} 3001 48 24 96 48 30 12 6,768 ,601 267 ,184 24 574 ,588 48 54 ,255 336 ,944 73 72
+> 3K8 {3} 8401 64 32 128 64 56 16 617 ,929 ,873 13 ,194 ,749 32 27 ,978 ,704 64 1,783 ,926 15 ,564 ,765 97 96
+> 3K12 {3} 33 ,001 96 48 192 96 132 24 —————————
+> 4K5 {3,4} 7801 80 80 160 160 20 10 577 ,764 ,601 102 ,725 10 ,385 221 ,810 21 ,740 26 ,566 124 ,875 4621 15 ,415
+> 4K5 {4} 7801 120 40 240 80 60 15 174 ,273 ,721 11 ,739 ,640 40 25 ,581 ,730 80 998 ,471 4,658 ,070 121 120
+> 3L133 {3} 12 ,688 456 228 912 456 961,293 ,658 96 ,115 228 208 ,136 456 23 ,983 49 ,005 685 684
+> 3L143 {3} 40 ,409 800 400 1600 800 16 852 ,745 ,745 2,625 ,209 400 5,736 ,592 800 139 ,964 417 ,027 1201 1200
+> 3L151 {3} 19 ,981 1000 500 2000 1000 20 10 152 ,692 ,141 16 ,564 ,617 500 36 ,016 ,124 1000 150 ,707 496 ,196 1501 1500
+> 3L153 {3} 98 ,606 1240 620 2480 1240 25 10 1,833 ,113 ,016 67 ,400 ,747 500 147 ,671 ,104 1240 855 ,397 3,486 ,091 1861 1860
+> 3L223 {3} 15 ,659 1260 630 2884 1442 44521 ,285 47 ,579 812 100 ,420 1624 32 ,750 45 ,913 2437 2436
+> 3L523 {3} 1,299 ,005 99 ,168 49 ,584 246 ,304 123 ,152 44178 ,141 ,285 19 ,499 ,329 73 ,568 40 ,224 ,140 147 ,136 2,911 ,352 4,183 ,685 220 ,705 220 ,704
+> 4L133 {3,4} 159 ,001 1632 1632 3264 3264 96985 ,916 ,371 475 ,081 135 ,322 1,011 ,500 292 ,400 79 ,351 158 ,058 75 ,157 155 ,475
+> 3D3 {3} 27 ,622 1023 513 2046 1020 9670 ,704 ,118 3,235 ,954 765 5,501 ,789 1272 91 ,858 215 ,967 1522 1521
+> 3D4 {3} 524 ,225 10 ,924 5460 21 ,840 10 ,920 16 8—————4,043 ,377 13 ,749 ,608 16 ,381 16 ,380
+> 4D3 {2,4} 663 ,472 6144 6144 12 ,285 12 ,285 96—————514 ,120 1,217 ,310 486 ,442 1,155 ,144
+> 6D2 {2,4,6} 524 ,225 4096 4096 8190 8190 865,879 ,066 ,753 1,094 ,865 701 ,001 1,869 ,170 1,202 ,948 254 ,758 457 ,795 218 ,570 389 ,995
+> 6D2 {4,6} 524 ,225 5704 2488 10 ,920 5460 16 84,992 ,649 ,921 15 ,032 ,900 33 ,905 25 ,363 ,692 57 ,194 991 ,861 2,029 ,546 46 ,236 60 ,717
+> 6D2 {6} 524 ,225 6584 1608 12 ,922 3458 32 10 2,126 ,796 ,737 126 ,748 ,497 2532 208 ,964 ,598 4382 3,158 ,364 7,395 ,885 5551 5550
+
+Table 3: Game sizes of the equivalent representations proposed in the paper (that is, belief game and TB-DAG) on several standard parametric benchmark team games. See Section 8 for a description of the games and for a detailed description of the meaning of each column. Values denoted by ‘—’ are missing due to out-of-time or out-of-memory errors. 
+
+## 8.1 Postprocessing techniques 
+
+In practice, ConstructTB-DAG is suboptimal in several ways. Here, we state some straightforward postpro-cessing techniques that can be used to shrink the size of the TB-DAG. These do not affect the theoretical statements as the primary focus of those is isolating the dependency on our parameters of interest, but they can significantly affect the practical performance, so we apply them in the experiments. 1. If two terminal nodes z, z ′ have the same sequence, we remove one of them (say, z′) from our DAG because it is redundant, and alias x[{z′}] to x[{z}]. If this removal causes a section of the DAG to no longer contain any terminal descendants, we also remove that section. 2. If a decision point in the TB-DAG has (at most) one parent and (at most) one child, we remove the decision point and directly connect the parent observation node to the grandchild decision points. In particular, if the team has perfect recall, the above two optimizations are sufficient for the TB-DAG to coincide with the sequence form. 
+
+## 8.2 Experimental setting 
+
+First, we give a complete description of the experimental setting in which the different algorithms are tested. 
+
+Game instances We run experiments on commonly adopted parametric benchmarks in the team games literature. The following is the naming convention adopted for the instances considered: 
+
+• nKr: n-player Kuhn poker with r ranks [33]. 
+
+• nLbrs : n-player Leduc poker with a b-bet maximum in each betting round, r ranks, and s suits [48]. 
+
+• nDd: n-player Liar’s Dice with one d-sided die for each player [36]. The full description of these games can be found in Farina et al. [16] . For each game, the players belonging to team ▽▽▽ are represented along with the name. For example, 4L133 {3,4} indicates a 4-player Leduc poker game with 1 bet each round, 3 ranks, 3 suits, where players 3 and 4 belong to team ▽▽▽ and are therefore coordinated by player ▼.30 Original game CFR on TB-DAG Column generation Game {▼} ▲ Value Nodes Information This paper ZFCS22                                                                                                                                                                                                                       
+
+> Gu∗|H| max P|P|kInit ε=10 −3ε=10 −4Init ε=10 −3ε=10 −43K3 {3} 0.000 151 660.00 s0.00s 0.00s 0.00 s0.00s 0.00s
+> 3K4 {3} -0.042 601 12 80.01 s0.00s 0.00s 0.00 s0.01s 0.02s
+> 3K6 {3} -0.024 3001 30 12 1.03 s0.03s 0.12s 0.00 s0.14s 0.14s
+> 3K8 {3} -0.019 8401 56 16 1m6s 4.73s 32.36s 0.01 s0.23s 0.32s
+> 3K12 {3} -0.014 33 ,001 132 24 —oom oom 0.01 s0.84s 1.39s
+> 4K5 {3,4} -0.037 7801 20 10 0.55 s0.03s 0.05s ———
+> 4K5 {4} -0.030 7801 60 15 13 .71 s1.59s 6.34s ———
+> 3L133 {3} 0.215 12 ,688 960.49 s0.02s 0.05s 0.02 s24.89s 45.96s
+> 3L143 {3} 0.107 40 ,409 16 81.39 s0.10s 0.48s 0.05 s2m 4s 6m 3s
+> 3L151 {3} -0.019 19 ,981 20 10 1.54 s0.18s 0.50s 0.04 s3.06s 13.98s
+> 3L153 {3} 0.024 98 ,606 25 10 16 .03 s1.24s 4.94s 0.12 s7m 23s 28m 13s
+> 3L223 {3} 0.516 15 ,659 440.13 s0.03s 0.08s 0.05 s13.48s 18.53s
+> 3L523 {3} 0.953 1,299 ,005 4418 .02 s11.26s 24.86s 6.83 s>6h >6h
+> 4L133 {3,4} 0.147 159 ,001 962.03 s0.21s 0.92s ———
+> 3D3 {3} 0.284 27 ,622 960.80 s0.11s 0.40s 0.09 s11.05s 11.05s
+> 3D4 {3} 0.284 524 ,225 16 81m3s 22.54s 1m 28s 1.57 s3h 19m 3h 19m
+> 4D3 {2,4} 0.200 663 ,472 9627 .05 s2.31s 4.70s ———
+> 6D2 {2,4,6} 0.072 524 ,225 8610 .74 s1.72s 4.26s ———
+> 6D2 {4,6} 0.265 524 ,225 16 816 .55 s3.80s 11.09s ———
+> 6D2 {6} 0.333 524 ,225 32 10 31 .00 s30.20s 1m 11s ———
+
+Table 4: Runtime of our CFR-based algorithm (column ‘ This paper ’) using the TB-DAG, compared to the prior state-of-the-art algorithms based on linear programming and column generation by Zhang et al. [59] (‘ ZFCS22 ’), on several standard parametric benchmark games. See Section 8 for a description of the games. Column “u∗” is the TMECor value of the game. Column “Init” represents the time needed to construct the structures needed for solving the games. This corresponds to fully exploring the TB-DAG and computing its full representation in memory in the TB-DAG case. Columns “ ε = 10 −3” and “ ε = 10 −4” list the amount of time required for that algorithm to compute an ε-approximate TMECor of the game. Missing or unknown values are denoted by‘—’. For each row, the background color of each runtime column is set proportionally to the ratio with the best runtime for the row, according to the logarithmic color scale 1 10 ≥ 100 . Runtimes that are more than two orders of magnitude larger than the best runtime for the row (i.e., for which R > 10 2)are colored as if R = 10 2.
+
+CFR Variant used We implemented the Predictive CFR + (PCFR +) [ 17 ] state-of-the-art variant of CFR on the TB-DAG. PCFR + is a predictive regret minimization algorithm and uses quadratic averaging of iterates. At each time t, we use the previous utility vector for each time as the prediction for the next. We remark that applying the CFR algorithm on the belief game and on the TB-DAG leads to identical iterations since the two representations are structurally equivalent (as proven in Section 6), and CFR is a deterministic algorithm. We therefore focus on the TB-DAG representation due to its efficiency. We also remark that the optimizations discussed in Sections 6.3 and 8.1 are applied during the experiments. 
+
+Baselines We use the column generation framework of Farina et al. [16] and refined by Zhang et al. [59] (henceforth “ ZFCS22 ”) as the prior state-of-the-algorithm to compare the performance of CFR on the team belief DAG. ZFCS22 belongs to the family of column generation approaches adopted in the past literature in team games and described in Section 3. ZFCS22 iteratively refines the strategy of each team by solving best-response problems using a tight integer program derived from the theory of extensive-form correlation [ 53 ]. We used the original code by the authors, which was implemented for three-player games in which a team of two players faces an opponent. 
+
+Hardware used All experiments were run on a 64-core AMD EPYC 7282 processor. Each algorithm was allocated a maximum of 4 threads, 60GBs of RAM, and a time limit of 6 hours. ZFCS22 uses the commercial solver Gurobi to solve linear and integer linear programs. All CFR implementations are single-threaded, while we allowed Gurobi to use up to four threads. 31 8.3 Discussion of the results 
+
+We now discuss the empirical results obtained by our algorithms. 
+
+Representation vs Game size We analyze the size results from Table 3. The different orders of magnitude of the size of each representation and the original game highlight how the belief game construction increases the size of the game. Moreover, the striking difference between the two equivalent approaches of belief game and TB-DAG motivates the introduction of the latter: the direct construction of a decision problem and the more efficient representation brought by the DAG structure allow the construction of a substantially smaller representation. The benefits of the DAG imperfect-recall structure are especially beneficial in the case of Liar’s Dice instances, which have a larger depth of the game tree. Overall, this comparison confirms the results from the worst-case bounds from Sections 4.4, D.4 and 6.1. The exponential factor of inefficiency between the two representations agrees with the results from the discussion in Section D.3. There are also some minor remarks that are worth to be made. Whenever ▼ is a perfect-recall player (equivalently, when the team ▽▽▽ is composed of a single player), our constructions never increase the size of its decision problem. In the case of the belief game, we have that the adversary retains an identical number of information sets and sequences. In the case of the TB-DAG, the correspondence is |D ▼| = |˜I▼| + 1 and 
+
+|S ▼| = | ˜Σ▼|
+
+Running time We focus on the time performance of CFR applied to the games from Table 4. The main observation is that the TB-DAG approach combined with the CFR algorithm has good performance in most of the games traditionally employed in the team game literature. In particular, impressive performance is achieved in games where the information complexity is low. This is the case of Leduc and Liar’s Dice benchmarks (whose number of infosets and sequences in the original game are reported in Table 3). On the other hand, the column generation approaches struggle since the dimension of the pure strategy space depends exponentially on the number of information sets. The performance of our method depends crucially on having low information complexity. In fact, in games such as 3K8 and 3K12 where the information complexity is high, we observe poor performance even though the game tree is small. On the other hand, column generation techniques avoid this cost by considering an incrementally larger action space. 
+
+# 9 Conclusion 
+
+This paper proposed a novel two-player zero-sum representation called the team-belief DAG for the computation of mixed Nash equilibria in timeable two-player zero-sum imperfect-recall games and team max-min equilibria with correlation in adversarial team games. We proposed a conversion mechanism that can be interpreted from the point of view of a perfect-recall coordinator which manages all the player’s strategic choices while not accessing any information destined to be imperfectly recalled. The behavior of such a coordinator is defined based on beliefs and observations, novel concepts that allow an intuitive yet effective characterization. We also introduced a DAG decision problem structure for the TB-DAG to characterize more efficiently our conversion, by avoiding the pitfalls of an extensive-form characterization of the equivalent game. We theoretically analyzed the efficiency of our method through worst-case bounding of the size of the converted game, and we experimentally tested it on a set of customary benchmark games against a state-of-the-art approach from the literature. Our results are accompanied by novel complexity results that further characterize the hardness of computing equilibria in imperfect-recall games. In particular, we prove that computing a max-min strategy in behavioral strategies is ΣP 
+
+> 2
+
+-hard even when the number of players is constant and there is no chance. Similarly, we prove that computing a Nash equilibrium in mixed strategies is ∆P 
+
+> 2
+
+-hard. Many directions departing from this work can be interesting for further development of the literature on imperfect-recall and team games. In particular, designing an algorithm able to exploit both the TB-DAG representation and the incrementality of column generation is an interesting approach to surpass the previous developments. Moreover, the TB-DAG construction may possibly be improved by preprocessing the game to reduce its information complexity, mitigating the exponential blowup due, while generalizing the notion of 32 triangle-free games [13 ] to DAG games may extend the class of games that can be solvable in polynomial time. Another possible direction follows the more traditional two-player zero-sum literature. It aims to develop specific abstraction, dynamic pruning, and subgame-solving techniques tailored to our conversion’s resulting two-player zero-sum games. Finally, the question whether some of the results presented in the paper can be extended to the non-timeable or absent-minded imperfect-recall case is open. 
+
+# Acknowledgements 
+
+The work of Prof. Gatti’s research group is funded by the FAIR (Future Artificial Intelligence Research) project, funded by the NextGenerationEU program within the PNRR-PE-AI scheme (M4C2, Investment 1.3, Line on Artificial Intelligence). The work of Prof. Sandholm’s group is supported by the Vannevar Bush Faculty Fellowship ONR N00014-23-1-2876, National Science Foundation grants RI-2312342 and RI-1901403, ARO award W911NF2210266, and NIH award A240108S001. Brian Hu Zhang’s work is also supported in part by the CMU Computer Science Department Hans Berliner PhD Student Fellowship. 
+
+# References 
+
+[1] Anton Bakhtin, Noam Brown, Emily Dinan, Gabriele Farina, Colin Flaherty, Daniel Fried, Andrew Goff, Jonathan Gray, Hengyuan Hu, Athul Paul Jacob, Mojtaba Komeili, Karthik Konath, Minae Kwon, Adam Lerer, Mike Lewis, Alexander H. Miller, Sasha Mitts, Adithya Renduchintala, Stephen Roller, Dirk Rowe, Weiyan Shi, Joe Spisak, Alexander Wei, David Wu, Hugh Zhang, and Markus Zijlstra. Human-level play in the game of diplomacy by combining language models with strategic reasoning. Science , 378(6624): 1067–1074, 2022. [2] Michael Bowling, Neil Burch, Michael Johanson, and Oskari Tammelin. Heads-up limit hold’em poker is solved. Science , 347(6218), January 2015. [3] Noam Brown and Tuomas Sandholm. Safe and nested subgame solving for imperfect-information games. In Conference on Neural Information Processing Systems (NeurIPS) , 2017. [4] Noam Brown and Tuomas Sandholm. Superhuman AI for heads-up no-limit poker: Libratus beats top professionals. Science , 359(6374):418–424, 2018. [5] Noam Brown and Tuomas Sandholm. Solving imperfect-information games via discounted regret minimization. In AAAI Conference on Artificial Intelligence (AAAI) , 2019. [6] Noam Brown and Tuomas Sandholm. Superhuman AI for multiplayer poker. Science , 365(6456):885–890, 2019. [7] Colin Camerer. Behavioral Game Theory: Experiments in Strategic Interaction . Princeton University Press, 2003. [8] Luca Carminati, Federico Cacciamani, Marco Ciccone, and Nicola Gatti. Public information representa-tion for adversarial team games. In NeurIPS Cooperative AI Workshop , 2021. [9] Andrea Celli and Nicola Gatti. Computational results for extensive-form adversarial team games. In 
+
+Proceedings of the AAAI Conference on Artificial Intelligence , number 1, 2018. [10] Jiří Čermák, Branislav Bošansk` y, Karel Horák, Viliam Lis` y, and Michal Pěchouček. Approximating maxmin strategies in imperfect recall games using a-loss recall property. International Journal of Approximate Reasoning , 93:290–326, 2018. [11] Jianer Chen, Benny Chor, Mike Fellows, Xiuzhen Huang, David Juedes, Iyad A Kanj, and Ge Xia. Tight lower bounds for certain parameterized NP-hard problems. Information and Computation , 201(2): 216–231, 2005. 33 [12] Francis Chu and Joseph Halpern. On the NP-completeness of finding an optimal strategy in games with common payoffs. International Journal of Game Theory , 2001. [13] Gabriele Farina and Tuomas Sandholm. Polynomial-time computation of optimal correlated equilibria in two-player extensive-form games with public chance moves and beyond. In Conference on Neural Information Processing Systems (NeurIPS) , 2020. [14] Gabriele Farina, Andrea Celli, Nicola Gatti, and Tuomas Sandholm. Ex ante coordination and collusion in zero-sum multi-player extensive-form games. In Conference on Neural Information Processing Systems (NeurIPS) , 2018. [15] Gabriele Farina, Christian Kroer, and Tuomas Sandholm. Regret circuits: Composability of regret minimizers. In International Conference on Machine Learning , 2019. [16] Gabriele Farina, Andrea Celli, Nicola Gatti, and Tuomas Sandholm. Connecting optimal ex-ante collusion in teams to extensive-form correlation: Faster algorithms and positive complexity results. In International Conference on Machine Learning , 2021. [17] Gabriele Farina, Christian Kroer, and Tuomas Sandholm. Faster game solving via predictive Blackwell approachability: Connecting regret matching and mirror descent. In AAAI Conference on Artificial Intelligence (AAAI) , 2021. [18] Jakob Foerster, Francis Song, Edward Hughes, Neil Burch, Iain Dunning, Shimon Whiteson, Matthew Botvinick, and Michael Bowling. Bayesian action decoder for deep multi-agent reinforcement learning. In Proceedings of the 36th International Conference on Machine Learning , volume 97 of Proceedings of Machine Learning Research , 2019. [19] Sam Ganzfried and Tuomas Sandholm. Endgame solving in large imperfect-information games. In 
+
+International Conference on Autonomous Agents and Multi-Agent Systems (AAMAS) , 2015. [20] Andrew Gilpin and Tuomas Sandholm. A competitive Texas Hold’em poker player via automated abstraction and real-time equilibrium computation. In National Conference on Artificial Intelligence (AAAI) , 2006. [21] Hugo Gimbert, Soumyajit Paul, and B. Srivathsan. A bridge between polynomial optimization and games with imperfect recall. In Autonomous Agents and Multi-Agent Systems , 2020. [22] M. Grotschel, L. Lovász, and A. Schrijver. Geometric Algorithms and Combinatorial Optimizations .Springer-Verlag, 1993. [23] Sergiu Hart and Andreu Mas-Colell. A simple adaptive procedure leading to correlated equilibrium. 
+
+Econometrica , 68:1127–1150, 2000. [24] Johan Håstad. Some optimal inapproximability results. Journal of the ACM (JACM) , 48(4):798–859, 2001. [25] Albert Xin Jiang, Ariel Procaccia, Yundi Qian, Nisarg Shah, and Milind Tambe. Defender (mis)coordination in security games. In International Joint Conference on Artificial Intelligence (IJCAI) ,2013. [26] Michael Johanson. Measuring the size of large no-limit poker games. Technical report, University of Alberta, 2013. [27] Mamoru Kaneko and J Jude Kline. Behavior strategies, mixed strategies and perfect recall. International Journal of Game Theory , 24(2):127–145, 1995. [28] Daphne Koller and Nimrod Megiddo. The complexity of two-person zero-sum games in extensive form. 
+
+Games and Economic Behavior , 4(4):528–552, October 1992. 34 [29] Vojtěch Kovařík, Martin Schmid, Neil Burch, Michael Bowling, and Viliam Lis` y. Rethinking formal models of partially observable multiagent decision making. Artificial Intelligence , 303:1036–45, 2022. [30] Mark W Krentel. The complexity of optimization problems. Journal of computer and system sciences ,36(3):490–509, 1988. [31] Christian Kroer and Tuomas Sandholm. Imperfect-recall abstractions with bounds in games. In ACM Conference on Economics and Computation (EC) , 2016. [32] H. W. Kuhn. Extensive games. Proc. of the National Academy of Sciences , 36:570–576, 1950. [33] H. W. Kuhn. A simplified two-person poker. In Contributions to the Theory of Games , volume 1 of 
+
+Annals of Mathematics Studies, 24 , pages 97–103. 1950. [34] H. W. Kuhn. Extensive games and the problem of information. In Contributions to the Theory of Games ,volume 2 of Annals of Mathematics Studies, 28 , pages 193–216. 1953. [35] Marc Lanctot, Richard Gibson, Neil Burch, Martin Zinkevich, and Michael Bowling. No-regret learning in extensive-form games with imperfect recall. In International Conference on Machine Learning (ICML) ,2012. [36] Viliam Lis` y, Marc Lanctot, and Michael H Bowling. Online monte carlo counterfactual regret minimization for search in imperfect information games. In Autonomous Agents and Multi-Agent Systems , 2015. [37] H. B. McMahan, Geoffrey J. Gordon, and Avrim Blum. Planning in the presence of cost functions controlled by an adversary. In International Conference on Machine Learning , 2003. [38] Matej Moravcik, Martin Schmid, Karel Ha, Milan Hladik, and Stephen Gaukrodger. Refining subgames in large imperfect information games. In AAAI Conference on Artificial Intelligence (AAAI) , 2016. [39] Matej Moravčík, Martin Schmid, Neil Burch, Viliam Lisý, Dustin Morrill, Nolan Bard, Trevor Davis, Kevin Waugh, Michael Johanson, and Michael Bowling. Deepstack: Expert-level artificial intelligence in heads-up no-limit poker. Science , May 2017. [40] Ashutosh Nayyar, Aditya Mahajan, and Demosthenis Teneketzis. Decentralized stochastic control with partial history sharing: A common information approach. IEEE Transactions on Automatic Control , 58 (7):1644–1658, 2013. [41] Julien Perolat, Bart De Vylder, Daniel Hennes, Eugene Tarassov, Florian Strub, Vincent de Boer, Paul Muller, Jerome T. Connor, Neil Burch, Thomas Anthony, Stephen McAleer, Romuald Elie, Sarah H. Cen, Zhe Wang, Audrunas Gruslys, Aleksandra Malysheva, Mina Khan, Sherjil Ozair, Finbarr Timbers, Toby Pohlen, Tom Eccles, Mark Rowland, Marc Lanctot, Jean-Baptiste Lespiau, Bilal Piot, Shayegan Omidshafiei, Edward Lockhart, Laurent Sifre, Nathalie Beauguerlange, Remi Munos, David Silver, Satinder Singh, Demis Hassabis, and Karl Tuyls. Mastering the game of stratego with model-free multiagent reinforcement learning. Science , 378(6623):990–996, 2022. [42] Michele Piccione and Ariel Rubinstein. On the interpretation of decision problems with imperfect recall. 
+
+Games and Economic Behavior , 20:3–24, 1997. [43] I. Romanovskii. Reduction of a game with complete memory to a matrix game. Soviet Mathematics , 3, 1962. [44] Aviad Rubinstein. Settling the complexity of computing approximate two-player nash equilibria. ACM SIGecom Exchanges , 15(2):45–49, 2017. [45] Tuomas Sandholm. Abstraction for solving large incomplete-information games. In AAAI Conference on Artificial Intelligence (AAAI) , 2015. Senior Member Track. 35 [46] Tuomas Sandholm. Solving imperfect-information games. Science , 347(6218):122–123, 2015. [47] Marcus Schaefer and Christopher Umans. Completeness in the polynomial-time hierarchy: A compendium. 
+
+SIGACT News , 33(3):32–49, 2002. [48] Finnegan Southey, Michael Bowling, Bryce Larson, Carmelo Piccione, Neil Burch, Darse Billings, and Chris Rayner. Bayes’ bluff: Opponent modelling in poker. In Conference on Uncertainty in Artificial Intelligence (UAI) , 2005. [49] Oskari Tammelin, Neil Burch, Michael Johanson, and Michael Bowling. Solving heads-up limit Texas hold’em. In International Joint Conference on Artificial Intelligence (IJCAI) , 2015. [50] Emanuel Tewolde, Caspar Oesterheld, Vincent Conitzer, and Paul W. Goldberg. The computational complexity of single-player imperfect-recall games. In International Joint Conference on Artificial Intelligence (IJCAI) , 2023. [51] John von Neumann. Zur Theorie der Gesellschaftsspiele. Mathematische Annalen , 100:295–320, 1928. [52] Bernhard von Stengel. Efficient computation of behavior strategies. Games and Economic Behavior , 14 (2):220–246, 1996. [53] Bernhard von Stengel and Françoise Forges. Extensive-form correlated equilibrium: Definition and computational complexity. Mathematics of Operations Research , 33(4):1002–1022, 2008. [54] Bernhard von Stengel and Daphne Koller. Team-maxmin equilibria. Games and Economic Behavior , 21 (1):309–321, 1997. [55] Martin J Wainwright and Michael Irwin Jordan. Graphical models, exponential families, and variational inference . Now Publishers Inc, 2008. [56] Kevin Waugh. Abstraction in large extensive games. Master’s thesis, University of Alberta, 2009. [57] Brian Hu Zhang and Tuomas Sandholm. Polynomial-time optimal equilibria with a mediator in extensive-form games. In Conference on Neural Information Processing Systems (NeurIPS) , 2022. [58] Brian Hu Zhang and Tuomas Sandholm. Team correlated equilibria in zero-sum extensive-form games via tree decompositions. In AAAI Conference on Artificial Intelligence (AAAI) , 2022. [59] Brian Hu Zhang, Gabriele Farina, Andrea Celli, and Tuomas Sandholm. Optimal correlated equilibria in general-sum extensive-form games: Fixed-parameter algorithms, hardness, and two-sided column-generation. In ACM Conference on Economics and Computation (EC) , 2022. [60] Brian Hu Zhang, Gabriele Farina, Ioannis Anagnostides, Federico Cacciamani, Stephen Marcus McAleer, Andreas Alexander Haupt, Andrea Celli, Nicola Gatti, Vincent Conitzer, and Tuomas Sandholm. Computing optimal equilibria and mechanisms via learning in zero-sum extensive-form games. In 
+
+Conference on Neural Information Processing Systems (NeurIPS) , 2023. [61] Brian Hu Zhang, Ioannis Anagnostides, Gabriele Farina, and Tuomas Sandholm. Efficient Φ-regret minimization with low-degree swap deviations in extensive-form games, 2024. arXiv. [62] Brian Hu Zhang, Gabriele Farina, and Tuomas Sandholm. Mediator interpretation and faster learning algorithms for linear correlated equilibria in general extensive-form games. In International Conference on Learning Representations , 2024. [63] Naifeng Zhang, Stephen McAleer, and Tuomas Sandholm. Faster game solving via hyperparameter schedules. arXiv preprint arXiv:2404.09097 , 2024. 36 [64] Youzhi Zhang and Bo An. Converging to team-maxmin equilibria in zero-sum multiplayer games. In 
+
+International Conference on Machine Learning (ICML) , 2020. [65] Youzhi Zhang, Bo An, and Jakub Čern` y. Computing ex ante coordinated team-maxmin equilibria in zero-sum multiplayer extensive-form games. In AAAI Conference on Artificial Intelligence (AAAI) , 2021. [66] Martin Zinkevich. Online convex programming and generalized infinitesimal gradient ascent. In 
+
+International Conference on Machine Learning (ICML) , 2003. [67] Martin Zinkevich, Michael Bowling, Michael Johanson, and Carmelo Piccione. Regret minimization in games with incomplete information. In Conference on Neural Information Processing Systems (NeurIPS) ,2007. 
+
+# AppendixA. Omitted Proofs from Section 5 
+
+Proposition 5.2. Let R and ˆR be as in Algorithm DAG-Generic . Then the regret of R with utility sequence 
+
+u1, . . . , uT is equal to the regret of ˆR with utility sequence D⊤u1, . . . , D⊤uT .Proof. Using the fact that D is a bijection, we have 
+
+RT 
+
+> Q
+
+= max 
+
+> x∈Q
+> T
+
+X
+
+> t=1
+
+ut, x − xt
+
+= max  
+
+> ˆx∈ˆQ
+> T
+
+X
+
+> t=1
+
+ut, Dx − D ˆxt
+
+= max  
+
+> ˆx∈ˆQ
+> T
+
+X
+
+> t=1
+
+D⊤ut, x − xt = ˆRT
+
+> Q
+
+.
+
+Theorem 5.3 (DAG regret minimization via CFR) . DAG-CFR produces the same iterates as DAG-Generic 
+
+with CFR as ˆR. Therefore, in particular, the regret of DAG-CFR with utility sequence u1, . . . , uT is the same as that of CFR on the tree form with utility sequence ˆu1 := D⊤u1, . . . , ˆut := D⊤uT . Moreover, the per-iteration runtime of DAG-CFR is linear in the number of edges in the DAG. In particular, taking any reasonably efficient regret minimizer over simplices, the regret of DAG-CFR after T iterations is at most O(|S| √T ).Proof. Let s ∈ D be any decision point of Q, and let ˆs ∈ ˆD be any decision point in ˆQ with δ( ˆs) = s. It is enough to show that the sequence of utility vectors observed by Rˆs when running DAG-Generic with CFR as 
+
+ˆR is the same as the sequence of utility vectors observed by Rs in DAG-CFR . We show this by induction on the decision points ˆs, leaves first. First, if ˆs has no decision point descendants, then the claim is trivial because, by construction of D⊤,we have ˆut[ ˆsa ] = ut[sa ] for every a ∈ As. Now let ˆs ∈ ˆD be any internal node and s = δ( ˆs). By inductive hypothesis, for every decision point descendant ˆs′ of ˆs, at every timestep t, Rˆs′ receives the same utility vector as Rs′ where s′ = δ( ˆs′), and thus produces the same behavioral strategy rts′ = ˆrt 
+
+> ˆs′
+
+. Thus, at any timestep t the utility vector ˆvt[ˆ s∗] that is passed to Rˆs is given by 
+
+ˆvt[ˆ sa ] = ˆ ut[ˆ sa ] + X 
+
+> ˆs′:pˆs′=ˆ sa
+
+ˆrt 
+
+> ˆs′
+
+, ˆvt[ˆ s′∗]
+
+= ut[sa ] + X 
+
+> ˆs′:pˆs′=ˆ sa
+
+rts′ , vt[s′∗]
+
+= ut[sa ] + X
+
+> s′:sa ∈Ps
+
+rts′ , vt[s′∗]
+
+= vt[sa ]
+
+37 where once again we use the notation s′ := δ( ˆs′), and the inductive hypothesis is used in the second equality on every term in the sum. 
+
+# AppendixB. Omitted Proofs from Section 6 
+
+Theorem 6.5. Assuming FPT ̸ = W[1] , there is no algorithm for computing the mixed Nash value of a 
+
+one-player game of imperfect recall with information complexity k whose runtime is f (k)poly (|H| ) for some arbitrary function f .Proof. We reduce from k-CLIQUE. Given a graph G = ( V, E ), we construct the following game with a single team with two members. Nature selects two integers j1, j 2 ∈ [k] uniformly at random. Both team members observe their indices privately and select vertices v1(j1), v 2(j2) ∈ V . If j1 = j2, the team scores 1 if and only if v1 = v2; otherwise the team scores 0. If j1̸ = j2, the team scores 1 if and only if (v1, v 2) is an edge in the graph; otherwise the team scores 0. This game has 2k information sets ( k for each player), so the information complexity is certainly bounded by 2k.We claim that there is a strategy profile of the team that scores 1 if and only if a k-clique exists in G.Indeed, if a k-clique exists in G, then the following profile scores 1: let (v(1) , . . . , v (k)) be a k-clique. Each player plays the pure strategy vi(ji) = v(ji).Conversely, a pure profile is a pair of functions v1, v 2 : [ k] → V . If this profile scores 1, then we must have v1 = v2 =: v (because otherwise the team scores 0 when both players are given an index i for which 
+
+v1(i)̸ = v2(i)), and (v(i), v (j)) is an edge for all (i, j ) (otherwise the team scores 0 when one player is given i
+
+and the other player is given j). Thus v is a k-clique. 
+
+# AppendixC. Omitted Proofs from Section 7 
+
+Theorem 7.1 (28 , 12 , 53 ). Finding the optimal strategy in a one-player, timeable game of imperfect recall is 
+
+NP -hard, even when the desired precision ε is an absolute constant. Proof. We essentially follow the proof of Chu and Halpern [12] , but we are more explicit about ordering the turns so that we can later bound the information complexity of our game. Given a 3-CNF formula ϕ with m
+
+clauses and n variables, construct the following game with two team members on the maximizing team and no opponent. Nature picks a random clause j ∈ [m] and a random variable xi that appears in clause j. P1 privately observes the variable and is asked to assign a value (either true or false) to it. P2 then privately observes the clause j (but not the variable i, nor P1’s assignment), and must pick one of the three variables in the clause. The team wins if P2 picks variable i and P1 assigns the value to i that makes the clause true. Note that the pure strategies of P1 are precisely the assignments x ∈ { 0, 1}n. We claim that, if P1 plays assignment x, the best value for the team is precisely 1/3 of the maximum number of clauses satisfied by x.To see this, note that the team will lose with probability 2/3 no matter what since P2 has only a 1/3 chance of picking the same variable that was selected by Nature. Conversely, if P2 happens to pick the right variable, the team wins if and only if P1’s assignment to that variable satisfies the clause j. Thus, P2’s best strategy, given P1 strategy x, is always to pick the satisfying variable in the clause, if there is one. By construction, this achieves the desired value. Finally, by the PCP theorem [ 24 ], the above proof also shows that there exists an absolute constant ε
+
+such that computing the optimal value in a team game with no adversary to accuracy ε is NP -hard. 
+
+Corollary 7.2. Assuming the exponential time hypothesis [ 11 ], there is no 2o(k) · poly (n)-time algorithm for finding the optimal strategy in a one-player timeable game of imperfect recall. Proof. The information complexity of the game used in the above construction is 13 k = n, and the branching factor can be made an absolute constant by splitting the root chance node into Θ( log m) layers. Finally,        
+
+> 13 Here we use the ordering of the players: namely, we have k=nonly because P1 plays before P2. If the order of the players were flipped, we would instead have k=m.
+
+38 the size of the game is O(mn ). Thus, Theorem 6.3 implies a SAT-solving algorithm whose runtime is 2O(k).Thus, in particular, if the k were replaced by any o(k) term, then SAT would have a 2o(n)-time algorithm, violating ETH. 
+
+Theorem 7.3. BehavioralMaxMin is in ΣP 
+
+> 2
+
+. If ▼ has perfect recall, it is in NP .Proof. Consider a behavioral max-min strategy represented by a distribution over the actions at each information set I. Let δ > 0, and consider rounding each entry of the behavioral-form strategy by at most an additive δ so that the resulting strategy is rational. Let x′ be the correlation plan of the resulting strategy. Thus, for any given terminal node s, the resulting reach probability x′[s] is perturbed by at most an additive O(N δ ) where N is the number of nodes in the game. Thus, ∥x′ − x∥1 ≤ O(N 2δ). Thus, for any realization-form strategy y for the opponent, we have |⟨ x′ − x, Ay ⟩| ≤ ∥ x′ − x∥1∥Ay ∥∞ ≤ O(N 2δ), so x′ is 
+
+O(N 2δ)-close to the optimal solution. Taking δ < O (ε/N 2) thus concludes the proof. 
+
+Theorem 7.4. BehavioralMaxMin is ΣP 
+
+> 2
+
+-hard, even when the number of players is constant and there is no chance. Proof. We first give a reduction involving chance, then show how to relax this condition. We reduce from 
+
+∃∀ 3-SAT, which is known to be ΣP 
+
+> 2
+
+-complete [ 47 ]. The ∃∀ 3-SAT problem is to, given a 3-DNF formula 
+
+ϕ(X, Y ), determine whether ∃X ∀Y ϕ (X, Y ) holds. Given a 3-DNF formula ϕ with m clauses, n1 variables in X, and n2 variables in Y , construct the following game between 
+
+> ▽▽▽
+
+with 3 players and ▽▽▽ with 3 players. Nature chooses three variables x1, x 2, x 3 from X and three variables y1, y 2, y 3 from Y . For each variable xi (respectively yi), Player i of 
+
+> ▽▽▽
+
+(respectively ▽▽▽) is asked for an assignment to the variable. If any two players of 
+
+> ▽▽▽
+
+(respectively ▽▽▽) have the same variable but differ in their assignment, 
+
+> ▽▽▽
+
+gets value −M (respectively M ) where M is a large value. In addition, 
+
+> ▽▽▽
+
+gets value 1 if at least one term in the 3-DNF ϕ is satisfied by the assignments of 
+
+> ▽▽▽
+
+and ▽▽▽.Let n = max (n1, n 2). We complete the proof by showing that 
+
+> ▽▽▽
+
+gets at least 1/n 3 if and only if 
+
+∃X ∀Y ϕ (X, Y ) holds; otherwise, their value is at most 0. We first show that for large enough M , since players of 
+
+> ▽▽▽
+
+cannot correlate, 
+
+> ▽▽▽
+
+’s pure strategies are dominant over non-pure ones. 
+
+Lemma C.1. Let x ∈ X be a variable and p ≤ 1/2 be the probability that Player i plays their less-likely action for x in a behavioral strategy. If p > 0 and M ≥ n1, then this strategy is strictly dominated by the strategy under which Player i only plays their more-likely action. Proof. Whenever variable x is picked for Player i and one of their teammate (probability strictly larger than 1/n 21), the penalty incurred by the two players is strictly more than (M/n 21)( p(1 − q) + q(1 − p)) ≥
+
+(M/n 21)( p + q(1 − 2p)) ≥ (M/n 21)p, where q is the probability that the teammate of Player i picks Player i’s less-likely action for x. On the other hand, Player i gains no more than 1 by playing their less-likely action (probability p/n 1). Hence, if M > n 1, any strategy with p > 0 is strictly dominated by a pure strategy. The intuition behind this result is the following: the potential gain by deviating from a pure strategy is proportional to the probability of deviation ( p here), while the penalty is also proportional to this probability as well. Hence, non-zero deviation is strictly dominated if the penalty is large enough. The pure strategies of a player of 
+
+> ▽▽▽
+
+(respectively ▽▽▽) are precisely the assignments in {0, 1}X (respectively in {0, 1}Y ). By a similar argument, it is straightforward to show that it is a dominant strategy for 
+
+> ▽▽▽
+
+(respectively for ▽▽▽) to let all players pick the same assignment to avoid a large penalty. The hardness then follows from the following observation. If ∃X ∀Y ϕ (X, Y ) holds, then 
+
+> ▽▽▽
+
+can play the corresponding assignment to force a value of at least 1/n 3: no matter what assignment ▽▽▽ picks, at least one term in ϕ is true, which is discovered with a probability of at least 1/n 3 (whenever all the variables in such a term are picked by Nature). On the other hand, if ∃X ∀Y ϕ (X, Y ) does not hold, then no matter what assignment 
+
+> ▽▽▽
+
+picks, there is an assignment that ▽▽▽ can pick such that none of the terms is satisfied, which forces a value of 0 for 
+
+> ▽▽▽
+
+.39 Hardness for games of no chance To show that the same hardness holds even when there is no chance, we use the following gadget to eliminate the need of Nature. Let us introduce a new 
+
+> ▽▽▽
+
+-player called 
+
+> ▽▽▽
+
+-Nature and a new ▽▽▽-player called ▽▽▽-Spoiler. The gadget will be such that 
+
+> ▽▽▽
+
+-Nature can incur a large penalty whenever they do not mimic perfectly Nature’s behavior. More concretely, as Nature in the construction above, 
+
+> ▽▽▽
+
+-Nature picks s = ( x1, x 2, x 3, y 1, y 2, y 3) ∈ X3 × Y 3. ▽▽▽-Spoiler then guesses 
+
+> ▽▽▽
+
+-Nature’s choice by picking s′ ∈ X3 × Y 3.
+
+> ▽▽▽
+
+receives −N (n31n32 − 1) If s = s′, otherwise N , where N is a large number. The game then continues as in the construction above. By a similar argument to the one used in the proof of the lemma above, 
+
+> ▽▽▽
+
+-Nature’s dominant strategy is to pick s uniformly at random. Since 
+
+> ▽▽▽
+
+cannot correlate, the game plays exactly like the construction above; ▽▽▽ can force a value of 1/n 3 if and only if ∃X ∀Y ϕ (X, Y ) holds. 
+
+Theorem 7.5. MixedNash is in ∆P 
+
+> 2
+
+, even for exact computation (ε = 0) .Proof. Let X ⊂ Rm, Y ⊂ Rn be the space of realization-form pure strategies of both players, and A be the payoff matrix. Then our goal is to decide whether the polytope 
+
+X ∗ := 
+
+
+
+x ∈ Rm : 1 x ∈ co X , 
+
+> 2
+
+y⊤Ax ≤ v ∀y ∈ Y 
+
+
+
+is empty. We will show how to separate over X ∗ with a mixed-integer linear programming oracle, which suffices to complete the proof because such a separating oracle can be used to run the ellipsoid algorithm. Given a candidate solution x, we check both constraints. If 2 is violated for some y∗ ∈ Y , then 
+
+Ay ∗ is a separating direction; such y∗ can be found by an integer programming oracle. If 1 is violated, then a separating direction can be found because (strong) separation and optimization are equivalent for well-described polytopes [22], and optimization over co X is an integer program. 
+
+Theorem 7.6. MixedNash is ∆P 
+
+> 2
+
+-hard, even when the number of players is constant and there is no chance. Proof. We reduce from Last-SAT, which is known to be ∆P 
+
+> 2
+
+-complete [ 30 ]. The Last-SAT problem is to, given a 3-CNF formula ϕ(x), decide whether the lexicographically last satisfying assignment of ϕ has a 1 in the least-significant bit. Given a 3-CNF formula ϕ with m clauses over a set of n variables X = {x0, . . . x n−1}, we construct the following zero-sum game with 3 players on each team. First, Nature chooses a triple (y1, y 2, y 3) ∈ X3
+
+uniformly at random. Player i of 
+
+> ▽▽▽
+
+(respectively of ▽▽▽) is asked concurrently and independently to assign either true or false to the variable yi. The payoff for 
+
+> ▽▽▽
+
+is a sum of terms, determined by the following conditions. 
+
+• If any two players of 
+
+> ▽▽▽
+
+(respectively of ▽▽▽) assign different values to the same variable, 
+
+> ▽▽▽
+
+receives −N 2
+
+(respectively +N 2), where N is a large number. 
+
+• If any clause in ϕ is rendered false by the assignment of 
+
+> ▽▽▽
+
+(respectively ▽▽▽), 
+
+> ▽▽▽
+
+receives −(n2 + N )
+
+(respectively +N ). 
+
+• If y1 = xk and player 1 of 
+
+> ▽▽▽
+
+assigns true to this variable, then 
+
+> ▽▽▽
+
+receives +2 n−k (respectively −2n−k). 
+
+• If y1 = xn−1 and player 1 of 
+
+> ▽▽▽
+
+assigns false to this variable, then 
+
+> ▽▽▽
+
+receives a penalty of −1.We can see that when ▽▽▽ copies 
+
+> ▽▽▽
+
+’s mixed strategy: 
+
+• The first and the third term yield an expected payoff of 0, since the positive payoff and the negative payoff cancels out exactly. 
+
+• The second term is non-positive, and strictly negative when at least one clause will be violated by an assignment in 
+
+> ▽▽▽
+
+’s mixed strategy. 
+
+• The fourth term is non-positive, and strictly negative when an assignment in 
+
+> ▽▽▽
+
+’s mixed strategy does not include the variable xn−1.40 If the maxmin value of the game is 0, then there is a mixed strategy of 
+
+> ▽▽▽
+
+such that the expected payoff is non-negative, even when ▽▽▽ copies this strategy. From the second term and the fourth term, we infer that this mixed strategy must be a satisfying assignment including xn−1. If this assignment is not the lexicographically maximal one, then 
+
+> ▽▽▽
+
+’s expected payoff will be strictly negative when ▽▽▽ plays this maximal satisfying assignment, due to the third term of payoff. Hence, the satisfying assignment behind 
+
+> ▽▽▽
+
+’s mixed strategy must be lexicographically maximal; the Last-SAT instance is true. For the other direction, assume that the Last-SAT instance is true. Then 
+
+> ▽▽▽
+
+can play the strategy corresponding to the lexicographically last satisfying assignment. When N is large enough (e.g. N = n22n), the best ▽▽▽ can do is to play the same strategy. This means the expected payoff is at least 0 for 
+
+> ▽▽▽
+
+.Hence, the value of the game is 0 if and only if the Last-SAT instance is true. 
+
+Eliminate Nature To eliminate Nature from the construction, we introduce a new 
+
+> ▽▽▽
+
+-player called 
+
+> ▽▽▽
+
+-Nature and a new ▽▽▽-player called ▽▽▽-Nature. Both new players are supposed to imitate Nature’s uniform choice over the triples in X3. The actual triple given to the 3 assignment-players of 
+
+> ▽▽▽
+
+and the 3 assignment-players of ▽▽▽
+
+is determined by the choice of 
+
+> ▽▽▽
+
+-Nature and the one of ▽▽▽-Nature. More concretely, the game proceeds as follows. First, 
+
+> ▽▽▽
+
+-Nature picks a triple of indexes I+ = ( i+1 , i +2 , i +3 ) ∈{0, . . . , n − 1}3 without any other player observing the choice. Then ▽▽▽-Nature also picks I− = ( i− 
+
+> 1
+
+, i − 
+
+> 2
+
+, i − 
+
+> 3
+
+) ∈{0, . . . , n − 1}3 without any other player observing the choice. We write, for all j, ij = ( i+ 
+
+> j
+
++ i− 
+
+> j
+
+) mod n.The game then continues as in the construction with a chance node, with (y1, y 2, y 3) = ( xi1 , x i2 , x i3 ) ∈ X3.To see how this new construction with no chance node works, first notice that by implementing the uniform strategy (over the indexes), 
+
+> ▽▽▽
+
+-Nature (resp. ▽▽▽-Nature) can enforce a uniform distribution over 
+
+X3 for the triple (xi1 , x i2 , x i3 ), even when the distribution is conditioned on I− (resp. I+). In particular, although the assignment-players of 
+
+> ▽▽▽
+
+can correlate their assignment with the choice of 
+
+> ▽▽▽
+
+-Nature (i.e., I+), it does not do them any good when ▽▽▽-Nature forces the conditional distribution on I+ of (y1, y 2, y 3) to be uniform over X3. The rest of the argument is similar to the construction with Nature above, with the consequence that the value of this game of no chance is 0 if and only if the Last-SAT instance is true. 
+
+# AppendixD. Discussion 
+
+In this section, we discuss important details that may help the interested reader in clarifying some technical aspects of our contributions. 
+
+## D.1. Necessity of assumptions 
+
+Timeability Timeability is used fundamentally in our TB-DAG construction, to allow the construction of the belief, which consists only of nodes at a single layer of the game tree. We think dealing with non-timeable games is a very interesting question for the future; doing so would require a new definition of information complexity k that does not depend on the timing. Games with absentmindedness (which are a subset of non-timeable games) introduce other issues. In particular, mixtures of pure strategies are no longer sufficient to characterize optimal strategies (see, for example, Piccione and Rubinstein [42] ), so even our solution concepts break down. We refer the interested reader to Tewolde et al. [50] and papers cited therein for computational issues related to games with absentmindedness and without timeability. 
+
+Two-player zero-sum The zero-sum assumption is fundamental to the efficient algorithms in the present paper: even two-player normal-form games are hard to solve if they are not zero sum [ 44 ]. The TB-DAG construction does apply to any imperfect-recall timeable game (even if it is not zero sum), allowing no-regret learning algorithms like CFR to be run on such games. However, CFR is not guaranteed to converge to a Nash equilibrium in such games, only to a coarse-correlated equilibrium .41 A    
+
+> CDE
+> B
+> FGH
+
+Figure 6: A game showing that public state-based approaches do not subsume inflation. 
+
+## D.2. Public states vs observations 
+
+In this section, we discuss in depth the difference between public states and public observations . Intuitively, the difference is that observations are localized to a particular node in the TB-DAG: if a fact is public to the team conditional on the part of the team strategy that has been played to reach this point , then it is an observation. On the other hand, public states only encode unconditionally public information. As we will see, using observations is strictly preferable to public states from both conceptual and theoretical perspectives. 
+
+Comparision to using public states We envision an alternative construction of the TB-DAG in which the team coordinator observes only the public state containing the current node. That is, the definition of 
+
+SplitBelief is replaced by: 
+
+SplitBelief pub  
+
+> i
+
+(H, h ) := H ∩ P where h ∈ P ∈ Pi.
+
+and SplitBelief pub  
+
+> i
+
+(H) defined analogously. Then, in ConstructTB-DAG , we replace SplitBelief i(H) with 
+
+SplitBelief pub  
+
+> i
+
+(H). We will call this new construction the public-state TB-DAG and spend the rest of this subsection contrasting it with the (observation) TB-DAG constructed by ConstructTB-DAG .Our first result is that the TB-DAG can never be too much larger than the public state TB-DAG: 
+
+Proposition D.1. Let N and N ′ be the number of nodes in the TB-DAG and public state TB-DAG respectively. Then N ≤ 2pN ′, where p is the largest size (in number of nodes) of any belief in the public state TB-DAG. Proof. Let B be any belief in the public state TB-DAG. In the (non-public-state) TB-DAG, B splits into disjoint beliefs B1, . . . , B m. Let A1, . . . , A m be the sizes of the prescription spaces at B1, . . . , B m respectively. Then B has A1A2 . . . A m children, so B induces 1 + A1A2 . . . A m nodes in the public state TB-DAG. On the other hand, the beliefs B1, . . . , B m in the TB-DAG will have A1, . . . , A m children respectively, accounting for a total of m + A1 + · · · + Am ≤ 2mA 1 . . . A m nodes. Now, observing simply that m ≤ p completes the proof. Thus, using observations is never much worse than using public states. 
+
+Comparision to using inflated public states Complete inflation [27 ], which we simply call inflation for short, is an algorithm that splits an infoset I into two infosets I = I1 ⊔ I2 if no pure strategy of the team can simultaneously play to a node in I1 and a node in I2, and repeats this process until no more such splits are possible. This preserves strategic equivalence. However, inflation can lead to the break-up of public states, which, in turn, reduces the size of public state TB-DAG. 42 h
+
+> u
+
+h′
+
+> u′
+
+I
+
+I1 I2
+
+Figure 7: A pictorial representation of the proof of Proposition D.2. Since h and h′ can be played simultaneously but u and u′ cannot, there must be an infoset like the red dotted one connecting a child of h to a child of h′.Therefore, inflation cannot break existing edges between played nodes. Indeed, consider the game in Figure 6. Due to the information sets marked in the last layer of the game tree, the connectivity graph contains a path C—D—E—...—H. Therefore, {C, D, ..., H} form a public state. Also, it is possible for the combinations CEG and DFH to be reached (if the player at the root plays left or right, respectively). Therefore, CEG and DFH are beliefs in the public-state TB-DAG. In the observation TB-DAG, consider, for example, what happens if the left action is played at the root so that C, E, and G are all reached. Note that there are no edges connecting C, E, and G—the path connecting C to E in the connectivity graph passes through D, which is not reached; therefore, C, E, and G are three different observations and hence three different beliefs, resulting in an exponentially-smaller TB-DAG. Inflation would remove the nontrivial information sets in the second black layer, which would ultimately have the same effect in this example as using observations. The number 3 is not special in this construction; it can be increased arbitrarily by simply increasing the number of children of A and B. Therefore, in particular, one can construct a family of games in which the public state TB-DAG (without inflation) has exponential size, while the (observation) TB-DAG has polynomial size. This is why Zhang and Sandholm [58] and Carminati et al. [8] insist that inflation be done as a preprocessing step before beginning their constructions. The use of observations, however, removes the need for this step: 
+
+Proposition D.2. Given any team decision problem T , the TB-DAG of T is the same no matter whether inflation is applied to T before the construction. Proof. Inflation operations affect the connectivity graph Gi, thus changing the results of SplitBelief i
+
+operations at a terminal node. Consider, therefore, any observation node O in the TB-DAG, and let h, h ′ ∈ O,such that I = I1 ⊔ I2 is an inflatable infoset and h ⪯ u ∈ I1 and h′ ⪯ u′ ∈ I2. We need to show that inflating 
+
+I into I1 and I2 cannot remove the (h, h ′) edge in Gi[O].Assume for contradiction that inflating would remove the (h, h ′) edge and that therefore SplitBelief i
+
+would split h, h ′ into two different beliefs. We have that O is a valid observation node, so it is possible for the player to play to both nodes h and h′ simultaneously. But then there must be an infoset I′ connecting some node on the h → u path to some node on the h′ → u′ path—otherwise, it would be possible for the player to play to both u and u′ simultaneously, which violates inflatability of I. But then there is still an (h, h ′) edge in Gi[O], which is a contradiction. Although inflation can be performed efficiently, not requiring it as a preprocessing step simplifies the code and makes for a conceptually cleaner construction. However, the benefits of observations go beyond making inflation unnecessary. In fact, even with inflation, there are still cases in which using observations instead represents an exponential improvement. 43 1                       
+
+> 22
+> 1
+> 22
+> 1
+> 22
+> 1
+> 22
+> 1
+> 22
+> 1
+> 22
+> c= 1 c= 2 c= 3 c= 4 c= 5 c= 6
+> t= 2
+> t= 1
+> t= 0
+> t= 3
+> t= 4
+> t= 5
+
+Figure 8: The counterexample for Proposition D.3, for C = 6 .
+
+Proposition D.3. There exists a family of team decision problems in which the TB-DAG has a polynomial size, but the public state TB-DAG has exponential size, even if inflation is applied as a preprocessing step before building the latter. Proof. The counterexample in Figure 6 would work if it were not for the fact that all of the infosets in the last layer inflate. Therefore, we use a similar gadget at the bottom of the game to prove this result but ensure that inflation does nothing. Consider the following family of games, parameterized by an integer C > 1. First, Nature picks an integer 
+
+c ∈ { 1, . . . , C }. Over the next C − 2 layers t = 1 , 2, . . . , C − 2, if c ∈ { t, t + 2 }, a player who cannot distinguish the two cases chooses an action a ∈ { 0, 2}. If c = t + a, then the game continues; otherwise, the game ends. Finally, P1, who has perfect information about c chooses between two actions numbered either c or c + 1 .Then, player P2, observing P1’s action number but not the value c, picks one of two options. The resulting game is visualized in Figure 8. We observe the following things about it. 1. No infoset inflates: all nontrivial infosets have size 2, and it is easy to check that for all such infosets it is always possible to play to both nodes in them. This starkly contrasts the earlier counterexample, in which inflation was enough to achieve a small representation. 2. Every P2-node in layer C − 1 is in the same public state, and it is always possible to play to at least 
+
+C/ 2 of them. Therefore, if using public-state-based beliefs, there will be a belief with 2C/ 2 prescriptions. Thus, the public-state-based team belief DAG, will have a size of at least 2C/ 2.We claim that layer t ≤ C − 1 does not have too many beliefs. Let B ⊆ H t be a belief, and in the below discussion, let [a..b ] denote the set of integers {a, . . . , b }.1. B ⊆ [t + 2 ..C ]. Since all nodes j ≥ t + 2 must be played to, we have B = [ t + 2 ..C ].2. B̸ ⊆ [t + 2 ..C ]. Then let j = max (B \ [t + 2 ..C ]) . Since j ≤ t + 1 , we have j − 2 /∈ B, since j and j − 2
+
+are descendants of different actions taken at the infoset on layer j − 2 < t . Thus B does not contain any node j′ < j − 2 either, since in G[Ht] such nodes j′ are only connected to j through j − 2.Thus, B ∩ [1 ..t + 1] is either {j} or {j, j − 1}. Further, since all nodes j ≥ t + 2 are played to and connected in G[Ht], it follows that B ∩ [t + 2 ..C ] is either [t + 2 ..C ] or empty. Thus, for each possible choice of j ≤ t + 1 , there are at most 4 valid beliefs. Thus, the number of beliefs in layer t is at most 4( t + 1) + 1 + 2 = 4 t + 7 , where the +2 comes from counting the terminal beliefs, of which there are at most two. 44 Further, at each belief B, we claim that the number of active information sets is, at most, a constant. For 
+
+t < C − 1 this is obvious since Ht contains only one information set (namely {t, t + 2 }). For t = C + 1 , by the above argument, we have |B| ≤ 2, so B overlaps at most two information sets. Overall, we have that there are O(C) beliefs at each of the C layers of the game, and such beliefs never touch more than O(1) different infosets. This is also true at the final layer because each infoset contains only two nodes at most. It is therefore proven that the team belief DAG has a size of at most O(C2).A practical experiment backs up these results. When C = 16 , using observations generates a DAG with around 1000 edges; using public states generates a DAG with 30 million edges. 
+
+## D.3. Tree vs DAG representation 
+
+Here, we give an explicit example in which the TB-DAGs will be exponentially smaller than the game tree generated by MakeBeliefGame . This construction would work for most nontrivial adversarial team games, but for concreteness, consider the game G depicted in Figure 1. Call the leftmost terminal node in that diagram z. Consider adding another copy of G rooted in node z, and then repeating this process until ℓ
+
+copies of the game tree have been created, thus forming a game Gℓ. That is, Gℓ is the game in which G is played repeatedly until ℓ repetitions have been reached, or the terminal node reached is not z.Note that when running MakeBeliefGame on G, multiple copies of node z will appear. Thus, the number of nodes in the auxiliary game will be exponential in ℓ. However, in the TB-DAG, after the ith repetition of the game finishes, the belief will always be {zi} (where zi is the copy of z in the ith repetition of the game). Thus, the size of the TB-DAG will scale linearly with ℓ. Thus, as ℓ grows, the TB-DAG will be exponentially smaller than the auxiliary game, and in particular, the TB-DAG will have polynomial size while the auxiliary game will have exponential size. 
+
+## D.4. Definition of information complexity and comparison of bounds 
+
+We discuss the comparison between the bounds from Theorem 4.12 and Theorem 6.2 in more detail. In Section 4.1, we defined the information complexity as the maximum number of last-infosets in any public state. This definition was made with Theorem 6.3 in mind, because it is the correct parameterization for that result. For Theorem 4.12, however, we could have used a tighter parameterization. In particular, we could have defined a parameter κ as the number of infosets (not last-infosets) in any public state. Then 
+
+O(b2κd +d) would be a valid upper bound in Theorem 4.12. One might ask how this new upper bound compares to that of Theorem 6.3. To this end, we now compare the two bounds. 
+
+Lemma D.4. k ≤ κd .Proof. Every last-infoset at a public state P will be an infoset intersecting some public state ancestor of P .Thus, there can be at most κd of these. Thus, the bound in Theorem 6.3 is at most 
+
+|H| (b + 1) k+1 ≤ |H| (b + 1) κd < |H| b2κd ≤ b2κd +d
+
+where we use the bounds b ≥ 2 (which holds for every nontrivial game) and |H| ≤ bd. Thus, we conclude that the bound in Theorem 6.3 is always strictly tighter than the bound in Theorem 4.12. We also remark that in any case κ ≤ |H| is a loose bound that still ensures that the overall bound in Theorem 4.13 is polynomial in |H| .
+
+## D.5. Connection with tree decomposition 
+
+The public state TB-DAG can be viewed from the perspective of graphical models, specifically, using tree decompositions . Here, we review tree decompositions and show the tree decomposition-based perspective of the public-state TB-DAG. 45 Definition D.5. Given a (simple) graph G = ( V, E ), a tree decomposition 14 is a tree J , with the following properties: 1. the nodes of J are subsets of V , called bags ;2. for each edge (u, v ) ∈ E, there is a bag containing both u and v; and 3. for each vertex u ∈ V , the subset of nodes of J whose bags contain u is connected. Consider an arbitrary set of the form 
+
+Π = {x ∈ { 0, 1}n : gk(x) = 0 ∀k ∈ [m]}
+
+where the gks are arbitrary constraints, and as before let X = co Π. Each constraint gk has a scope Sk ⊆ [n]
+
+of variables on which it depends. The dependency graph of Π is the graph GΠ whose nodes are the integers 
+
+1, . . . , n , and where there is an edge (i, j ) if there is a constraint whose scope Sk contains both i and j. For a subset U ⊆ [n], a vector ˜x ∈ { 0, 1}U is locally feasible if ˜x = xH for some x ∈ Π. We will use ΠU to denote the set of all locally feasible vectors on U . Of course, Π[n] = Π .The main result of interest to us is a corollary of the junction tree theorem (see, for example, [ 55 ]), which allows an arbitrary set X = co Π to be described with a constraint system whose size is related to the sizes of tree decompositions of GΠ.
+
+Theorem D.6 ( 55 ). Let J be a tree decomposition of GΠ. Then x ∈ X if and only if there are vectors 
+
+λU ∈ ∆(Π H ) for each bag U of J , such that: 
+
+xU = X
+
+> ˜x∈ΠU
+
+λU [ ˜ x] · ˜x ∀ bags U in J
+
+X  
+
+> ˜x∈ΠU
+> ˜xU∩V= ˜ x∗
+
+λU [ ˜ x] = X  
+
+> ˜x∈ΠV
+> ˜xU∩V= ˜ x∗
+
+λV [ ˜ x] ∀ edges (U, V ) of J and ˜x∗ ∈ ΠU ∩V
+
+Intuitively, the first constraint says that every xU must be a convex combination of locally feasible ˜x ∈ ΠU .This is of course a necessary condition. The second constraint says that marginal probabilities on edges (U, V )
+
+must be consistent with each other. This is also clearly a necessary condition, so the difficulty of proving the above result lies in showing that these two constraints are sufficient . We will not prove the result here, but we will use it as a black box. In this section, we will work with a representation slightly different from the realization form. For a player 
+
+i in a coordinator game G and a pure strategy of that player, the history form of the strategy as the vector 
+
+x ∈ { 0, 1}H where x[h] = 1 if and only if the team plays all actions on the ∅ → h path. (Of course, the realization form is just the subvector of x indexed by Z.) As usual we will use Π for the set of pure strategies in history form, and x = co Π. The history form is the set of vectors x ∈ { 0, 1}H satisfying the following constraint system. 
+
+x[∅] = 1 
+
+x[ha ] = x[h] if h / ∈ H i
+
+x[h] = X
+
+> a∈Ah
+
+x[ha ] if h ∈ H i
+
+x[ha ]x[h′] = x[h′a]x[h] if h, h ′ ∈ I ∈ I i; a ∈ Ah
+
+This constraint system defines a dependency graph GΠ, whose nodes are nodes of the tree, and in which there is an edge (h, h ′) if either h′ is a child of h, or h and h′ are in the same infoset of player i.   
+
+> 14 also known as a clique tree or junction tree
+
+46 Now consider the following tree decomposition of J of GΠ. For each public state P , the tree decomposition 
+
+J has a bag UP that contains all nodes in P and all children of nodes in P . The edges of J are the obvious edges, connecting each UP to UP ′ if UP ∩ UP ′̸ = ∅.One can check that, up to trivial reformulations (that is, removal of redundant variables and constraints), the constraint system from Theorem D.6 associated with J is identical to the constraint system associated with the public state TB-DAG (via (4) ). Thus, it is possible to interpret the public state TB-DAG entirely from the point of view of tree decompositions. We do not take this perspective in the rest of the paper because using beliefs is more interpretable and understandable from a game-theoretic perspective. 47
