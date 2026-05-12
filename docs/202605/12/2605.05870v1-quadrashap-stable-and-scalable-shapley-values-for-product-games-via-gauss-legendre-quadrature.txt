@@ -1,0 +1,1878 @@
+Title: QuadraSHAP: Stable and Scalable Shapley Values for Product Games via Gauss-Legendre Quadrature
+
+URL Source: https://arxiv.org/pdf/2605.05870v1
+
+Published Time: Fri, 08 May 2026 00:47:23 GMT
+
+Number of Pages: 29
+
+Markdown Content:
+# QuadraSHAP : Stable and Scalable Shapley Values for Product Games via Gauss–Legendre Quadrature 
+
+Majid Mohammadi 1,2 Grigory Reznikov 1,2 Pavel Sinitcyn 1,2 
+
+Krikamol Muandet 3 Siu Lun Chau 4 
+
+> 1
+
+AI Technology for Life, Information and Computing Sciences, Utrecht University, The Netherlands  
+
+> 2
+
+Biomolecular Mass Spectrometry and Proteomics, Pharmaceutical Sciences, Utrecht University, The Netherlands 
+
+> 3
+
+Rational Intelligence Lab, CISPA Helmholtz Center for Information Security, Germany 
+
+> 4
+
+Epistemic Intelligence & Computation Lab, College of Computing & Data Science, Nanyang Technological University, Singapore 
+
+Abstract 
+
+We study the efficient computation of Shapley values for product games – cooperative games in which the coalition value factorizes as a product of per-player terms. Such games arise in machine learning explainability whenever the value function inherits a multiplicative structure from the underlying model, as in kernel methods with product kernels and tree-based models. Our key result is that the Shapley value of each player in a product game admits an exact one-dimensional integral representation: the weighted sum over exponentially many feature coalitions collapses to the integral of a degree-(d − 1) polynomial over [0 , 1] , where 
+
+d is the total number of features. This yields a Gauss–Legendre quadrature scheme that is 
+
+provably exact whenever the number of nodes satisfies mq ≥ ⌈ d/ 2⌉, and otherwise provides a 
+
+near-exact approximation with error provably decaying geometrically in mq. In practice, a few hundred nodes can achieve highly precise estimates even with thousands of features. Building on this formulation, we derive a numerically stable implementation via log-space evaluation, together with an efficient parallel implementation based on associative scan primitives that achieves O(d m q) total work and O(log d) parallel time. Experiments show that QuadraSHAP 
+
+is the fastest numerically stable method across all tested configurations. Code is available at 
+
+https://anonymous.4open.science/r/quadrashap-28D7 .
+
+Keywords: Efficient Shapley values, Tree ensembles, Product kernel methods, feature attribu-tions. 1
+
+> arXiv:2605.05870v1 [cs.LG] 7 May 2026
+
+# 1 Introduction 
+
+Shapley values (Shapley, 1953) are a foundational tool for explaining predictions of machine learning (ML) models, yielding feature attributions with strong axiomatic guarantees rooted in cooperative game theory (Lundberg and Lee, 2017). Their principled nature has driven widespread adoption in explainable AI, spanning both model-agnostic methods (Fumagalli et al., 2026; Lund-berg and Lee, 2017; Muschalik et al., 2024) and model-specific methods that exploit the structure of particular model classes, e.g., TreeSHAP for tree ensembles (Bifet et al., 2022a; Lundberg et al., 2020), GPSHAP for Gaussian processes (Chau et al., 2023; Mohammadi et al., 2026), and RKHS-SHAP for kernel methods (Chau et al., 2022). Shapley-based attribution has thus become a central paradigm for interpreting modern ML systems. Despite their popularity, exact Shapley values are generally expensive to compute, since their definition involves exponentially many feature coalitions. Model-specific methods sidestep this by exploiting the structure of the model under explanation, yielding exact or near-exact Shapley values in polynomial time. The focus of this paper is one particularly important case: when the model induces a multiplicative structure in the coalition value function. This connects naturally to product games (Dehez, 2024), where the value factorizes across players v(S) = Q 
+
+> j∈S
+
+uj for player-specific quantities uj (see Definition 1). By linearity of the Shapley value, this perspective extends directly to weighted sums of product games, a form encompassing many widely used explainability settings, including path-dependent tree-based models (Bifet et al., 2022a; Lundberg et al., 2020) and kernel methods with product kernels (Mohammadi et al., 2025). A common strategy for exploiting multiplicative structure reformulates the Shapley value in terms of polynomial representations and recovers the required coefficients via interpolation. For tree-based models, Linear TreeSHAP (Bifet et al., 2022a) uses Chebyshev interpolation to compute Shapley values in linear time by evaluating and storing the underlying polynomial at carefully chosen nodes (Bifet et al., 2022a). However, the numerical stability of such approaches deteriorates rapidly with the polynomial degree, primarily due to the ill-conditioning of the Vandermonde inverse. This degree is governed by the path length in tree ensembles and by the number of features in more general multiplicative settings, making interpolation-based methods unreliable in high dimensions. For product-kernel methods, a more stable alternative based on algebraic recursions has been proposed (Mohammadi et al., 2025, 2026), but at the cost of substantially more arithmetic operations. The literature thus exposes a persistent trade-off between numerical stability and computational efficiency, with no existing method achieving both. 
+
+Contributions. We resolve this trade-off by recasting the Shapley value for product games, via the Beta-function representation of its weights, as an integral of a single polynomial over [0 , 1] .We call the resulting method QuadraSHAP , for quadra ture-based Shap ley value computation . This representation eliminates both subset enumeration and interpolation-based coefficient recovery, and admits a Gauss–Legendre quadrature scheme that is exact whenever mq ≥ ⌈ d/ 2⌉, with provably geometric convergence otherwise. Empirically, a few hundred nodes deliver highly precise estimates for problems with thousands of features. The same formulation yields an algorithm that is both stable and fast. At each quadrature node, the contribution of feature i
+
+depends on a product over all features except i. Rather than recomputing this leave-one-out 2Figure 1: Scope of QuadraSHAP . Left: two settings, tree-based models and product kernels, where Shapley values reduce to weighted sums of product games. Right: qualitative comparison of the methods on complexity and stability. product per feature, we compute the full product once and divide out the corresponding factor for each i. This sharing reduces the total work from O(d2mq) to O(d m q). To avoid overflow and underflow in high dimensions, the products are evaluated in log-space with explicit sign tracking. The same product structure also makes the computation naturally parallel: the feature-wise sums and products can be evaluated by combining partial results in a binary-tree fashion, using standard associative scan primitives (Blelloch, 1990). This gives O(log d) parallel time under a standard parallel model. Specialized to tree ensembles, QuadraSHAP matches the complexity of Linear TreeSHAP while remaining numerically stable. Our benchmarks show it is the fastest numerically accurate exact method across every tested configuration, outperforming TreeSHAP by 3–5× at large ensemble sizes and staying stable in regimes where Linear TreeSHAP fails. The same product-game formu-lation applies to product-kernel methods, where QuadraSHAP reduces the computational cost by an order of magnitude over (Mohammadi et al., 2025, 2026) while preserving exactness and stability. 
+
+Related work. Recently, Li et al. (2026) derive a GL rule for tree Shapley values via the gradient of the multilinear extension; our product-game formulation instead unifies tree ensembles and product-kernel methods under a single integral representation (Proposition 2), and additionally yields a geometric approximation bound for mq < ⌈d/ 2⌉ (Proposition 3) and an O(log d) parallel algorithm. See Appendix A for further discussion and comparison of the two approaches. 
+
+# 2 Preliminaries 
+
+Notation. Let D denote the set of d input features and 2D its power set. The training set consists of n samples {(x(i), y (i))}ni=1 , where x(i) ∈ Rd and y(i) ∈ R (or a discrete label set in classification). We write X ∈ Rn×d for the feature matrix. For a subset S ⊆ D , XS denotes the restriction of X
+
+to the columns indexed by S, and xS the restriction of a vector x to the same subset. We use bold 3lowercase letters for vectors, bold uppercase letters for matrices, calligraphic letters for sets, and capital letters for random variables. Element-wise multiplication and division are denoted by ⊙
+
+and ⊘, respectively, and expectation by E. All proofs are deferred to Appendix B. 
+
+Shapley values. The Shapley value (Shapley, 1953) is a classical solution concept from coopera-tive game theory and a widely used method for feature attribution in explainable ML. It assigns an importance score to each feature by averaging its marginal contribution over all coalitions, with weights determined by coalition size. Among allocation rules, it is uniquely characterized by the axioms of efficiency , symmetry , the null-player property, and linearity (Shapley, 1953; Weber, 1988), and these axioms have been repeatedly invoked as motivation for Shapley-based attribution in explainable ML (Chau et al., 2022, 2023; Fumagalli et al., 2026; Lundberg and Lee, 2017; Lundberg et al., 2020; Muschalik et al., 2024). Formally, given a value function v : 2 D → R that assigns a scalar as a contribution to each subset of features, the Shapley value of feature j ∈ D is defined as             
+
+> ϕj(v) = X
+> S⊆D\{ j}
+> μ(|S| ) v(S ∪ { j})−v(S),μ(s) = s! ( d−s−1)!
+> d!.(1)
+
+The term v(S ∪{ j})−v(S) is the marginal contribution of feature j to coalition S, and we denote μ
+
+as the Shapley weights .Equation (1) sums over 2d−1 coalitions, so exact computation is exponential in d for generic v. Scalable algorithms have therefore developed along two complementary directions: model-agnostic approximations such as KernelSHAP and its refinements (Fumagalli et al., 2026; Lundberg and Lee, 2017; Muschalik et al., 2024; Ribeiro et al., 2016), and model-specific 
+
+exact algorithms that exploit algebraic or combinatorial structure in v (Bifet et al., 2022a; Chau et al., 2022, 2023; Jiang et al., 2025; Lundberg et al., 2020; Merrick and Taly, 2020; Mohammadi et al., 2025, 2026; Yang, 2021). The methods developed in this paper belong to the model-specific line and target the broad class of value functions with multiplicative structure. 
+
+Value functions for explainability. In explainable ML, the value function v specifies how a predictive model f is evaluated when only a subset of features is treated as “present,” and different choices correspond to different semantics for missing features (Molnar, 2022; Sundararajan and Najmi, 2020). The two standard choices are the observational/conditional value 
+
+vobs  
+
+> x
+
+(S) = Ef (X) | XS = xS
+
+,
+
+which imputes missing features from the conditional distribution, and the interventional/marginal 
+
+value 
+
+vint  
+
+> x
+
+(S) = EXD\S 
+
+f (xS , X D\S ),
+
+which treats missing features as drawn from their marginal distribution independently of xS (Chen et al., 2020; Heskes et al., 2020; Janzing et al., 2020). In this paper we focus on a broad class of value functions that exhibit multiplicative structure across features, independently of the specific semantics used for missing features. 4Product games. A product game is a cooperative game whose coalition value factorizes across players (Dehez, 2024). 
+
+Definition 1 (Product game) . With the convention v(∅) = 1 , v : 2 D → R is a product game if 
+
+v(S) = Y
+
+> j∈S
+
+uj (xj )
+
+for S ⊆ D , where uj (xj ) denotes the multiplicative contribution associated with feature j for the instance x.
+
+For notational simplicity, we write uj := uj (xj ) throughout. Substituting this form into equa-tion (1), the marginal contribution of feature i to a coalition S ⊆ D \{ i} yields v(S ∪{ i})−v(S) =  Q  
+
+> j∈S
+
+uj
+
+(ui − 1) , so the Shapley value reduces to 
+
+ϕi(v) = ( ui − 1) X
+
+> S⊆D\{ i}
+
+μ(|S| ) Y
+
+> j∈S
+
+uj , μ(s) = s! ( d − s − 1)! 
+
+d! . (2) The remainder of the paper develops an efficient algorithm for computing Shapley values of product games and shows that this multiplicative structure arises naturally in several settings of interest, including product-form kernels and tree-based models. 
+
+Gauss–Legendre quadrature. Gauss–Legendre quadrature (Davis and Rabinowitz, 1984) ap-proximates integrals over a bounded interval via a weighted sum of function evaluations at carefully chosen nodes. On [0 , 1] , it gives 
+
+Z 10
+
+g(t) dt ≈
+
+> mq
+
+X
+
+> q=1
+
+ωq g(τq),
+
+where the nodes {τq}mq 
+
+> q=1
+
+⊂ (0 , 1) are the roots of the shifted Legendre polynomial of degree mq,and the weights {ωq} are computed once via the Golub–Welsch algorithm (Golub and Welsch, 1969). The rule has two key properties that drive our approach: (i) with mq nodes it is exact for every polynomial of degree at most 2mq − 1, and (ii) when exactness is not required, smaller values of mq provide a controlled approximation to the integral (Trefethen, 2008). 
+
+# 3 Shapley Values for Product Games via Gauss–Legendre Quadrature 
+
+The core challenge in evaluating equation (2) is the weighted sum over all 2d−1 subsets of D \ { i}.Rather than recovering this sum via interpolation (Bifet et al., 2022a; Merrick and Taly, 2020) or recursive coefficient computation (Mohammadi et al., 2025), we show that the Shapley weights can be absorbed directly into a one-dimensional integral. 53.1 A quadrature-ready Shapley formula for product games 
+
+We now present a one-dimensional integral representation that can yield an analytic formula for 
+
+ϕi(v) and enables stable and efficient computation via Gauss–Legendre quadrature. 
+
+Proposition 2. Let vx(S) = Q 
+
+> j∈S
+
+uj be a product game. Then, for each i ∈ D ,
+
+ϕi(v) = ( ui − 1) 
+
+Z 10
+
+Y 
+
+> j̸=i
+
+ (1 − t) + t u j
+
+ dt. (3) Equation (3) absorbs the Shapley weights into a one-dimensional integral, with the reduction relying on the Beta-function representation 
+
+μ(s) = 
+
+Z 10
+
+ts(1 − t)d−s−1 dt 
+
+of the Shapley weights. The remaining question is how to evaluate this integral efficiently. We next show that the polynomial structure of the integrand makes Gauss–Legendre quadrature an exact match: with sufficiently many nodes, the quadrature sum recovers the integral exactly, yielding an efficient and provably exact algorithm. 
+
+Proposition 3. Let v(S) = Q 
+
+> j∈S
+
+uj be a product game and let {(τq, ω q)}mq 
+
+> q=1
+
+be Gauss–Legendre nodes and weights on [0 , 1] . Define, for each i ∈ D ,
+
+bϕi(v) := ( ui − 1) 
+
+> mq
+
+X
+
+> q=1
+
+ωq
+
+Y 
+
+> j̸=i
+
+ (1 − τq) + τquj
+
+. (4) 
+
+1. (Exactness.) If mq ≥ ⌈ d/ 2⌉, then bϕi(v) = ϕi(v) for all i ∈ D .2. (Approximation.) For mq < ⌈d/ 2⌉, let Eρ be a Bernstein ellipse (Trefethen, 2008) for [0 , 1] with parameter ρ > 1, and set Mρ := max z∈Eρ |gi(z)| where gi(z) := Q 
+
+> j̸=i
+
+ (1 − z) + zu j
+
+. Then, for 
+
+Cρ dependent only on ρ,
+
+bϕi(v) − ϕi(v) ≤ | ui − 1| · Cρ Mρ ρ−2mq .
+
+We empirically study the sensitivity of approximation quality to mq in our experiments, and find that for product games arising from models with up to 10 ,000 features, a budget of only a few hundred quadrature nodes is sufficient to reach near-machine-precision accuracy, far below the exactness threshold of ⌈d/ 2⌉. In addition, Theorem 3 replaces the exponential sum over 2d−1
+
+coalitions by mq evaluations of a simple product. At each quadrature node xq, the integrand is a product with one factor per feature, 
+
+> d
+
+Y
+
+> j=1
+
+ 1 − xq + xquj
+
+.
+
+Thus, the method avoids coalition enumeration entirely and only evaluates this d-factor prod-uct at the quadrature nodes. When mq is chosen below the exactness threshold, the resulting approximation degrades smoothly rather than failing abruptly. This product form also leads to 6two useful algorithmic properties. First, the work can be shared across features. At a fixed node 
+
+xq, the Shapley contribution of feature i requires the product over all features except i. Instead of recomputing this leave-one-out product for each feature, we compute the full product once and divide out the factor associated with feature i. This reduces the näive cost from O(d2mq) to 
+
+O(d m q). Second, the same product form makes the computation both stable and parallel. For stability, we evaluate products in log-space with explicit sign tracking, which avoids overflow and underflow for large d. For speed, the feature-wise products can be computed by parallel prefix/scan operations, as described in the next subsection. These advantages, if possible, are less direct in interpolation-based or recursive Shapley algorithms. 
+
+3.2 Stable and Efficient Shapley Attribution 
+
+Stable evaluation via shared log-space products. A direct implementation of the quadrature formula equation (4) faces two practical obstacles: (i) naïvely forming a length-(d−1) leave-one-out product for every pair (i, q ) costs O(d2mq) operations; and (ii) when d is large or some uj are far from one, these products easily overflow or underflow in floating-point arithmetic, undermining the very numerical stability we seek to establish. Both issues are resolved by a single primitive: a shared log-space product per quadrature node. For each node τq, define the per-feature factors and their full product 
+
+Tq,j := (1 − τq) + τq uj , Pq := 
+
+> d
+
+Y
+
+> j=1
+
+Tq,j ,
+
+so that every leave-one-out product reduces to a single division, Q  
+
+> j̸=i
+
+Tq,j = Pq/T q,i . This collapses the (i, q )-loop from O(d2mq) to O(d m q). To execute the division stably, we accumulate the log-magnitude of Pq and track its sign separately, 
+
+log |Pq| =
+
+> d
+
+X
+
+> j=1
+
+log |Tq,j |, sgn( Pq) = 
+
+> d
+
+Y
+
+> j=1
+
+sgn( Tq,j ),
+
+so that the Shapley estimator takes the numerically stable form 
+
+bϕi(v) = ( ui − 1) 
+
+> mq
+
+X
+
+> q=1
+
+ωq sgn( Pq) sgn( Tq,i ) exp  log |Pq| − log |Tq,i |. (5) In many models of interest, e.g., kernel functions based on distances or likelihood factors, the uj ,and hence the Tq,j , are nonnegative, and the sign bookkeeping is vacuous; retaining it ensures correctness when some uj are negative. Special care is required when some factors Tq,j are zero. In that case, the full product Pq vanishes, and all leave-one-out products Q  
+
+> j̸=i
+
+Tq,j are zero except possibly for the unique index i such that Tq,i = 0 , for which the product over the remaining factors may be nonzero. This situation can be detected via sgn( Pq) = 0 ; however, since log |Tq,j |
+
+is undefined at zero, such terms must be handled separately rather than through the log-space accumulation. 7Parallel implementation and complexity. An associative scan is a fundamental parallel building block: given a length-d sequence and an associative binary operator ⊕, it computes all prefix reductions a1, a 1 ⊕ a2, . . . , a 1 ⊕ · · · ⊕ ad simultaneously (Blelloch, 1990). By pairing elements in a binary tree of depth log d, this can be done in O(d) total work and O(log d) parallel time, and the same tree structure trivially yields the full reduction a1 ⊕ · · · ⊕ ad as a special case. The log-space quantities log |Pq| and sgn( Pq) are reductions of associative operators–addition and multiplication–over the feature index j, and are therefore direct applications of this primitive. The same pattern reappears in the final weighted sum over quadrature nodes in equation (5), which is itself an associative reduction over mq terms. Since the d Shapley values are independent given 
+
+{(log |Pq|, sgn( Pq)) }mq
+
+> q=1
+
+, they are computed in parallel across i at no additional asymptotic cost. This analysis establishes the following result. 
+
+Proposition 4. Let d be the number of features and mq the number of Gauss–Legendre nodes. 1. (Sequential.) The estimator {bϕi}di=1 in equation (5) requires O(d m q) total work. 2. (Parallel.) The parallel time complexity is O(log d) with O d m q/ log dm q
+
+ processors. 
+
+The total work is tight because computing all d Shapley values requires forming d m q quadrature factors and combining them, each at least once. The parallel time combines the O(log d) feature-axis scan with the O(log mq) reduction over quadrature nodes. 
+
+# 4 Product Games in ML Explainability: Product Kernel Meth-ods and Trees 
+
+4.1 Product kernels and kernel-specific value functions 
+
+Many kernel-based learning algorithms admit predictions of the form 
+
+f (x) = 
+
+> n
+
+X
+
+> i=1
+
+αi k(x, x(i)),
+
+with model-specific coefficients αi ∈ R. When the kernel factorizes, 
+
+k(x, x′) = 
+
+> d
+
+Y
+
+> j=1
+
+kj (xj , x ′ 
+
+> j
+
+),
+
+the prediction inherits a multiplicative structure across features. This covers a broad class of kernel methods, including support vector machines, kernel ridge regression, and Gaussian process posterior means, equipped with product kernels such as the anisotropic radial basis function (RBF) kernel. 8Kernel-specific value function. For product-kernel models, we adopt the kernel-specific value function of Mohammadi et al. (2025, 2026), obtained from the functional decomposition induced by the product kernel. It restricts the product kernel to the active feature subset S:
+
+vx(S) = α⊤KS
+
+ XS , xS
+
+ =
+
+> n
+
+X
+
+> i=1
+
+αi
+
+Y
+
+> j∈S
+
+kj
+
+ xj , x (i)
+
+> j
+
+, (6) where KS is the kernel matrix evaluated on features in S. Adopting the convention Q
+
+> j∈∅
+
+(·) = 1 
+
+gives vx(∅) = Pni=1 αi. Intuitively, features outside S are removed by replacing their per-feature kernel factors with the multiplicative identity, so the coalition value retains only the factors of the active features. 
+
+Product-game structure. Setting u(i) 
+
+> j
+
+:= kj (xj , x (i) 
+
+> j
+
+), the value function in equation (6) becomes a weighted sum of product games indexed by training points: vx(S) = Pni=1 αi
+
+Q 
+
+> j∈S
+
+u(i) 
+
+> j
+
+. By linearity of the Shapley value, 
+
+ϕℓ(vx) = 
+
+> n
+
+X
+
+> i=1
+
+αi ϕℓ
+
+ v(i), v(i)(S) := Y
+
+> j∈S
+
+u(i) 
+
+> j
+
+.
+
+Since each v(i) is a product game, it can be evaluated via the Gauss–Legendre representation in Theorem 3. Thus QuadraSHAP applies directly to product-kernel models: compute Shapley values of the per-training-point product games and aggregate with weights αi.The sequential cost is O(nd m q). In the exact regime mq ≥ ⌈ d/ 2⌉, this is O(nd 2) for all attribu-tions—an order of magnitude better than the O(nd 3) of Mohammadi et al. (2026). The gap widens in the parallel and approximate settings: parallel reductions cut the d-dependence in depth, and 
+
+mq < ⌈d/ 2⌉ further lowers cost when near-exact attributions suffice. 
+
+4.2 Tree ensemble value functions and induced product structure 
+
+We briefly review how Shapley values for tree ensembles arise from a model-specific value function, following TreeSHAP and recent extensions such as Linear TreeSHAP (Bifet et al., 2022a). 
+
+Tree-based value function. Consider a decision tree T with leaf set L and edge set E. Each leaf ℓ ∈ L stores a prediction νℓ, and Eℓ ⊆ E denotes the edges on the root-to-ℓ path. Following the extended model of TreeSHAP (Lundberg et al., 2020), a subset S is treated as observed by resolving splits on features in S deterministically for x, while splits on features outside S are averaged using branch probabilities. For each edge e ∈ E , let pe ∈ (0 , 1) be the fraction of training samples taking that edge, and κ(e) ∈ D the feature at the corresponding split. Define 
+
+ce(x) = 
+
+(
+
+1/p e, if x follows edge e, 
+
+0, otherwise. For each feature j ∈ D , define the path factor at leaf ℓ by 
+
+qj,ℓ (x) = Y 
+
+> e∈E ℓ:κ(e)= j
+
+ce(x),
+
+95 10 15 20                                       
+
+> mq
+> 10 −7
+> 10 −6
+> 10 −5
+> 10 −4
+> 10 −3
+> 10 −2
+> ℓ2 distance
+> d= 50
+> ±1 σ
+> Mean ‖̂ φmq−φ⋆‖2
+> 050 100 150 200
+> mq
+> 10 −4
+> 10 −3
+> 10 −2
+> 10 −1
+> 10 0
+> 10 1
+> 10 2
+> d= 500
+> ±1 σ
+> Mean ‖̂ φmq−φ⋆‖2
+> 0100 200 300 400
+> mq
+> 10 −4
+> 10 −3
+> 10 −2
+> 10 −1
+> 10 0
+> 10 1
+> 10 2
+> d= 1, 000
+> ±1 σ
+> Mean ‖̂ φmq−φ⋆‖2
+> 0200 400
+> mq
+> 10 −4
+> 10 −3
+> 10 −2
+> 10 −1
+> 10 0
+> 10 1
+> 10 2
+> d= 5, 000
+> ±1 σ
+> Mean ‖̂ φmq−φ⋆‖2
+
+Figure 2: Mean ℓ2 error of QuadraSHAP against the exact Shapley vector versus quadrature budget 
+
+mq (KRR with RBF kernel; bands: ±1σ over ten test points; dashed line: exactness threshold). Error decays geometrically, reaching near-machine precision within a few hundred nodes at all scales. with the empty product equal to 1. The contribution of leaf ℓ under coalition S is then 
+
+νℓ
+
+ Y 
+
+> e∈E ℓ
+
+pe
+
+ Y 
+
+> j∈S
+
+qj,ℓ (x),
+
+giving 
+
+vx(S) = X
+
+> ℓ∈L
+
+νℓ
+
+ Y
+
+> e∈E ℓ
+
+pe
+
+ Y
+
+> j∈S
+
+qj,ℓ (x)
+
+
+
+. (7) Each leaf thus induces a product game, and vx is a weighted sum of leaf-wise product games. Crucially, the effective dimension of each product game is not the ambient d but the number of distinct split features on that leaf path: 
+
+ηℓ := |{ k ∈ D : ∃e ∈ E ℓ, κ (e) = k}| , η := max  
+
+> ℓ∈L
+
+ηℓ, h := max  
+
+> ℓ∈L
+
+hℓ,
+
+where hℓ = |E ℓ| is the path length. We call η the effective path dimension and h the tree depth. Note ηℓ ≤ hℓ, since a feature may repeat along a root-to-leaf path. 
+
+Shapley values in parallel. The tree value function in equation (7) is a weighted sum of product games: each leaf ℓ depends on S only through Q 
+
+> j∈S
+
+qj,ℓ (x), mirroring the product-kernel case. By linearity of Shapley values, we apply Theorem 3 leaf-by-leaf and sum. Let {(τr, ω r)}mq 
+
+> r=1
+
+be Gauss–Legendre nodes and weights on [0 , 1] , and set 
+
+ar(q) = 1 − τr + τrq, sr(q) = q − 1
+
+ar(q) , Gℓ(r) = νℓ
+
+ Q  
+
+> e∈E ℓ
+
+pe
+
+ Q  
+
+> j∈D
+
+ar
+
+ qj,ℓ (x).
+
+Lemma 5. For the tree value function in equation (7) ,
+
+bϕi =
+
+> mq
+
+X
+
+> r=1
+
+ωr
+
+X
+
+> ℓ∈L
+
+Gℓ(r) sr
+
+ qi,ℓ (x).
+
+10 Theorem 5 shows that only features on the path to ℓ contribute, since qj,u = 1 otherwise. Direct evaluation therefore costs O(mq|L| η), which becomes O(|L| η2) in the exact regime 
+
+mq = ⌈η/ 2⌉—matching the cost of the original TreeSHAP. Since contributions of different leaves can be evaluated independently, the method parallelizes naturally: depth-first traversal in O(h),per-leaf product-game Shapley in O(log η), and summation across leaves yield total parallel time 
+
+O(d+log |L| +log η) = O(d) with enough processors. This is on par with GPUTreeSHAP (Mitchell et al., 2022), which similarly bottlenecks on tree depth. In the sequential setting, however, direct evaluation repeats work across leaves and features. Linear TreeSHAP (Bifet et al., 2022a) eliminates this redundancy via an interpolation-based formulation, but at the cost of numerical instability for deeper trees. We next show the same efficiency is achievable within our quadrature framework, without sacrificing stability. 
+
+Optimizing Shapley value evaluation for trees. We now reorganize this computation so the total work becomes linear in the number of leaves. Along a root-to-leaf path, each time we traverse an edge e splitting on feature i, the state of that feature changes from q− 
+
+> e
+
+to q+ 
+
+> e
+
+= q− 
+
+> e
+
+ce(x).Set ∆e(r) = sr(q+ 
+
+> e
+
+) − sr(q− 
+
+> e
+
+). The telescoping trick from Linear TreeSHAP then lets us reindex the sum from leaves to edges. 
+
+Lemma 6. Let He(r) = P   
+
+> ℓbelow e
+
+Gℓ(r), summed over leaves reachable from the endpoint of e. Then 
+
+bϕi =
+
+> mq
+
+X
+
+> r=1
+
+ωr
+
+X 
+
+> e∈E :κ(e)= i
+
+He(r) ∆ e(r).
+
+Theorem 6 replaces the leaf–feature quantities qi,ℓ —of which there are up to O(|L| η)—with edge-local ones. Traversing edge e only affects feature κ(e), and the effect is captured by the single increment ∆e(r); each leaf contributes only the scalar Gℓ(r). The algorithm thus never materializes the full table of qi,ℓ values: it maintains the current path state and aggregates leaf weights upward through the tree. 
+
+Lemma 7. Decision tree Shapley values can be computed in O(|L| η) time. 
+
+The full algorithm is given in Appendix C. 
+
+# 5 Experiments 
+
+Our experiments verify three properties of QuadraSHAP : (i) approximation error decays geomet-rically in mq; (ii) the exact tree variant outperforms all numerically stable competitors on synthetic and real-world tree benchmarks; and (iii) the product-kernel variant is an order of magnitude faster than the current exact baseline and scales to dimensions where the baseline cannot return any explanation within a 300-second budget. For tree baselines we compare against shap (Lundberg and Lee, 2017), FastTreeSHAP v1/v2 (Yang, 2021), Linear TreeSHAP (Bifet et al., 2022a,b), and 
+
+shapiq (Muschalik et al., 2024); for product-kernel methods, against PKeX-Shapley (Mohammadi et al., 2025). Numerical correctness of tree methods is assessed via the worst-case violation of the Shapley efficiency axiom, which is zero by design for any exact implementation. 11 Table 1: Tree explainer benchmark: runtime (milliseconds per instance) on synthetic data across leaf counts. Stability of the efficiency axiom max i |E[f ] + P 
+
+> j
+
+ϕij − f (xi)|: ● exact ( <10 −12 ), ●
+
+degraded ( 10 −12 to 10 −4), ● broken ( >10 −4). Best per column bold ; t/o denotes timeout after 300s.                                                                                                                                     
+
+> d= 10 d= 100
+> #leaves 10 100 1k10 k100 k10 100 1k10 k100 k
+> TreeSHAP 0.009 ●0.087 ●1.2 ●14 ●169 ●0.010 ●0.088 ●1.4 ●22.1 ●254 ●
+> FastTreeSHAP v1 0.010 ●0.049 ●0.68 ●7.6 ●89.1 ●0.010 ●0.055 ●0.70 ●10.3 ●130 ●
+> FastTreeSHAP v2 0.040 ●0.11 ●2.4 ●7.6 ●88.9 ●0.038 ●0.16 ●3.7 ●10.6 ●123 ●
+> Linear TreeSHAP 0.015 ●0.050 ●0.48 ●6.1 ●69.1 ●0.016 ●0.050 ●0.49 ●5.9 ●66.5 ●
+> shapiq 3.3 ●53.8 ●573 ●6281 ●t/o 3.4 ●47.0 ●576 ●4602 ●46494 ●
+> QuadraSHAP 0.005 ●0.030 ●0.29 ●3.7 ●41.5 ●0.006 ●0.031 ●0.33 ●4.0 ●48.3 ●
+
+Table 2: Tree explainer benchmark on five text-classification datasets: runtime (millisecond per instance) with stability of the efficiency axiom shown as ● exact ( <10 −12 ), ● degraded ( 10 −12 to 
+
+10 −4), ● broken ( >10 −4). Best per column bold ; t/o denotes timeout after 300s.                                                                           
+
+> emotion imdb sms_spam sst2 RT max depth 100 20 100 100 100 total leaves 24,200 51,099 29,662 180,676 83,125 tree count 100 100 100 300 300
+> TreeSHAP 341 ●27.4 ●176 ●1707 ●773 ●
+> FastTreeSHAP v1 326 ●18.4 ●166 ●1621 ●740 ●
+> FastTreeSHAP v2 326 ●t/o 166 ●1618 ●740 ●
+> Linear TreeSHAP 43.2 ●6.76 ●10.8 ●87.4 ●43.3 ●
+> shapiq 1650 ●2205 ●1930 ●t/o t/o
+> QuadraSHAP 11.3 ●3.75 ●9.68 ●60.5 ●27.3 ●
+
+5.1 Approximation Quality and Quadrature Budget 
+
+We study how rapidly the approximation error decays with mq for a product-kernel model. A Kernel Ridge Regressor (KRR) with an RBF kernel is fitted to standardized synthetic data for each 
+
+d ∈ { 50 , 500 , 1000 , 5000 } (see Appendix D for data creation). The reference Shapley vector ϕ⋆ is computed once at the exactness threshold m⋆q =⌈d/ 2⌉, and the mean ℓ2 error ∥bϕ − ϕ⋆∥2 is reported as mq varies over ten spaced values in [1 , min(500 , m ⋆q )] . Figure 2 shows the mean ±1σ over ten test points. At d=50 , the error drops three orders of magnitude from ≈10 −2 at mq=2 to ≈10 −7
+
+by mq=5 , using fewer than 20% of the nodes required for exactness. At larger scales the error is already small even at modest budgets: for d=1 ,000 it falls from ≈70 at mq=20 to ≈10 −4 by 
+
+mq=50 (exactness threshold mq=500 ), and for d=5 ,000 a similar reduction is observed while the exactness threshold ( mq=2 ,500 ) lies far outside the tested range. 12 5.2 Tree Ensemble Benchmark 
+
+Synthetic data. We benchmark all tree-based methods on random forests trained on a controlled synthetic regression dataset (see Appendix D for construction details), sweeping d ∈ { 10 , 100 }
+
+and ensemble size from 10 to 10 5 leaves. To assess algorithmic stability, we use max i |E[f ] + P 
+
+> j
+
+ϕij − f (xi)| as a proxy, measuring the worst-case deviation from the efficiency axiom. Table 1 summarizes the order-of-magnitude differences in this stability proxy; Table 5 in Appendix F reports the exact values. QuadraSHAP (mq=⌈η/ 2⌉) is the fastest numerically stable method in every configuration. At 10 5 leaves it runs in 41.5 ms ( d=10 ) and 48.3 ms ( d=100 ), outperforming 
+
+FastTreeSHAP v1 by 2–2.7× and shap by 3–5×, with the gap widening as the ensemble grows. Its efficiency-axiom violation remains at floating-point precision ( ∼10 −13 ) throughout. Linear TreeSHAP matches QuadraSHAP in speed but is unreliable: its efficiency violation grows from 
+
+6×10 −14 at 10 leaves to ∼10 at 10 4 leaves ( d=10 ), reaching 7×10 2 at 10 5 leaves ( d=100 ). Instability sets in well before the asymptotic regime and worsens with tree depth, making its reported runtime meaningless at scale. shapiq is correct but orders of magnitude slower, timing out at 10 5 leaves for d=10 .
+
+Real-world text classification. To assess performance on realistic, deep tree structures, we train random forest classifiers on five public text-classification datasets: emotion (Saravia et al., 2018), imdb (Maas et al., 2011), sms spam (Almeida et al., 2011), sst2 (Wang et al., 2019), and 
+
+rotten tomatoes (RT) (Pang and Lee, 2005). Documents are encoded as 5,000-dimensional TF-IDF vectors; full training, and dataset details are in Appendix E. The resulting ensembles range from 24k to 181k leaves and reach depths up to 100, substantially deeper than synthetic forests above. Table 2 reports runtime and summarises stability differences by order of magnitude; Table 6 in the Appendix gives the exact values. QuadraSHAP is the fastest method on every dataset, achieving 
+
+2–4× speedups over Linear TreeSHAP and 15 –30 × over shap and FastTreeSHAP . It is also the only method that remains numerically stable across all five datasets: at depth 100 , every competitor exhibits catastrophic efficiency violations— shap and FastTreeSHAP reach ∼10 9,
+
+shapiq reaches ∼10 30 , and Linear TreeSHAP reaches 10 186 –10 271 —while QuadraSHAP stays at floating-point precision ( ≤10 −13 ). The exception is imdb , whose shallow forests (max depth 20 )fall below the breakdown threshold, and all stable methods agree there. 
+
+5.3 Product-Kernel Methods Benchmark 
+
+We benchmark QuadraSHAP against PKeX-Shapley (Mohammadi et al., 2025), the current state-of-the-art exact method for product-kernel models, on synthetic and real-world data. 
+
+Synthetic data. We train a Kernel Ridge Regressor (KRR) with an RBF kernel on synthetic datasets (generated as in Section 5.1; see Appendix D) for d ∈ { 50 , 500 , 1000 , 2000 , 5000 }, and explain 50 held-out instances per setting (Table 3), with a 300-second per-instance timeout. For each d,
+
+QuadraSHAP runs with max mq = 400 .13 Table 3: Kernel-explainer benchmark: runtime (seconds per instance, mean over 50 samples) on KRR with RBF kernel. Synthetic : varying feature dimensionality d. TF-IDF text classification : tuned RBF SVC at d=5 , 000 across five datasets. t/o denotes failure to return any explanation within the 300 seconds time limit. Bold marks the faster (or only completing) method.                                           
+
+> Synthetic (varying d)TF-IDF text ( d=300 )
+> 50 500 1k2k5kimdb sms sst2 RT emotion
+> PKeX-Shapley 0.03 31.0 248.3 t/o t/o t/o t/o t/o t/o t/o
+> ±0.002 ±1.6±12 .4
+> QuadraSHAP 0.11 1.2 2.6 5.4 7.6 5.13 2.49 3.25 6.21 5.33
+> ±0.01 ±0.02 ±0.12 ±0.21 ±0.34 ±0.31 ±0.14 ±0.18 ±0.35 ±0.29
+
+PKeX-Shapley is faster at small d (0.03 s vs. 0.11 s at d=50 ), but QuadraSHAP takes over at around d≈150 , reaching a 25 .8× speedup at d=500 (1.2 s vs. 31 .0 s) and a 95 .5× speedup at 
+
+d=1000 (2.6 s vs. 248 .3 s). For d ≥ 2000 , PKeX-Shapley returns no explanation within the time limit, while QuadraSHAP completes in 5.4 s at d=2000 and 7.6 s at d=5000 .
+
+Real-world text classification. We further evaluate on the same five text-classification datasets (Section 5.2), fitting and fine-tuning support vector classification (SVC) with RBF kernel (see Ap-pendix E) on the 5,000-dimensional TF-IDF features and explaining 50 held-out samples per dataset (Table 3). PKeX-Shapley produces no explanation within 300 s on any dataset. QuadraSHAP 
+
+completes on all five with mq = 400 , with mean per-instance runtimes from 2.49 s ( sms spam )to 6.21 s ( rotten tomatoes ), consistent with the synthetic scaling trend. 
+
+# 6 Conclusion 
+
+We showed that Shapley values for product games reduce to a one-dimensional integral, enabling exact computation via Gauss–Legendre quadrature in O(d m q) total work and O(log d) parallel time, with geometric convergence in mq below the exactness threshold. A log-space implemen-tation resolves numerical instability that affects interpolation-based alternatives. Applied to tree ensembles, QuadraSHAP matches the complexity of Linear TreeSHAP while remaining numerically stable across all tested scales. Natural directions for future work include extending the quadrature framework to higher-order feature interactions (Muschalik et al., 2024), broaden-ing the product-game formulation to additional model classes with multiplicative structure, and developing adaptive quadrature strategies that tune mq per feature based on local convergence estimates. 14 References 
+
+Tiago A Almeida, José María G Hidalgo, and Akebo Yamakami. Contributions to the study of sms spam filtering: new collection and results. In Proceedings of the 11th ACM symposium on Document engineering , pages 259–262, 2011. Albert Bifet, Jesse Read, Chao Xu, et al. Linear treeshap. In Advances in Neural Information Processing Systems , 2022a. Albert Bifet, Jesse Read, Chao Xu, et al. Linear treeshap: reference implementation. https:// github.com/yupbank/linear_tree_shap , 2022b. Accessed: 2026-04-12, commit: 9deb5568. Guy E. Blelloch. Prefix sums and their applications. Technical report, Carnegie Mellon University, 1990. Richard P. Brent. The parallel evaluation of general arithmetic expressions. Journal of the ACM ,21(2):201–206, 1974. Siu Lun Chau, Robert Hu, Javier Gonzalez, and Dino Sejdinovic. Rkhs-shap: Shapley values for kernel methods. Advances in neural information processing systems , 35:13050–13063, 2022. Siu Lun Chau, Krikamol Muandet, and Dino Sejdinovic. Explaining the uncertain: Stochastic shapley values for gaussian process models. Advances in Neural Information Processing Systems ,36:50769–50795, 2023. Hugh Chen, Scott M. Lundberg, Gabriel G. Erion, and Su-In Lee. True to the model or true to the data? arXiv preprint arXiv:2006.16234 , 2020. Philip J. Davis and Philip Rabinowitz. Methods of Numerical Integration . Academic Press, 2nd edition, 1984. Pierre Dehez. Cooperative product games. International Game Theory Review , 26(01):2350016, 2024. Fabian Fumagalli, R Teal Witter, and Christopher Musco. Polyshap: Extending kernelshap with interaction-informed polynomial regression. arXiv preprint arXiv:2601.18608 , 2026. Gene H. Golub and John H. Welsch. Calculation of Gauss quadrature rules. Mathematics of Computation , 23(106):221–230, 1969. Tom Heskes, Enzo Sijben, Ioana Bucur, and Tom Claassen. Causal shapley values: Exploiting causal knowledge to explain individual predictions of complex models. Advances in Neural Information Processing Systems , 33, 2020. Dominik Janzing, Lenon Minorics, and Patrick Blöbaum. Feature relevance quantification in explainable ai: A causal problem. Proceedings of the 23rd International Conference on Artificial Intelligence and Statistics , 2020. Zhongli Jiang, Min Zhang, and Dabao Zhang. Fast calculation of feature contributions in boosting trees. In The 41st Conference on Uncertainty in Artificial Intelligence , 2025. 15 Weida Li, Yaoliang Yu, and Bryan Kian Hsiang Low. TreeGrad-Ranker: Feature ranking via O(l)-time gradients for decision trees. In International Conference on Learning Representations ,2026. Scott M. Lundberg and Su-In Lee. A unified approach to interpreting model predictions. In 
+
+Advances in Neural Information Processing Systems , 2017. Scott M. Lundberg, Gabriel Erion, Hugh Chen, Alex DeGrave, Jordan M. Prutkin, Bala Nair, Ronit Katz, Jonathan Himmelfarb, Nisha Bansal, and Su-In Lee. From local explanations to global understanding with explainable ai for trees. Nature Machine Intelligence , 2020. Andrew L. Maas, Raymond E. Daly, Peter T. Pham, Dan Huang, Andrew Y. Ng, and Christopher Potts. Learning word vectors for sentiment analysis. In Proceedings of the 49th Annual Meeting of the Association for Computational Linguistics: Human Language Technologies , pages 142–150, Portland, Oregon, USA, June 2011. Association for Computational Linguistics. URL http: //www.aclweb.org/anthology/P11-1015 .Luke Merrick and Ankur Taly. The explanation game: Explaining machine learning models using shapley values. arXiv preprint arXiv:2009.05500 , 2020. Rory Mitchell, Eibe Frank, and Geoffrey Holmes. Gputreeshap: massively parallel exact calculation of shap scores for tree ensembles. PeerJ Computer Science , 8:e880, 2022. Majid Mohammadi, Siu Lun Chau, and Krikamol Muandet. Computing exact shapley values in polynomial time for product-kernel methods. arXiv preprint arXiv:2505.16516 , 2025. Majid Mohammadi, Krikamol Muandet, Ilaria Tiddi, Annette Ten Teije, and Siu Lun Chau. Exact shapley attributions in quadratic-time for fanova gaussian processes. In Proceedings of the AAAI Conference on Artificial Intelligence , volume 40, pages 24414–24421, 2026. Christoph Molnar. Interpretable Machine Learning . Lulu.com, 2022. URL https:// christophm.github.io/interpretable-ml-book/ .Maximilian Muschalik, Hubert Baniecki, Fabian Fumagalli, Patrick Kolpaczki, Barbara Hammer, and Eyke Hüllermeier. shapiq: Shapley interactions for machine learning. Advances in Neural Information Processing Systems , 37:130324–130357, 2024. Guillermo Owen. Multilinear extensions of games. Management Science , 18(5-part-2):64–79, 1972. Bo Pang and Lillian Lee. Seeing stars: Exploiting class relationships for sentiment categorization with respect to rating scales. In Proceedings of the ACL , 2005. Marco Tulio Ribeiro, Sameer Singh, and Carlos Guestrin. Why should i trust you?: Explaining the predictions of any classifier. In KDD , 2016. Elvis Saravia, Hsien-Chi Toby Liu, Yen-Hao Huang, Junlin Wu, and Yi-Shin Chen. CARER: Contextualized affect representations for emotion recognition. In Proceedings of the 2018 Conference on Empirical Methods in Natural Language Processing , pages 3687–3697, Brussels, Belgium, October-November 2018. Association for Computational Linguistics. doi: 10.18653/v1/ D18-1404. URL https://www.aclweb.org/anthology/D18-1404 .16 Lloyd S. Shapley. A value for n-person games. In Contributions to the Theory of Games . Princeton University Press, 1953. Mukund Sundararajan and Amir Najmi. The many shapley values for model explanation. Proceed-ings of the 37th International Conference on Machine Learning , 2020. Lloyd N. Trefethen. Is Gauss quadrature better than Clenshaw–Curtis? SIAM Review , 50(1):67–87, 2008. Lloyd N. Trefethen. Approximation Theory and Approximation Practice . SIAM, 2013. Alex Wang, Amanpreet Singh, Julian Michael, Felix Hill, Omer Levy, and Samuel R. Bowman. GLUE: A multi-task benchmark and analysis platform for natural language understanding. 2019. In the Proceedings of ICLR. Robert J. Weber. Probabilistic values for games. The Shapley Value: Essays in honor of Lloyd S. Shapley , pages 101–119, 1988. Jilei Yang. Fast treeshap: Accelerating shap value computation for trees. arXiv preprint arXiv:2109.09847 , 2021. 17 A Concurrent Work 
+
+Li et al. (2026) independently apply Gauss–Legendre quadrature to compute Shapley values for decision trees. Their observation is that the Shapley value can be written as the integral of the gradient of the multilinear extension of the tree model: ϕi = R 10 ∂ifx(t 1) d t, where fx is the multilinear extension evaluated along the diagonal t1. Because the tree value function is a polynomial of degree at most D − 1 in t (where D is the tree depth), the GL rule with ⌈D/ 2⌉
+
+nodes evaluates this integral exactly. The resulting TreeGrad-Shap algorithm is presented as a by-product of their primary contribution on feature ranking via gradient optimization, and achieves O(LD ) complexity for a tree with L leaves. 
+
+Relationship to QuadraSHAP . While both works arrive at a GL quadrature rule for tree Shap-ley values, the derivations are mathematically distinct and the scopes differ in several important ways. 
+
+TreeGrad-Shap proceeds via the gradient of the multilinear extension of the tree model, and then specifically study the tree-structured value functions. QuadraSHAP instead derives its integral representation from the product structure of the value function, using the Beta-function representation of the Shapley weights (Owen, 1972; Weber, 1988). This derivation applies to any value function that is a weighted sum of product games, a class that encompasses tree ensembles and product-kernel methods. The resulting differences in capability are as follows. First, QuadraSHAP covers product-kernel methods (e.g., SVMs and kernel ridge regressors with RBF or polynomial kernels), which are entirely outside the scope of TreeGrad-Shap . Second, QuadraSHAP introduces an approximation regime :when mq < ⌈d/ 2⌉, the quadrature error converges geometrically in mq, with an explicit bound; Li et al. (2026) do not consider approximation beyond the exact threshold. Third, QuadraSHAP puts forward a stable algorithm that is numerically stable at large-scale problems encountered in our text-classification benchmarks, where interpolation-based methods break down catastrophically. Fourth, QuadraSHAP exploits the associative structure of the required products to deliver an 
+
+O(log d) parallel-time algorithm via scan primitives. 
+
+# B Proofs 
+
+Proof of Proposition 2 
+
+By definition, the Shapley value of player i ∈ D is 
+
+ϕi(v) = X
+
+> S⊆D\{ i}
+
+|S| ! ( d − |S| − 1)! 
+
+d!
+
+ v(S ∪ { i}) − v(S).
+
+For a product game, the marginal contribution simplifies to 
+
+v(S ∪ { i}) − v(S) = 
+
+Y 
+
+> j∈S
+
+uj
+
+
+
+(ui − 1) .
+
+18 Substituting this expression yields 
+
+ϕi(v) = ( ui − 1) X
+
+> S⊆D\{ i}
+
+μ|S| 
+
+Y
+
+> j∈S
+
+uj , μq := q! ( d − q − 1)! 
+
+d! .
+
+We now express the coefficients μq as integrals. For integers q ∈ { 0, . . . , d − 1}, consider the integral Z 10
+
+tq(1 − t)d−q−1 dt. 
+
+By repeated integration by parts (or by the definition of the Beta function), this integral evaluates to Z 10
+
+tq(1 − t)d−q−1 dt = q! ( d − q − 1)! 
+
+d! = μq.
+
+Thus, each Shapley weight μq admits the representation 
+
+μq =
+
+Z 10
+
+tq(1 − t)d−q−1 dt. 
+
+Substituting this identity into the Shapley expression and interchanging summation and integration give 
+
+ϕi(v) = ( ui − 1) 
+
+Z 10
+
+X
+
+> S⊆D\{ i}
+
+t|S| (1 − t)d−|S|− 1 Y
+
+> j∈S
+
+uj dt. 
+
+To simplify the inner sum, observe that for each feature j̸ = i, the term inside the summation contributes either a factor (1 − t) if j / ∈ S or a factor t u j if j ∈ S . Summing over all subsets 
+
+S ⊆ D \ { i} therefore corresponds to expanding the product 
+
+Y 
+
+> j̸=i
+
+ (1 − t) + t u j
+
+.
+
+Since |D \ { i}| = d − 1, this expansion yields 
+
+X
+
+> S⊆D\{ i}
+
+t|S| (1 − t)d−|S|− 1 Y
+
+> j∈S
+
+uj = Y 
+
+> j̸=i
+
+ (1 − t) + t u j
+
+.
+
+Substituting back into the integral completes the proof: 
+
+ϕi(v) = ( ui − 1) 
+
+Z 10
+
+Y 
+
+> j̸=i
+
+ (1 − t) + t u j
+
+ dt. 
+
+19 Proof of Proposition 3 
+
+Part (i): Exactness. The integrand gi(t) := Q 
+
+> j̸=i
+
+ (1 − t) + tu j
+
+ is a polynomial of degree at most d−1 in t. An mq-point GL rule on [0 , 1] integrates exactly every polynomial of degree at most 
+
+2mq − 1 (Davis and Rabinowitz, 1984). For mq ≥ ⌈ d/ 2⌉ we have 2mq − 1 ≥ 2⌈d/ 2⌉ − 1 ≥ d − 1,so the quadrature sum reproduces the exact integral: 
+
+> mq
+
+X
+
+> q=1
+
+ωq gi(τq) = 
+
+Z 10
+
+gi(t) dt. 
+
+Multiplying both sides by (ui − 1) and applying Proposition 2 gives bϕi(v) = ϕi(v).
+
+Part (ii): Approximation. Let 
+
+gi(t) := Y 
+
+> j̸=i
+
+ (1 − t) + t u j
+
+.
+
+Given Proposition 2, one can write: 
+
+ϕi(v) − bϕi(v) = (ui − 1) 
+
+Z 10
+
+gi(t) dt − (ui − 1) 
+
+> mq
+
+X
+
+> q=1
+
+ωq gi(τq)
+
+= |ui − 1|
+
+Z 10
+
+gi(t) dt −
+
+> mq
+
+X
+
+> q=1
+
+ωq gi(τq) . (8) Now gi is a polynomial in t of degree at most d − 1, hence it is entire and in particular analytic on and inside every Bernstein ellipse Eρ, for any ρ > 1. Standard Gauss–Legendre quadrature error bounds for analytic functions on [−1, 1] (Trefethen, 2013, Thm. 19.3), transferred to [0 , 1] via the affine change of variables x = 2 t − 1, imply 
+
+Z 10
+
+gi(t) dt −
+
+> mq
+
+X
+
+> q=1
+
+ωq gi(τq) ≤ 4 max z∈Eρ |gi(z)|
+
+ρ2mq (ρ2 − 1) .
+
+Substituting this bound into the previous display yields 
+
+ϕi(v) − bϕi(v) ≤ | ui − 1|4 max z∈Eρ |gi(z)|
+
+ρ2mq (ρ2 − 1) .
+
+Hence, for any fixed ρ > 1,
+
+ϕi(v) − bϕi(v) ≤ Cρ Mρ |ui − 1| ρ−2mq ,
+
+where Mρ := max z∈Eρ |gi(z)| and Cρ := 4 /(ρ2 − 1) depends only on ρ. This proves the claimed geometric decay of the approximation error. 20 Proof of Proposition 4 
+
+Sequential. Computing, for each q ∈ { 1, . . . , m q}, the factors Tq,j = (1 − τq) + τquj and the associated quantities log |Tq,j | and sgn( Tq,j ) costs O(d m q) arithmetic operations in total. Accumulating log |Pq| = P 
+
+> j
+
+log |Tq,j | and sgn( Pq) = Q 
+
+> j
+
+sgn( Tq,j ) is a length-d reduction for each of the mq nodes, contributing O(d m q) additional work. Evaluating equation (5) then requires, for each i ∈ { 1, . . . , d }, a weighted sum of mq terms, each obtained from log |Pq| − log |Tq,i | in constant time, for a further O(d m q) operations. The total is therefore O(d m q).
+
+Parallel time. Given an associative operator ⊕ and a length-d sequence, a hierarchical parallel scan evaluates a1 ⊕ · · · ⊕ ad in parallel time O(log d) using O(d) processors (Blelloch, 1990). Both 
+
+log |Pq| (under addition) and sgn( Pq) (under multiplication) are such reductions over the feature axis of length d, and the mq nodes are independent, so the shared-product phase completes in parallel time O(log d). For each i, evaluating equation (5) requires (i) subtracting log |Tq,i | from 
+
+log |Pq| pointwise (parallel time O(1) ), and (ii) a weighted sum over q, which is a length-mq
+
+tree reduction with parallel time O(log mq). Since the d Shapley values are independent given 
+
+{(log |Pq|, sgn( Pq)) }mq
+
+> q=1
+
+, they are evaluated in parallel across i without increasing parallel time. The overall parallel time is therefore O(log d + log mq) = O(log d). The required number of processors is the ratio of total work to parallel time (Brent, 1974), giving O d m q/(log d + log mq)
+
+processors. The exact regime mq = ⌈d/ 2⌉ is a special case. 
+
+Proof of Theorem 5 
+
+Consider the tree value function in Equation (7), 
+
+vx(S) = X
+
+> ℓ∈L
+
+νℓ
+
+Y
+
+> e∈E ℓ
+
+pe
+
+! Y
+
+> j∈S
+
+qj,ℓ (x)
+
+!
+
+.
+
+For each leaf ℓ, the term Q 
+
+> j∈S
+
+qj,ℓ (x) is a product game over the features, with S-independent weight νℓ
+
+Q 
+
+> e∈E ℓ
+
+pe. Since the Shapley value is linear in the value function, the Shapley value of the full tree is the weighted sum of the Shapley values of these leaf-wise product-game terms. Therefore, the Shapley value can be written by applying Theorem 3 as: 
+
+bϕi = X
+
+> ℓ∈L
+
+νℓ
+
+Y
+
+> e∈E ℓ
+
+pe
+
+!  qi,ℓ (x) − 1 mq
+
+X
+
+> r=1
+
+ωr
+
+Y 
+
+> j̸=i
+
+ar
+
+ qj,ℓ (x)
+
+=
+
+> mq
+
+X
+
+> r=1
+
+ωr
+
+X
+
+> ℓ∈L
+
+νℓ
+
+Y
+
+> e∈E ℓ
+
+pe
+
+!  qi,ℓ (x) − 1 Y  
+
+> j̸=i
+
+ar
+
+ qj,ℓ (x).
+
+Using sr(q) = q−1  
+
+> ar(q)
+
+and Gℓ(r) = νℓ
+
+ Q  
+
+> e∈E ℓ
+
+pe
+
+ Q  
+
+> j∈D
+
+ar
+
+ qj,ℓ (x), we obtain 
+
+bϕi =
+
+> mq
+
+X
+
+> r=1
+
+ωr
+
+X
+
+> ℓ∈L
+
+Gℓ(r) sr
+
+ qi,ℓ (x),
+
+which proves the claim. 21 Proof of Theorem 6 
+
+For a leaf ℓ and feature i, let Πℓ,i = ( e1, . . . , e k) be the sequence of edges on the path from ℓ to the root that are labeled with feature i, ordered from ℓ to the root. Consider the sum 
+
+> k
+
+X
+
+> a=1
+
+∆ea (r) = 
+
+> k
+
+X
+
+> a=1
+
+ sr(q+ 
+
+> ea
+
+) − sr(q− 
+
+> ea
+
+).
+
+Note, that q− 
+
+> ea
+
+= q+ 
+
+> ea−1
+
+since the state of the feature does not change while traversing edge that splits on another feature, so the sum above telescopes to sr(q+ 
+
+> e1
+
+) − sr(q− 
+
+> ek
+
+). Since the q = 1 for the feature that is not present on the path from some node to the root, q− 
+
+> ek
+
+= 1 and sr(q− 
+
+> ek
+
+) = 0 ,leading to kX
+
+> a=1
+
+∆ea (r) = sr(q+ 
+
+> e1
+
+) = sr(qi,ℓ (x)) .
+
+This identity can be used to replace sr(qi,ℓ (x)) in Shapley value computation as 
+
+bϕi =
+
+> mq
+
+X
+
+> r=1
+
+ωr
+
+X
+
+> ℓ∈L
+
+Gℓ(r)sr(qi,ℓ (x)) =
+
+> mq
+
+X
+
+> r=1
+
+ωr
+
+X
+
+> ℓ∈L
+
+Gℓ(r) X
+
+> e∈Πℓ,i
+
+∆e(r).
+
+We now rearrange the sum P 
+
+> ℓ∈L
+
+Gℓ(r) P 
+
+> e∈Πℓ,i
+
+∆e(r) in order to sum not over the leaves but over edges. Note, that ∆e(r) contributes to the sum with coefficient He(r) for edges labeled with i
+
+since e occurs in Πℓ,i only for ℓ in the subtree of e, and with coefficient 0 for other edges, so 
+
+bϕi =
+
+> mq
+
+X
+
+> r=1
+
+ωr
+
+X 
+
+> e∈E :κ(e)= i
+
+He(r) ∆ e(r).
+
+Proof of Theorem 7 
+
+In order to calculated Shapley values depth-first search (DFS) of the tree can be used. During the traversal, we maintain the current feature states qj along the root-to-current-node path, together with the running quantities Br =
+
+Q  
+
+> eon current path
+
+pe
+
+ Q 
+
+> j
+
+ar(qj ). Initially, at the root, all qj = 1 
+
+and hence Br = 1 . When the DFS descends through an edge e with split feature κ(e), the state of only this feature changes from q− 
+
+> e
+
+to q+ 
+
+> e
+
+= q− 
+
+> e
+
+ce(x). Therefore, for each quadrature node r, the corresponding value Br can be updated in constant time by multiplying by pe ar (q+    
+
+> e)
+> ar(q−
+> e)
+
+. The old values of qκ(e) and Br are stored on the recursion stack and restored when the DFS backtracks. 22 At a leaf ℓ, the traversal has accumulated exactly the product appearing in Gℓ(r), so the leaf returns Gℓ(r) = νℓBr for every quadrature node r. Each internal node sums the vectors returned by its children. Consequently, after the recursive call below, an edge e returns, we have obtained 
+
+He(r) = P   
+
+> ℓbelow e
+
+Gℓ(r). We then add He(r) to the accumulator of the parent subtree and update the Shapley value of the edge feature by adding ωrHe(r)∆ e(r) to bϕκ(e) for each r.The running time of the algorithm is linear in the size of the tree, up to the quadrature factor. Each edge is traversed once in the downward direction and once during backtracking, and for each such edge, we perform O(mq) work to update the quantities Br, accumulate the returned values 
+
+He(r), and add the corresponding contribution to bϕκ(e). Each leaf similarly contributes O(mq)
+
+work. Hence, the total running time is O(mq|L| ); for the exact case of mq = η, the complexity will be O(η|L| ). The memory usage is O(mqh + η) during the DFS: the recursion stack stores the 
+
+mq-dimensional running vector along the current path, while the current feature states require one value per feature appearing on a root-to-leaf path. In particular, the algorithm avoids storing the O(|L| η) leaf–feature quantities qi,ℓ explicitly. 23 24 C Pseudocode for tree algorithms 
+
+Algorithm 1 Optimal DFS algorithm 
+
+Require: Tree T , explained sample x, quadrature nodes and weights {(τr, ω r)}mq
+
+> r=1
+
+Ensure: Shapley values ϕi
+
+Definitions: ar(q) = 1 − τr + τrq, sr(q) = q − 1
+
+ar(q)
+
+State along current DFS path: 
+
+q[j]: current factor of feature j (default 1)
+
+B[r]: current product value 
+
+Q  
+
+> eon path
+
+pe
+
+ Q 
+
+> j
+
+ar(q[j]) 
+
+1: for all features i do 
+
+2: ϕi ← 0
+
+3: end for 
+
+4: for all features j do 
+
+5: q[j] ← 1
+
+6: end for 
+
+7: for r = 1 to mq do 
+
+8: B[r] ← 1
+
+9: end for 
+
+10: function DFS (u)
+
+11: if u is a leaf then 
+
+12: for r = 1 to mq do 
+
+13: H[r] ← νu · B[r]
+
+14: end for 
+
+15: return H
+
+16: end if 
+
+17: for r = 1 to mq do 
+
+18: Htot [r] ← 0
+
+19: end for 
+
+20: for all child edges e = ( u, v ) do 
+
+21: j ← f (e)
+
+22: p ← pe
+
+23: c ← ce(x)
+
+24: qold ← q[j]
+
+25: qnew ← qold · c
+
+26: for r = 1 to mq do 
+
+27: B[r] ← B[r] · p · ar(qnew )
+
+ar(qold )
+
+28: end for 
+
+29: q[j] ← qnew 
+
+30: Hchild ← DFS (v)
+
+31: for r = 1 to mq do 
+
+32: ∆ ← sr(qnew ) − sr(qold )
+
+33: ϕj ← ϕj + ωr Hchild [r] ∆ 
+
+34: Htot [r] ← Htot [r] + Hchild [r]
+
+35: end for 
+
+36: q[j] ← qold 
+
+37: for r = 1 to mq do 
+
+38: B[r] ← B[r] 
+
+p · ar(qnew )
+
+ar(qold )
+
+
+
+39: end for 
+
+40: end for 
+
+41: return Htot 
+
+42: end function 
+
+43: DFS (root( T )) 25 Complexity. When DFS moves across an edge, only one qj changes, so updating the running quantities costs O(mq). Each subtree aggregation and Shapley update also costs O(mq) per edge. Since every edge is traversed once downward and once upward, the total running time is 
+
+O(mqL).
+
+Numerical note. As before, the updates for q and G can be carried out in log-space: store 
+
+log |Gr| (and, if needed, log |qj |), together with sign bits. Then multiplications/divisions become additions/subtractions of logs. Zero values should be handled explicitly rather than by taking logarithms, and special care is needed when ar(q) = 0 .
+
+# D Synthetic Dataset Construction 
+
+The synthetic regression benchmark uses datasets generated with sklearn.datasets.make_regressio 
+
+For each feature dimensionality, we generate n=1 ,000 samples with the following fixed parame-ters: 
+
+• n_informative = d/ 4 (one-fourth of features are informative); 
+
+• n_targets = 1 (single real-valued target); 
+
+• noise = 0 .1 (small Gaussian noise added to the target); 
+
+• random_state = 42 (fixed seed for reproducibility). 
+
+# E Text-Classification Dataset Details 
+
+All five datasets used in the real-world tree ensemble benchmark (Section 5.2) and the product-kernel benchmark (Section 5.3) are loaded directly from the Hugging Face datasets library. Table 4 summarises their basic statistics. Table 4: Statistics of the five text-classification datasets used in Sections 5.2 and 5.3.                         
+
+> Dataset Train Test Classes Task
+> emotion 16,000 2,000 6Emotion recognition
+> imdb 25,000 25,000 2Sentiment analysis
+> sms_spam 4,457 1,115 2Spam detection
+> sst2 67,349 872 2Sentiment analysis
+> rotten_tomatoes 8,530 1,066 2Sentiment analysis
+
+Text preprocessing. Documents are tokenized with TF-IDF using the following fixed configura-tion: lower-casing, English stop-word removal, unigram and bigram features ( ngram _range=(1 , 2) ), minimum document frequency min _df=3 , maximum document frequency max _df=0 .95 , sublin-ear TF scaling ( sublinear _tf=True ), and vocabulary capped at 5,000 terms ( max _features=5000 ). This yields a d=5 ,000 dimensional TF-IDF feature vector for each document. 26 Tree ensemble models. For the tree ensemble benchmark, a RandomForestClassifier 
+
+is trained on each dataset with n_estimators = 100 (emotion , imdb , sms_spam ) or 
+
+300 (sst2 , rotten_tomatoes ), max_depth = 100 , min_samples_leaf = 1,and random_state = 42 . No hyperparameter search is performed for the tree models; the configuration is fixed across all datasets to ensure a fair stability comparison at large depths. 
+
+SVM model. For the product-kernel benchmark (Section 5.3), a support vector classification model with RBF kernel is trained on each dataset. Hyperparameters C and γ are tuned indepen-dently per dataset using Optuna with 50 trials of TPE sampling and five-fold cross-validation on the training split. The best configuration is then re-fitted on the full training set. Fifty held-out test samples are drawn uniformly at random for the explanation benchmark. 
+
+# F Experimental Results 
+
+Due to space constraints, the full benchmark tables for tree models are presented here in the appendix. We report the synthetic and real-world tree ensemble results (Tables 5 and 6). Each table reports runtime alongside the worst-case violation of the Shapley efficiency axiom max i |E[f ] + P 
+
+> j
+
+ϕj (xi) − f (xi)|, which equals zero for any numerically exact implementation; red entries indicate numerical breakdown. All benchmarks were performed on a computer equipped with 
+
+AMD Ryzen AI 7 350 operating under normal conditions and having 32GB of RAM having frequency of 3750 MHz and operating in dual-channel mode. 27 Table 5: Single-threaded TreeSHAP runtime (milliseconds, mean ± sample std. over 3 seeds, top) and worst-case efficiency-axiom violation max i |E[f ] + P
+
+j ϕij − f (xi)| (bottom) on synthetic data. Red: numerical breakdown. Bold : fastest stable. 
+
+#leaves 10 20 50 100 1k 10 k 100 k
+
+d = 10 
+
+TreeShap 
+
+0.009 ± 0.000 
+
+5·10 −14 
+
+0.016 ± 0.001 
+
+6·10 −14 
+
+0.036 ± 0.003 
+
+1·10 −13 
+
+0.087 ± 0.002 
+
+1·10 −13 
+
+1.2 ± 0.1 
+
+3·10 −13 
+
+14.0 ± 1.0 
+
+1·10 −12 
+
+169 ± 13 
+
+3·10 −12 
+
+FastTreeSHAP v1 
+
+0.010 ± 0.004 
+
+5·10 −14 
+
+0.013 ± 0.000 
+
+9·10 −14 
+
+0.026 ± 0.001 
+
+9·10 −14 
+
+0.049 ± 0.105 
+
+1·10 −13 
+
+0.68 ± 0.07 
+
+3·10 −13 
+
+7.6 ± 0.7 
+
+1·10 −12 
+
+89.1 ± 7.7 
+
+3·10 −12 
+
+FastTreeSHAP v2 
+
+0.040 ± 0.027 
+
+3·10 −14 
+
+0.043 ± 0.002 
+
+6·10 −14 
+
+0.062 ± 0.001 
+
+6·10 −14 
+
+0.11 ± 0.00 
+
+1·10 −13 
+
+2.4 ± 0.4 
+
+2·10 −13 
+
+7.6 ± 0.3 
+
+1·10 −12 
+
+88.9 ± 2.2 
+
+3·10 −12 
+
+Linear TreeSHAP 
+
+0.015 ± 0.005 
+
+6·10 −14 
+
+0.019 ± 0.001 
+
+2·10 −13 
+
+0.028 ± 0.000 
+
+8·10 −12 
+
+0.050 ± 0.004 
+
+9·10 −11 
+
+0.48 ± 0.01 
+
+3·10 −6
+
+6.1 ± 0.1 
+
+1·10 1
+
+69.1 ± 0.6 
+
+2·10 1
+
+shapiq 
+
+3.3 ± 0.0 
+
+2·10 −13 
+
+7.9 ± 0.6 
+
+3·10 −13 
+
+25.1 ± 1.0 
+
+3·10 −13 
+
+53.8 ± 3.2 
+
+1·10 −12 
+
+573 ± 10 
+
+1·10 −11 
+
+6281 ± 26 
+
+9·10 −11 t/o 
+
+QuadraSHAP 
+
+0.005 ± 0.000 
+
+4·10 −14 
+
+0.009 ± 0.000 
+
+6·10 −14 
+
+0.017 ± 0.000 
+
+6·10 −14 
+
+0.030 ± 0.000 
+
+1·10 −13 
+
+0.29 ± 0.03 
+
+2·10 −13 
+
+3.7 ± 0.4 
+
+5·10 −13 
+
+41.5 ± 0.6 
+
+8·10 −13 
+
+d = 100 
+
+TreeShap 
+
+0.010 ± 0.001 
+
+9·10 −14 
+
+0.017 ± 0.002 
+
+7·10 −14 
+
+0.042 ± 0.005 
+
+1·10 −13 
+
+0.088 ± 0.017 
+
+2·10 −13 
+
+1.4 ± 0.2 
+
+6·10 −13 
+
+22.1 ± 1.5 
+
+2·10 −12 
+
+254 ± 29 
+
+6·10 −12 
+
+FastTreeSHAP v1 
+
+0.010 ± 0.001 
+
+6·10 −14 
+
+0.014 ± 0.001 
+
+1·10 −13 
+
+0.027 ± 0.003 
+
+1·10 −13 
+
+0.055 ± 0.009 
+
+2·10 −13 
+
+0.70 ± 0.08 
+
+7·10 −13 
+
+10.3 ± 0.9 
+
+2·10 −12 
+
+130 ± 19 
+
+6·10 −12 
+
+FastTreeSHAP v2 
+
+0.038 ± 0.001 
+
+6·10 −14 
+
+0.044 ± 0.001 
+
+6·10 −14 
+
+0.073 ± 0.010 
+
+6·10 −14 
+
+0.16 ± 0.04 
+
+2·10 −13 
+
+3.7 ± 0.8 
+
+6·10 −13 
+
+10.6 ± 0.7 
+
+2·10 −12 
+
+123 ± 13 
+
+6·10 −12 
+
+Linear TreeSHAP 
+
+0.016 ± 0.000 
+
+6·10 −14 
+
+0.021 ± 0.000 
+
+2·10 −13 
+
+0.029 ± 0.001 
+
+1·10 −12 
+
+0.050 ± 0.004 
+
+1·10 −10 
+
+0.49 ± 0.04 
+
+2·10 −5
+
+5.9 ± 0.2 
+
+6·10 0
+
+66.5 ± 1.3 
+
+7·10 2
+
+shapiq 
+
+3.4 ± 0.4 
+
+2·10 −13 
+
+6.8 ± 2.4 
+
+7·10 −14 
+
+21.1 ± 4.3 
+
+2·10 −12 
+
+47.0 ± 4.6 
+
+3·10 −12 
+
+576 ± 35 
+
+3·10 −9
+
+4602 ± 22 
+
+9·10 −5
+
+46494 ± 510 
+
+1·10 −4
+
+QuadraSHAP 
+
+0.006 ± 0.000 
+
+6·10 −14 
+
+0.009 ± 0.000 
+
+6·10 −14 
+
+0.017 ± 0.001 
+
+2·10 −13 
+
+0.031 ± 0.002 
+
+1·10 −13 
+
+0.33 ± 0.01 
+
+2·10 −13 
+
+4.0 ± 0.3 
+
+3·10 −13 
+
+48.3 ± 2.8 
+
+5·10 −13 
+
+28 Table 6: Execution time in milliseconds (mean ± sample std. over 3 repeats, top) and worst-case violation of the efficiency axiom (bottom) for tree explainers across text-classification datasets. Red entries indicate numerical breakdown. Bold : fastest stable. 
+
+emotion imdb sms_spam sst2 RT max depth 100 20 100 100 100 total leaves 24200 51099 29662 180676 83125 tree count 100 100 100 300 300 
+
+TreeShap 341 ± 1 27.4 ± 0.2 176 ± 1 1707 773 ± 2    
+
+> 2·10 93·10 −14 1·10 95·10 81·10 9
+
+FastTreeSHAP v1 326 ± 0 18.4 ± 0.0 166 ± 0 1621 740 ± 1    
+
+> 1·10 93·10 −14 3·10 96·10 86·10 8
+
+FastTreeSHAP v2 326 ± 0 t/o 166 ± 0 1618 740 ± 1   
+
+> 1·10 93·10 96·10 86·10 8
+
+Linear TreeSHAP 43.2 ± 0.1 6.76 ± 0.32 10.8 ± 0.0 87.4 ± 0.4 43.3 ± 0.1     
+
+> 5·10 222 1·10 23 1·10 186 2·10 268 9·10 235
+
+shapiq 1650 2205 1930 t/o t/o   
+
+> 1·10 30 2·10 −84·10 29
+
+QuadraSHAP 11.3 ± 0.0 3.75 ± 0.02 9.68 ± 0.01 60.5 ± 0.2 27.3 ± 0.0     
+
+> 6·10 −15 1·10 −13 3·10 −14 4·10 −13 1·10 −13
+
+29

@@ -1,0 +1,1532 @@
+Title: Segment Anything with Robust Uncertainty-Accuracy Correlation
+
+URL Source: https://arxiv.org/pdf/2605.10603v1
+
+Published Time: Tue, 12 May 2026 03:24:21 GMT
+
+Number of Pages: 29
+
+Markdown Content:
+# Segment Anything with Robust Uncertainty-Accuracy Correlation 
+
+Hongyou Zhou 1 Marc Toussaint 1 Ling Shao 2 Zihan Ye 2 B(a) SAM 2  
+
+> Scenes
+> Objects
+> Scientific
+> Testing image
+> (Various OOD)
+> Segmentation
+> (unexplainable )
+> Testing image
+> (Various OOD)
+> Segmentation
+> (Interpretable )
+> Uncertainty Map
+> (Robust )
+> Egocentric
+> Scenes
+> Objects
+> Scientific
+> Egocentric
+> …
+> Confidence
+> (Confused )
+> Training image
+> (Fixed domain)
+> Training image
+> (Dynamic domain)
+> …
+> …
+> …
+> …
+> …
+> …
+> …
+> …
+> …
+> …
+> …
+> …
+> …
+> …
+> …
+
+(b) Our RUAC    
+
+> Trained on
+> Trained on
+> SAM 2
+> SAM 2
+> …………
+> …
+> Adversarial
+> Uncertainty
+> Estimation
+> Bayesian
+> Mask Decoder
+
+Figure 1. Overview of Robust Uncertainty-Accuracy Correlation (RUAC): Both panels share the same out-of-domain test images spanning four categories (Objects, Scenes, Scientific, Egocentric). (a) Vanilla SAM2 trained on a fixed source domain produces 
+
+unexplainable segmentation and confused confidence maps, exhibiting Mask-level Confidence Confusion (MCC) . (b) RUAC introduces a 
+
+dynamic training domain via Adversarial Uncertainty Estimation (AUE: bio-inspired style and deformation perturbations) combined with a Bayesian Mask Decoder (UE), simultaneously improving segmentation accuracy and providing calibrated pixel-wise uncertainty. The result is Uncertainty-Accuracy Alignment : interpretable segmentation and robust uncertainty maps that reliably correlate with prediction errors. 
+
+## Abstract 
+
+Despite strong zero-shot performance, SAM is unreliable under domain shift due to Mask-level Confidence Confusion (MCC), where a single IoU-based mask score fails to reflect pixel-wise reliability near boundaries. Motivated by the con-trast between texture-biased shortcuts in neural networks and shape-centric processing in human vision, we model out-of-domain variation as ap-
+
+> 1
+
+Learning and Intelligent Systems, Technical University of Berlin, Berlin, Germany. 2UCAS-Terminus AI Lab, University of Chinese Academy of Sciences, Beijing, China. Correspondence to: Zihan Ye <zihhye@outlook.com>. 
+
+Proceedings of the 43 rd International Conference on Machine Learning , Seoul, South Korea. PMLR 306, 2026. Copyright 2026 by the author(s). 
+
+pearance shifts and non-rigid deformations that jointly stress calibration. We propose Segment Anything with Robust Uncertainty-Accuracy Correlation (RUAC) for robust pixel-wise un-certainty estimation under appearance and defor-mation shifts. RUAC adds a lightweight uncer-tainty head, trains it with a collaborative style-deformation attack that jointly perturbs texture and geometry, and applies Uncertainty-Accuracy Alignment to ensure uncertainty consistently high-lights erroneous pixels even under adversarial per-turbations. Across 23 zero-shot domains, RUAC 
+
+improves segmentation quality and yields more faithful uncertainty with stronger uncertainty-accuracy correlation. Project page: https:// github.com/HongyouZhou/ruac.git .1
+
+> arXiv:2605.10603v1 [cs.CV] 11 May 2026
+
+Segment Anything with Robust Uncertainty-Accuracy Correlation Style Adversarial Network (MAX player, ψ𝑠 )                 
+
+> Original Image Segmentation Uncertainty Map
+> Styled Image
+> Deformed Image
+> ℒ𝑐𝑎𝑙
+> ℒ𝑠𝑒𝑔
+> Apply
+> Style
+> Apply
+> Deformation
+> Bayesian Mask Decoder (MIN player, 𝜃 𝑑𝑒𝑐 )
+> Image
+> Token
+> Mask
+> Token
+> Weibull 𝜆 𝑧 ,𝜅 𝑧
+> Weibull 𝜆 𝑤 ,𝜅 𝑤
+> GCN Layers Object Graph Construction Refined Δs
+> Deformation Network (MAX player, ψ𝑑 )
+> Offset Net Offset Field
+> Normalize
+> &
+> Scale
+> Visual
+> Features
+> Ground Truth
+> ℒ𝐾𝐿
+> Δ𝑠 ,𝑓
+> Node: Style Δ⊕Visual Feature
+> Edge Types:
+> IoU / Distance / Semantic Similarity
+> GCN Layer x 2
+> LayerNorm
+> ReLU
+> Dropout
+> Residual
+> +0.1 x
+> Conv
+> Norm
+> RelU
+> Conv
+> Norm
+> RelU  GRL
+> min 𝜃 𝑑𝑒𝑐
+> max ψ𝑠
+> max ψ𝑑
+> SAM 2
+> image
+> encoder
+> GRL
+
+Figure 2. Overview of the RUAC Framework. We formulate adversarial training as a minimax game between attackers and the segmentation model. The Style Adversarial Network (ψs) constructs an object graph from ground-truth masks and visual features, then refines per-object style statistics via GCN layers to generate semantically coherent styled images. The Deformation Network (ψd) predicts a dense offset field from SAM2 visual features to produce geometric perturbations. Both attackers are trained via Gradient Reversal Layers (GRL), enabling end-to-end optimization without PGD-style inner loops. The Bayesian Mask Decoder (θdec ) employs dual-granularity Weibull distributions over image tokens (local, boundary-aware) and mask tokens (global, semantic) to model pixel-wise uncertainty, optimizing for uncertainty-accuracy alignment under these bio-inspired perturbations. Training also includes a clean branch (not shown) to maintain in-domain performance. 
+
+## 1. Introduction 
+
+Recently, the rise of foundation models has reshaped com-puter vision. Among them, one of the most striking ex-amples is the Segment Anything Model (SAM) family. From SAM (Kirillov et al., 2023) to the video-optimized SAM2 (Ravi et al., 2025) and concept-aware SAM3 (Carion et al., 2025), these models trained on large-scale datasets (e.g., SA-1B) have demonstrated exceptional zero-shot seg-mentation across diverse objects and scenes. Although the SAM family excels at most segmentation tasks, its performance deteriorates on domains outside the pretrain-ing distribution, such as medical imaging (Zhu et al., 2024; Zhang et al., 2024), biological microscopy (Archit et al., 2023), and scientific imaging. This not only leads to a de-crease in segmentation accuracy, but we further found that SAM often suffers from Mask-level Confidence Confusion (MCC) : Due to the model structure of the SAM family, the entire mask shares the same confidence score, which is hard to differentiate from the background’s score. MCC makes it impossible to identify unreliable pixels within a mask, while the uniform confidence across foreground and background renders the model fragile to even minor perturbations. This brittleness is particularly dangerous in safety-critical appli-cations: users cannot reliably determine when the model will fail. To address MCC, a natural solution is to augment SAM with a Bayesian mask decoder that provides pixel-level uncertainty estimates rather than mask-level confidence. However, this alone is insufficient: we observe that the learned uncertainty-accuracy relationship, while valid on the source domain, often degrades under domain shift. We term this phenomenon Uncertainty-Accuracy (UA) shift :the model’s uncertainty no longer correlates with its pre-diction errors on out-of-domain (OOD) data. Existing fine-tuning approaches (Chen et al., 2024; Wei et al., 2024; Zhu et al., 2024; Zhang et al., 2024) risk catastrophic forget-ting, require costly target-domain annotations, and critically, only optimize segmentation metrics (e.g., Dice, IoU) with-out addressing UA shift (Hendrycks & Dietterich, 2019; Oakden-Rayner et al., 2020; Grote et al., 2024). To address this problem, we augment SAM2 with uncer-tainty estimation, yielding a general segmentation model that achieves both improved OOD segmentation accuracy and robust uncertainty-accuracy correlation: SAM2 with RUAC (Figure 1). Unlike prior work that improves either segmentation accuracy or uncertainty calibration, RUAC is, to our knowledge, the first method to simultaneously im-prove SAM’s segmentation accuracy and provide calibrated pixel-wise uncertainty under single-source domain general-ization (SDG). The innovation of our method is reflected in three aspects: 1. Interpretable predictions : Compared to previous 2Segment Anything with Robust Uncertainty-Accuracy Correlation 
+
+SAM improvements that only focused on accuracy, our method also includes pixel-level uncertainty mod-eling to identify ambiguous and error-prone regions, allowing users or the model itself to reject or correct predictions with high uncertainty. 2. Single-source generalization : Compared to previous fine-tuning-based improvements (Zhang et al., 2024; Archit et al., 2023), our work inherits the philosophy of the SAM family: only training a general segmentation model. This avoids the huge cost of data collection and training in the target data domain, truly strengthening “Segment Anything”. 3. Bio-inspired robustness enhancement : Compared to previous uncertainty estimation methods, our method is grounded in human vision research: humans ex-hibit robust object recognition primarily through shape bias, whereas neural networks rely more heavily on texture bias (Geirhos et al., 2019; Landau et al., 1988; Baker et al., 2018; Wang et al., 2025). Therefore, our method enhances robustness from both texture and shape aspects simultaneously, making machine percep-tion consistent with the robustness observed in biologi-cal vision and providing robust uncertainty-accuracy correlation. This also brings new insights for future robustness and uncertainty estimation research. The design of RUAC is motivated by our empirical ob-servations when integrating existing uncertainty methods with SAM2. Specifically, we first follow the fine-tuning settings recommended in SAM2 and evaluate the perfor-mance of directly integrating existing uncertainty methods into the SAM2 model. However, the direct integration does not yield satisfactory results: existing uncertainty meth-ods are not designed for foundation models and struggle to generalize when trained on limited fine-tuning data. To address this without requiring additional data, we draw in-spiration from human visual perception: humans achieve robust recognition primarily through shape bias rather than texture (Geirhos et al., 2019; Landau et al., 1988; Baker et al., 2018). Accordingly, we decouple OOD variation into two subproblems: style (texture) variation and shape (geo-metric) variation. While conventional adversarial training targets worst-case prediction error, our approach uses bio-inspired perturbations to improve the correlation between uncertainty and accuracy. Specifically, we propose an ad-versarial training module that exposes the model to extreme variations in surface appearance and non-rigid deformations, thereby explicitly exploring texture bias and shape under-standing capabilities. We use adversarially generated pertur-bations as stress tests to further align uncertainty and error, requiring the model’s predictive uncertainty to accurately cover its prediction errors and uncertainties even under these bio-inspired adversarial samples. This ultimately ensures that when the model fails due to ambiguity in appearance or shape, it can assign high uncertainty to its predictions. Our contributions are mainly reflected in the following three aspects: 1. We propose a general segmentation framework, RUAC, which exhibits a robust uncertainty-accuracy correla-tion, truly enhancing the goal of “Segment Anything”. 2. We introduce adversarial uncertainty-accuracy align-ment: a training paradigm that uses style-deformation perturbations to promote calibration rather than worst-case robustness. 3. We explore existing uncertainty estimation methods un-der the current foundation model paradigm and demon-strate that they generally perform poorly on out-of-domain data, while our RUAC framework maintains significant robustness in both segmentation accuracy and uncertainty estimation. 
+
+## 2. Related Work 
+
+Foundation Models for Segmentation. SAM (Kirillov et al., 2023) and SAM2 (Ravi et al., 2025) established promptable segmentation as a foundation model paradigm, demonstrating strong transfer across diverse image and video domains. Subsequent works further improve this paradigm for efficiency (Xiong et al., 2024), mask qual-ity (Ke et al., 2023), or specific downstream tasks (Li et al., 2024; Ošep et al., 2024). While domain-specific adaptations (Wei et al., 2024) and robustness-oriented fine-tuning (Chen et al., 2024) have improved performance, the predictive reliability of these models under substantial do-main shift remains under-explored (Grote et al., 2024). 
+
+Uncertainty and Reliability under Domain Shift. Deep networks are notoriously miscalibrated (Guo et al., 2017) and overconfident on out-of-domain inputs (Hendrycks & Gimpel, 2017). In dense prediction, this issue is amplified by spatial correlations, necessitating pixel-level uncertainty estimates to pinpoint failure modes. Approaches range from sampling-based Bayesian methods (Gal & Ghahra-mani, 2016; Kendall & Gal, 2017) to efficient closed-form evidential learning (Sensoy et al., 2018; Ye et al., 2024). BNDL (Hu et al., 2025) further advances this by model-ing features with Weibull distributions to capture structured uncertainty in segmentation. Unlike methods that pursue aleatoric-epistemic decomposition, we optimize total predic-tive uncertainty to align with task error, extending Bayesian methods to target training-time reliability under semanti-cally meaningful perturbations. 
+
+Robust Training under Distribution Shift. Single-source domain generalization (Zhou et al., 2022) employs 3Segment Anything with Robust Uncertainty-Accuracy Correlation 
+
+augmentation (Zhou et al., 2021) or adversarial learn-ing (Ganin & Lempitsky, 2015; Ganin et al., 2016) to mit-igate the sensitivity of deep models to texture and style shifts (Geirhos et al., 2019). While ℓp-bounded adversarial training (Goodfellow et al., 2015), particularly Projected Gradient Descent (PGD) (Madry et al., 2018), improves worst-case robustness, it lacks semantic variation. Recent work thus prioritizes meaningful stressors like style trans-fer (Geirhos et al., 2019) and geometric deformations (Wang et al., 2021b). Notably, AdvStyle (Zhong et al., 2022) learns adversarial style features for domain generalization, inspir-ing our learnable style perturbations, while DG-Font (Xie et al., 2021) employs deformable convolutions for feature-level deformations, informing our geometric adversarial module. We leverage these semantic perturbations not pri-marily for robustness, but to actively align uncertainty with error, ensuring reliable uncertainty estimates under domain shifts. 
+
+## 3. Approach 
+
+We introduce RUAC (Robust Uncertainty-Accuracy 
+
+Correlation, Figure 2), a framework that calibrates uncer-tainty to maintain its semantic relationship with prediction error across domains. It comprises two key components: (1) 
+
+Uncertainty Estimation (UE) : a Bayesian mask decoder that replaces the deterministic mask decoder to produce calibrated uncertainty estimates, and (2) Adversarial Un-certainty Estimation (AUE) : an uncertainty-driven adver-sarial training module that generates challenging samples where the uncertainty-accuracy relationship degrades under domain shift. 
+
+3.1. Problem Setup 
+
+We study prompted image segmentation under domain shift. Given an image I ∈ RH×W ×3 with sparse prompts 
+
+P = {(xi, y i, l i)}ni=1 , where (xi, y i) are pixel coordinates and li ∈ { +1 , −1} indicates positive (foreground) or neg-ative (background) points, a model Mθ predicts a binary mask ˆM ∈ { 0, 1}H×W and a pixel-wise uncertainty map 
+
+u ∈ RH×W 
+
+> +
+
+. Although we build upon SAM2’s architecture, we operate in single-frame mode without memory propa-gation : each image is processed independently, isolating segmentation quality from temporal tracking. Training uses a single source domain Ds (MOSE dataset (Ding et al., 2023), sampling individual frames) and evaluation is zero-shot on N = 23 diverse target domains {D it}Ni=1 spanning objects, scenes, scientific, and egocentric distributions. 
+
+3.2. Uncertainty Estimation (UE) 
+
+We follow the SAM2 architecture (Ravi et al., 2025) and make one major modification: replacing the deterministic mask decoder with a Bayesian mask decoder with parame-ters θdec . Following Hu et al. (2025), we model both image tokens f ∈ RH×W ×C and mask tokens mk ∈ RC using Weibull variational posteriors. We justify the choice of Weibull (vs. Gaussian, Dirichlet, and other non-negative alternatives) in Appendix A.2. For image tokens, a convolu-tional network predicts spatially-varying per-pixel Weibull parameters (λf , κ f ). For mask tokens, a shared MLP pre-dicts per-channel Weibull parameters (λm,c , κ m,c ) (archi-tecture details in Appendix A). Samples are drawn via reparameterization: wi = λi · (− ln(1 − u)) 1/κ i where 
+
+u ∼ Uniform (0 , 1) . Letting w denote the stochastic fea-tures from both image-token and mask-token branches, we collect all Weibull parameters as ϕ = {(λi, κ i)} to form the variational posterior qϕ(w). Reparameterized samples from both branches are combined via inner product to produce the final logits, enabling closed-form uncertainty propaga-tion where weight uncertainty directly translates to semantic uncertainty in mask predictions. Both image-token and mask-token posteriors contribute to the KL regularization term (Eq. 2), providing calibrated uncertainty at both spatial (per-pixel) and semantic (per-mask) granularities. 
+
+Uncertainty computation. We support two modes for uncertainty estimation. (1) Analytic mode: The Weibull distribution admits closed-form expectation E[wi] = λi ·
+
+Γ(1 + 1 /κ i), enabling deterministic forward pass without sampling. Given the analytically-derived logit variance v
+
+(Appendix A.8), we apply MacKay’s probit approxima-tion (MacKay, 1992) to obtain the expected sigmoid output, then compute the normalized Bernoulli entropy as the pixel-wise uncertainty ˜u(x, y ) ∈ [0 , 1] . (2) Monte Carlo mode: 
+
+We draw S samples from the Weibull posteriors by sam-pling u(s) ∼ Uniform (0 , 1) and computing reparameterized features via w(s) 
+
+> i
+
+= λi · (− ln(1 − u(s))) 1/κ i for both image tokens and mask tokens. The mean prediction ¯M and pixel-wise uncertainty (from sample disagreement) are obtained by aggregating across all S samples. While the Bayesian mask decoder provides uncertainty estimates, the learned uncertainty-accuracy relationship may not generalize across domains. This phenomenon, which we term uncertainty-accuracy (UA) shift , motivates our adversarial calibration framework. 
+
+3.3. Adversarial Uncertainty Estimation (AUE) 
+
+The AUE module generates challenging samples where the uncertainty-accuracy relationship degrades, exposing failure modes that standard training cannot anticipate. We propose 
+
+end-to-end adversarial generation , where style and deforma-tion generators are optimized jointly with the segmentation model via Gradient Reversal Layers (GRL) (Ganin et al., 2016). For each training sample we synthesize adversarial images Iadv via the learnable style and deformation networks described below. The adversarial loss Ladv = Ladv seg + β Ladv KL 
+
+4Segment Anything with Robust Uncertainty-Accuracy Correlation 
+
+reuses the same formulation as the clean branch, ensuring consistent training dynamics while enforcing robustness under domain shifts. In practice, the attack networks are optimized adversarially (via GRL-based sign reversal) to generate such challenging samples, and can additionally be optimized with a dedicated calibration objective (Sec. 3.4) without updating the segmentation model. 
+
+Style adversarial network. To challenge texture invari-ance, we introduce a style adversarial network with pa-rameters ψs, following (Zhong et al., 2022). We first ex-tract per-object style statistics (μk, σk) ∈ R3 as the mean and standard deviation of each RGB channel within the masked region Mk. The network then predicts style resid-uals (∆ μk, ∆σk) from backbone features z (coordinated via a GCN for multi-object scenes, see Appendix B.4). Let 
+
+˜μk = μk +∆ μk and ˜σk = σk +∆ σk denote the perturbed style parameters, and ˜Ik = AdaIN (I, ˜μk, ˜σk) the stylized image for object k. The composite adversarial image is 
+
+Iadv = Ibg + ∑ 
+
+> k
+
+Mk ⊙ ˜Ik, where Ibg = (1 − ∑ 
+
+> k
+
+Mk) ⊙ I.
+
+Deformation adversarial network. To challenge shape priors, we introduce a deformation adversarial network with parameters ψd, inspired by DG-Font (Xie et al., 2021). By design, deformations are small but targeted at bound-aries and thin structures, where they yield large segmenta-tion effects analogous to adversarial examples in classifica-tion (Szegedy et al., 2014; Goodfellow et al., 2015). The network takes as input the backbone features z ∈ RC×H×W
+
+and an object mask Mk, then predicts a per-pixel flow field 
+
+δk. Specifically, we first encode the mask via a convolu-tional downsampler to obtain mask embeddings ek. These are fused with projected image features via element-wise ad-dition, and passed through a fusion module and offset predic-tor: δk = fψd
+
+(fproj (z) + fmask (Mk)). The adversarial im-age is then obtained via differentiable grid sampling (Jader-berg et al., 2015): Iadv = GridSample (˜I, δ), where ˜I is the styled image. Importantly, the same flow field is applied to the ground-truth mask, Madv = GridSample (M∗, δ), to maintain semantic correspondence between the perturbed image and its supervision signal. 
+
+Perturbation pipeline. Both style and deformation at-tacks operate in image space : style applies AdaIN color transfer, deformation applies spatial warping via grid sam-pling. Attack parameters are predicted in parallel from the backbone features z = fenc (I) of the original (unperturbed) image, ensuring stable gradient flow for min-max optimiza-tion. These parameters are then applied sequentially : style followed by deformation. A single backbone forward pass on the final adversarial image Iadv produces adversarial fea-tures for decoder training. Perturbation magnitudes are constrained by ϵ (with ∥δ∥∞ ≤ ϵ for deformations and analogous bounds for style shifts), ensuring semantically meaningful augmentations (design rationale in Appendix B). Importantly, the attack networks are used only during train-ing to expose calibration weaknesses. At inference, only the Bayesian mask decoder runs, requiring no GT masks or attack computation. 
+
+3.4. Objective and Optimization Main objective. We train the Bayesian mask decoder with segmentation supervision and Bayesian regularization on both clean and adversarial samples. The segmentation loss is defined as 
+
+Lseg = Lfocal + Ldice + LIoU , (1) 
+
+LKL = KL (qϕ(wdec ) ∥∥ p(wdec )) , (2) where LKL regularizes the Weibull posterior qϕ towards a Gamma prior p(wdec ) and prevents uncertainty collapse. Importantly, we do not directly supervise the segmentation model parameters using any calibration loss that regresses uncertainty to prediction error. Instead, the main optimizer updates the model only through segmentation supervision and Bayesian regularization on both branches: 
+
+min 
+
+> θdec
+
+Lθ = Lseg + β LKL 
+
+︸ ︷︷ ︸
+
+> clean branch
+
++γ (Ladv seg + β Ladv KL 
+
+)︸ ︷︷ ︸
+
+> adversarial branch
+
+, (3) where β controls the KL regularization strength and γ
+
+weights the adversarial training contribution. We use a cur-riculum schedule that gradually increases γ during training (Appendix C). 
+
+Attacker objective. Via GRL, the attacker implicitly max-imizes the adversarial branch of the total loss. Let ψ =
+
+{ψs, ψ d} denote attacker parameters, and let xadv = Tψ (x)
+
+be the adversarial sample produced by composing style and deformation transformations. The attacker objective is: 
+
+max  
+
+> ψ
+
+Ladv seg + β Ladv KL + λ Lcal , (4) where Ladv seg and Ladv KL are the same losses as Eqs. 1–2 eval-uated on adversarial samples. The calibration loss Lcal 
+
+encourages the model to output uncertainty aligned with prediction errors on adversarial samples. The calibration loss penalizes both overconfident errors (cer-tain but wrong) and over-uncertain correct predictions (un-certain but correct): 
+
+Lcal = e · exp( − sg[ u]) 
+
+︸ ︷︷ ︸
+
+> certain & wrong
+
++ (1 − e) · exp(sg[ u]) 
+
+︸ ︷︷ ︸
+
+> uncertain & correct
+
+, (5) where e = | ˆM − M∗| is the pixel-wise prediction error, with M∗ denoting the ground-truth mask, and u is the an-alytic uncertainty. The stop-gradient operator sg[ ·] blocks gradients through the uncertainty estimator, preventing the attacker from exploiting trivial gradient pathways. 5Segment Anything with Robust Uncertainty-Accuracy Correlation 
+
+3.5. Training Loop 
+
+We adopt an alternating training scheme where each it-eration comprises two forward passes: (1) a clean pass 
+
+on original training samples, and (2) an adversarial pass 
+
+on perturbed samples generated by the style and deforma-tion networks. Both passes share the same segmentation and Bayesian regularization objectives. During the adver-sarial pass, Gradient Reversal Layers (GRL) implement a min-max update in a single backward pass: segmentation gradients update the encoder/decoder as usual, while their signs are flipped for the attack networks to encourage harder perturbations. This design achieves a min-max optimization without explicit inner loops: 
+
+min 
+
+> θdec
+
+max 
+
+> ψs,ψ d
+
+Lseg + β LKL 
+
+︸ ︷︷ ︸
+
+> clean branch
+
++ γ (Ladv seg + β Ladv KL + λ Lcal 
+
+)︸ ︷︷ ︸
+
+> adversarial branch
+
+,
+
+(6) where GRL handles the sign flip for ψs, ψ d implicitly. Al-gorithm 1 (Appendix) summarizes the complete procedure. 
+
+Interpretation. From a PAC-Bayesian perspec-tive (McAllester, 1999), our adversarial training can be interpreted as encouraging two desirable properties: (1) 
+
+Loss Landscape Flattening , biasing the posterior toward solutions less sensitive to style and deformation, and (2) 
+
+Uncertainty-Risk Coupling , where regions difficult to make robust tend to exhibit elevated uncertainty (Appendix F.2). 
+
+## 4. Experiments 
+
+Datasets: We evaluate RUAC following the standard zero-shot protocol of SAM/SAM2 (Kirillov et al., 2023; Ravi et al., 2025): a strict SDG setting. Models are fine-tuned solely on the MOSE dataset (Ding et al., 2023) (complex video objects) and evaluated zero-shot on 23 diverse target domains spanning four categories: Objects , Scenes , Scien-tific , and Egocentric (Table S6). This strict SDG protocol tests the model’s ability to learn invariant representations rather than memorizing source-specific statistics. 
+
+Prompting protocol (3-click): For zero-shot evaluation, we follow a deterministic 3-click interactive prompting protocol consistent with prior promptable/interactive segmentation evaluations (Kirillov et al., 2023; Sofiiuk et al., 2022). Con-cretely, each object is evaluated with three point prompts generated deterministically from ground truth (with a min-imum click separation), and all methods receive identical prompts. 
+
+Metrics: We report (1) J&F Score (Perazzi et al., 2016) for segmentation quality and (2) PAvPU (Mukhoti & Gal, 2018) (Patch Accuracy vs. Patch Uncertainty) for uncer-tainty calibration. All metrics are reported in percentage points. 
+
+Implementation: Training uses SAM2.1 with the frozen Hiera-B+ image encoder (Hiera Base-Plus, ∼ 69 M param-eters). We use AdamW ( 10 −6 decoder, 10 −4 uncertainty head/attacker), bfloat16, and a curriculum (Appendix C) over 20 epochs. Training cost, parameter overhead, and a comparison with diffusion-based augmentation are reported in Appendix P. During training, we use analytic uncertainty (Sec. 3.2) with gradients for Bayesian optimization. At evaluation, we report metrics using sampling-based uncer-tainty ( S=20 samples) for robustness. Sensitivity to S is analyzed in Appendix O. Full hyperparameters are provided in Appendix Table S5. 
+
+Baselines: We compare against: (1) Foundation base-lines : SAM2 zero-shot, SAM2-FT (decoder fine-tuning), and SAM2-FT-LoRA (parameter-efficient fine-tuning (Hu et al., 2022)); (2) Uncertainty estimation baselines : Bayes-SAM2 (our Bayesian mask decoder without adversarial training) and UR-ERN (Ye et al., 2024) (evidential uncer-tainty via NIG head on decoder features; see Appendix E); (3) Test-time adaptation baseline : UCTTA (Tan et al., 2025) (uncertainty-calibrated continual test-time adaptation ap-plied to vanilla SAM2 without source-domain fine-tuning), reported separately as it requires model updates during inference; (4) Generic augmentation baselines : Random Noise, PGD (Madry et al., 2018), Patch (Nesti et al., 2022), MixStyle (Zhou et al., 2021), DSU (Li et al., 2022), and StyleGen-Generic / StyleGen-Targeted (SD 1.5 img2img following ALIA (Dunlap et al., 2023) and DA-Fusion (Tra-bucco et al., 2024): Generic uses 2 prompts spanning all target domains, Targeted uses 9 prompts each tailored to one of the 11 below-average OOD domains (overlapping domains merged)), all built on our Bayesian mask decoder. 
+
+4.1. Domain Generalization Performance 
+
+Table 1 presents the zero-shot performance across all 23 domains. Figure 3 provides qualitative comparisons across four representative domains: RUAC produces more com-plete masks on urban scenes (finer building boundaries), achieves cleaner delineation of densely packed structures in satellite imagery, and better handles occlusions in object-centric and egocentric views. 
+
+Foundation Baselines: SAM2 zero-shot yields a strong baseline (Avg 67.75) but struggles on challenging domains like TrashCan (44.9), Hypersim (46.7), and NDISPark (40.7). 
+
+The Impact of RUAC: RUAC achieves the highest aver-age performance (81.62), surpassing both standard fine-tuning and the Bayesian mask decoder alone. Notably, RUAC shows significant gains on challenging datasets (e.g., PIDRay +6.1 vs. SAM2), where texture and shape priors differ most from natural images. 6Segment Anything with Robust Uncertainty-Accuracy Correlation Input  Ground Truth  SAM 2 Bayes -SAM 2 RUAC 
+
+> Scene
+> Object
+> Scientific
+> Egocentric
+
+Figure 3. Qualitative segmentation comparison across diverse domains. From top to bottom: Scene (Cityscapes), Scientific (IBD aerial building imagery), Object (mixed industrial objects), and Egocentric (hand-object interaction). Columns show input, ground truth, and predictions from SAM2, Bayes-SAM2, and RUAC (ours). RUAC produces more complete and accurate masks, particularly for challenging cases such as fine-grained building boundaries (Scene), densely packed structures (Scientific), and occluded objects (Object/Egocentric). Corresponding confidence and uncertainty maps for the first row are shown in Figure 4. SAM 2           
+
+> Bayes -SAM 2
+> RUA C
+> Object 1Object 2 Object 3
+> Confidence Uncertainty Confidence Uncertainty Confidence Uncertainty
+> N/A N/A N/A
+
+Figure 4. Confidence and uncertainty visualization for three object instances from the first row of Figure 3. Each row corresponds to a method (SAM2, Bayes-SAM2, RUAC), showing confidence and uncertainty maps. In both maps, brighter colors (greater contrast against the black background) indicate higher confidence or uncertainty. SAM2 produces only confidence without uncertainty estimation (N/A). Both Bayes-SAM2 and RUAC yield uncertainty maps, but RUAC exhibits sharper confidence on object interiors while concentrating uncertainty along ambiguous boundaries, indicating better calibration. Additional visualizations are provided in Figure S7 (Appendix). 
+
+4.2. Uncertainty Calibration Analysis 
+
+A key motivation of RUAC is aligning uncertainty with risk. While standard fine-tuning (SAM2-FT) often produces “con-fident errors” (high confidence, wrong prediction) on OOD data, RUAC maintains well-calibrated uncertainty estimates. This is qualitatively evident in Figure 4, which visualizes confidence and uncertainty maps for three object instances from the first row of Figure 3. In both maps, brighter col-ors (greater contrast against the black background) indi-cate higher values. SAM2 provides only confidence es-timates without uncertainty quantification. Both Bayes-SAM2 and RUAC produce uncertainty maps, but RUAC exhibits sharper confidence on object interiors while con-centrating uncertainty along ambiguous boundaries, better tracking prediction reliability under domain shift. 
+
+PAvPU Analysis: To further evaluate uncertainty calibra-tion, we use the Patch Accuracy vs. Patch Uncertainty (PAvPU) metric (Mukhoti & Gal, 2018). PAvPU measures the proportion of samples that are either correctly predicted with low uncertainty (accurate-certain) or incorrectly pre-dicted with high uncertainty (inaccurate-uncertain). Fol-lowing the BNDL evaluation protocol (Hu et al., 2025), we average PAvPU across three uncertainty thresholds τ ∈{0.01 , 0.05 , 0.1}. Higher values indicate better uncertainty-accuracy alignment. Table 2 reports these results for all evaluation domains. Critically, a random uncertainty esti-mator (independent of prediction accuracy) achieves ∼50 PAvPU. Bayes-SAM2’s OOD PAvPU of 55.40 is barely 
+
+7Segment Anything with Robust Uncertainty-Accuracy Correlation 
+
+Table 1. Zero-shot domain generalization results (J&F scores) on 23 target datasets. All methods are fine-tuned on MOSE and evaluated zero-shot. Bayes-SAM2 denotes UE only. RUAC denotes full framework with UE and AUE. Bold and underline indicate the best and second-best results per column (excluding ablations and test-time adaptation). 
+
+Objects Scenes Scientific Egocentric Method TrashCan iShape ZeroWaste-f LVIS NDD20 Plittersdorf TimberSeg DRAM Cityscapes ADE20K Hypersim WoodScape STREETS NDISPark DOORS BBBC038v1 IBD PIDRay PPDLS GTEA EgoHOS VISOR OVIS Avg ↑
+
+Foundation baselines (no uncertainty estimation) 
+
+SAM2 44.9 63.3 83.2 75.2 91.7 47.5 78.3 70.0 64.2 58.8 46.7 55.6 87.6 40.7 89.1 81.1 80.9 63.4 76.2 55.6 84.0 52.0 68.3 67.75 
+
+SAM2-FT 72.4 79.1 87.3 75.9 92.3 86.2 83.8 78.6 65.1 60.2 60.8 59.1 88.5 86.7 91.6 87.2 87.6 68.3 83.7 89.6 89.3 74.7 86.3 79.75 
+
+SAM2-FT-LoRA 71.3 78.0 86.8 75.6 93.8 88.7 83.6 78.5 61.6 51.1 54.6 59.6 89.8 88.2 92.2 87.0 88.9 64.4 83.6 90.5 90.4 73.0 88.5 79.13 
+
+Uncertainty estimation baselines (no adversarial calibration) 
+
+Bayes-SAM2 74.9 84.3 88.0 75.1 94.2 88.4 88.3 73.6 55.4 55.2 57.5 57.0 90.4 89.6 90.9 85.5 90.3 67.5 86.7 91.0 90.4 75.1 87.7 79.87 
+
+UR-ERN 68.5 62.8 83.4 66.0 89.6 83.3 69.2 76.6 58.2 53.8 54.4 53.7 86.0 83.3 90.4 81.6 80.6 62.2 76.6 85.1 72.1 67.2 83.6 73.40 
+
+Generic augmentation baselines (with Bayesian mask decoder) 
+
+Random Noise 74.4 84.6 88.4 74.8 94.5 88.6 88.3 76.0 64.2 56.4 61.8 58.3 90.4 89.7 91.9 87.5 90.2 66.5 86.9 91.3 91.3 74.8 87.8 80.81 
+
+PGD 72.7 84.6 87.5 73.2 94.3 88.4 88.2 75.8 53.3 56.0 55.8 59.4 90.5 89.3 91.6 88.4 90.1 67.4 87.5 91.1 91.5 74.0 87.3 79.90 
+
+Patch 73.2 84.7 88.0 75.4 94.3 88.9 88.3 76.1 61.3 54.4 60.9 59.1 90.3 89.4 91.8 86.0 90.3 67.7 87.4 90.8 91.2 76.7 87.7 80.60 
+
+MixStyle 75.9 85.4 87.9 77.2 94.6 88.9 88.4 70.5 59.9 53.4 59.9 60.6 90.6 89.2 91.0 87.7 89.8 66.5 86.7 90.8 91.9 73.9 88.1 80.37 
+
+DSU 73.7 84.6 88.4 79.5 94.6 89.0 88.6 73.9 58.6 51.8 57.8 59.6 90.6 88.9 91.2 88.2 90.3 67.1 87.2 90.5 90.5 75.8 87.9 80.35 
+
+StyleGen-Generic 76.5 80.6 87.5 71.8 94.5 88.3 86.7 74.5 62.0 47.9 51.2 61.3 90.8 88.9 91.4 88.2 88.3 68.6 86.4 89.9 90.3 71.1 87.9 79.33 
+
+StyleGen-Targeted 75.8 78.1 83.7 74.7 93.3 87.3 85.0 75.8 51.9 51.3 48.1 59.9 90.4 88.8 91.7 89.2 84.9 71.6 86.6 89.5 87.2 67.7 85.9 78.19 
+
+Adversarial augmentation ablations (Style & Deform) 
+
+RUAC-Style-Global 71.3 84.9 88.6 72.5 94.4 88.6 88.7 72.6 60.0 55.1 62.6 58.8 90.4 88.6 90.9 88.3 90.4 68.1 86.4 91.6 90.5 75.3 87.3 80.26 
+
+RUAC-Style-Single 75.0 84.6 88.3 74.6 94.3 88.8 88.4 75.0 58.3 56.9 59.8 59.5 90.4 89.4 90.9 85.8 90.0 67.2 87.7 90.2 91.6 74.9 88.2 80.43 
+
+RUAC-Style-Multi 71.0 85.4 88.0 75.0 94.7 88.7 88.4 75.3 61.7 55.3 58.8 59.2 90.3 89.7 91.9 88.1 90.5 67.2 87.6 90.9 91.1 75.0 88.1 80.52 
+
+RUAC-Style-MultiBG 74.3 86.3 88.6 74.2 94.4 88.6 88.7 75.8 59.3 55.0 62.5 60.9 90.3 88.6 91.8 87.8 90.2 67.6 87.3 90.0 91.0 75.0 87.3 80.68 
+
+RUAC-Style-GCN 74.4 85.7 88.2 74.7 94.0 88.4 88.8 75.6 60.5 57.3 62.2 59.4 90.3 88.9 91.1 87.8 90.1 68.5 87.3 90.1 91.2 75.4 87.2 80.74 
+
+RUAC-Deform 71.0 85.7 88.7 74.4 94.5 88.8 88.4 74.9 60.6 54.7 60.7 58.7 90.3 88.7 91.4 88.3 90.6 68.2 85.8 91.4 91.2 75.9 87.1 80.44 
+
+Complete methods (ours) 
+
+RUAC 73.8 86.1 89.1 78.6 94.6 88.6 88.7 74.9 66.7 58.5 64.0 61.5 90.4 89.1 91.5 87.7 90.6 69.5 87.0 91.4 91.4 76.6 86.8 81.62 
+
+Test-time adaptation (for reference only, since it unfairly uses test data) 
+
+UCTTA 73.6 84.9 88.5 80.6 94.7 87.6 90.1 78.6 70.1 60.8 66.3 60.9 90.0 86.2 91.9 86.9 89.8 67.5 88.5 87.5 91.7 77.6 87.5 81.82 
+
+Table 2. PAvPU Comparison. Patch Accuracy vs. Patch Uncertainty across domains. Higher PAvPU indicate better uncertainty-accuracy alignment. 
+
+In-Domain Out-of-Domain Method MOSE TrashCan iShape ZeroWaste LVIS NDD20 Plittersdorf TimberSeg DRAM Cityscapes ADE20K Hypersim WoodScape STREETS NDISPark DOORS BBBC IBD PIDRay PPDLS GTEA EgoHOS VISOR OVIS 
+
+> Avg ↑
+
+Bayes-SAM2 86.9 61.5 67.2 69.4 64.9 29.5 94.6 15.2 11.3 25.6 31.3 72.1 83.7 95.6 99.7 64.6 58.7 53.9 9.0 43.6 64.7 44.1 33.3 81.2 55.4 
+
+RUAC 81.6 70.5 78.3 83.0 71.5 60.3 99.8 26.4 10.8 30.9 37.9 74.2 82.6 97.0 99.8 70.6 71.4 58.5 14.9 51.4 73.7 63.5 51.9 86.9 63.7 
+
+(a) Original (b) Style (w/o GCN) (c) Style (w/ GCN) (d) Deformation 
+
+Figure 5. Visualization of adversarial perturbations (zoomed to central region). (a) Original input image. (b) Without GCN, style perturbation is applied globally, causing uniform darkening across the entire scene. (c) With GCN capturing inter-object correlations, perturbations become object-aware, enabling more targeted attacks while preserving global semantics (e.g., the central elephant). (d) Geometric deformation, where red indicates reduced regions and green indicates expanded regions along object boundaries. 
+
+above chance , indicating that its uncertainty calibration largely collapses under domain shift, a manifestation of the UA shift problem. In contrast, RUAC achieves 63.72 OOD PAvPU, a +8.32 absolute improvement over Bayes-SAM2. On in-domain data, both methods perform well (Bayes-SAM2 86.9 vs. RUAC 81.6), but the OOD gap reveals RUAC’s robustness to domain shift. Notably, on some OOD datasets where the model correctly identifies domain shift, it expresses elevated uncertainty even when predictions are ac-curate. We term this domain-level cautiousness , a conserva-tive behavior desirable in safety-critical applications. While PAvPU is threshold-sensitive and may underestimate perfor-mance when uncertainty is globally elevated, threshold-free metrics confirm that uncertainty ranking remains meaning-ful: RUAC achieves 0.81 AUROC pixel (failure detection at pixel granularity) and 0.59 Uncertainty-Accuracy PCC on OOD datasets, indicating that even within high-uncertainty regimes, the model correctly ranks which pixels are more likely to fail (details in Appendix H). Additionally, AURC analysis (Appendix I) shows RUAC achieves 9.8% lower risk at matched coverage levels compared to Bayes-SAM2, and Wilcoxon signed-rank tests (Appendix J) confirm sta-tistical significance ( p < 0.001 for AURC, p < 0.01 for 8Segment Anything with Robust Uncertainty-Accuracy Correlation 
+
+Table 3. Calibration comparison across augmentation methods using the same Bayesian mask decoder. Aggregate metrics over 23 OOD datasets. Bold and underline mark the best and second-best per metric (excluding the no-augmentation Bayes-SAM2). RUAC is the only method that improves both segmentation accu-racy and all three calibration metrics over Bayes-SAM2.                                         
+
+> Method J&F ↑PAvPU ↑AURC ↓ECE ↓
+> Bayes-SAM2 79.87 55.40 0.102 0.123 Random Noise 80.81 52.24 0.112 0.126 PGD 79.90 52.89 0.115 0.130 Patch 80.60 56.29 0.105 0.131 MixStyle 80.37 55.46 0.100 0.133 DSU 80.35 58.02 0.097 0.125 StyleGen-Generic 79.33 55.10 0.101 0.136 StyleGen-Targeted 78.19 48.87 0.111 0.172 RUAC 81.62 63.72 0.092 0.117
+
+PAvPU) across 23 domains. Expected Calibration Error (ECE) further confirms calibration quality: RUAC achieves 0.117 versus 0.123 for Bayes-SAM2 across 23 domains (17/23 wins, p = 0 .037 , Appendix J). 
+
+Comparison with generic augmentation baselines. 
+
+Across seven generic augmentation methods built on the same Bayesian mask decoder (Tables 1, 3), RUAC is the only one that simultaneously improves J&F and all three calibration metrics (PAvPU, AURC, ECE) over the no-augmentation Bayes-SAM2. The mechanism is that RUAC alone perturbs the most segmentation-relevant feature direc-tions at sufficient magnitude (Appendix K). 
+
+4.3. Ablation Study 
+
+Table 1 includes ablations of our adversarial generators: 
+
+Style-Global: global style perturbation applied uniformly across the image. Style-Single: style perturbation applied only to the target object. Style-Multi: style perturbation applied to multiple objects independently. Style-MultiBG: 
+
+multi-object style perturbation including background. Style-GCN: multi-object with GCN refinement for semantically coherent perturbations. Deform: deformation attack only (no style). RUAC: combines Style-GCN with Deform, yield-ing the best generalization by probing complementary di-rections (texture vs. shape). Figure 5 visualizes these per-turbations: GCN enables object-aware style transfer while deformation probes geometric robustness. RUAC is robust to β (KL regularization) and γ (adversarial weight). Full sensitivity sweeps are reported in Appendix L, and a loss-component ablation is provided in Appendix M. 
+
+4.4. Downstream Utility: Uncertainty-Guided Mask Correction 
+
+To test whether calibration translates into downstream utility, we apply a simple uncertainty-guided connected-component filter (UncCorr) that removes mask fragments with high mean uncertainty, applied identically to Bayes-SAM2 and RUAC (Table 4). UncCorr improves RUAC’s J&F ( +0 .09 ,17/23 datasets) but degrades Bayes-SAM2’s ( −0.28 , 14/23 datasets): miscalibrated uncertainty actively misleads down-stream filters, while RUAC’s calibrated uncertainty enables productive post-processing. Implementation details are in Appendix N. 
+
+Table 4. Uncertainty-guided mask correction. J&F before/after UncCorr filtering, with Wins/Losses over 23 OOD datasets. Method J&F ↑ + UncCorr ( ∆) Wins / Losses Bayes-SAM2 79.87 79.59 ( −0.28 ) 9 / 14 
+
+RUAC 81.62 81.71 ( +0 .09 ) 17 / 6 
+
+## 5. Conclusion 
+
+We presented RUAC, a framework that addresses UA shift via bio-inspired adversarial training. RUAC achieves reli-able zero-shot transfer across 23 OOD datasets. By aligning pixel uncertainty with prediction error, RUAC outperforms passive uncertainty methods, demonstrating that adversarial calibration is key to trustworthy segmentation under domain shift. Beyond calibration, RUAC’s uncertainty maps are actionable for downstream mask correction (Appendix N). Future work includes extending RUAC to Vision-Language Models for trustworthy multi-modal reasoning, to future SAM versions such as SAM3, and to video tracking for uncertainty-aware temporal consistency. 
+
+## Impact Statement 
+
+This paper presents work whose goal is to advance the field of Machine Learning. There are many potential societal consequences of our work, none which we feel must be specifically highlighted here. 
+
+## References 
+
+Archit, A., Nair, S., Khalid, N., Hilt, P., Rajashekar, V., Freitag, M., Gupta, S., and Pape, C. Segment anything for microscopy. bioRxiv preprint , 2023. doi: 10.1101/ 2023.08.21.554208. URL https://doi.org/10.1 101/2023.08.21.554208 .Baker, N., Lu, H., Erlikhman, G., and Kellman, P. J. Deep convolutional networks do not classify based on global object shape. PLOS Computational Biology , 14(12): e1006613, 2018. doi: 10.1371/journal.pcbi.1006613. URL https://pmc.ncbi.nlm.nih.gov/art icles/PMC6306249/ .Bashkirova, D., Abdelfattah, M., Zhu, Z., Akl, J., Allad-kani, F., Hu, P., Ablavsky, V., Calli, B., Bargal, S. A., and 9Segment Anything with Robust Uncertainty-Accuracy Correlation 
+
+Saenko, K. ZeroWaste dataset: Towards deformable ob-ject segmentation in cluttered scenes. In IEEE Conference on Computer Vision and Pattern Recognition (CVPR) , pp. 21115–21125, 2022. doi: 10.1109/CVPR52688.2022.0 2102. URL https://arxiv.org/abs/2106.0 2740 .Bengio, Y., Léonard, N., and Courville, A. Estimating or propagating gradients through stochastic neurons for con-ditional computation. arXiv preprint arXiv:1308.3432 ,2013. Brooks, T., Holynski, A., and Efros, A. A. InstructPix2Pix: Learning to follow image editing instructions. In Proceed-ings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) , pp. 18392–18402, 2023. URL https://openaccess.thecvf.com/co ntent/CVPR2023/html/Brooks_InstructP ix2Pix_Learning_To_Follow_Image_Edit ing_Instructions_CVPR_2023_paper.html .Caicedo, J. C., Goodman, A., Karhohs, K. W., Cimini, B. A., Ackerman, J., Haghighi, M., Heng, C., Becker, T., Doan, M., McQuin, C., Rohban, M., Singh, S., and Carpenter, A. E. Nucleus segmentation across imaging experiments: The 2018 data science bowl. Nature Methods , 16(12): 1247–1253, 2019. doi: 10.1038/s41592-019-0612-7. URL https://www.nature.com/articles/ s41592-019-0612-7 .Carion, N., Gustafson, L., Hu, Y.-T., Debnath, S., Hu, R., Suris, D., Ryali, C., Alwala, K. V., Khedr, H., Huang, A., Lei, J., Ma, T., Guo, B., Kalla, A., Marks, M., Greer, J., Wang, M., Sun, P., Rädle, R., Afouras, T., Mavroudi, E., Xu, K., Wu, T.-H., Zhou, Y., Momeni, L., Hazra, R., Ding, S., Vaze, S., Porcher, F., Li, F., Li, S., Kamath, A., Cheng, H. K., Dollár, P., Ravi, N., Saenko, K., Zhang, P., and Feichtenhofer, C. SAM 3: Segment anything with concepts. ArXiv preprint , abs/2511.16719, 2025. URL 
+
+https://arxiv.org/abs/2511.16719 .Chen, J., Xu, Y., Lu, S., Liang, R., and Nan, L. 3D instance segmentation of MVS buildings. IEEE Transactions on Geoscience and Remote Sensing , 60:1–13, 2022. doi: 10.1109/TGRS.2022.3183567. Chen, W.-T., Vong, Y.-J., Kuo, S.-Y., Ma, S., and Wang, J. RobustSAM: Segment anything robustly on degraded images. In IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) , pp. 4081–4091, 2024. doi: 10.1109/CVPR52733.2024.00391. URL https: //arxiv.org/abs/2406.09627 .Ciampi, L., Santiago, C., Costeira, J. a. P., Gennaro, C., and Amato, G. Domain adaptation for traffic density estimation. In Proceedings of the 16th International Joint Conference on Computer Vision, Imaging and Computer Graphics Theory and Applications (VISAPP) , pp. 185– 195, 2021. doi: 10.5220/0010303401850195. Ciampi, L., Santiago, C., Costeira, J. a. P., Gennaro, C., and Amato, G. Night and day instance segmented park (ndis-park) dataset: A collection of images taken by day and by night for vehicle detection, segmentation and counting in parking areas. Zenodo, 2022. Cohen, N., Newman, Y., and Shamir, A. Semantic segmen-tation in art paintings. Computer Graphics Forum , 41(2): 261–275, 2022. doi: 10.1111/cgf.14473. Cordts, M., Omran, M., Ramos, S., Rehfeld, T., Enzweiler, M., Benenson, R., Franke, U., Roth, S., and Schiele, B. The Cityscapes dataset for semantic urban scene under-standing. In IEEE Conference on Computer Vision and Pattern Recognition (CVPR) , pp. 3213–3223, 2016. doi: 10.1109/CVPR.2016.350. Damen, D., Doughty, H., Farinella, G. M., Furnari, A., Ma, J., Kazakos, E., Moltisanti, D., Munro, J., Perrett, T., Price, W., and Wray, M. Rescaling egocentric vision: Col-lection, pipeline and challenges for EPIC-KITCHENS-100. International Journal of Computer Vision , 130(1): 33–55, 2022. doi: 10.1007/s11263-021-01531-2. Darkhalil, A., Shan, D., Zhu, B., Ma, J., Kar, A., Higgins, R., Fidler, S., Fouhey, D., and Damen, D. EPIC-KITCHENS VISOR benchmark: Video segmentations and object re-lations. In Advances in Neural Information Processing Systems (NeurIPS), Datasets and Benchmarks Track , vol-ume 35, 2022. URL https://proceedings.neur ips.cc/paper_files/paper/2022/hash/5 90a7ebe0da1f262c80d0188f5c4c222-Abstr act-Datasets_and_Benchmarks.html .Ding, H., Liu, C., He, S., Jiang, X., Torr, P. H. S., and Bai, S. MOSE: A new dataset for video object segmentation in complex scenes. In Proceedings of the IEEE/CVF International Conference on Computer Vision (ICCV) , pp. 19876–19886. IEEE/CVF, 2023. doi: 10.1109/ICCV51 070.2023.01850. URL https://openaccess.the cvf.com/content/ICCV2023/papers/Ding _MOSE_A_New_Dataset_for_Video_Object _Segmentation_in_Complex_ICCV_2023_p aper.pdf .Dunlap, L., Umino, A., Zhang, H., Yang, J., Gonzalez, J. E., and Darrell, T. Diversify your vision datasets with automatic diffusion-based augmentation. In Advances in Neural Information Processing Systems (NeurIPS) , 2023. URL https://papers.neurips.cc/paper_ files/paper/2023/file/f99f7b22ad47fa 6ce151730cf8d17911-Paper-Conference. pdf .10 Segment Anything with Robust Uncertainty-Accuracy Correlation 
+
+Fathi, A., Ren, X., and Rehg, J. M. Learning to recognize objects in egocentric activities. In IEEE Conference on Computer Vision and Pattern Recognition (CVPR) , pp. 3281–3288, 2011. doi: 10.1109/CVPR.2011.5995444. Fortin, J.-M., Gamache, O., Grondin, V., Pomerleau, F., and Giguère, P. Instance segmentation for autonomous log grasping in forestry operations. In IEEE/RSJ Inter-national Conference on Intelligent Robots and Systems (IROS) , pp. 6064–6071, 2022. doi: 10.1109/IROS47612. 2022.9982286. Gal, Y. and Ghahramani, Z. Dropout as a Bayesian approxi-mation: Representing model uncertainty in deep learning. In Proceedings of the 33rd International Conference on Machine Learning (ICML) , pp. 1050–1059, 2016. URL 
+
+https://proceedings.mlr.press/v48/ga l16.html .Ganin, Y. and Lempitsky, V. Unsupervised domain adap-tation by backpropagation. In Proceedings of the 32nd International Conference on Machine Learning (ICML) ,pp. 1180–1189, 2015. URL https://proceeding s.mlr.press/v37/ganin15.html .Ganin, Y., Ustinova, E., Ajakan, H., Germain, P., Larochelle, H., Laviolette, F., Marchand, M., and Lempitsky, V. S. Domain-adversarial training of neural networks. Journal of Machine Learning Research , 17(59):1–35, 2016. URL 
+
+https://jmlr.org/papers/v17/15-239.h tml .Geirhos, R., Rubisch, P., Michaelis, C., Bethge, M., Wich-mann, F. A., and Brendel, W. ImageNet-trained CNNs are biased towards texture; increasing shape bias improves accuracy and robustness. In 7th International Conference on Learning Representations, ICLR 2019, New Orleans, LA, USA, May 6-9, 2019 . OpenReview.net, 2019. URL 
+
+https://openreview.net/forum?id=Bygh 9j09KX .Goodfellow, I. J., Shlens, J., and Szegedy, C. Explaining and harnessing adversarial examples. In International Conference on Learning Representations (ICLR) , 2015. URL https://arxiv.org/abs/1412.6572 .Grote, T., Freiesleben, T., and Berens, P. Foundation models in healthcare require rethinking reliability. Na-ture Machine Intelligence , 6(12):1421–1423, 2024. doi: 10.1038/s42256-024-00924-5. URL http://dx.doi .org/10.1038/s42256-024-00924-5 .Guo, C., Pleiss, G., Sun, Y., and Weinberger, K. Q. On calibration of modern neural networks. In Proceedings of the 34th International Conference on Machine Learning (ICML) , pp. 1321–1330, 2017. URL https://proc eedings.mlr.press/v70/guo17a.html .Gupta, A., Dollar, P., and Girshick, R. LVIS: A dataset for large vocabulary instance segmentation. In IEEE Conference on Computer Vision and Pattern Recognition (CVPR) , pp. 5351–5359, 2019. doi: 10.1109/CVPR.201 9.00550. Haucke, T., Kühl, H. S., and Steinhage, V. Socrates: Intro-ducing depth in visual wildlife monitoring using stereo vision. Sensors , 22(23):9082, 2022. doi: 10.3390/s22239 082. Hendrycks, D. and Dietterich, T. G. Benchmarking neural network robustness to common corruptions and pertur-bations. In 7th International Conference on Learning Representations, ICLR 2019, New Orleans, LA, USA, May 6-9, 2019 . OpenReview.net, 2019. URL https: //openreview.net/forum?id=HJz6tiCqYm .Hendrycks, D. and Gimpel, K. A baseline for detecting misclassified and out-of-distribution examples in neural networks. In International Conference on Learning Rep-resentations (ICLR) , 2017. URL https://openre view.net/forum?id=Hkg4TI9xl .Hong, J., Fulton, M., and Sattar, J. Trashcan: Asemantically-segmented dataset towards visual detection of marine debris, 2020. URL https://arxiv.org/ abs/2007.08097 .Hu, E. J., Shen, Y., Wallis, P., Allen-Zhu, Z., Li, Y., Wang, S., Wang, L., and Chen, W. LoRA: Low-rank adaptation of large language models. In International Conference on Learning Representations (ICLR) , 2022. URL https: //arxiv.org/abs/2106.09685 .Hu, X., Duan, Z., Chen, B., and Zhou, M. Enhancing uncertainty estimation and interpretability via Bayesian non-negative decision layer. In International Conference on Learning Representations (ICLR) , 2025. URL http s://arxiv.org/abs/2505.22199 .Jaderberg, M., Simonyan, K., Zisserman, A., and Kavukcuoglu, K. Spatial transformer networks. In Cortes, C., Lawrence, N., Lee, D., Sugiyama, M., and Gar-nett, R. (eds.), Advances in Neural Information Process-ing Systems (NeurIPS) , volume 28. Curran Associates, Inc., 2015. doi: 10.5555/2969442.2969465. URL 
+
+https://proceedings.neurips.cc/paper _files/paper/2015/file/33ceb07bf4eeb 3da587e268d663aba1a-Paper.pdf .Ke, L., Ye, M., Danelljan, M., Liu, Y., Tai, Y.-W., Tang, C.-K., and Yu, F. Segment anything in high quality. In Advances in Neural Information Processing Systems (NeurIPS) , volume 36, 2023. URL https://procee dings.neurips.cc/paper_files/paper/2 023/file/5f828e38160f31935cfe9f67503 ad17c-Paper-Conference.pdf .11 Segment Anything with Robust Uncertainty-Accuracy Correlation 
+
+Kendall, A. and Gal, Y. What uncertainties do we need in Bayesian deep learning for computer vision? In Advances in Neural Information Processing Systems (NeurIPS) , pp. 5574–5584, 2017. URL https://proceedings. neurips.cc/paper_files/paper/2017/ha sh/2650d6089a6d640c5e85b2b88265dc2b-A bstract.html .Kirillov, A., Mintun, E., Ravi, N., Mao, H., Rolland, C., Gustafson, L., Xiao, T., Whitehead, S., Berg, A. C., Lo, W.-Y., Dollár, P., and Girshick, R. Segment anything. In IEEE International Conference on Computer Vision (ICCV) , pp. 4015–4026, 2023. doi: 10.1109/ICCV51070. 2023.00371. URL https://openaccess.thecvf. com/content/ICCV2023/papers/Kirillov _Segment_Anything_ICCV_2023_paper.pdf .Landau, B., Smith, L. B., and Jones, S. S. The importance of shape in early lexical learning. Cognitive Development , 3 (3):299–321, 1988. doi: 10.1016/0885-2014(88)90014-7. Li, S., Ke, L., Danelljan, M., Piccinelli, L., Segu, M., Van Gool, L., and Yu, F. MASA: Matching anything by segmenting anything. In IEEE/CVF Conference on Com-puter Vision and Pattern Recognition (CVPR) , pp. 18963– 18973, 2024. doi: 10.1109/CVPR52733.2024.01794. URL https://openaccess.thecvf.com/co ntent/CVPR2024/papers/Li_Matching_An ything_by_Segmenting_Anything_CVPR_2 024_paper.pdf . Highlight Paper. Li, X., Dai, Y., Ge, Y., Liu, J., Shan, Y., and Duan, L.-Y. Un-certainty modeling for out-of-distribution generalization. In International Conference on Learning Representations (ICLR) , 2022. URL https://openreview.net/f orum?id=6HN7LHyzGgC .Li, Y., Ye, Z., and Rehg, J. M. Delving into egocentric actions. In IEEE Conference on Computer Vision and Pattern Recognition (CVPR) , pp. 287–295, 2015. doi: 10.1109/CVPR.2015.7298625. MacKay, D. J. C. A practical Bayesian framework for backpropagation networks. Neural Computation , 4(3): 448–472, 1992. doi: 10.1162/neco.1992.4.3.448. URL 
+
+https://doi.org/10.1162/neco.1992.4.3. 448 .Madry, A., Makelov, A., Schmidt, L., Tsipras, D., and Vladu, A. Towards deep learning models resistant to adversarial attacks. In International Conference on Learning Representations (ICLR) , 2018. URL https: //openreview.net/forum?id=rJzIBfZAb .McAllester, D. A. Pac-Bayesian model averaging. In Pro-ceedings of the Twelfth Annual Conference on Compu-tational Learning Theory (COLT) , pp. 164–170. ACM, 1999. doi: 10.1145/307400.307435. Minervini, M., Fischbach, A., Scharr, H., and Tsaftaris, S. A. Finely-grained annotated datasets for image-based plant phenotyping. Pattern Recognition Letters , 81:80– 89, 2016. doi: 10.1016/j.patrec.2015.10.013. Mukhoti, J. and Gal, Y. Evaluating Bayesian deep learn-ing methods for semantic segmentation. arXiv preprint arXiv:1811.12709 , 2018. URL https://arxiv.or g/abs/1811.12709 .Nesti, F., Rossolini, G., Nair, S., Biondi, A., and Buttazzo, G. Evaluating the robustness of semantic segmentation for autonomous driving against real-world adversarial patch attacks. In IEEE/CVF Winter Conference on Applications of Computer Vision (WACV) , 2022. URL https://op enaccess.thecvf.com/content/WACV2022 /html/Nesti_Evaluating_the_Robustnes s_of_Semantic_Segmentation_for_Auton omous_Driving_Against_WACV_2022_paper. html .Oakden-Rayner, L., Dunnmon, J., Carneiro, G., and Ré, C. Hidden stratification causes clinically meaningful failures in machine learning for medical imaging. In 
+
+Proceedings of the ACM Conference on Health, Inference, and Learning (CHIL) , pp. 151–159, 2020. doi: 10.1145/ 3368555.3384468. URL https://dl.acm.org/d oi/10.1145/3368555.3384468 .Ošep, A., Meinhardt, T., Ferroni, F., Peri, N., Ramanan, D., and Leal-Taixé, L. Better call SAL: Towards learning to segment anything in LiDAR. In European Conference on Computer Vision (ECCV) , pp. 71–90, 2024. URL 
+
+https://arxiv.org/abs/2403.13129 .Perazzi, F., Pont-Tuset, J., McWilliams, B., Van Gool, L., Gross, M., and Sorkine-Hornung, A. A benchmark dataset and evaluation methodology for video object seg-mentation. In IEEE Conference on Computer Vision and Pattern Recognition (CVPR) , pp. 724–732, 2016. doi: 10.1109/CVPR.2016.85. Podell, D., English, Z., Lacey, K., Blattmann, A., Dockhorn, T., Müller, J., Penna, J., and Rombach, R. SDXL: Improv-ing latent diffusion models for high-resolution image syn-thesis. In Proceedings of the International Conference on Learning Representations (ICLR) , 2024. URL https: //openreview.net/forum?id=di52zR8xgf .Pugliatti, M. and Topputo, F. Doors: Dataset for boulders segmentation. Zenodo, 2022. Qi, J., Gao, Y., Hu, Y., Wang, X., Liu, X., Bai, X., Be-longie, S., Yuille, A., Torr, P., and Bai, S. Occluded video instance segmentation: A benchmark. International Jour-nal of Computer Vision , 130(8):2022–2039, 2022. doi: 10.1007/s11263-022-01629-1. 12 Segment Anything with Robust Uncertainty-Accuracy Correlation 
+
+Ravi, N., Gabeur, V., Hu, Y.-T., Hu, R., Ryali, C., Ma, T., Khedr, H., Rädle, R., Rolland, C., Gustafson, L., Mintun, E., Pan, J., Alwala, K. V., Carion, N., Wu, C.-Y., Girshick, R., Dollár, P., and Feichtenhofer, C. SAM 2: Segment anything in images and videos. In International Confer-ence on Learning Representations (ICLR) , 2025. URL 
+
+https://openreview.net/forum?id=Ha6R TeWMd0 . Best Paper Honourable Mention; Oral. Roberts, M., Ramapuram, J., Ranjan, A., Kumar, A., Bautista, M. A., Paczan, N., Webb, R., and Susskind, J. M. Hypersim: A photorealistic synthetic dataset for holistic indoor scene understanding. In IEEE International Con-ference on Computer Vision (ICCV) , pp. 10912–10922, 2021. doi: 10.1109/ICCV48922.2021.01073. Rombach, R., Blattmann, A., Lorenz, D., Esser, P., and Ommer, B. High-resolution image synthesis with la-tent diffusion models. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recogni-tion (CVPR) , pp. 10684–10695, 2022. URL https: //openaccess.thecvf.com/content/CVPR 2022/html/Rombach_High-Resolution_Im age_Synthesis_With_Latent_Diffusion_ Models_CVPR_2022_paper.html .Sensoy, M., Kaplan, L., and Kandemir, M. Evidential deep learning to quantify classification uncertainty. In 
+
+Advances in Neural Information Processing Systems (NeurIPS) , pp. 3179–3189, 2018. doi: 10.5555/3327 144.3327239. URL https://proceedings.neur ips.cc/paper_files/paper/2018/hash/a 981f2b708044d6fb4a71a1463242520-Abstr act.html .Snyder, C. and Do, M. Streets: A novel camera network dataset for traffic flow. In Advances in Neural Information Processing Systems (NeurIPS) , volume 32, pp. 10242– 10253, 2019. URL https://proceedings.neur ips.cc/paper_files/paper/2019/hash/e e389847678a3a9d1ce9e4ca69200d06-Abstr act.html .Sofiiuk, K., Petrov, I. A., and Konushin, A. Reviving iterative training with mask guidance for interactive segmentation. In IEEE International Conference on Image Processing (ICIP) , pp. 3141–3145, 2022. doi: 10.1109/ICIP46576.2022.9897365. URL https: //arxiv.org/abs/2102.06583 .Szegedy, C., Zaremba, W., Sutskever, I., Bruna, J., Er-han, D., Goodfellow, I., and Fergus, R. Intriguing properties of neural networks. In International Confer-ence on Learning Representations (ICLR) , 2014. URL 
+
+https://arxiv.org/abs/1312.6199 .Tan, M., Chen, G., Wu, J., Zhang, Y., Chen, Y., and Zhao, P. Uncertainty-calibrated test-time model adaptation with-out forgetting. IEEE Transactions on Pattern Analysis and Machine Intelligence , 47(8):6274–6289, 2025. doi: 10.1109/TPAMI.2025.3560696. URL https://ieee xplore.ieee.org/document/10964530 .Trabucco, B., Doherty, K., Gurinas, M., and Salakhutdinov, R. Effective data augmentation with diffusion models. In 
+
+International Conference on Learning Representations (ICLR) , 2024. URL https://openreview.net/f orum?id=ZWzUA9zeAg .Trotter, C., Atkinson, G., Sharpe, M., Richardson, K., Mc-Gough, A. S., Wright, N., Burville, B., and Berggren, P. NDD20: A large-scale few-shot dolphin dataset for coarse and fine-grained categorisation. In FGVC7 Workshop at IEEE/CVF Conference on Computer Vi-sion and Pattern Recognition (CVPR) , 2020. URL 
+
+https://arxiv.org/abs/2005.13359 .Wang, B., Zhang, L., Wen, L., Liu, X., and Wu, Y. Towards real-world prohibited item detection: A large-scale x-ray benchmark. In IEEE International Conference on Computer Vision (ICCV) , pp. 5412–5421, 2021a. doi: 10.1109/ICCV48922.2021.00536. URL https://ar xiv.org/abs/2108.07020 .Wang, H., Xiao, C., Kossaifi, J., Yu, Z., Anandkumar, A., and Wang, Z. Augmax: Adversarial composition of ran-dom augmentations for robust training. In Advances in Neural Information Processing Systems (NeurIPS) ,2021b. URL https://proceedings.neurips. cc/paper/2021/hash/01e9565cecc4e9891 23f9620c1d09c09-Abstract.html .Wang, Y., Yue, Y., Yue, Y., Wang, H., Jiang, H., Han, Y., Ni, Z., Pu, Y., Shi, M., Lu, R., Yang, Q., Zhao, A., Xia, Z., Song, S., and Huang, G. Emulating human-like adaptive vision for efficient and flexible machine visual perception. 
+
+Nature Machine Intelligence , 7(11):1804–1822, 2025. doi: 10.1038/s42256-025-01130-7. URL https: //www.nature.com/articles/s42256-025 -01130-7 .Wei, X., Cao, J., Jin, Y., Lu, M., Wang, G., and Zhang, S. I-medSAM: Implicit medical image segmentation with segment anything. In European Conference on Computer Vision (ECCV) , pp. 90–107, 2024. doi: 10.1007/978-3-0 31-72684-2_6. Xie, Y., Chen, X., Sun, L., and Lu, Y. DG-Font: Deformable generative networks for unsupervised font generation. In IEEE Conference on Computer Vision and Pattern Recognition (CVPR) , pp. 5130–5139, 2021. doi: 10.110 9/CVPR46437.2021.00509. URL https://openac cess.thecvf.com/content/CVPR2021/htm 
+
+13 Segment Anything with Robust Uncertainty-Accuracy Correlation 
+
+l/Xie_DG-Font_Deformable_Generative_ Networks_for_Unsupervised_Font_Gener ation_CVPR_2021_paper.html .Xiong, Y., Varadarajan, B., Wu, L., Xiang, X., Xiao, F., Zhu, C., Dai, X., Wang, D., Sun, F., Iandola, F., Krish-namoorthi, R., and Chandra, V. EfficientSAM: Leveraged masked image pretraining for efficient segment anything. In IEEE/CVF Conference on Computer Vision and Pat-tern Recognition (CVPR) , pp. 16111–16121, 2024. doi: 10.1109/CVPR52733.2024.01525. Yang, L., Yan, Z., He, Y., Sun, W., Huang, Z., Huang, H., and Fan, H. ishape: A first step towards irregular shape instance segmentation. ArXiv preprint , abs/2109.15068, 2021. URL https://arxiv.org/abs/2109.1 5068 .Ye, K., Chen, T., Wei, H., and Zhan, L. Uncertainty regu-larized evidential regression. In Proceedings of the AAAI Conference on Artificial Intelligence (AAAI) , volume 38, pp. 16460–16468, 2024. doi: 10.1609/aaai.v38i15.29583. URL https://ojs.aaai.org/index.php/A AAI/article/view/29583 .Yogamani, S., Hughes, C., Horgan, J., Sistu, G., Var-ley, P., O’Dea, D., Uriˇ cár, M., Milz, S., Simon, M., Amende, K., Witt, C., Rashed, H., Chennupati, S., Nayak, S., Mansoor, S., Perroton, X., and Pérez, P. Wood-Scape: A multi-task, multi-camera fisheye dataset for autonomous driving. In IEEE International Conference on Computer Vision (ICCV) , pp. 9308–9318, 2019. doi: 10.1109/ICCV.2019.00940. Zhang, L., Zhou, S., Stent, S., and Shi, J. Fine-grained egocentric hand-object segmentation: Dataset, model, and applications. In European Conference on Computer Vision (ECCV) , pp. 127–145, 2022. doi: 10.1007/978-3 -031-19818-2_8. URL https://www.ecva.net/p apers/eccv_2022/papers_ECCV/html/215 2_ECCV_2022_paper.php .Zhang, L., Rao, A., and Agrawala, M. Adding conditional control to text-to-image diffusion models. In Proceedings of the IEEE/CVF International Conference on Computer Vision (ICCV) , pp. 3836–3847, 2023. URL https: //openaccess.thecvf.com/content/ICCV 2023/html/Zhang_Adding_Conditional_C ontrol_to_Text-to-Image_Diffusion_Mod els_ICCV_2023_paper.html .Zhang, L., Liang, Y., Zhang, R., Javadi, A., and Xie, P. BLO-SAM: Bi-level optimization based finetuning of the segment anything model for overfitting-preventing semantic segmentation. In Proceedings of the 41st In-ternational Conference on Machine Learning (ICML) ,volume 235, pp. 59289–59309. PMLR, 2024. doi: 10.48550/arXiv.2402.16338. URL https://procee dings.mlr.press/v235/zhang24ai.html .Zhao, D., Zang, Q., Pu, N., Wang, S., Sebe, N., and Zhong, Z. SeCoV2: Semantic connectivity-driven pseudo-labeling for robust cross-domain semantic segmentation. 
+
+IEEE Transactions on Pattern Analysis and Machine In-telligence (TPAMI) , 47(11):10378–10395, 2025. doi: 10.1109/TPAMI.2025.3596943. URL https://ieee xplore.ieee.org/document/11120362 .Zhong, Z., Zhao, Y., Lee, G. H., and Sebe, N. Adversarial style augmentation for domain generalized urban-scene segmentation. In Koyejo, S., Mohamed, S., Agarwal, A., Belgrave, D., Cho, K., and Oh, A. (eds.), Advances in Neural Information Processing Systems (NeurIPS) ,volume 35, pp. 338–350. Curran Associates, Inc., 2022. doi: 10.5555/3600270.3600295. URL https://pr oceedings.neurips.cc/paper_files/pap er/2022/file/023d94f44110b9a3c62329b eec739772-Paper-Conference.pdf .Zhou, B., Zhao, H., Puig, X., Xiao, T., Fidler, S., Barriuso, A., and Torralba, A. Semantic understanding of scenes through the ADE20K dataset. International Journal of Computer Vision , 127(3):302–321, 2019. doi: 10.1007/s1 1263-018-1140-0. Zhou, K., Yang, Y., Qiao, Y., and Xiang, T. Domain gener-alization with mixstyle. In International Conference on Learning Representations (ICLR) , 2021. URL https: //openreview.net/forum?id=6xHJ37MVxxp .Zhou, K., Liu, Z., Qiao, Y., Xiang, T., and Loy, C. C. Do-main generalization: A survey. IEEE Transactions on Pat-tern Analysis and Machine Intelligence (TPAMI) , 45(4): 4396–4415, 2022. doi: 10.1109/TPAMI.2022.3195549. URL https://ieeexplore.ieee.org/docu ment/9847099 .Zhu, J., Hamdi, A., Qi, Y., Jin, Y., and Wu, J. Medical SAM 2: Segment medical images as video via segment anything model 2. ArXiv preprint , abs/2408.00874, 2024. URL https://arxiv.org/abs/2408.00874 .14 Segment Anything with Robust Uncertainty-Accuracy Correlation 
+
+## Supplementary Material 
+
+Table of contents: 
+
+• §A: Bayesian Mask Decoder Architecture • §B: Adversarial Network Design • §C: Training Strategy • §D: Dataset Details • §E: UR-ERN Baseline • §F: Theoretical Analysis • §G: Failure Cases • §H: Threshold-Free Metrics • §I: Risk-Coverage Analysis • §J: Statistical Significance • §K: Channel Alignment Analysis • §L: Hyperparameter Sensitivity Analysis • §M: Loss Component Ablation • §N: Uncertainty-Guided Mask Correction • §O: MC Sample Analysis • §P: Training Cost, Parameter Efficiency, and Extension 
+
+## A. Bayesian Mask Decoder Architecture and Design Rationale 
+
+We adapt the Bayesian Non-negative Decision Layer (BNDL) (Hu et al., 2025) for SAM2’s mask decoder. Our implementation differs from the original in several key as-pects, each motivated by the unique requirements of prompt-able segmentation with uncertainty estimation. 
+
+A.1. Uncertainty Quantification, AU/EU, and the Relation to BNDL 
+
+Uncertainty quantification (UQ) decomposes uncertainty into aleatoric uncertainty (AU, the inherent randomness in the data) and epistemic uncertainty (EU, the uncertainty inherent in the model itself) (Gal & Ghahramani, 2016). BNDL (Hu et al., 2025) maps these two sources to two Weibull-parameterized streams: the latent representation 
+
+z models AU and the decision-layer weights w model EU. Predictions are obtained by inner product of reparameterized samples from both streams. Our adaptation for SAM2 changes how each Weibull stream is conditioned while preserving the AU/EU correspon-dence. (i) The AU stream replaces BNDL’s per-sample 
+
+κ with a small CNN that predicts per-pixel κ, making the 
+
+z-Weibull spatially heterogeneous as required for dense pre-diction (Sec. A.4). (ii) The EU stream replaces BNDL’s static decision-layer weight with a dynamic weight pro-jected from each of SAM2’s K mask tokens, giving every mask hypothesis its own Weibull posterior over decision weights (Sec. A.6). The κ-prediction network for w keeps BNDL’s original structure. Both streams remain Weibull-parameterized and combine via inner product as in BNDL, so the AU/EU decomposition is structurally preserved. Our uncertainty estimation is based on BNDL because it is a lightweight, state-of-the-art UQ method with strong interpretability, fitting our goal of interpretably segment anything under zero-shot domain shifts. Although our adap-tation preserves BNDL’s AU/EU structure, we do not pursue further improvement on AU and EU estimations. The more important question for our task is how to guarantee robust uncertainty-accuracy correlation under domain shift , an orthogonal goal to AU/EU decomposition. This motivates our framework: Segment Anything with Robust Uncertainty-Accuracy Correlation (RUAC). RUAC retains the Weibull-based Bayesian decoder of BNDL for its interpretable per-pixel uncertainty and augments it with a bio-inspired adversarial training objective (Sec. 3.3) that explicitly aligns predictive uncertainty with segmentation error under domain shift. To our knowledge, RUAC is the first method that leverages uncertainty-based adversarial training to simultaneously improve SAM’s segmentation ac-curacy and provide calibrated pixel-wise uncertainty under single-source domain generalization (SDG). The remainder of this section details our adaptation of BNDL for SAM2’s mask decoder. 
+
+A.2. Weibull Posterior Modeling Design choice: We parameterize both pixel features and mask weights with Weibull distributions W (λ, κ ) supported on [0 , ∞).
+
+Rationale: Although BNDL was originally proposed for classification, its structural requirement transfers naturally to our segmentation setting: BNDL models non-negative evidence for C classes per image, while our setting requires non-negative evidence for K = 4 mask hypotheses per pixel (with ReLU-activated features through STE-ReLU). Both reduce to modeling non-negative evidence for discrete categories, for which a distribution supported on [0 , ∞) is the natural choice. Weibull additionally admits closed-form expectation E[w] = λ · Γ(1 + 1 /κ ) and variance (Sec. A.8), enabling analytic uncertainty propagation through the inner-product logit computation without sampling overhead. Com-mon alternatives are inadequate for the following reasons: • Gaussian : has support on (−∞ , +∞) and assigns non-zero probability to negative evidence values, violating the non-negativity constraint. • Dirichlet : commonly used in Evidential Deep Learning, models distributions over probability simplices rather than continuous evidence vectors, requiring an extra layer of indirection that Weibull avoids. • Other non-negative distributions : among distributions with support on [0 , ∞), Weibull subsumes Exponential as a special case ( κ = 1 ) and offers simpler closed-form moments than Log-Normal or Gamma. 1Segment Anything with Robust Uncertainty-Accuracy Correlation 
+
+• Truncated Gaussian : can enforce non-negativity but breaks the closed-form moment structure required for an-alytic uncertainty propagation, forcing reliance on Monte Carlo estimation. 
+
+A.3. Dual-Path Architecture Design choice: Unlike the original BNDL which processes only pixel features, our version uses two parallel paths: (1) a pixel feature path processing upscaled decoder features (C′ = 32 channels), and (2) a mask token path processing SAM’s K learned mask tokens ( K = 4 : 1 single + 3 multi-mask). Rationale: SAM’s multi-mask output requires each mask hypothesis to have independent uncertainty character-istics. A single global uncertainty estimate cannot capture the confidence differences between competing mask hy-potheses (e.g., when the prompt is ambiguous). By process-ing mask tokens through a separate Weibull-parameterized path, each hypothesis maintains its own (λ, κ ) parameters, enabling the model to express “mask A is confident but mask B is uncertain” for the same pixel location. Note that this dual-path design is motivated by SAM’s multi-mask output structure (per-hypothesis uncertainty), not by AU/EU sepa-ration. We treat uncertainty as a unified signal for reliability assessment, as discussed in Sec. A.1. 
+
+A.4. Spatial Kappa Prediction Design choice: While the original BNDL uses a per-sample scalar κ for the AU stream (one κ per image, predicted by a Linear-Softplus head from the pooled feature), we predict spatially-varying κ using a small CNN (Conv 3×3-GELU-Conv 3×3-Softplus), clamped to [0 .5, 10 .0] . Rationale: Seg-mentation uncertainty is inherently spatially heterogeneous .Object boundaries, occluded regions, and ambiguous tex-tures should exhibit higher uncertainty than confident in-terior regions. A per-image scalar κ forces the model to choose a single confidence level for the entire image, which is inappropriate for dense prediction tasks. The convolu-tional architecture enables κ to vary smoothly across space while respecting local image context. The clamping bounds prevent numerical instability (very small κ causes heavy tails, while very large κ collapses to point estimates). 
+
+A.5. STE-ReLU Activation Design choice: We use Straight-Through Estimator (STE) ReLU (Bengio et al., 2013) (hard ReLU in forward, identity gradient in backward) instead of smooth alternatives like Softplus. Rationale: In Evidential Deep Learning (EDL), zero evidence must map to maximum uncertainty. Soft-plus never produces exact zeros, meaning the model cannot express “I have no evidence about this pixel”. STE-ReLU produces true sparsity in the forward pass (exact zeros where evidence is absent) while avoiding the dead neuron prob-lem through gradient flow in the backward pass. This is critical for calibrated uncertainty: regions with zero fore-ground evidence should have entropy 0.5 (maximum binary uncertainty), not a slightly-below-maximum value. 
+
+A.6. Mask Token Processing Design choice: Each mask token is processed through a shared MLP that outputs per-channel Weibull parameters for foreground/background classes ( 2 × C′ dimensions). The fi-nal logits compute logits k = ⟨˜z, ˜wk, fg ⟩−⟨ ˜z, ˜wk, bg ⟩+bk. Ra-tionale: The foreground-background formulation mirrors SAM’s binary mask prediction while enabling probabilistic interpretation. The inner-product formulation ensures that uncertainty propagates correctly: if either pixel features or weights are uncertain (high variance Weibull samples), the resulting logits will have high variance, correctly reflecting the compound uncertainty. 
+
+A.7. Training vs. Inference Mode Design choice: During training, we sample from the Weibull distribution via reparameterization. At inference, we use the analytic expectation E[˜ z] = λ · Γ(1 + κ−1). Ra-tionale: Sampling during training is necessary for gradient-based optimization of the Weibull parameters. However, at inference, using the analytic expectation provides deter-ministic predictions (same input ⇒ same output), which is preferable for reproducibility and downstream applications. The analytic expectation is also more efficient (no sampling overhead) and has lower variance than any finite sample estimate. 
+
+A.8. Weibull Variance Computation 
+
+The Bayesian mask decoder parameterizes both pixel fea-tures zc and per-mask weights wk,c with Weibull distribu-tions. Each Weibull variable with parameters (λ, κ ) has closed-form variance: Var [X] = λ2
+
+[
+
+Γ
+
+(
+
+1 + 2
+
+κ
+
+)
+
+− Γ2
+
+(
+
+1 + 1
+
+κ
+
+)] 
+
+. (S7) The final logit is computed as an inner product between pixel features and mask weights: ℓk = ∑ 
+
+> c
+
+zc · wk,c . For two independent random variables, the variance of their product is: Var [ZW ] = Var [Z]Var [W ]+ Var [Z]E[W ]2+Var [W ]E[Z]2.
+
+(S8) We use a first-order approximation that retains only the Var [Z]Var [W ] term: 
+
+v ≈ ∑
+
+> c
+
+Var [zc] · Var [wk,c ]. (S9) 2Segment Anything with Robust Uncertainty-Accuracy Correlation 
+
+Justification for this approximation: The omitted terms Var [Z]E[W ]2 and Var [W ]E[Z]2 scale the variance by a roughly constant factor across pixels. Our empirical analysis confirms: 1. Rank preservation : The Pearson correlation between simplified and full variance exceeds 0.99 across diverse inputs. Since calibration metrics (AUROC, PAvPU) de-pend only on the ranking of uncertainty values, not their absolute magnitudes, the approximation preserves all task-relevant information. 2. Constant scaling : The full variance is approximately 
+
+2–3× the simplified variance. This constant factor is absorbed by the subsequent MacKay approxima-tion, which maps variance to probability through κ =1/√1 + πv/ 8. A constant scaling of v merely shifts the sigmoid operating point uniformly, without affecting relative ordering. 3. Analytic-sampling agreement : Comparing our analytic uncertainty against 100-sample Monte Carlo ground truth yields Pearson correlation > 0.90 , confirming that the end-to-end pipeline (variance approximation + MacKay) produces well-ranked uncertainty estimates. This variance v is then used in MacKay’s probit approxima-tion to compute analytic uncertainty. 
+
+## B. Adversarial Network Design Decisions 
+
+Pipeline overview. Both style and deformation attacks op-erate in image space : style applies AdaIN color transfer, deformation applies spatial warping via grid sampling. At-tack parameters are predicted in parallel from the backbone features z = fenc (I) of the original (unperturbed) image, ensuring stable gradient flow for min-max optimization. These parameters are then applied sequentially in the order style →deformation. A single backbone forward pass on the final adversarial image produces adversarial features for decoder training. This design minimizes backbone forward passes (2 per iteration: clean + adversarial) while maintain-ing cooperative attack dynamics. 
+
+B.1. Optimization Strategy 
+
+We adopt Gradient Reversal Layers (GRL) for minimax optimization rather than PGD-style inner loops or alternat-ing optimization steps. Traditional alternating optimization (e.g., updating attacker for k steps, then defender for k steps) introduces instability from non-stationary objectives. GRL achieves equivalent minimax dynamics within a single back-ward pass: the segmentation model receives gradients that minimize loss, while attack networks receive negated gradi-ents that maximize loss, enabling simultaneous parameter updates with consistent gradient information. Note that we still perform both clean and adversarial forward passes each iteration (see Algorithm 1), but the min-max update itself requires no inner optimization loop. 
+
+B.2. Style Adversarial Network 
+
+For appearance perturbations, we use Adaptive Instance Normalization (AdaIN) rather than direct pixel perturbations or neural style transfer. Direct perturbations (e.g., PGD) create high-frequency noise that models can easily filter out, while not reflecting realistic domain shifts. AdaIN operates on per-channel statistics (mean, variance), corresponding to realistic appearance changes like lighting, color grading, and material properties. This forces genuine generalization to different visual appearances rather than simple noise filtering. Per-object features are extracted via masked average pool-ing: fk =
+
+∑  
+
+> x,y zt(x,y )·Mk(x,y )
+
+∑   
+
+> x,y Mk(x,y )+ ϵ
+
+. An MLP predicts style residuals ∆sk = GRL (MLP (fk)) , constrained via sigmoid-based relative encoding: 
+
+μadv  
+
+> k
+
+= μk · (1 + ϵμ · (2 σ(∆ sμk ) − 1)) + ϵ · tanh(∆ sshift  
+
+> k
+
+),
+
+(S10) 
+
+σadv  
+
+> k
+
+= σk · (1 + ϵσ · (2 σ(∆ sσk ) − 1)) , (S11) where ϵμ, ϵ σ control perturbation magnitude. When multiple objects are present ( K ≥ 2), an optional Graph Convolutional Network coordinates perturbations across objects. Independent per-object perturbations may create physically inconsistent scenes (e.g., conflicting light-ing conditions). The GCN refines style residuals based on spatial proximity and visual similarity, with edges eij =
+
+⊮[dspatial (i, j ) < τ d] · ⊮[sim visual (fi, fj ) > τ s]. A 2-layer GCN with symmetric normalization produces coordinated, scene-consistent perturbations. 
+
+B.3. Deformation Adversarial Network 
+
+The deformation network reuses SAM2’s memory encoder architecture (MaskDownSampler, CXBlock Fuser) rather than a custom design. This architecture is already optimized for fusing mask information with image features, which is precisely what semantic deformation prediction requires. Reusing it reduces additional parameters, leverages pre-trained fusion capabilities, and ensures matching receptive fields. Given backbone features and object masks, the network predicts dense offset fields: 
+
+hk = Fuser (Proj (zt) + MaskEnc (Mk)) , (S12) 
+
+∆pk = GRL (ϵ · (2 σ(OffsetNet (hk)) − 1)) , (S13) where ∆pk ∈ R2×H×W and ϵ bounds maximum displace-ment. The adversarial image is then obtained via differen-3Segment Anything with Robust Uncertainty-Accuracy Correlation 
+
+tiable grid sampling: Iadv = GridSample (˜I, δ), where ˜I is the styled image from the previous stage. Several design choices ensure training stability. (1) De-formation offsets are zero-initialized so that the attack net-work produces identity transformations initially, allowing the model to first learn basic segmentation before encoun-tering deformations. (2) Encoder components (MaskEnc, Proj, Fuser) are frozen to prevent GRL gradients from desta-bilizing pre-trained modules. (3) Zero-mean offsets are enforced by subtracting the spatial mean, preserving local warps while removing global translation. 
+
+Ground-truth mask synchronization. Crucially, the same flow field δ is applied to the ground-truth mask via bilinear interpolation: Madv = GridSample (M∗, δ). This ensures semantic correspondence between the deformed image and its supervision signal, enabling correct loss computation on the adversarial branch. For multi-object scenes, each object mask is warped independently using its corresponding offset field and composited via weighted averaging in overlap regions. 
+
+B.4. Graph Convolutional Network for Multi-Object Coordination 
+
+When multiple objects are present, independent per-object perturbations may create physically inconsistent scenes. We employ a 2-layer Graph Convolutional Network (GCN) to coordinate style perturbations across spatially or semanti-cally related objects. 
+
+Graph Construction. Given K object masks {Mk}Kk=1 
+
+and their visual features {fk}Kk=1 (extracted via masked average pooling from backbone features), we construct an object graph G = ( V, E) where each node represents an object. Edges are established based on three complementary criteria: 1. Spatial overlap (IoU): Objects with overlapping masks should have coordinated perturbations: 
+
+wIoU  
+
+> ij
+
+= IoU (Mi, Mj ) · ⊮[IoU (Mi, Mj ) > τ IoU ].
+
+(S14) 2. Geometric proximity: Nearby objects likely share light-ing conditions: 
+
+wdist  
+
+> ij
+
+= max 
+
+(
+
+0, 1 − dboundary (Mi, Mj )
+
+dmax 
+
+)
+
+·⊮[dij < τ d],
+
+(S15) where dboundary is the minimum boundary distance be-tween masks. 3. Semantic similarity: Visually similar objects should receive similar perturbations: 
+
+wsem  
+
+> ij
+
+= cos( fi, fj ) · ⊮[cos( fi, fj ) > τ sim ]. (S16) The final edge weight combines all criteria: wij = wIoU  
+
+> ij
+
++
+
+wdist  
+
+> ij
+
++ wsem  
+
+> ij
+
+. Self-loops with unit weight are added to pre-serve node identity. 
+
+Node Feature Initialization. Each node is initialized with the concatenation of style residuals and projected visual features: 
+
+h(0)  
+
+> k
+
+= [∆ μk, ∆σk] ⊕ MLP proj (fk) ∈ R12 , (S17) where the MLP projects 256-dimensional visual features to 6 dimensions, balancing influence with the 6-dimensional style residuals. 
+
+Message Passing. We use row-normalized graph convolu-tion with residual connections: 
+
+H(l+1) = ReLU 
+
+(
+
+LayerNorm 
+
+( ˜D−1 ˜AH (l)W(l))) 
+
+,
+
+(S18) where ˜A = A + I is the adjacency matrix with self-loops, 
+
+˜Dii = ∑ 
+
+> j
+
+˜Aij is the degree matrix, and W(l) are learnable weights. The final layer projects back to style dimension without activation. 
+
+Residual Output. To ensure stable training with GRL, refined style residuals use a scaled residual connection: 
+
+[∆ μ′, ∆σ′] = [∆ μ, ∆σ] + α · H(L)[:6] , (S19) where α = 0 .1 is a fixed scaling factor that prevents large initial perturbations while allowing gradual refinement. 
+
+## C. Training Strategy and Curriculum 
+
+C.1. Hardware Configuration 
+
+All experiments are conducted on 8 × NVIDIA A40 GPUs (48GB each) using PyTorch’s Distributed Data Parallel (DDP). We use a per-GPU batch size of 2 with gradient accumulation of 2 steps, yielding an effective batch size of 32. Mixed-precision training (bfloat16) is enabled for memory efficiency. Total training time for 20 epochs on MOSE is approximately 6 hours. 
+
+C.2. Curriculum Schedule 
+
+Training follows a three-phase curriculum to ensure stable learning. In Phase 1 (epochs 0-4), only the standard SAM segmentation loss is active ( γ = 0 ), establishing a work-ing baseline. Phase 2 (epochs 4-6) introduces Bayesian uncertainty estimation ( β = 0 .05 ). Phase 3 (epochs 6+) enables full AUE with adversarial training ( γ = 0 .2). This progressive hardening prevents destabilization from adver-sarial perturbations before the model has acquired basic segmentation capability. 4Segment Anything with Robust Uncertainty-Accuracy Correlation 
+
+C.3. Parameter Configuration 
+
+The image encoder (Hiera-B+) remains frozen throughout training. SAM’s encoder was trained on billions of masks with carefully designed pretraining. Fine-tuning on our smaller MOSE dataset risks catastrophic forgetting of gen-eral visual features and overfitting to source-specific appear-ances. Freezing preserves general-purpose representations while the decoder adapts to uncertainty-aware segmentation. We use a learning rate hierarchy: decoder ( 10 −6), uncer-tainty head and attacker networks ( 10 −4). Randomly initial-ized components (uncertainty head, attackers) require faster learning to catch up with the pre-trained decoder, while the decoder updates slowly to preserve pre-trained knowledge. 
+
+Table S5. Hyperparameter summary. 
+
+Category Hyperparameter Value 
+
+Training Epochs 20 Effective batch size 32 Optimizer AdamW Learning rates Image encoder frozen Mask decoder 10 −6
+
+Bayesian mask decoder 10 −4
+
+Attackers 10 −3 → 10 −4
+
+Loss weights 
+
+β (UE) 0.05 
+
+γ (AUE) 0.2 
+
+λ (calibration) 0.1 Adversarial Style ϵ 0.3 Deform ϵ 0.15 Bayesian mask decoder Feature dim C′ 32 
+
+κ range [0 .5, 10 .0] 
+
+KL weight 10 −8
+
+Prior Γ( α, β ) (1 .0, 3.0) 
+
+C.4. Why Calibration Emerges Without Direct Supervision 
+
+A natural question arises: if the calibration loss Lcal (Eq. 5) only updates the attacker via stop-gradient, how does the main model’s calibration improve? We clarify this indirect mechanism: 
+
+Step 1: Attacker learns to find miscalibrated samples. 
+
+The calibration loss trains the attacker to generate perturba-tions that expose the model’s calibration failures: samples where the model is either (a) confident but wrong, or (b) uncertain but correct. These are precisely the failure modes that degrade uncertainty-accuracy alignment. 
+
+Step 2: Main model trains on these hard samples. 
+
+The main model sees these adversarial samples through 
+
+Ladv seg + βLadv KL . When predictions fail on these samples, the segmentation loss provides error signal, while the KL term regularizes the Bayesian posterior. Over training, the model learns to express appropriate uncertainty for sample diffi-
+
+Algorithm 1 RUAC Training via Gradient Reversal 
+
+Require: Image batch {I}, GT masks {M∗}, attack networks 
+
+Astyle , Adeform 
+
+1: Initialize encoder fenc , Bayesian mask decoder fdec , optimizer 
+
+O
+
+2: for each iteration do 
+
+3: // Clean forward pass 
+
+4: z ← fenc (I); ˆM, ˜u ← fdec (z)
+
+5: Lclean ← L seg + βLKL 
+
+6: // Adversarial forward pass (GRL reverses gradients for attackers) 
+
+7: // Predict attack parameters in parallel from clean features 
+
+z
+
+8: (∆ μ, ∆σ) ← A style (z, M∗); δ ← A deform (z, M∗)
+
+9: // Apply attacks sequentially: style → deformation 
+
+10: ˜I ← AdaIN (I, μ + ∆ μ, σ + ∆ σ)
+
+11: Iadv ← GridSample (˜I, δ)
+
+12: zadv ← fenc (Iadv ); ˆMadv , ˜uadv ← fdec (zadv )
+
+13: e ← | ˆMadv − M∗|
+
+14: Ladv ← L adv seg + βLadv KL + λLcal 
+
+15: // Joint update: GRL flips gradients for ψs, ψ d
+
+16: Ltotal ← L clean + γLadv 
+
+17: O.step (∇θ,ϕ,ψ Ltotal ) (GRL reverses ∇ψ )
+
+18: end for 
+
+culty. 
+
+Step 3: Calibration emerges from Bayesian regulariza-tion. The Weibull-parameterized posterior naturally couples prediction confidence with weight uncertainty. Training on adversarially-selected hard samples forces the model into parameter regions where uncertainty aligns with prediction risk. This is the “flat minima” effect from PAC-Bayesian theory (Section F). 
+
+Why not direct calibration supervision? Direct regression of uncertainty to error (i.e., letting Lcal gradients flow to the model) creates two problems: 1. Trivial solutions : The model may learn to output uni-formly high uncertainty to minimize calibration loss, ignoring segmentation quality. 2. Gradient conflicts : Calibration and segmentation objec-tives may have opposing gradients, destabilizing training. Our indirect approach avoids both issues: the model’s uncer-tainty is shaped by Bayesian regularization on challenging samples, not by explicit error regression. 
+
+C.5. Why GT Masks During Training Do Not Cause Overfitting 
+
+A potential concern is that using ground-truth masks to generate adversarial perturbations might cause the model to overfit to the training data. We address this concern: 
+
+Training-only component. The attack networks Astyle and 
+
+Adeform are used exclusively during training . At inference, 5Segment Anything with Robust Uncertainty-Accuracy Correlation                   
+
+> Table S6. Zero-shot target datasets (23 total). All models train on MOSE only.
+> Category Datasets
+> Objects TrashCan (Hong et al., 2020), iShape (Yang et al., 2021), ZeroWaste-f (Bashkirova et al., 2022), LVIS (Gupta et al., 2019), NDD20 (Trotter et al., 2020), Plittersdorf (Haucke et al., 2022), Tim-berSeg (Fortin et al., 2022), DRAM (Cohen et al., 2022) Scenes Cityscapes (Cordts et al., 2016), ADE20K (Zhou et al., 2019), Hypersim (Roberts et al., 2021), Wood-Scape (Yogamani et al., 2019), STREETS (Snyder & Do, 2019), NDISPark (Ciampi et al., 2021; 2022), DOORS (Pugliatti & Topputo, 2022) Scientific BBBC038v1 (Caicedo et al., 2019), IBD (Chen et al., 2022), PIDRay (Wang et al., 2021a), PPDLS (Minervini et al., 2016) Egocentric GTEA (Fathi et al., 2011; Li et al., 2015), Ego-HOS (Zhang et al., 2022), VISOR (Darkhalil et al., 2022; Damen et al., 2022), OVIS (Qi et al., 2022)
+
+only the Bayesian mask decoder runs, requiring no GT masks or attack networks. This follows the standard adver-sarial training paradigm (Madry et al., 2018). 
+
+GT defines where to perturb, not what to predict. The GT masks serve a different role than in supervised learning: they localize objects for perturbation generation, not as pre-diction targets. The decoder learns to maintain calibration under perturbations, not to memorize GT patterns. 
+
+Zero-shot generalization validates no overfitting. Our evaluation is conducted on 23 completely held-out OOD datasets (zero-shot). The consistent improvements (Table 1, 2) demonstrate effective generalization, not memorization of source-domain GT patterns. 
+
+## D. Dataset Details 
+
+Source domain: MOSE (Ding et al., 2023) contains 2,149 video clips with 5,200 objects across 36 categories. We use first frames only for both training and evaluation, oper-ating SAM2 in single-frame mode without memory prop-agation. This isolates image segmentation quality from temporal tracking, enabling fair comparison with image-based methods. Target domains: Table S6 shows the 23 zero-shot datasets spanning medical imaging (BBBC038v1), autonomous driving (Cityscapes, WoodScape), industrial inspection (ZeroWaste-f, PIDRay), indoor scenes (Hyper-sim, DOORS), and egocentric settings (EgoHOS, VISOR). For datasets originally provided as videos, we evaluate on first frames only. Prompting protocol (3-click). For zero-shot evaluation, we follow a deterministic 3-click interactive prompting protocol consistent with prior promptable/inter-active segmentation evaluations (Kirillov et al., 2023; Sofi-iuk et al., 2022). Each object is evaluated with three point prompts generated deterministically from ground truth (with a minimum click separation). All methods receive identical prompts. 
+
+## E. UR-ERN Baseline Implementation 
+
+UR-ERN (Ye et al., 2024) is an evidential deep learning method that models predictive uncertainty via Normal In-verse Gamma (NIG) distributions. To adapt UR-ERN for SAM2, we add a lightweight 1×1 convolutional head on the upscaled decoder features (32 channels after transposed con-volutions). This head predicts four channels corresponding to the NIG parameters (γ, ν, α, β ), which are constrained to valid domains via softplus activations ( ν > 0, α > 1,
+
+β > 0) and linear activation for γ ∈ R.Following the original formulation, we decompose the pre-dictive variance into aleatoric and epistemic components: 
+
+σ2 
+
+> aleatoric
+
+= β/ (α − 1) and σ2 
+
+> epistemic
+
+= β/ (ν(α − 1)) . The NIG negative log-likelihood and evidence regularization terms are used for training. We report total predictive vari-ance as the uncertainty measure. 
+
+## F. Theoretical Analysis: Why AUE Aligns Uncertainty with Error 
+
+In this section, we provide a theoretical perspective on why optimizing a Bayesian mask decoder under bounded ad-versarial perturbations can improve the alignment between predictive uncertainty and model error. We ground this analysis in the Variational Inference (VI) framework. 
+
+F.1. Preliminaries 
+
+Let D be the data distribution. We seek a posterior qϕ(w)
+
+over weights w that minimizes the Variational Free En-ergy (equivalent to maximizing the Evidence Lower Bound, ELBO): 
+
+L(ϕ) = Ex,y∼D 
+
+[Ew∼qϕ [− log p(y|x, w)] ]
+
++ β KL (qϕ(w)∥p(w)) . (S20) In AUE, we augment this with an adversarial objective. Let 
+
+δ∗(x) be the worst-case perturbation within a feasible set ∆
+
+(defined by our Style and Deformation generators): 
+
+δ∗(x) = arg max 
+
+> δ∈∆
+
+Ew∼qϕ [− log p(y|xδ , w)] . (S21) The AUE objective effectively minimizes the risk on these perturbed samples: 
+
+LAUE (ϕ) ≈ Ex,y
+
+[Ew∼qϕ [− log p(y|xδ∗ , w)] ]+βKL (qϕ∥p).
+
+(S22) 6Segment Anything with Robust Uncertainty-Accuracy Correlation 
+
+F.2. Logit Variance Increases Predictive Entropy 
+
+We first formalize a key property of our analytic uncertainty estimator. Note that the logit variance v is strictly non-negative by construction, ensured by the Weibull parameter-ization. Under the MacKay-style sigmoid approximation, increased logit variance produces higher predictive entropy. 
+
+Lemma F.1. Let m ∈ R and v ≥ 0 denote the mean and variance of a (scalar) logit, and define the MacKay/probit approximation 
+
+p(v) ≜ σ(κs(v) m) , κs(v) ≜ (1 + cv )−1/2, c > 0.
+
+(S23) 
+
+Let u(v) ≜ H(p(v)) be the Bernoulli entropy H(p) = 
+
+−p log p − (1 − p) log(1 − p). Then u(v) is non-decreasing in v. Moreover, if m̸ = 0 then u(v) is strictly increasing in 
+
+v.Proof. Define the effective logit magnitude a(v) ≜
+
+κs(v) |m| = |m| (1 + cv )−1/2. Note that for m̸ = 0 , a(v)
+
+is strictly decreasing in v (and constant if m = 0 ). Due to the symmetry of entropy H(p) = H(1 − p), we have u(v) = H(σ(|m|κs(v))) = H(σ(a(v))) . Let g(a) ≜
+
+H(σ(a)) for a ≥ 0. Differentiating g(a) with respect to a:
+
+dg
+
+da = dH
+
+dp
+
+∣∣∣∣p=σ(a)
+
+︸ ︷︷ ︸
+
+> −logit (p)= −a
+
+· dσ
+
+da (a)
+
+︸ ︷︷ ︸ 
+
+> σ(a)(1 −σ(a))
+
+= −a · σ(a)(1 − σ(a)) .
+
+(S24) For a > 0, we have σ(a) ∈ (0 .5, 1) , so both terms are positive, making dg/ da strictly negative. Thus, u(v) is the composition of a decreasing function g(a) and a decreasing function a(v), making it strictly increasing in v (for m̸ =0). 
+
+F.3. Connection to Flat Minima and Uncertainty 
+
+We now provide an intuition for why optimizing Eq. S22 improves uncertainty calibration. The core argument relies on the connection between adversarial robustness and the geometry of the loss landscape (Flat Minima). 
+
+Proposition F.2 (Informal) . Adversarial training acts as a smoothing operator on the loss landscape, encouraging convergence to regions with lower curvature (flatter minima) compared to standard training. In a variational framework, lower curvature in the loss L w.r.t weights w permits the posterior covariance Σ to expand (increase) without incur-ring high likelihood penalties. Through Lemma F.1, this increased posterior variance translates to higher predictive entropy. Proof Sketch. Let us approximate the posterior qϕ(w) as a Gaussian N (μ, Σ). Minimizing the free energy (Eq. S20) involves a trade-off between fitting the data (minimizing NLL) and staying close to the prior (minimizing KL). Using a second-order Taylor expansion of the loss around μ, the optimal covariance Σ∗ satisfies the inverse-Hessian relation-ship: 
+
+Σ∗ ≈ (Hw + λI)−1 , (S25) where Hw is the Hessian of the loss and λ corresponds to the prior precision. 
+
+1. Standard Training (Sharp Minima): Standard ERM often converges to sharp minima where the Hessian Hw
+
+has large eigenvalues (high curvature). To minimize the expected NLL term Ew[NLL ] ≈ NLL (μ) + 12 Tr (H(Σ)) ,the optimizer is forced to reduce Σ significantly. This re-sults in small posterior variance, low logit variance, and consequently overconfident predictions (low entropy). 
+
+2. AUE Training (Flat Minima): Optimizing against perturbations δ∗ effectively minimizes the worst-case loss within a neighborhood, which necessitates finding a solu-tion μ that is robust to local changes. This implies finding a region where the loss surface is flat (low curvature, small 
+
+Hw). Because Hw is smaller, the penalty term Tr (H(Σ)) 
+
+is reduced, allowing the KL term to dominate. The KL term encourages Σ to expand towards the prior (unit variance). This larger Σ propagates to higher logit variance, which, via Lemma F.1, results in higher predictive entropy (calibrated uncertainty). 
+
+Conclusion: AUE aligns uncertainty with error by forcing the model into flat minima. In these regions, the Bayesian posterior is allowed to express higher epistemic uncertainty (weight variance), which correctly reflects the model’s relia-bility, whereas sharp minima force the posterior to collapse into overconfidence. 
+
+F.4. Generalization Bound 
+
+From a PAC-Bayesian viewpoint, the AUE objective can be viewed as maximizing the margin of validity for the poste-rior. By training on xδ∗ , we essentially optimize the risk over a smoothed distribution. Scalable PAC-Bayes bounds often contain terms relating to the sharpness of the poste-rior. By enabling the posterior to be flatter (higher variance) while maintaining low empirical risk, AUE effectively opti-mizes a tighter bound on potential OOD error. 
+
+## G. Failure Cases and Limitations 
+
+We observe three main failure modes: (1) Extreme domain shift : X-ray and microscopy images degrade segmentation quality, though uncertainty remains useful for failure detec-tion. (2) Very small objects : Objects <1% of image area challenge both segmentation and uncertainty estimation due to limited spatial resolution of uncertainty maps. (3) Heavy occlusion : Objects >80% occluded produce appropriate 7Segment Anything with Robust Uncertainty-Accuracy Correlation 
+
+high uncertainty but may fail to segment correctly. In such cases the model correctly “knows that it doesn’t know” but cannot recover the missing information. These limitations motivate future work on multi-scale uncertainty estimation and targeted adversarial attacks for edge cases. 
+
+## H. Threshold-Free Uncertainty Analysis 
+
+While PAvPU provides a threshold-based calibration metric, it can be sensitive to the choice of uncertainty threshold. On some OOD datasets, the model may express elevated uncertainty across most pixels, correctly identifying domain shift, which leads to low PAvPU even when predictions are accurate. This conservative behavior is desirable in safety-critical applications. To provide a more complete picture, we report threshold-free metrics that assess whether uncertainty correctly ranks 
+
+predictions by error likelihood, independent of any specific threshold choice. 
+
+H.1. Failure Detection AUROC 
+
+Area Under the Receiver Operating Characteristic (AUROC pixel ) measures the probability that a randomly cho-sen incorrectly predicted pixel has higher uncertainty than a randomly chosen correctly predicted pixel . An AUROC of 0.5 indicates random ranking, while 1.0 indicates perfect separation. This is evaluated at pixel granularity : each pixel serves as an independent sample. As shown in Figure S6, RUAC achieves an average AUROC pixel of 0.809 across all OOD datasets. Even on datasets with low PAvPU (e.g., DRAM, PIDRay), AUROC pixel remains above 0.7, indicating that uncertainty correctly identifies which pixels are more likely to be mis-predicted. 
+
+H.2. Uncertainty-Accuracy Pearson Correlation 
+
+Pearson Correlation Coefficient (PCC) between pixel-wise uncertainty and pixel-wise error provides a continuous mea-sure of calibration. Positive correlation indicates that higher uncertainty corresponds to higher error rates. RUAC achieves an average PCC of 0.585 across OOD datasets, with all datasets showing positive correlation. This confirms that uncertainty signals contain meaningful infor-mation about prediction reliability. 
+
+H.3. Interpretation 
+
+The combination of (1) elevated uncertainty on OOD datasets, (2) high AUROC, and (3) positive PCC demon-strates that RUAC exhibits domain-level cautiousness : the model correctly identifies domain shift and adopts a con-servative stance, while still maintaining the ability to distin-guish reliable from unreliable predictions within the high-uncertainty regime. This is precisely the behavior required for safe deployment in open-world scenarios. 
+
+## I. Risk-Coverage Analysis 
+
+To provide decision-relevant evidence that calibration im-proves independently of accuracy, we analyze the risk-coverage trade-off. This analysis addresses the concern that PAvPU improvements may be driven by accuracy gains rather than genuine calibration. 
+
+I.1. Area Under Risk-Coverage Curve (AURC) 
+
+The risk-coverage curve plots segmentation risk (1 - ac-curacy) against coverage (fraction of predictions retained) as we progressively reject high-uncertainty predictions. A well-calibrated model should achieve lower risk at any given coverage level. The Area Under the Risk-Coverage Curve (AURC) provides a single scalar summary: lower AURC indicates better uncertainty quality .Table S7 compares AURC between RUAC and Bayes-SAM2 (UE without adversarial training) across all 23 OOD datasets. RUAC achieves a mean AURC of 0.092 compared to 0.102 for Bayes-SAM2, representing a 9.8% relative improvement. Crucially, this improvement is observed on 
+
+19/23 domains (83%), demonstrating that the calibration benefit is consistent across diverse domain shifts.         
+
+> Table S7. AURC comparison (lower is better). RUAC achieves lower AURC on 19/23 domains.
+> Method Mean AURC ↓Std
+> Bayes-SAM2 (UE) 0.102 0.099
+> RUAC 0.092 0.093
+
+I.2. Selective Prediction Curves 
+
+Figure S8 shows selective prediction curves for represen-tative domains. At each coverage level, we retain only the predictions with lowest uncertainty and measure the re-sulting accuracy. A model with better calibration achieves higher accuracy at any given coverage. Across domains, RUAC (solid green) consistently lies above or matches Bayes-SAM2 (dashed blue), confirming that adversarial training improves the informativeness of uncer-tainty estimates for selective prediction. The improvement is particularly pronounced on challenging domains (e.g., DRAM, PIDRay) where domain shift is severe. 8Segment Anything with Robust Uncertainty-Accuracy Correlation 0.5    
+
+> 0.6
+> 0.7
+> 0.8
+> 0.9
+> 1.0
+> Failure Detection AUROC
+> Avg: 0.809
+> Objects Scenes Scientific Egocentric
+> TrashCan
+> iShape
+> ZeroWaste-f
+> LVIS
+> NDD20
+> Plittersdorf
+> TimberSeg
+> DRAM
+> Cityscapes
+> ADE20K
+> Hypersim
+> WoodScape
+> STREETS
+> NDISPark
+> DOORS
+> BBBC038v1
+> IBD
+> PIDRay
+> PPDLS
+> GTEA
+> EgoHOS
+> VISOR
+> OVIS
+> 0.0
+> 0.2
+> 0.4
+> 0.6
+> 0.8
+> 1.0
+> Uncertainty-Error PCC
+> Avg: 0.585
+
+Figure S6. Threshold-free uncertainty evaluation (pixel-level). (Top) Failure Detection AUROC pixel measures whether pixel-wise uncertainty correctly ranks predictions by per-pixel accuracy (avg. 0.809). (Bottom) Uncertainty-Accuracy PCC confirms positive correlation. Both metrics evaluate at pixel granularity, i.e., each pixel is a sample with its own uncertainty and correctness label. SAM 2           
+
+> Bayes -SAM 2
+> RUA C
+> Object 1Object 2Object 3
+> Confidence Uncertainty Confidence Uncertainty Confidence Uncertainty
+> N/A N/A N/A
+
+Figure S7. Additional confidence and uncertainty visualization. Complementing Figure 4 in the main text, we show three more object instances from additional rows of Figure 3. The layout follows the same format: each row corresponds to a method (SAM2, Bayes-SAM2, RUAC), displaying confidence and uncertainty maps. Brighter regions indicate higher confidence or uncertainty values. Consistent with the main text observations, RUAC demonstrates sharper confidence on object interiors while concentrating uncertainty along ambiguous boundaries, confirming its superior calibration behavior across diverse object instances. 
+
+I.3. Implications for Decision-Making 
+
+These results demonstrate that RUAC’s calibration improve-ment is orthogonal to accuracy gains :1. At matched accuracy : When comparing predictions at the same coverage level (i.e., same effective accuracy), RUAC’s uncertainty ranking is more reliable. 2. Actionable uncertainty : The improvement in AURC directly translates to better performance in downstream tasks that use uncertainty for rejection, active learning, or human-in-the-loop correction. 3. Consistent across domains : The benefit is observed on the majority of OOD datasets, not just those where RUAC has higher accuracy. 
+
+## J. Statistical Significance Analysis 
+
+To rigorously evaluate calibration improvements, we con-duct Wilcoxon signed-rank tests across all 23 OOD datasets. This non-parametric test is appropriate for paired compar-isons without assuming normality. 9Segment Anything with Robust Uncertainty-Accuracy Correlation 0 20 40 60 80 100                          
+
+> Coverage (%)
+> 0
+> 20
+> 40
+> 60
+> 80
+> 100
+> Accuracy (%)
+> LVIS
+> RUAC (AUE)
+> Bayes-SAM2 (UE)
+> 020 40 60 80 100
+> Coverage (%)
+> 0
+> 20
+> 40
+> 60
+> 80
+> 100
+> Accuracy (%)
+> CITYSCAPES
+> RUAC (AUE)
+> Bayes-SAM2 (UE)
+> 020 40 60 80 100
+> Coverage (%)
+> 0
+> 20
+> 40
+> 60
+> 80
+> 100
+> Accuracy (%)
+> DRAM
+> RUAC (AUE)
+> Bayes-SAM2 (UE)
+> 020 40 60 80 100
+> Coverage (%)
+> 0
+> 20
+> 40
+> 60
+> 80
+> 100
+> Accuracy (%)
+> PIDRay
+> RUAC (AUE)
+> Bayes-SAM2 (UE)
+> 020 40 60 80 100
+> Coverage (%)
+> 0
+> 20
+> 40
+> 60
+> 80
+> 100
+> Accuracy (%)
+> VISOR
+> RUAC (AUE)
+> Bayes-SAM2 (UE)
+> 020 40 60 80 100
+> Coverage (%)
+> 0
+> 20
+> 40
+> 60
+> 80
+> 100
+> Accuracy (%)
+> Hypersim
+> RUAC (AUE)
+> Bayes-SAM2 (UE)
+> Selective Prediction: Coverage vs Accuracy
+> (Higher curve = better uncertainty quality)
+
+Figure S8. Selective prediction curves (Coverage vs. Accuracy). At each coverage level, we retain predictions with lowest uncer-tainty. Higher curves indicate better uncertainty quality. RUAC (solid) consistently achieves higher accuracy than Bayes-SAM2 (dashed) at matched coverage levels. 
+
+J.1. Wilcoxon Signed-Rank Tests 
+
+Table S8 reports paired comparisons between RUAC and Bayes-SAM2 (UE only). For each metric, we count the number of domains where RUAC outperforms and compute the one-sided p-value. 
+
+Table S8. Wilcoxon signed-rank tests on calibration metrics across 23 OOD datasets. PAvPU denotes the threshold-averaged PAvPU over τ ∈ { 0.01 , 0.05 , 0.1} as defined in Sec. 4. *p < 0.05 ,** p < 0.01 , *** p < 0.001 .
+
+Metric RUAC Bayes-SAM2 Wins p-value 
+
+AURC ↓ 0.092 0.102 19/23 0.0006*** PAvPU ↑ 63.7 55.4 19/23 0.0022** ECE ↓ 0.117 0.123 17/23 0.037* AUROC mask ↑ 0.971 0.966 13/23 0.22 
+
+J.2. Interpretation 
+
+Three of four calibration metrics show statistically signifi-cant improvements: • AURC (p = 0.0006 ): RUAC achieves lower risk at matched coverage levels on 83% of domains. • PAvPU (p = 0 .0022 ): Uncertainty-accuracy alignment improves significantly. • ECE (p = 0 .037 ): Expected calibration error decreases on 74% of domains. The non-significant AUROC mask result is expected: AUROC mask (computed at mask granularity, averaging un-certainty per mask and comparing against mask-level IoU) measures ranking quality across entire masks, while our method optimizes pixel-level calibration . Both methods achieve high AUROC mask (>0.96) because Bayesian un-certainty already provides excellent mask-level ranking. RUAC’s contribution is improving pixel-level calibration 
+
+(AUROC pixel = 0.81, AURC, PAvPU). 
+
+## K. Channel Alignment Analysis 
+
+Unlike classification, where each image carries one label, segmentation requires per-pixel labels. This makes generic augmentation strategies fundamentally limited for our set-ting. Non-adversarial pixel perturbations cannot specifically discover the inputs on which the current decoder is sub-optimal. Diffusion-based image synthesis risks semantic lay-out drift, breaking the pixel-mask correspondence required for supervision. Feature-statistics and style-transfer meth-ods perturb images alone but cannot perturb their associated masks. RUAC sidesteps these limitations by jointly perturb-ing pixels and their spatial layout, enabling co-perturbation of images and ground-truth masks during training. To understand why RUAC also outperforms these baselines empirically on both segmentation accuracy and calibration, we analyze how each method’s training-time perturbation aligns with real OOD domain shift at the per-channel level of the mask decoder features. 
+
+K.1. Method-Level Channel Alignment 
+
+For each augmentation method we extract 32-dimensional foreground pixel features (pooled within dilated ground-truth masks at stride-4 resolution) from the mask decoder and compute two quantities: • Augmentation shift : the per-channel mean difference between augmented and clean features on the in-domain dataset (MOSE). • OOD shift : the per-channel mean difference between OOD and in-domain features, averaged over the 23 zero-shot datasets. 
+
+Channel alignment is defined as the Pearson correlation across the 32 channels between these two shift vectors. A high correlation indicates that the augmentation method perturbs the same channels that actually shift under real domain change. Figure S9 and Table S9 report the alignment correlation 
+
+r and the perturbation norm ∥shift ∥ for five representative methods. PGD and Patch are pixel-space attacks that do not directly perturb decoder features and are omitted from this feature-level analysis. The methods cluster into two regimes: • Low-alignment perturbations. Random Noise, by con-struction, perturbs all channels uniformly and produces near-zero correlation with real OOD shift. StyleGen-Targeted reaches moderate alignment (0.58) at large mag-10 Segment Anything with Robust Uncertainty-Accuracy Correlation 0.4 0.2 0.0 0.2                  
+
+> Norm. Aug. Shift
+> 0.5
+> 0.4
+> 0.3
+> 0.2
+> 0.1
+> 0.0
+> 0.1
+> 0.2
+> Norm. OOD Shift
+> RN
+> r = -0.005 ||shift|| = 0.0162
+> 0.4 0.2 0.0 0.2
+> Norm. Aug. Shift
+> 0.5
+> 0.4
+> 0.3
+> 0.2
+> 0.1
+> 0.0
+> 0.1
+> 0.2
+> DSU
+> r = 0.815 ||shift|| = 0.0037
+> 0.4 0.2 0.0 0.2
+> Norm. Aug. Shift
+> 0.5
+> 0.4
+> 0.3
+> 0.2
+> 0.1
+> 0.0
+> 0.1
+> 0.2
+> MixStyle
+> r = 0.824 ||shift|| = 0.0044
+> 0.4 0.2 0.0 0.2
+> Norm. Aug. Shift
+> 0.5
+> 0.4
+> 0.3
+> 0.2
+> 0.1
+> 0.0
+> 0.1
+> 0.2
+> SG-v2
+> r = 0.579 ||shift|| = 0.0919
+> 0.4 0.2 0.0 0.2
+> Norm. Aug. Shift
+> 0.5
+> 0.4
+> 0.3
+> 0.2
+> 0.1
+> 0.0
+> 0.1
+> 0.2
+> RUAC
+> r = 0.811 ||shift|| = 0.0460
+> ch27
+> ch29
+> ch3
+> ch23
+> ch18
+> ch2
+> ch8
+> ch14
+> ch0
+> ch30
+> ch5
+> ch4
+> ch10
+> ch19
+> ch17
+> ch13
+> ch15
+> ch31
+> ch26
+> ch20
+> ch7
+> ch6
+> ch28
+> ch12
+> ch25
+> ch11
+> ch22
+> ch16
+> ch1
+> ch24
+> ch9
+> ch21
+> Feature Channel (sorted by |OOD shift|)
+> RN (||0.0162||)
+> DSU (||0.0037||)
+> MixStyle (||0.0044||)
+> SG-v2 (||0.0919||)
+> RUAC (||0.0460||)
+> Per-Channel Augmentation Shift (raw, shared color scale)
+> 0.03
+> 0.02
+> 0.01
+> 0.00
+> 0.01
+> 0.02
+> 0.03
+> Augmentation shift
+> (per channel, unnormalized)
+> Channel-Level Alignment: Training Perturbation Direction vs Real OOD Shift
+> (scatter: unit-normalized; heatmap: raw magnitude)
+
+Figure S9. Channel alignment across augmentation methods. (Top) Scatter of per-channel augmentation shift (x-axis) versus per-channel OOD shift (y-axis), unit-normalized for visualization. The dashed line is the regression fit. (Bottom) Per-channel augmentation shift on the raw magnitude scale, sorted by aggregate OOD shift. Random Noise produces uncorrelated perturbations. Feature-statistics methods (DSU, MixStyle) achieve high alignment but very small magnitude. StyleGen-Targeted reaches moderate alignment at large magnitude. RUAC simultaneously achieves high alignment and substantial magnitude. 
+
+Table S9. Channel alignment statistics for five augmentation methods. Higher r indicates better alignment with real OOD shift directions. ∥shift ∥ reflects perturbation magnitude on the same scale across methods. Effective robustness training requires both. RUAC is the only method that achieves high alignment together with substantial magnitude, without any target-domain access. 
+
+Method Perturbation type r ∥shift ∥
+
+Random Noise Random pixel noise −0.005 0.0162 DSU Feature statistics (Gaussian) 0.815 0.0037 MixStyle Feature statistics (mixing) 0.824 0.0044 StyleGen-Targeted SD img2img style transfer 0.579 0.0919 
+
+RUAC Adversarial style+deform 0.811 0.0460 
+
+nitude, but its diffusion-based image synthesis introduces semantic drift that hurts both J&F and PAvPU (Table 3). • High-alignment but low-magnitude perturbations. 
+
+DSU and MixStyle achieve the highest correlations (∼0.82) because they perturb feature statistics in direc-tions that match real OOD shift. However, their perturba-tion magnitude is roughly an order of magnitude smaller than RUAC’s, so they cannot drive the decoder into the regions of feature space that robust fine-tuning needs to cover. RUAC is the only method that satisfies both conditions. It learns adversarial style and deformation perturbations that align with the channels most affected by domain shift ( r=0 .81 ) and applies them at substantial magnitude (∥shift ∥=0 .046 ), without any access to target-domain data. 
+
+K.2. Per-Dataset Top-Channel Analysis 
+
+To localize the channels that actually shift under domain change, we compute the per-channel OOD shift for each of the 23 datasets, separately for the pretrained SAM2 en-coder/decoder and for the fine-tuned Bayes-SAM2 model. Figure S10 shows the resulting heatmaps together with RUAC’s learned adversarial perturbation magnitude per channel. Three observations emerge from this analysis: • A few channels dominate OOD shift. In the fine-tuned model (Figure S10c), channel ch27 appears in the top-3 most shifted channels for 18 of the 23 datasets, followed by ch29 (12 datasets) and ch17 (9 datasets). RUAC’s adversarial perturbation (Figure S10a) targets exactly these channels. ch27 receives the largest adversarial shift among all 32 channels, even though RUAC receives no channel-level supervision. • Domain-specific channel patterns. Different datasets engage different channels. PIDRay shifts most along ch27, ch29, and ch23, while DRAM shifts along ch10, ch17, and ch13. Visually similar domains share patterns. Driving scenes (Cityscapes, STREETS) both rely on ch27 and ch29. Indoor scenes (DOORS, DRAM) share ch10 and ch13. • Fine-tuning concentrates the OOD shift. Comparing the pretrained heatmap (b) with the fine-tuned heatmap (c) under the same color scale, fine-tuning amplifies the per-11 Segment Anything with Robust Uncertainty-Accuracy Correlation 0.02 0.00 
+
+> Adv Shift
+> ch27
+> ch29
+> ch3
+> ch23
+> ch18
+> ch2
+> ch8
+> ch14
+> ch0
+> ch30
+> ch5
+> ch4
+> ch10
+> ch19
+> ch17
+> ch13
+> ch15
+> ch31
+> ch26
+> ch20
+> ch7
+> ch6
+> ch28
+> ch12
+> ch25
+> ch11
+> ch22
+> ch16
+> ch1
+> ch24
+> ch9
+> ch21
+> Feature Channel (sorted by |OOD shift|)
+> (a) RUAC
+> ade20k
+> bbbc038v1
+> cityscapes
+> doors
+> dram
+> egohos
+> gtea
+> hypersim
+> ibd
+> ishape
+> lvis
+> ndd20
+> ndispark
+> ovis
+> pidray
+> plittersdorf
+> ppdls
+> streets
+> timberseg
+> trashcan
+> visor
+> woodscape
+> zerowaste_f
+> (b) Pretrained (Vanilla SAM2)
+> ade20k
+> bbbc038v1
+> cityscapes
+> doors
+> dram
+> egohos
+> gtea
+> hypersim
+> ibd
+> ishape
+> lvis
+> ndd20
+> ndispark
+> ovis
+> pidray
+> plittersdorf
+> ppdls
+> streets
+> timberseg
+> trashcan
+> visor
+> woodscape
+> zerowaste_f
+> (c) Finetuned (Bayes-SAM2)
+> top-3 shifted ch.
+> 0.100
+> 0.075
+> 0.050
+> 0.025
+> 0.000
+> 0.025
+> 0.050
+> 0.075
+> 0.100
+> Per-channel OOD shift
+
+Figure S10. Per-dataset channel-level OOD shift versus RUAC’s learned perturbation. (a) RUAC’s adversarial perturbation magnitude per channel, learned end-to-end with no channel-level supervision. (b) Per-channel OOD shift heatmap for the pretrained SAM2 model. (c) Same heatmap for the fine-tuned Bayes-SAM2 model. Black boxes mark each dataset’s top-3 most shifted channels. Channels are sorted by aggregate OOD shift magnitude (top = most shifted). Panels (b) and (c) share a color scale. 
+
+channel OOD shift. Each channel encodes more domain-specific information after fine-tuning, and the identity of the top-3 most shifted channels per dataset changes between (b) and (c). RUAC learns to attack the post-fine-tuning vulnerable channels, again without any channel-level supervision. Together these observations explain the calibration gap in Table 3. Only RUAC perturbs the right feature directions at sufficient magnitude, and only RUAC discovers these directions purely from the adversarial training signal rather than from target-domain access. 
+
+## L. Hyperparameter Sensitivity Analysis 
+
+To assess RUAC’s robustness to hyperparameter choices, we sweep the two main loss weights, β (KL regularization, con-trolling the Bayesian decoder’s posterior) and γ (adversarial loss weight, controlling the contribution of the AUE branch), each across a 0.5×–16 × range around the default. To keep the sweep tractable we use a compressed 8-epoch schedule rather than the 20-epoch schedule used for the main results in Tables 1, 2, and 3. Absolute numbers therefore differ from the main results, but relative trends across the sweep range remain meaningful, since all sweep runs share the same training budget. 
+
+Table S10. Sensitivity to the KL regularization weight β. γ
+
+is fixed at 0.2 (default). All metrics aggregated over 23 OOD datasets. The default configuration is highlighted. 
+
+β J&F ↑ PAvPU ↑ AURC ↓ ECE ↓
+
+0.025 (0.5×) 77.83 43.35 0.108 0.185 
+
+0.05 (1×, default) 77.47 43.43 0.111 0.179 
+
+0.1 (2×) 77.84 43.54 0.105 0.179 
+
+0.4 (8×) 77.97 41.01 0.111 0.185 
+
+0.8 (16 ×) 77.86 44.40 0.104 0.183 
+
+Across the full 0.5×–16 × sweep for each hyperparameter, all four metrics remain stable: J&F varies by at most 0.7
+
+points, AURC by ≤ 0.008 , PAvPU by ≤ 3.4 points, and ECE by ≤ 0.014 . The sweep also reveals that the default 
+
+(β, γ ) = (0 .05 , 0.2) is not necessarily optimal on the com-pressed schedule: a slightly larger γ = 0 .5 improves J&F by 
+
+0.57 and AURC by 0.002 in Table S11. We did not perform a fine-grained search on the full 20-epoch schedule. We retain the original (β, γ ) = (0 .05 , 0.2) for consistency with 12 Segment Anything with Robust Uncertainty-Accuracy Correlation                                    
+
+> Table S11. Sensitivity to the adversarial loss weight γ.βis fixed at 0.05 (default). All metrics aggregated over 23 OOD datasets. The default configuration is highlighted.
+> γJ&F ↑PAvPU ↑AURC ↓ECE ↓
+> 0.1(0.5×)77.72 42.77 0.111 0.174
+> 0.2(1×, default) 77.84 42.62 0.107 0.178
+> 0.5(2.5×)78.41 43.34 0.105 0.176
+> 1.6(8×)78.03 43.29 0.108 0.188
+> 3.2(16 ×)78.22 41.28 0.109 0.183
+
+all other results in the paper, treating the sensitivity sweep as evidence of robustness rather than an optimization target. The fact that RUAC outperforms all baselines (Tables 1, 2, 3) under a non-optimized configuration further supports that the gains stem from the AUE perturbation design rather than careful tuning. 
+
+## M. Loss Component Ablation 
+
+The full RUAC training objective combines the base segmen-tation loss (focal + dice) with two trainable components: the KL regularization on the Bayesian posterior (weighted by β) and the AUE adversarial loss (weighted by γ). We isolate the contribution of each by disabling it while keeping the rest unchanged. The base segmentation loss cannot be ablated, since training collapses without it. The combination 
+
+β = 0 with γ > 0 is also not meaningful: the AUE adversar-ial loss relies on the Bayesian decoder’s uncertainty map for calibration, so removing the KL regularization that shapes that posterior would leave the adversarial signal without a target. We therefore ablate the AUE adversarial loss ( γ=0 ,equivalent to the no-augmentation Bayes-SAM2 in Table 1) and the KL regularization in turn. Results are aggregated over the 23 OOD datasets (Table S12).                    
+
+> Table S12. Loss component ablation. Aggregate metrics over 23 OOD datasets. The full RUAC configuration is highlighted, with
+> bold marking the best value per metric. Configuration J&F ↑PAvPU ↑AURC ↓ECE ↓
+> RUAC (full) 81.62 63.72 0.092 0.117 w/o KL 81.26 62.43 0.091 0.114
+> w/o AUE 79.87 55.40 0.102 0.123
+
+Removing the AUE adversarial loss recovers the no-augmentation Bayes-SAM2 baseline and causes the largest drop ( ∆J&F −1.75 , ∆PAvPU −8.32 , ∆AURC +0 .010 ,
+
+∆ECE +0 .006 ), confirming that adversarial training is the primary contributor to RUAC’s gains on both segmentation accuracy and uncertainty calibration. Removing the KL regularization causes only a minor change ( ∆J&F −0.36 ,
+
+∆PAvPU −1.29 , ∆AURC −0.001 , ∆ECE −0.003 ). The differences in AURC and ECE between the full RUAC and the no-KL variant fall within run-to-run noise. The KL term primarily serves as a training stabilizer that prevents the Weibull posterior from degenerating, rather than as a perfor-mance driver. Both observations match our intuition: the adversarial branch carries the burden of aligning uncertainty with error under domain shift, while the KL regulariza-tion keeps the Bayesian decoder’s posterior well-defined throughout training. 
+
+## N. Downstream Utility: Uncertainty-Guided Mask Correction 
+
+Beyond reporting calibration metrics, we test whether RUAC’s uncertainty maps carry actionable signal for down-stream decision-making. Inspired by SeCoV2 (Zhao et al., 2025), we apply a simple uncertainty-guided connected-component (CC) filter to each predicted mask: we extract connected components and remove fragments whose mean uncertainty exceeds an adaptive threshold, while always pre-serving the largest CC. The threshold is the 95 th percentile of the predicted foreground uncertainty with a floor of 0.3
+
+to prevent over-filtering on confident predictions. We refer to this post-processing step as UncCorr, and we apply it identically to Bayes-SAM2 and RUAC. Crucially, the same mask decoder and the same prompts are used. Only the uncertainty source differs. Numerical results are reported in Table 4 of the main text. The two methods react oppositely to the same correction. UncCorr applied to Bayes-SAM2 degrades J&F on average (−0.28 , hurting 14 of 23 datasets), confirming our calibra-tion analysis: uncertainty that does not track error actively misleads downstream filters, sometimes removing correctly predicted regions. UncCorr applied to RUAC improves 
+
+J&F (17 of 23 datasets), demonstrating that RUAC’s un-certainty is well-aligned enough with error to identify and remove genuinely unreliable mask fragments. The +0.09 average gain is modest because UncCorr is a conserva-tive post-processing step that only edits at the connected-component level, but the directional contrast (RUAC helps, Bayes-SAM2 hurts) is the substantive finding: better cal-ibration translates directly into more useful uncertainty maps for downstream applications, not just better calibra-tion scores. We expect more aggressive uncertainty-aware post-processing (e.g., per-pixel rejection, active sampling, or selective re-prompting) to amplify this gap. 
+
+## O. MC Sample Analysis 
+
+At inference time we estimate per-pixel uncertainty by draw-ing S samples from the Weibull posterior of the Bayesian decoder. The forward pass that produces the predicted logits uses the analytic Weibull expectation, so the segmentation output (J&F) is independent of S by construction. The sam-ple count only affects the uncertainty map quality. We sweep 13 Segment Anything with Robust Uncertainty-Accuracy Correlation 
+
+S ∈ { 1, 5, 20 , 50 , 100 } on the same trained checkpoint and report aggregate metrics across the 23 OOD datasets in Table S13.                                    
+
+> Table S13. MC sample count Sat inference. Same trained checkpoint, only the sample count is varied. The default S= 20
+> used in the main results is highlighted, with bold marking the best value per metric. Differences across Sare within run-to-run noise.
+> SJ&F ↑PAvPU ↑AURC ↓ECE ↓
+> 181.53 63.36 0.096 0.115
+> 581.44 63.32 0.089 0.116
+> 20 (default) 81.62 63.72 0.092 0.117
+> 50 81.46 64.14 0.091 0.119
+> 100 81.59 63.87 0.090 0.117
+
+All four metrics are remarkably stable across the 100 ×
+
+range of S. Even with a single sample ( S=1 ), PAvPU is within 0.36 points and AURC within 0.007 of the default 
+
+S=20 . AURC reaches its best value already at S=5 , indi-cating that the Weibull-based uncertainty is highly sample-efficient and saturates well below typical MC dropout sam-ple counts. The minor J&F fluctuations ( ±0.21 ) come from numerical precision since J&F is theoretically constant given the analytic forward pass. We therefore use S=20 as a conservative default that gives smooth uncertainty maps without meaningful additional cost. Users with tight latency budgets can drop to S∈{ 3, 5} with negligible loss. 
+
+## P. Training Cost, Parameter Efficiency, and Extension 
+
+We report the practical training cost of RUAC, the parameter overhead introduced beyond the frozen SAM2 encoder, and how the design extends to future SAM models and to video tracking. 
+
+P.1. Training Cost and Parameter Overhead 
+
+Training RUAC takes approximately 6 hours on 8 NVIDIA A40 GPUs (about 48 GPU-hours) for the standard 20-epoch schedule on the MOSE source domain. The trainable RUAC additions total approximately 0.45 M parameters, which is 
+
+0.64% of SAM2’s frozen image encoder (Hiera-B+, the hierarchical ViT image backbone of SAM2, 69 .1M parame-ters). Table S14 reports the per-component breakdown: a compact deformation offset module ( ∼ 370 K) dominates the budget, while the style attacker, GCN refinement mod-ule, and Bayesian pixel head are each on the order of 34 Kparameters or below. The deformation attacker addition-ally reuses a frozen copy of SAM2’s pretrained memory encoder ( ∼ 1.37 M), copied at initialization and kept frozen throughout training to avoid GRL-induced gradient insta-bility. These reused weights are not retrained and are ex-cluded from the trainable count. The frozen image encoder is shared with the SAM2 baseline and is also not retrained.                 
+
+> Table S14. Per-component trainable parameter breakdown of RUAC. The SAM2 Hiera-B+ encoder ( 69 .1M) is kept frozen. The deformation attacker additionally reuses a frozen copy of SAM2’s memory encoder weights ( ∼1.37 M, not shown) which is excluded from the trainable count. Component Trainable Params Style attacker (AdaIN + GRL) ∼34 KGCN refinement ∼34 KDeformation offset module ∼370 KBayesian pixel head ∼7.5K
+> Total trainable RUAC additions ∼0.45 M
+> Frozen SAM2 encoder 69 .1M
+> Trainable overhead vs. encoder 0.64 %
+
+P.2. Comparison with Diffusion-Based Augmentation 
+
+Recent style-augmentation pipelines often rely on pretrained diffusion models to synthesize domain-shifted training im-ages (Dunlap et al., 2023; Trabucco et al., 2024). We list the parameter scale of representative diffusion backbones in Table S15 for reference. RUAC introduces roughly three orders of magnitude fewer trainable parameters than these al-ternatives. Because RUAC perturbs the segmentation feature space directly rather than synthesizing pixels, it also avoids the semantic drift, prompt-engineering cost, and inference-time text-encoder dependency typical of diffusion-based augmentation. We instantiate diffusion-based augmentation as two vari-ants of StyleGen , both using SD 1.5 img2img follow-ing ALIA (Dunlap et al., 2023) and DA-Fusion (Trabucco et al., 2024). StyleGen-Generic uses 2 prompts spanning all target domains. StyleGen-Targeted uses 9 prompts, each tailored to one of the 11 OOD target domains be-low the average J&F (overlapping domains merged, e.g., VISOR +GTEA into “egocentric kitchen”), representing a strong prompt-engineering effort that explicitly targets the test distribution. Despite this, StyleGen-Targeted degrades 
+
+below StyleGen-Generic and even below Random Noise on J&F and PAvPU (Table 3): more aggressive prompt engi-neering toward OOD domains amplifies semantic drift in the synthesized images, breaking the pixel-mask correspon-dence required for segmentation supervision. This is the empirical evidence behind the channel-alignment analysis in Appendix K.1, where StyleGen-Targeted achieves only moderate alignment ( r=0 .58 ) at large magnitude. 
+
+P.3. Extension to Future SAM Models and Video 
+
+The RUAC trainable modules attach to the mask decoder and operate on the contrastive feature space produced by the frozen Hiera-B+ trunk. The encoder itself is untouched during training. This decoder-attached, encoder-agnostic 14 Segment Anything with Robust Uncertainty-Accuracy Correlation              
+
+> Table S15. Parameter scale of diffusion-based alternatives vs. RUAC. Counts refer to the augmentation backbone as reported in the cited papers. Method Parameters Stable Diffusion 1.5 (Rombach et al., 2022) ∼860 MSDXL (Podell et al., 2024) ∼2.6BControlNet (Zhang et al., 2023) ∼361 MInstructPix2Pix (Brooks et al., 2023) ∼860 M
+> RUAC (ours) ∼0.45 M
+
+design means that swapping the encoder for a future model, e.g., the SAM3 image encoder (Carion et al., 2025) or a video tracker backbone, only requires re-targeting the de-coder feed: the adversarial style and deformation networks, the GCN refinement module, and the Bayesian mask de-coder can be reused without architectural change. Because the encoder remains frozen, the cost of porting RUAC to a new backbone is dominated by re-running the same ∼ 48 
+
+GPU-hour fine-tuning of the ∼ 0.45 M trainable RUAC pa-rameters, not by retraining the much larger encoder. For video tracking specifically, the Bayesian decoder’s per-pixel uncertainty can be temporally aggregated to flag tracker drift across frames. We leave this empirical study to future work. 15
