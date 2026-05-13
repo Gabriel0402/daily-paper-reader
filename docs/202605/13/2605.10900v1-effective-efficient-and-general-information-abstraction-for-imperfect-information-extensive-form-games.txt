@@ -1,0 +1,727 @@
+Title: Effective, Efficient, and General Information Abstraction for Imperfect-Information Extensive-Form Games
+
+URL Source: https://arxiv.org/pdf/2605.10900v1
+
+Published Time: Tue, 12 May 2026 03:16:50 GMT
+
+Number of Pages: 17
+
+Markdown Content:
+# Effective, Efficient, and General Information Abstraction for Imperfect-Information Extensive-Form Games 
+
+Boning Li ∗ Longbo Huang †
+
+May 12, 2026 
+
+Abstract 
+
+Information abstraction reduces the computational cost of solving imperfect-information games by clustering information sets into a smaller number of buckets . Existing methods either rely on domain-specific features such as rank or equity, which are inapplicable to games with non-standard payoff structures, or require expensive offline neural-network training on billions of samples. We propose Warm-up Expected Value-based Abstraction (WEVA) , a simple yet effective alternative: run a small number of Counterfactual Regret Minimization (CFR) it-erations on the full game as a warm-up phase, extract per-hand expected value features at every decision node, form a depth-weighted multi-node feature vector, and apply k-means++ cluster-ing to obtain the abstraction mapping. WEVA requires no domain knowledge, no pre-training, and incurs only a small overhead on top of the abstract-game solve. Experiments on three structurally diverse games, with different bucket numbers and CFR variants, show that WEVA consistently outperforms equity-based and rank-based abstractions, reducing exploitability by up to over 80%. Surprisingly, as few as W =10 warm-up iterations already produce abstrac-tions that outperform existing information abstraction methods in most settings. These results establish WEVA as an effective, efficient, and general approach to information abstraction in imperfect-information extensive-form games. 
+
+## 1 Introduction 
+
+Imperfect-Information Extensive-Form Games (IIEFGs) model sequential multi-agent decision-making under partial observability and provide a unifying framework for a wide range of domains, including poker [Bowling et al., 2015], Mahjong [Liu et al., 2023] and dark chess [Zhang and Sand-holm, 2026]. Solving these games requires reasoning over information sets, i.e., collections of game states indistinguishable to a player, whose number grows exponentially with game size. Even with efficient algorithms like Counterfactual Regret Minimization (CFR) [Zinkevich et al., 2007] and its variants [Lanctot et al., 2009, Brown and Sandholm, 2019a, Farina et al., 2021], large games remain intractable without simplification. Information abstraction addresses this by grouping sim-ilar information sets into buckets , reducing the effective game size [Gilpin and Sandholm, 2006a]. This serves two purposes [Sandholm, 2010, 2015]: (1) it reduces computational cost by shrinking the strategy space, and (2) it provides an automatic classification of information sets that captures strategically relevant similarities. Existing abstraction methods face a trade-off between generality and computational cost. Domain-specific features, such as rank (relative hand strength) and equity (expected win probability against 
+
+> ∗IIIS, Tsinghua University. Email: li-bn22@mails.tsinghua.edu.cn
+> †IIIS, Tsinghua University. Email: longbohuang@tsinghua.edu.cn. Corresponding author.
+
+1
+
+> arXiv:2605.10900v1 [cs.GT] 11 May 2026
+
+a uniform opponent range) in poker [Shi and Littman, 2000, Billings et al., 2003, Gilpin and Sand-holm, 2006a], are cheap to compute but tied to specific game structures: rank assumes a fixed hand ordering, and equity requires a well-defined showdown payoff matrix. When applied to non-standard games or games with non-monotonic payoff structures, these features degrade or fail entirely. Recent approaches [Brown et al., 2019, Li and Huang, 2025] avoid domain dependency by training neural networks to estimate information set features, but require training on billions of samples, incurring substantial offline cost. We ask: 
+
+Can we obtain EV-based abstraction features cheaply, without neural networks or domain knowledge? 
+
+A key observation motivates our approach. During CFR iteration, the ordinal ranking of per-hand expected values stabilizes far earlier than the strategy itself converges (Figure 1). We measure this using the Spearman rank correlation [Zar, 2005] coefficient ρ, a standard measure of the mono-tonic association between two rankings: ρ = 1 indicates perfectly identical orderings, and ρ = 0 indicates no monotonic relationship. Comparing intermediate EVs against near-oracle EVs ob-tained by running 50 ,000 CFR iterations, we find that ρ exceeds 0.996 after only W =10 iterations across all three benchmark games, while exploitability remains orders of magnitude from conver-gence. In other words, CFR quickly learns which hands are strong and which are weak long before it finds the equilibrium strategy. Since the relative ordering of EVs, which is the primary signal for grouping similar information sets, stabilizes early, the warm-up EV features can provide a reliable basis for similarity measurement. 10 0 10 1 10 2 10 3                                
+
+> CFR Iterations
+> 10 4
+> 10 3
+> 10 2
+> 10 1
+> 10 0
+> 1 - Spearman
+> W=10
+> HUNL River
+> 10 010 110 210 3
+> CFR Iterations
+> 10 4
+> 10 3
+> 10 2
+> 10 1
+> 10 0
+> 1 - Spearman
+> W=10
+> Double-Board HUNL
+> 10 010 110 210 3
+> CFR Iterations
+> 10 4
+> 10 3
+> 10 2
+> 10 1
+> 10 0
+> 1 - Spearman
+> W=10
+> Random Game
+> 10 4
+> 10 3
+> 10 2
+> 10 1
+> 10 0
+> Exploitability
+> 10 4
+> 10 3
+> 10 2
+> 10 1
+> 10 0
+> Exploitability
+> 10 4
+> 10 3
+> 10 2
+> 10 1
+> 10 0
+> Exploitability
+> 1 - Spearman (EV rank error) Exploitability
+
+Figure 1: Convergence of EV rank correlation (Spearman ρ) and exploitability during CFR itera-tions across different games. Building on this observation, we propose Warm-up Expected Value-base Abstraction (WEVA) , a simple framework that extracts EV features directly from a short CFR warm-up phase. The method runs W iterations of CFR on the full (unabstracted) game, extracts per-hand EV values at each decision node, constructs depth-weighted feature vectors, and applies k-means++ clustering [Arthur and Vassilvitskii, 2007]. We compare two variants: ev-root , which uses only the root-node EV as a one-dimensional feature, and ev-nd (node-depth ), which constructs a multi-dimensional feature vector with exponentially decaying depth weights [Li and Huang, 2025]. WEVA does not require domain knowledge, does not rely on neural network training, and incurs minimal abstraction overhead. We evaluate WEVA on three structurally diverse river endgame benchmarks: Heads-up No-limit Hold’em (HUNL) Endgame, Double-Board HUNL (two independent boards with split pots), 2and a Random Game (per-node independent random payoffs). Across all three games, two state-of-the-art CFR variants (PCFR+ [Farina et al., 2021] and DCFR [Brown and Sandholm, 2019a]), and multiple bucket counts ( K ∈ { 20 , 50 , 200 }), WEVA consistently outperforms equity- and rank-based baselines, reducing exploitability by up to over 80%. Surprisingly, as few as W =10 warm-up iterations already suffice to beat all existing abstraction methods in most settings. Our contributions are: 
+
+• We propose WEVA , a lightweight EV-based information-abstraction framework that does not require domain knowledge or pre training. Our method is open-source and easily repro-ducible 1, lowering the barrier for future research in information abstraction. 
+
+• Through experiments on three structurally diverse games with two CFR variants and three bucket settings, we show that WEVA consistently outperforms equity-based and rank-based baselines, reducing exploitability by up to over 80%. 
+
+• We show that even W =10 warm-up CFR iterations already produce abstractions that out-perform existing methods in most settings, making WEVA an effective, efficient, and general information abstraction method in IIEFGs. 
+
+## 2 Related Work 
+
+Information Abstraction. Information abstraction groups similar information sets into buckets in a public state, which was initially performed manually in the poker domain via rank or equity [Shi and Littman, 2000, Billings et al., 2003]. Based on these domain features, automated abstraction was pioneered by Gilpin and Sandholm [2006a] for poker. Subsequently, by utilizing the staged dealing property of poker, the next stage’s bucket situation can be used as a better feature for clustering in flop and turn [Gilpin and Sandholm, 2007a, Gilpin et al., 2007, 2008]. In recent years, there have been some neural network-based abstraction methods [Brown et al., 2019, Li and Huang, 2025, Kubicek and Lis´ y, 2026, Fu et al., 2026], which do not require domain knowledge but require a large amount of offline data and computational overhead for training. The strength of information abstraction is positively correlated with the scale of abstraction [Kroer and Sandholm, 2014], but it is not completely monotonous [Waugh et al., 2009a]. Finding a universally applicable and efficient abstraction for various games remains difficult [Gilpin and Sandholm, 2008, Sandholm, 2015], which is exactly the problem that our work aims to solve. 
+
+Other Abstractions. Isomorphic abstraction is lossless [Gilpin and Sandholm, 2006b, 2007b], but its compression factor is limited and depends on game properties. The Imperfect-recall abstrac-tion forces the agent to forget some of the public state information [Waugh et al., 2009b, Lanctot et al., 2012], thereby merging information sets from different public states and further reducing the size of the game tree. Imperfect-recall abstraction can be combined with information abstrac-tion to generate high-quality abstractions for large-scale games such as HUNL [Johanson et al., 2013, Ganzfried and Sandholm, 2014, Brown and Sandholm, 2015a]. Action abstraction reduces the branching factor by selecting a subset of available actions at each decision point [Hawkin et al., 2011, 2012, Brown and Sandholm, 2014], which has been widely used in practical game-solving systems [Brown and Sandholm, 2018, Li et al., 2024]. 
+
+> 1Code is available at: https://github.com/lbn187/WEVA
+
+3CFR algorithms. CFR [Zinkevich et al., 2007] and its variants form the backbone of game-solving algorithms with theoretical guarantees. Discounted CFR (DCFR) [Brown and Sand-holm, 2019a] applies time-dependent discounting to past regrets and strategies. Predictive CFR+ (PCFR+) [Farina et al., 2021] further improves convergence by incorporating predictive regret matching. CFR can be combined with techniques such as sampling [Lanctot et al., 2009, Johanson et al., 2011], abstraction [Brown and Sandholm, 2015c], pruning [Brown and Sandholm, 2015b, 2017a], regularization [Perolat et al., 2021], warm-start [Brown and Sandholm, 2016], decomposi-tion [Burch et al., 2014], re-solving [Brown and Sandholm, 2017b] and search [Brown et al., 2018, Schmid et al., 2023] to achieve efficient equilibrium findings. 
+
+## 3 Notation 
+
+An Imperfect-Information Extensive-Form Game (IIEFG) [Kuhn, 1953] is defined by the tuple 
+
+G = ( N , H, A, Z, P, u, σ c, I). N = {1, 2} denotes the two players (we focus on two-player zero-sum games). H is the set of all histories (sequences of actions from the initial history ∅). For any history 
+
+h ∈ H , A(h) is the set of available actions; executing a ∈ A (h) transitions to a new history ha .
+
+Z ⊆ H is the set of terminal histories, with up(z) the payoff for player p at z ∈ Z . The player function P : H \ Z → N ∪ { c} specifies the acting player, where c is the chance player following a fixed strategy σc.For each player p, the information partition Ip groups indistinguishable histories: for any I ∈ I p
+
+and h, h ′ ∈ I, player p cannot distinguish h from h′. We write Ip to emphasize that an information set belongs to player p; when the player is clear from context, we use I and Ip interchangeably. We denote by I0 
+
+> p
+
+⊆ I p the set of root information sets , i.e., the information sets at the game’s initial decision point for player p. For a root information set I0 
+
+> p
+
+∈ I 0 
+
+> p
+
+and a decision node n, we write 
+
+I0 
+
+> p
+
+↓n for the downstream information set at n: the unique information set sharing the same private information as I0 
+
+> p
+
+, combined with the public action history leading to n. A behavioral strategy 
+
+σp assigns a probability distribution over A(I) for each I ∈ I p; the probability of action a at I
+
+is denoted σ(I, a ). A strategy profile σ = ( σ1, σ 2) determines the reach probability πσ(h) of any history h. The counterfactual value for player p at information set I is 
+
+vσp (I) = X
+
+> h∈I
+
+πσ
+
+> −p
+
+(h) X
+
+> z∈Z , h ⊑z
+
+πσ(z | h) up(z).
+
+And the expected value (EV) for player p at information set Ip under σ is 
+
+EV σp (Ip) = X
+
+> h∈Ip
+
+πσ(h | Ip) X
+
+> z∈Z ,h ⊑z
+
+πσ(z | h)up(z).
+
+The best response to σ−p is BR( σ−p) = arg max σ′ 
+
+> p
+
+up(σ′
+
+> p
+
+, σ −p). A Nash equilibrium σ∗ satisfies 
+
+∀p, u p(σ∗) = max σp up(σp, σ ∗−p). The exploitability of σ is Expl( σ) = 12
+
+P 
+
+> p
+
+up(BR( σ−p), σ −p). Counterfactual Regret Minimization (CFR) [Zinkevich et al., 2007] iteratively computes regrets 
+
+rt(I, a ) = vσt 
+
+> p
+
+(I, a ) − vσt 
+
+> p
+
+(I), regret sums RT (I, a ) = PTt=1 rt(I, a ) and derives strategies via regret matching: σt+1 (I, a ) = Rt
+
+> +
+
+(I, a )/ P 
+
+> a′
+
+Rt
+
+> +
+
+(I, a ′), where R+ = max(0 , R ). The average strategy ¯ σT
+
+converges to an ε-Nash equilibrium. A bucket mapping ϕ : I0 
+
+> p
+
+→ { 1, . . . , K } assigns each root information set to one of K buckets. All downstream information sets derived from the same root information set are mapped to the same bucket and share a single strategy, reducing the effective strategy space from |I 0 
+
+> p
+
+| to K. In the abstracted game, CFR operates over buckets rather than individual information sets. 4Algorithm 1: WEVA Abstraction 
+
+Input: Game G, bucket count K, warm-up iterations W , solve iterations T , depth weights 
+
+{wd}
+
+Output: Bucket mapping ϕ, strategy profile ¯ σT
+
+σW ← Run W iterations of CFR on full game G;
+
+for p ∈ N do for each I0 
+
+> p
+
+∈ I 0 
+
+> p
+
+do for each decision node n ∈ G do 
+
+Compute EV σW 
+
+> p
+
+(I0 
+
+> p
+
+↓n); 
+
+f (I0 
+
+> p
+
+) ← [wd0 · EV σW 
+
+> p
+
+(I0 
+
+> p
+
+↓n0), . . . , w dN −1 · EV σW 
+
+> p
+
+(I0 
+
+> p
+
+↓nN −1)]; 
+
+ϕp ← k-means++( {f (I0 
+
+> p
+
+)}I0  
+
+> p∈I 0
+> p
+
+, K ); 
+
+ϕ ← { ϕp}p∈N ;Construct abstract game G′ using bucket mapping ϕ;¯σT ← Run T iterations of CFR on G′;
+
+return ϕ, ¯σT
+
+## 4 Method 
+
+Given a game G, bucket count K, and warm-up iterations W , WEVA proceeds in four steps: 1. Warm-up: Run W iterations of CFR on the full (unabstracted) game G, producing an average strategy profile σW .2. EV extraction: For each root information set I0 
+
+> p
+
+∈ I 0 
+
+> p
+
+and each decision node n reachable from the root, compute the expected value EV σW 
+
+> p
+
+(I0 
+
+> p
+
+↓n) of the corresponding downstream information set. 3. Clustering: Construct a feature vector f (I0 
+
+> p
+
+) from the extracted EVs, then apply k-means++ to partition root information sets into K buckets. 4. Solving: Use the bucket mapping to define an abstract game G′ and solve G′ with CFR for 
+
+T iterations. The warm-up phase uses no abstraction (each root information set is its own bucket), so the intermediate strategy captures the full game dynamics. The total computational cost is W iterations on the full game plus T iterations on the abstract game. Algorithm 1 summarizes the procedure. 
+
+Root-EV (ev-root). The simplest variant uses only the root-node EV as a one-dimensional feature: 
+
+froot (I0 
+
+> p
+
+) = EV σW 
+
+> p
+
+(I0 
+
+> p
+
+↓nroot ) (1) where nroot is the root decision node (so I0 
+
+> p
+
+↓nroot = I0 
+
+> p
+
+). Clustering is performed via one-dimensional 
+
+k-means. This feature is semantically similar to equity but derived from actual game play rather than showdown evaluation, making it applicable to games without standard showdown structures. 
+
+Multi-Node Depth-Weighted EV (ev-nd). Two root information sets with identical root-node EVs may behave very differently at deeper decision nodes. To capture these strategic dif-ferences, ev-nd constructs a multi-dimensional feature vector incorporating downstream EVs from 5all reachable decision nodes, weighted by depth. The idea of using multi-node EV features for abstraction was first introduced by Li and Huang [2025], who train neural networks on billions of samples to estimate per-node EVs, incurring substantial offline cost. WEVA instead extracts these features directly from a short CFR warm-up, avoiding the need for any offline training while providing more accurate EV estimates from actual game-play dynamics. Let {n0, n 1, . . . , n N −1} be the decision nodes at depths {d0, d 1, . . . , d N −1}. The feature vector for root information set I0 
+
+> p
+
+is: 
+
+fnd (I0 
+
+> p
+
+) = wd0 · EV σW 
+
+> p
+
+(I0 
+
+> p
+
+↓n0), w d1 · EV σW 
+
+> p
+
+(I0 
+
+> p
+
+↓n1), . . . , w dN −1 · EV σW 
+
+> p
+
+(I0 
+
+> p
+
+↓nN −1) (2) where wd is a manually specified depth-dependent weight (see Appendix D for details). The high weight at depth 0 reflects that root-level value is the most informative signal, while deeper nodes provide diminishing but still useful refinement. Clustering is performed via k-means++ [Arthur and Vassilvitskii, 2007]. 
+
+Computational cost. The warm-up phase runs W iterations of CFR on the full game with |I 0 
+
+> p
+
+|
+
+root information sets and D decision nodes, costing O(W · |I 0 
+
+> p
+
+| · D) per iteration. The subsequent abstract solve runs T iterations with K buckets, costing O(T · K · D) per iteration. The relative overhead of warm-up is: overhead = W · |I 0 
+
+> p
+
+|
+
+T · K (3) For typical settings ( W =10, T =2 ,000, K=200, |I 0 
+
+> p
+
+|=1 ,081 in river HUNL), this ratio is approxi-mately 2 .7%. 
+
+## 5 Experiments 
+
+5.1 Setup 
+
+We evaluate WEVA on three structurally diverse benchmarks: HUNL Endgame , Double-Board HUNL , and a Random Game , whose detailed definitions appear in Appendix B. These games span a wide spectrum: HUNL has strong domain features, Double-Board breaks single-dimensional hand strength, and the Random Game eliminates all domain structure. K=20 K=50 K=200                 
+
+> 2 × 10 3
+> 3 × 10 3
+> 4 × 10 3
+> 6 × 10 3
+> Exploitability (fraction of pot)
+> HUNL River
+> K=20 K=50 K=200
+> 10 3
+> 10 2
+> Double-Board HUNL
+> K=20 K=50 K=200
+> 10 2
+> Random Game
+> equity rank-based ev-root (W=50) ev-nd (W=10) ev-nd (W=50) ev-nd (W=500)
+
+Figure 2: Final exploitability (log scale, lower is better) at T =2 ,000 for all methods on the three games with PCFR+. The rank-based method means rank-based abstraction in HUNL Endgame and rank-2d abstraction in Double-Board HUNL. 6Our implementation builds on OpenSpiel [Lanctot et al., 2019] and LiteEFG [Liu et al., 2024]. For each benchmark, we generate 10 random boards and average results. We use PCFR+ as the primary CFR variant and DCFR results are reported in Appendix A. The CFR iteration budget 
+
+T is 2 ,000. Bucket counts are K ∈ { 20 , 50 , 200 } and warm-up iterations are W ∈ { 10 , 50 , 500 }.Baseline methods include equity (showdown win probability) and rank (hand strength ranking). For Double-Board HUNL, we additionally test rank-2d , a game-specific baseline that clusters hands using a 2D feature vector of per-board ranks via k-means. Figure 2 summarizes final exploitability across all methods, games, and K values for PCFR+. Tables 1–3 provide the corresponding numerical values, which we analyze game by game below. 
+
+5.2 HUNL Endgame Results 
+
+Table 1 shows results on HUNL endgames. Equity is a strong baseline in this setting, as relative hand strength directly determines showdown outcomes. Nevertheless, ev-nd consistently outper-forms equity across all K values: Table 1: Exploitability (fraction of pot) on HUNL Endgame with PCFR+. Lower is better. Method K=20 K=50 K=200 equity .00531 ± .00023 .00334 ± .00016 .00189 ± .00010 rank .00541 ± .00021 .00337 ± .00015 .00202 ± .00012 ev-root ( W =50) .00515 ± .00046 .00323 ± .00026 .00220 ± .00011 ev-nd ( W =10) .00484 ± .00032 .00279 ± .00017 .00202 ± .00009 ev-nd ( W =50) .00492 ± .00036 .00261 ± .00027 .00171 ± .00007 ev-nd ( W =500) .00502 ± .00065 .00244 ± .00027 .00143 ± .00009 At K=20, ev-nd reduces exploitability versus equity by 9%, 7%, and 5% at W ∈{ 10 , 50 , 500 },and versus rank by 11%, 9%, and 7%. At K=50, the gains grow with W : 16%, 22%, and 27% versus equity and rank. At K=200, the effect of W is the most pronounced: W =10 yields a slight regression ( −7% vs equity, 0% vs rank), while W =50 and W =500 recover strongly, reaching 10% and 24% versus equity (and 15%, 29% versus rank). On HUNL Endgame, a richer warm-up signal is therefore necessary to distinguish 200 buckets, while at coarser granularities the W =10 signal already suffices. The ev-root variant performs at the same level against equity or rank, confirming that root-level information alone is insufficient. The relatively modest gap between equity/rank-based and ev-nd on HUNL Endgame is ex-pected: in HUNL, showdown payoffs are fully determined by a monotonic hand-strength ordering, so equity and rank-based already capture the dominant structure. The marginal advantage of ev-nd comes from capturing blocker effects that one-dimensional features miss. For example, on a board with three suited cards (e.g., 7 ♡ 9♡ Q♡ 3♢ K♣), a player holding A♡ 2♠ has low equity (ace-high) but uniquely blocks the opponent’s nut flush ( A♡-x♡). Knowing this, the player can bluff more aggressively at certain decision nodes because the opponent can never hold the strongest flush. Ev-nd’s multi-node features detect such differences in downstream EV across nodes, assigning blocker hands to different buckets from hands with similar equity but no blocking effect. 
+
+5.3 Double-Board HUNL Results 
+
+Double-Board HUNL breaks the single-dimensional hand-strength assumption. As shown in Ta-ble 2, 1D rank abstraction collapses entirely, as a single ordering cannot capture two-dimensional 7hand strength. The game-specific rank-2d baseline, which clusters on per-board rank vectors, performs much better but still falls short of ev-nd: Table 2: Exploitability on Double-Board HUNL with PCFR+. †Game-specific method using per-board rank features. Method K=20 K=50 K=200 equity .00983 ± .00157 .00564 ± .00107 .00181 ± .00032 rank .07261 ± .00821 .05561 ± .00715 .01698 ± .00277 rank-2d † .01688 ± .00390 .00272 ± .00104 .00058 ± .00012 ev-root ( W =50) .01053 ± .00180 .00494 ± .00086 .00287 ± .00046 ev-nd ( W =10) .00804 ± .00157 .00190 ± .00043 .00036 ± .00003 ev-nd ( W =50) .00791 ± .00158 .00186 ± .00046 .00029 ± .00003 ev-nd ( W =500) .00762 ± .00181 .00169 ± .00049 .00025 ± .00002 At K=20, ev-nd reduces exploitability versus equity by 18%, 20%, and 22% at W ∈{ 10 , 50 , 500 },and versus rank-2d by 52%, 53%, and 55%. At K=50, the gains versus equity grow sharply: 66%, 67%, and 70%. And the improvements against game-specific rank-2d are 30%, 32% and 38%. At 
+
+K=200, the gains against equity are 80%, 84% and 86%, and the improvements against rank-2d are 38%, 50% and 57%. The rank-2d abstraction, a hand-crafted multi-board feature, is better than equity at K=50 and K=200, however, still weaker than ev-nd. Hands strong on one board and weak on the other behave differently at various decision nodes, and ev-nd’s multi-node features distinguish them already within 10 CFR iterations. 
+
+5.4 Random Game Results 
+
+The Random Game provides the most challenging test: payoffs are random and independent across nodes, so no domain feature has structural meaning. As shown in Table 3, equity-based abstraction struggles, while ev-nd works really well. Table 3: Exploitability on Random Game with PCFR+. Method K=20 K=50 K=200 equity .03100 ± .00044 .02785 ± .00031 .01685 ± .00025 ev-root ( W =50) .04363 ± .00076 .03554 ± .00036 .00784 ± .00068 ev-nd ( W =10) .02284 ± .00080 .01381 ± .00077 .00288 ± .00016 ev-nd ( W =50) .02513 ± .00108 .01411 ± .00043 .00287 ± .00022 ev-nd ( W =500) .02417 ± .00089 .01440 ± .00054 .00284 ± .00015 At K=20, ev-nd reduces exploitability versus equity by 26%, 19%, and 22% at W ∈{ 10 , 50 , 500 };notably, W =10 is the strongest setting. At K=50: 51%, 49%, and 48%. At K=200, the improve-ment saturates at 83% regardless of W . Unlike HUNL and Double-Board HUNL Endgames, larger warm-up brings essentially no additional benefit on the Random Game, suggesting that its EV structure stabilizes extremely quickly. 85.5 Key Findings 
+
+Figure 3 shows the normalized exploitability against equity baseline across all methods and bucket settings. WEVA consistently outperforms all baselines in all games and all bucket settings. Here are our key findings: K=20 K=50 K=200          
+
+> 0.0
+> 0.2
+> 0.4
+> 0.6
+> 0.8
+> 1.0
+> 1.2
+> Normalized Exploitability
+> HUNL River
+> K=20 K=50 K=200
+> 0.0
+> 0.5
+> 1.0
+> 1.5
+> 2.0
+> Normalized Exploitability
+> Double-Board HUNL
+> K=20 K=50 K=200
+> 0.0
+> 0.2
+> 0.4
+> 0.6
+> 0.8
+> 1.0
+> 1.2
+> 1.4
+> Normalized Exploitability
+> Random Game
+> equity rank-based ev-root (W=50) ev-nd (W=10) ev-nd (W=50) ev-nd (W=500)
+
+Figure 3: Normalized exploitability (ratio to equity baseline) across all methods and K ∈{20 , 50 , 200 }. For each board, we compute exploitability(method)/exploitability(equity). Values below 1 .0 indicate improvement over equity. 
+
+• W =10 is already effective at small K: Across all three games at K∈{ 20 , 50 }, the im-provement over equity with W =10 is within a few percentage points of W =500, and on the Random Game W =10 even dominates. Warm-up is essentially free in this regime. 
+
+• Larger W may help at fine granularities : At K=200, W =500 surpasses W =10 on HUNL Endgame ( −7% →24% vs equity) and Double-Board HUNL (80% →86% vs equity, 38% →57% vs rank-2d). The Random Game saturates at 83% regardless of W , indicating that its EV structure stabilizes within the first 10 iterations. This yields a practical rule: at small K, W =10 already captures the relevant ordinal structure and additional warm-up iterations provide diminishing returns; at large K, the abstract-game solve dominates total runtime, and the extra cost of a longer warm-up phase can be weighed against the resulting accuracy improvements. 
+
+## 6 Conclusion 
+
+We presented WEVA, a lightweight information abstraction method that extracts EV features from a short CFR warm-up phase. The key variant, ev-nd, constructs multi-dimensional depth-weighted features from all decision nodes, capturing strategic differences that single-dimensional features miss. WEVA requires no domain knowledge, no neural network training, and incurs very small additional computational cost. The previous abstract work was often closed source and domain specific. We have provided the first effective, efficient and general open-source implementation of information abstraction in IIEFGs, which has significant implications for future research in the field of abstraction. Experiments on three diverse games show that WEVA consistently and often dramatically outperforms traditional abstraction methods, reducing exploitability by up to over 80%. Surprisingly, we find that as few as W =10 warm-up iterations suffice, which makes the approach practical for large-scale game solving. 9References 
+
+David Arthur and Sergei Vassilvitskii. k-means++: the advantages of careful seeding. In SODA ,pages 1027–1035. SIAM, 2007. Darse Billings, Neil Burch, Aaron Davidson, Robert Holte, Jonathan Schaeffer, Terence Schauen-berg, and Duane Szafron. Approximating game-theoretic optimal strategies for full-scale poker. In Proceedings of the International Joint Conference on Artificial Intelligence (IJCAI) , 2003. Michael Bowling, Neil Burch, Michael Johanson, and Oskari Tammelin. Heads-up limit hold’em poker is solved. Science , 347(6218):145–149, 2015. Noam Brown and Tuomas Sandholm. Regret transfer and parameter optimization. In Proceedings of the AAAI Conference on Artificial Intelligence , volume 28, 2014. Noam Brown and Tuomas Sandholm. Hierarchical abstraction, distributed equilibrium computa-tion, and post-processing, with application to a champion no-limit Texas Hold’em agent. In 
+
+Proceedings of the International Conference on Autonomous Agents and Multi-Agent Systems (AAMAS) , 2015a. Noam Brown and Tuomas Sandholm. Regret-based pruning in extensive-form games. Advances in neural information processing systems , 28, 2015b. Noam Brown and Tuomas Sandholm. Strategy-based warm starting for regret minimization in games. In Proceedings of the AAAI Conference on Artificial Intelligence , volume 30, 2016. Noam Brown and Tuomas Sandholm. Reduced space and faster convergence in imperfect-information games via pruning. In International conference on machine learning , pages 596–604. PMLR, 2017a. Noam Brown and Tuomas Sandholm. Safe and nested subgame solving for imperfect-information games. In Advances in Neural Information Processing Systems 30 (NIPS) , 2017b. Noam Brown and Tuomas Sandholm. Superhuman AI for heads-up no-limit poker: Libratus beats top professionals. Science , 359(6374):418–424, 2018. Noam Brown and Tuomas Sandholm. Solving imperfect-information games via discounted regret minimization. In Proceedings of the AAAI Conference on Artificial Intelligence , volume 33, 2019a. Noam Brown and Tuomas Sandholm. Superhuman AI for multiplayer poker. Science , 365(6456): 885–890, 2019b. Noam Brown and Tuomas W Sandholm. Simultaneous abstraction and equilibrium finding in games. 2015c. Noam Brown, Tuomas Sandholm, and Brandon Amos. Depth-limited solving for imperfect-information games. Advances in neural information processing systems , 31, 2018. Noam Brown, Adam Lerer, Sam Gross, and Tuomas Sandholm. Deep counterfactual regret mini-mization. In International conference on machine learning , pages 793–802. PMLR, 2019. 10 Noam Brown, Anton Bakhtin, Adam Lerer, and Qucheng Gong. Combining deep reinforcement learning and search for imperfect-information games. Advances in neural information processing systems , 33:17057–17069, 2020. Neil Burch, Michael Johanson, and Michael Bowling. Solving imperfect information games using decomposition. In Proceedings of the AAAI Conference on Artificial Intelligence , volume 28, 2014. Gabriele Farina, Christian Kroer, and Tuomas Sandholm. Faster game solving via predictive black-well approachability: Connecting regret matching and mirror descent. In Proceedings of the AAAI Conference on Artificial Intelligence , volume 35, 2021. Yanchang Fu, Shengda Liu, Pei Xu, and Kaiqi Huang. No-regret strategy solving in imperfect-information games via pre-trained embedding. In Proceedings of the AAAI Conference on Arti-ficial Intelligence , volume 40, pages 16906–16913, 2026. Sam Ganzfried and Tuomas Sandholm. Potential-aware imperfect-recall abstraction with earth mover’s distance in imperfect-information games. In Proceedings of the AAAI Conference on Artificial Intelligence , 2014. Andrew Gilpin and Tuomas Sandholm. A competitive Texas Hold’em poker player via automated abstraction synthesis. In Proceedings of the Fifth International Joint Conference on Autonomous Agents and Multiagent Systems (AAMAS) , 2006a. Andrew Gilpin and Tuomas Sandholm. Finding equilibria in large sequential games of imperfect information. In Proceedings of the 7th ACM conference on Electronic commerce , pages 160–169, 2006b. Andrew Gilpin and Tuomas Sandholm. Better automated abstraction techniques for imperfect in-formation games, with application to texas hold’em poker. In Proceedings of the 6th international joint conference on Autonomous agents and multiagent systems , pages 1–8, 2007a. Andrew Gilpin and Tuomas Sandholm. Lossless abstraction of imperfect information games. Jour-nal of the ACM , 54(5), 2007b. Andrew Gilpin and Tuomas Sandholm. Expectation-based versus potential-aware automated ab-straction in imperfect information games: An experimental comparison using poker. In AAAI ,pages 1454–1457, 2008. Andrew Gilpin, Tuomas Sandholm, and Troels Bjerre Sørensen. Potential-aware automated ab-straction of sequential games, and holistic equilibrium analysis of texas hold’em poker. In Pro-ceedings of the National Conference on Artificial Intelligence , volume 22, page 50. Menlo Park, CA; Cambridge, MA; London; AAAI Press; MIT Press; 1999, 2007. Andrew Gilpin, Tuomas Sandholm, and Troels Bjerre Sørensen. A heads-up no-limit texas hold’em poker player: Discretized betting models and automatically generated equilibrium-finding pro-grams. In Proceedings of the 7th international joint conference on Autonomous agents and mul-tiagent systems-Volume 2 , pages 911–918, 2008. John Hawkin, Robert Holte, and Duane Szafron. Automated action abstraction of imperfect infor-mation extensive-form games. In Proceedings of the AAAI Conference on Artificial Intelligence ,volume 25, pages 681–687, 2011. 11 John Hawkin, Robert Holte, and Duane Szafron. Using sliding windows to generate action abstrac-tions in extensive-form games. In Proceedings of the AAAI Conference on Artificial Intelligence ,volume 26, pages 1924–1930, 2012. Michael Johanson, Kevin Waugh, Michael Bowling, and Martin Zinkevich. Accelerating best re-sponse calculation in large extensive games. In IJCAI , volume 11, pages 258–265, 2011. Michael Johanson, Neil Burch, Richard Valenzano, and Michael Bowling. Evaluating state-space abstractions in extensive-form games. In Proceedings of the International Conference on Au-tonomous Agents and Multi-Agent Systems (AAMAS) , 2013. Christian Kroer and Tuomas Sandholm. Extensive-form game abstraction with bounds. In Pro-ceedings of the ACM Conference on Economics and Computation (EC) , 2014. Ondrej Kubicek and Viliam Lis´ y. Look-ahead reasoning with a learned model in imperfect infor-mation games. In The Fourteenth International Conference on Learning Representations , 2026. Harold W Kuhn. Extensive games and the problem of information. Contributions to the Theory of Games , 2(28):193–216, 1953. Marc Lanctot, Kevin Waugh, Martin Zinkevich, and Michael Bowling. Monte carlo sampling for regret minimization in extensive games. In Advances in Neural Information Processing Systems 22 (NIPS) , 2009. Marc Lanctot, Richard Gibson, Neil Burch, Martin Zinkevich, and Michael Bowling. No-regret learning in extensive-form games with imperfect recall. In Proceedings of the 29th International Coference on International Conference on Machine Learning , pages 1035–1042, 2012. Marc Lanctot, Edward Lockhart, Jean-Baptiste Lespiau, Vinicius Zambaldi, Satyaki Upadhyay, Julien P´ erolat, Sriram Srinivasan, Finbarr Timbers, Karl Tuyls, Shayegan Omidshafiei, et al. Openspiel: A framework for reinforcement learning in games. arXiv preprint arXiv:1908.09453 ,2019. Boning Li and Longbo Huang. Efficient online pruning and abstraction for imperfect information extensive-form games. In The Thirteenth International Conference on Learning Representations ,2025. Boning Li and Longbo Huang. Turborebel: 250 $\times $ accelerated belief learning for large imperfect-information extensive-form games, 2026. URL https://openreview.net/forum?id= yMo7Z670f6 .Boning Li, Zhixuan Fang, and Longbo Huang. Rl-cfr: improving action abstraction for imper-fect information extensive-form games with reinforcement learning. In Proceedings of the 41st International Conference on Machine Learning , pages 27752–27770, 2024. Mingyang Liu, Gabriele Farina, and Asuman Ozdaglar. Liteefg: An efficient python library for solving extensive-form games. arXiv preprint arXiv:2407.20351 , 2024. Weiming Liu, Haobo Fu, Qiang Fu, and Yang Wei. Opponent-limited online search for imper-fect information games. In International Conference on Machine Learning , pages 21567–21585. PMLR, 2023. 12 Matej Moravˇ c´ ık, Martin Schmid, Neil Burch, Viliam Lis´ y, Dustin Morrill, Nolan Bard, Trevor Davis, Kevin Waugh, Michael Johanson, and Michael Bowling. DeepStack: Expert-level artificial intelligence in heads-up no-limit Texas Hold’em. Science , 356(6337):508–513, 2017. Julien Perolat, Remi Munos, Jean-Baptiste Lespiau, Shayegan Omidshafiei, Mark Rowland, Pedro Ortega, Neil Burch, Thomas Anthony, David Balduzzi, Bart De Vylder, et al. From poincar´ e re-currence to convergence in imperfect information games: Finding equilibrium via regularization. In International Conference on Machine Learning , pages 8525–8535. PMLR, 2021. Tuomas Sandholm. The state of solving large incomplete-information games, and application to poker. Ai Magazine , 31(4):13–32, 2010. Tuomas Sandholm. Abstraction for solving large incomplete-information games. In Proceedings of the AAAI Conference on Artificial Intelligence , volume 29, 2015. Martin Schmid, Matej Moravˇ c´ ık, Neil Burch, Rudolf Kadlec, Josh Davidson, Kevin Waugh, Nolan Bard, Finbarr Timbers, Marc Lanctot, G Zacharias Holland, et al. Student of games: A unified learning algorithm for both perfect and imperfect information games. Science Advances , 9(46): eadg3256, 2023. Jiefu Shi and Michael L Littman. Abstraction methods for game theoretic poker. In International Conference on Computers and Games , pages 333–345. Springer, 2000. Kevin Waugh, David Schnizlein, Michael H Bowling, and Duane Szafron. Abstraction pathologies in extensive games. AAMAS (2) , 2009:781–8, 2009a. Kevin Waugh, Martin Zinkevich, Michael Johanson, Morgan Kan, David Schnizlein, and Michael H Bowling. A practical use of imperfect recall. In SARA , 2009b. Jerrold H Zar. Spearman rank correlation. Encyclopedia of biostatistics , 7, 2005. Brian Hu Zhang and Tuomas Sandholm. General search techniques without common knowledge for imperfect-information games, and application to superhuman fog of war chess. In The Fourteenth International Conference on Learning Representations , 2026. Martin Zinkevich, Michael Johanson, Michael Bowling, and Carmelo Piccione. Regret minimization in games with incomplete information. In Advances in Neural Information Processing Systems 20 (NIPS) , 2007. 13 A DCFR Results 
+
+We repeat all experiments using DCFR as the solver. Figure 4 summarizes final exploitability across all methods, games, and K values for DCFR. Tables 4–6 provide the corresponding numerical values. Results are consistent with PCFR+: ev-nd outperforms all baselines, and the relative improvements are similar in magnitude. K=20 K=50 K=200                 
+
+> 2 × 10 3
+> 3 × 10 3
+> 4 × 10 3
+> 6 × 10 3
+> Exploitability (fraction of pot)
+> HUNL River
+> K=20 K=50 K=200
+> 10 3
+> 10 2
+> Double-Board HUNL
+> K=20 K=50 K=200
+> 10 2
+> Random Game
+> equity rank-based ev-root (W=50) ev-nd (W=10) ev-nd (W=50) ev-nd (W=500)
+
+Figure 4: Final exploitability at T =2 ,000 for all methods on the three games with DCFR. Table 4: Exploitability on HUNL Endgame with DCFR. Method K=20 K=50 K=200 equity .00577 ± .00021 .00371 ± .00021 .00194 ± .00012 rank .00593 ± .00020 .00384 ± .00017 .00212 ± .00016 ev-root ( W =50) .00570 ± .00057 .00417 ± .00034 .00289 ± .00019 ev-nd ( W =10) .00543 ± .00052 .00305 ± .00021 .00209 ± .00012 ev-nd ( W =50) .00544 ± .00044 .00282 ± .00027 .00168 ± .00007 ev-nd ( W =500) .00507 ± .00056 .00256 ± .00023 .00180 ± .00009 Table 5: Exploitability on Double-Board HUNL with DCFR. Method K=20 K=50 K=200 equity .00984 ± .00158 .00560 ± .00107 .00175 ± .00032 rank .07190 ± .00825 .05547 ± .00712 .01691 ± .00277 rank-2d † .01690 ± .00391 .00271 ± .00105 .00052 ± .00012 ev-root ( W =50) .01152 ± .00208 .00513 ± .00103 .00285 ± .00047 ev-nd ( W =10) .00679 ± .00128 .00158 ± .00034 .00025 ± .00003 ev-nd ( W =50) .00589 ± .00109 .00117 ± .00026 .00020 ± .00003 ev-nd ( W =500) .00552 ± .00100 .00135 ± .00030 .00020 ± .00004 14 Table 6: Exploitability on Random Game with DCFR. Method K=20 K=50 K=200 equity .03083 ± .00036 .02776 ± .00032 .01682 ± .00024 ev-root ( W =50) .04299 ± .00080 .03496 ± .00074 .00757 ± .00035 ev-nd ( W =10) .02238 ± .00056 .01380 ± .00059 .00280 ± .00017 ev-nd ( W =50) .02173 ± .00064 .01433 ± .00055 .00260 ± .00013 ev-nd ( W =500) .02232 ± .00062 .01380 ± .00059 .00257 ± .00012 
+
+## B Game Definitions 
+
+HUNL Endgame. A standard poker river subgame. Five community cards are dealt uniformly at random. Each player’s hand space consists of all  47 2
+
+ = 1 ,081 possible 2-card combinations from the remaining deck, with card blocking enforced (no two players share the same card). At showdown, the player with the stronger 5-card poker hand wins the pot. 
+
+Double-Board HUNL. Ten community cards are dealt and split into two independent boards of five cards each. Each player holds 2 hole cards from the remaining 42 cards (  42 2
+
+ = 861 possible hands). At showdown, each board is evaluated independently using standard poker hand rankings, and the pot is split equally between the winners of each board. 
+
+Random Game. 500 abstract hands per player with no card structure. Terminal payoffs are drawn i.i.d. from {+1 , −1} independently for each terminal node and each hand matchup, forming an antisymmetric payoff matrix. 
+
+## C Discussion 
+
+Scope and limitations. WEVA is designed for IIEFGs where private information is fixed at the start of the game, fully enumerable, and does not change during play. The game tree con-tains no private actions and no intermediate chance nodes that alter private information. These assumptions hold for river subgames of poker (where hole cards are fixed and all community cards are already dealt) and many other endgame settings, but they exclude games with ongoing pri-vate information revelation (e.g. Mahjong) or games where the private type space is too large to enumerate exhaustively (e.g. dark chess). Additionally, the warm-up phase runs CFR on the full (unabstracted) game, which requires the full information-set space to fit in memory. For games where the unabstracted game is too large to solve directly (e.g., HUNL), WEVA cannot be applied to the entire game tree directly. 
+
+Future works. A natural extension is to combine WEVA with belief-based depth-limited sub-game solving [Moravˇ c´ ık et al., 2017, Brown et al., 2020, Li and Huang, 2026]. In this paradigm, the solver decomposes the game into subgames at runtime and solves each subgame independently. WEVA can serve as the abstraction layer within each subgame: upon reaching a new subgame, a short warm-up produces EV-based features for that subgame’s information sets, which are then clustered into buckets for efficient solving. This online abstraction approach has a key advantage over prior imperfect-recall abstraction methods [Ganzfried and Sandholm, 2014] and neural-network 15 based abstraction methods [Brown et al., 2019, Li and Huang, 2025], which require extensive of-fline precomputation. With WEVA, abstraction is computed on-the-fly with negligible overhead, enabling real-time deployment in large-scale games such as HUNL. Several directions merit exploration as well. First, applying WEVA to games with larger information-set spaces, such as Pot Limit Omaha and multi-player No-Limit Hold’em [Brown and Sandholm, 2019b], would test scalability. Second, alternative warm-up features beyond EV, such as reach probabilities or regret distributions, may provide complementary clustering signals. Third, investigating the interaction between warm-up length W and game complexity could yield adaptive schedules that allocate warm-up budget where it matters most. 
+
+## D Experimental Details 
+
+Table 7 summarizes the hyperparameters used in all experiments. Table 7: Hyperparameters for all experiments. Parameter Value Number of random boards 10 Seed 42+board id Bet sizes 0.5× pot, 1 × pot, 2 × pot DCFR ( α, β, γ ) (1 .5, 0, 2) Solve iterations T 2,000 Warm-up iterations W {10 , 50 , 500 }
+
+Bucket counts K {20 , 50 , 200 }
+
+k-means max iterations 8Depth attention weights w0, w 1, w 2, . . . 5.0, 1.0, 0.5, 0.25 , 0.15 , 0.1, 0.07 , 0.05 , . . . 
+
+D.1 Per-Board Variance 
+
+Figure 5 shows per-board exploitability for all abstraction methods across 10 boards. Each board exhibits different characteristics: on some boards one method performs best, while on others a different method dominates. This variation reflects the inherent diversity of random board draws. Importantly, ev-nd variants achieve consistently low exploitability across the majority of boards, confirming that the improvements in the main tables are not driven by outliers. 
+
+D.2 Convergence Curves 
+
+Figure 6 shows convergence curves at bucket count K=200 across all three games using PCFR+ with T = 2 ,000 iterations. The gains in Tables 1–3 are not only in the final exploitability: ev-nd converges to lower exploitability across all games and the advantage emerges within the first few hundred iterations, widening thereafter. 16 0 1 2 3 4 5 6 7 8 9
+
+0.000 
+
+0.002 
+
+0.004 
+
+0.006 
+
+0.008 
+
+0.010 
+
+> HUNL River
+
+K=20 
+
+0 1 2 3 4 5 6 7 8 9
+
+0.000 
+
+0.001 
+
+0.002 
+
+0.003 
+
+0.004 
+
+0.005 
+
+K=50 
+
+0 1 2 3 4 5 6 7 8 9
+
+0.0000 
+
+0.0005 
+
+0.0010 
+
+0.0015 
+
+0.0020 
+
+0.0025 
+
+K=200 
+
+0 1 2 3 4 5 6 7 8 9
+
+0.000 
+
+0.005 
+
+0.010 
+
+0.015 
+
+0.020 
+
+0.025 
+
+0.030 
+
+0.035 
+
+0.040 
+
+> Double-Board HUNL
+
+0 1 2 3 4 5 6 7 8 9
+
+0.000 
+
+0.002 
+
+0.004 
+
+0.006 
+
+0.008 
+
+0.010 
+
+0.012 
+
+0 1 2 3 4 5 6 7 8 9
+
+0.000 
+
+0.001 
+
+0.002 
+
+0.003 
+
+0.004 
+
+0.005 
+
+0 1 2 3 4 5 6 7 8 9
+
+Board ID 
+
+0.00 
+
+0.01 
+
+0.02 
+
+0.03 
+
+0.04 
+
+> Random Game
+
+0 1 2 3 4 5 6 7 8 9
+
+Board ID 
+
+0.000 
+
+0.005 
+
+0.010 
+
+0.015 
+
+0.020 
+
+0.025 
+
+0.030 
+
+0.035 
+
+0 1 2 3 4 5 6 7 8 9
+
+Board ID 
+
+0.0000 
+
+0.0025 
+
+0.0050 
+
+0.0075 
+
+0.0100 
+
+0.0125 
+
+0.0150 
+
+0.0175 
+
+equity rank-based ev-root (W=50) ev-nd (W=10) ev-nd (W=50) ev-nd (W=500) Figure 5: Per-board exploitability for all abstraction methods across 10 boards, three games, and three K values. Each group of bars represents one board, and different colors correspond to different methods. 250 500 750 1000 1250 1500 1750 2000 
+
+Iteration 
+
+2 × 10 3
+
+3 × 10 3
+
+4 × 10 3
+
+6 × 10 3
+
+> Exploitability
+
+HUNL River 
+
+250 500 750 1000 1250 1500 1750 2000 
+
+Iteration 
+
+10 3
+
+Double-Board HUNL 
+
+250 500 750 1000 1250 1500 1750 2000 
+
+Iteration 
+
+10 2
+
+3 × 10 3
+
+4 × 10 3
+
+6 × 10 3
+
+Random Game 
+
+equity rank-based ev-root (W=50) ev-nd (W=10) ev-nd (W=50) ev-nd (W=500) 
+
+Figure 6: Convergence curves at K=200 across three games using PCFR+ with T = 2 ,000 itera-tions. 17

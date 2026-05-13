@@ -1,0 +1,362 @@
+Title: Weather-Robust Scene Semantics with Vision-Aligned 4D Radar
+
+URL Source: https://arxiv.org/pdf/2605.07367v1
+
+Published Time: Mon, 11 May 2026 01:12:56 GMT
+
+Number of Pages: 7
+
+Markdown Content:
+# Weather-Robust Scene Semantics with Vision-Aligned 4D Radar 
+
+Kali Hamilton and Christoffer Heckman 
+
+Abstract —Cameras and LiDAR degrade in rain, fog, and snow, while millimeter-wave radar remains largely unaffected. We align a radar encoder to frozen SigLIP vision embeddings and decode structured scene captions through a frozen vision-language model (VLM) with ∼7M trainable parameters. On K-RADAR [1] with held-out fog, light snow, and heavy snow sequences, all radar configurations outperform a camera baseline that collapses to 
+
+>90% hallucination. We identify a token-norm mismatch as the dominant failure mode when bridging radar to a frozen VLM and show that projector-output LayerNorm resolves it. Analysis of encoder complexity, caption format, and pooling strategy reveals tradeoffs that inform future radar–VLM pipeline design. 
+
+Index Terms —4D radar, scene understanding, vision-language models, weather-robust perception, field robotics 
+
+I. I NTRODUCTION 
+
+Mobile robots operating outdoors routinely face condi-tions that defeat cameras and LiDAR: rain, fog, dust, snow, and airborne particulates. Millimeter-wave radar at 77 GHz penetrates these conditions, and modern 4D imaging radar produces a dense (range , azimuth , elevation , Doppler) tensor rich enough to motivate learned scene understanding rather than hand-crafted detection alone. Vision-language models (VLMs) have demonstrated strong open-vocabulary scene understanding by aligning a vision encoder to a large language model [2]. Robotics work such as RT-2 [3] and π0 [4] shows that the same pattern (a generic CNN adapted for the sensor feeding a frozen foundation model) transfers across modalities. We ask: can a radar encoder be aligned to a vision embedding space, and can a frozen VLM decode the resulting tokens into structured scene descriptions? Rather than building a fixed-class detec-tion head, we use structured caption generation as a proxy to evaluate the quality of the radar–vision alignment under adverse weather. Our contributions are:  
+
+> •
+
+A caption generation and evaluation pipeline for K-RADAR [1]: programmatic ground-truth captions from 3D bounding boxes, structured parsing, and caption-as-detection metrics enabling weather-stratified evaluation of radar–VLM systems.  
+
+> •
+
+Empirical analysis of vision–radar alignment at low data scale ( ∼8k frames), including an encoder–VLM utilization gap, caption format tradeoffs (prose vs. JSON), and pooling strategy effects on spatial prediction. 
+
+> Authors are with the Autonomous Robotics and Perception Group at the University of Colorado Boulder, Boulder, CO 80309, USA.
+
+II. R ELATED WORK 
+
+4D radar perception. K-RADAR [1] is the first large-scale 4D imaging-radar dataset with 3D bounding-box annotations across weather conditions. RADDet [5] treats the Doppler di-mension as CNN input channels for detection, motivating our 66-channel input variant. RTNH [6] and L4DR [7] demonstrate 4D radar’s weather robustness for detection; ColoRadar [8] ex-tends millimeter-wave radar to robot platforms beyond on-road settings. We use structured captioning as a proxy to evaluate radar encoder alignment quality under adverse weather. 
+
+Radar-language models. RSLM [9] aligns a 2D radar-spectrum encoder to a frozen VLM via CLIP-style contrastive loss. RLM [10] trains a generative captioner on 800k CARLA-simulated radar-caption pairs. Talk2Radar [11] publishes a real-4D-radar referring-expression dataset with a cross-modal fusion head rather than a frozen LLM. Our work targets the unaddressed combination: generative captioning from real 4D radar tensors against a frozen VLM. Simulated radar is, in practice, a ray-cast of LiDAR geometry with a noise model, erasing the multipath and precipitation phenomena that define radar’s weather advantage. 
+
+Position encoding for metric sensors. PETR [12] injects metric coordinates additively into intermediate feature maps, avoiding the dilution that CoordConv-style input channels suf-fer after strided convolutions. We adopt PETR after layer2 .III. M ETHOD 
+
+A. Input Representation 
+
+Each K-RADAR frame is a 4D tesseract of shape 
+
+(64 , 256 , 37 , 107) in (Doppler , range , elevation , azimuth ). Be-cause the radar’s vertical resolution is coarse (37 bins over 
+
+±15 ◦) and traffic objects occupy a narrow height band, we collapse elevation by taking the maximum power across all 37 bins at each (Doppler , range , azimuth ) cell, yielding a 3D tensor of shape (64 , 256 , 107) . This max-projection is standard for 4D radar: RADDet [5] and RTNH [6] apply the same reduction to obtain range-azimuth-Doppler volumes, and K-RADAR’s own baselines [1] operate on elevation-collapsed slices. We then apply R4 range compensation to correct free-space path loss and produce two input variants (Fig. 1):  
+
+> •
+
+5-channel [5 , 256 , 107] : total R4-compensated power, mean Doppler velocity, peak Doppler velocity, physical range (m), and azimuth (deg). This compact, physics-informed summary captures the dominant velocity and spatial structure per cell.          
+
+> arXiv:2605.07367v1 [cs.RO] 8 May 2026 4D Tesseract
+> (64 ×256 ×37 ×107)
+> Dop ×R×El ×Az
+> El. Max-Proj
+> (64 ×256 ×107)
+> Dop ×R×Az
+> max El R4Comp.
+> range power correction
+> Doppler Agg.
+> 64 →3: power, mean, peak
+> 5ch [5 ,256 ,107]
+> 3 Doppler + range + az
+> All Bins
+> full velocity distribution
+> 66ch [66 ,256 ,107]
+> 64 Doppler + range + az
+
+Fig. 1. Input representation: 4D tesseract → elevation max-projection → R4
+
+compensation → 5-channel or 66-channel variants.  
+
+> •
+
+66-channel [66 , 256 , 107] : all 64 Doppler bins with R4
+
+compensation, plus range and azimuth coordinate chan-nels. Preserving the full velocity distribution per cell retains multi-target and micro-Doppler information that the 5-channel aggregation discards. Both variants append two metric coordinate channels (range in metres, azimuth in degrees). Fig. 1 summarizes the pipeline. 
+
+B. Architecture 
+
+The pipeline consists of two stages (Fig. 2): vision–radar alignment, followed by caption fine-tuning. 
+
+Radar encoder. A standard ResNet-18 with its first convo-lution reshaped to accept C ∈ { 5, 66 } input channels. After 
+
+layer2 (stride 8, 128 channels, 32 ×14 feature map), we inject a PETR-style additive position embedding: normalized 
+
+(range , azimuth ) coordinates are mapped through a 2-layer MLP to 128 channels and added element-wise. After layer4 
+
+(512 ×8×4), average pooling with a 4×4 kernel produces 16 tokens of 512 dimensions. We also ablate a cross-attention pool variant with 32 learned queries (Table I, rightmost column). 
+
+Projector with output LayerNorm. A 2-layer MLP 
+
+(512 → 2048 → 2048) with GELU maps the 32 radar tokens into the VLM embedding dimension. We use an MLP rather than a Q-Former: at our data scale (7k frames, no BLIP-2 pretraining), MLP projectors are the standard sensor-to-LLM choice [16], [17]. We apply LayerNorm to the projector output . The fail-ure mode that motivated this is subtle and easily missed: training loss decreased normally over many epochs, but a swap test (substituting zeros or random noise for the radar tensor) produced identical captions. The VLM had learned to generate from its language prior while routing attention around the radar tokens. Diagnosing this required explicitly comparing output norms: projector outputs had mean L2 norm 
+
+∼18–207, while Qwen’s native embedding matrix converges near unit norm under its joint RMSNorm training. With a 
+
+20 × norm advantage, radar tokens saturate the softmax and collect attention weight in the forward pass; but the resulting attention distribution carries near-zero variance over radar positions, starving those inputs of gradient and reinforcing the pathology. Output LayerNorm resolves both the forward-pass saturation and the gradient starvation in one operation. Q-Former architectures handle this implicitly through their internal normalization; using a simple MLP projector exposes the mismatch and requires an explicit fix. 
+
+Frozen VLM with LoRA. Qwen2.5-VL-3B-Instruct [15] is loaded in fp16 and frozen. Radar token embeddings are prepended to the text prompt, and the model generates the caption autoregressively. Rank-16 LoRA [14] adapters on the 
+
+Q/K attention projections across all 36 transformer layers (3.7M trainable parameters) allow the frozen backbone to mildly adapt its attention distribution to radar tokens. Loss is standard cross-entropy on caption tokens only. 
+
+C. Caption Generation 
+
+Ground-truth captions are generated programmatically from K-RADAR’s 3D bounding-box annotations, which are derived from LiDAR (Fig. 3). Each frame’s bounding boxes are filtered to the radar FOV ( ±53 ◦ azimuth, ≤ 80 m range), sorted by range, and the closest objects receive per-object descriptions with class, range (m), and azimuth (as a bearing sector or numeric degrees).        
+
+> 3D Bounding Boxes
+> class, xyz ,lwh
+> FOV Filter
+> ±53 ◦az
+> ≤80 m
+> Range Sort
+> closest first top-k
+> Spatial Enc.
+> bearing, az ◦
+> range (m)
+> Prose: “3 objects. Closest: sedan right 13 m, sedan left 22 m. . . ”
+> JSON: {"objects":[ {
+> "class":"sedan", "az_deg":-9,"rng":13 }]}
+
+Fig. 3. Caption generation pipeline. LiDAR-derived 3D bounding-box anno-tations are filtered to the radar FOV, sorted by range, and formatted as prose or JSON ground truth. 
+
+Prose captions use natural-language templates: “There are 3 objects. Closest: a sedan slightly to the right at 13 m, a sedan to the left at 22 m. . . ” 
+
+JSON captions encode each object as a structured dictionary: {"objects":[ {"class":"sedan", "azimuth_deg":-9,"range_m":13 }]}. Numeric fields provide direct digit-token supervision for range and azimuth. This format trades spatial precision for recall (Section V-C). 
+
+D. Training 
+
+Stage 1: Vision alignment. The radar encoder and projector are jointly trained to regress frozen SigLIP [13] features on paired radar-camera frames using MSE plus cosine distance loss. 
+
+Stage 2: Caption fine-tuning. The encoder is frozen. The projector is initialized from Stage 1 and fine-tuned jointly with rank-16 LoRA on Qwen’s Q/K projections using cross-entropy on caption tokens. 
+
+E. Dataset and Split 
+
+We use a sequence-level split of K-RADAR [1] to avoid temporal frame leakage: 12 training sequences ( ∼7.5k frames), 3 validation, and 4 test. Fog and light snow sequences are fully held out from training, giving zero-shot weather evaluation. The full per-sequence breakdown is in Table II (Appendix). Radar RA 
+
+[5 , 256 , 107] 
+
+ResNet-18 
+
+layers 1–4 
+
+Avg Pool 
+
+(4 ×4) 
+
+Projector 
+
+MLP + LN 
+
+[512 , 8, 4] 16 tok 
+
+Camera 
+
+[B, 3, H, W ]
+
+SigLIP Encoder 
+
+frozen 
+
+Align Loss 
+
+MSE + Cosine 
+
+Radar RA   
+
+> [5 ,256 ,107]
+
+ResNet-18 
+
+> frozen
+
+Avg Pool 
+
+> (4 ×4)
+
+Projector 
+
+> MLP + LN
+
+Qwen2.5-VL 3B 
+
+> frozen
+
+JSON Output 
+
+> {"objects":[ {
+> "class","az", "range_m" }]}
+
+512 ×8×4 16 tok emb  
+
+> LoRA
+> r= 16
+> Q/K proj.
+> Schema Prompt
+> class, az_deg, range_m
+> from Stage 1
+
+Fig. 2. Two-stage training pipeline. Top: Stage 1 aligns the radar encoder to frozen SigLIP [13] vision embeddings (MSE + cosine loss). Bottom: Stage 2 freezes the encoder, transfers projector weights, and fine-tunes LoRA [14] adapters on Qwen2.5-VL-3B [15] to generate structured captions from radar tokens. 
+
+IV. R ESULTS 
+
+A. Caption-as-Detection Metrics 
+
+We parse generated captions into structured predictions (class, range in meters, angular position) and score against caption-parsed ground truth. Class P/R/F1 uses multiset matching on class per frame. Range MAE is computed over matched pairs; because range is a text token, this is a comparative metric across configurations, not physical sensor precision. Prose models output one of 7 bearing sectors ;JSON models output integer azimuth in degrees, evaluated as 
+
+azimuth MAE . Hallucination rate is the fraction of predicted classes absent from any GT object in the same frame. Table I shows results on held-out test sequences (fog, light snow, heavy snow). No single configuration wins every metric. The camera baseline uses the same VLM and LoRA setup but with an unfrozen ResNet-18 encoder on camera input (no Stage-1 alignment), so it measures VLM capability on a familiar modality rather than a controlled sensor-only comparison. 
+
+TABLE I DETECTION METRICS ON HELD -OUT WEATHER SEQUENCES . B OLD = BEST PER ROW .
+
+Baseline Ours 
+
+Camera 5ch 66ch 5ch JSON 5ch JSON 
+
+unfrozen +align +align avg pool x-attn 
+
+Class F1 0.336 0.527 0.473 0.540 0.491 Precision 0.457 0.704 0.624 0.672 0.664 Recall 0.266 0.421 0.381 0.452 0.390 Range MAE (m) 17.0 13.9 10.9 16.6 13.2 Bearing acc. — 0.333 0.304 — —Azimuth MAE ( ◦) 9.3 — — 7.0 7.9 Hallucination 0.543 0.296 0.376 0.329 0.336 
+
+B. Weather Robustness 
+
+Fig. 4 stratifies detection F1 and hallucination rate by weather condition. The fog and light snow sequences are entirely held out from Stage-1 and Stage-2 training. Camera performance collapses to near-zero F1 in fog (0.04) and light snow (0.07) with hallucination rates exceeding 90%, while both radar models maintain F1 above 0.44 across all condi-tions. Fig. 6 (Appendix) shows qualitative examples across normal, fog, and heavy snow conditions. Normal Fog Light Snow    
+
+> 0.0
+> 0.1
+> 0.2
+> 0.3
+> 0.4
+> 0.5
+> 0.6
+> 0.7
+> Class F1
+> 0.34
+> 0.04
+> 0.07
+> 0.46 0.47
+> 0.54
+> 0.50
+> 0.45
+> 0.52
+> Detection F1 by Weather
+> Normal Fog Light Snow
+> 0.0
+> 0.2
+> 0.4
+> 0.6
+> 0.8
+> 1.0
+> Hallucination Rate
+> 0.38
+> 0.96
+> 0.90
+> 0.23
+> 0.61
+> 0.46
+> 0.18
+> 0.60
+> 0.40
+> Hallucination Rate by Weather
+> Camera
+> Radar Prose
+> Radar JSON
+
+Fig. 4. Per-weather detection F1 and hallucination rate. Camera collapses in fog and snow ( >90% hallucination); both radar configurations maintain consistent detection. 
+
+V. D ISCUSSION 
+
+A. Why VL, Not Text-Only 
+
+In earlier ablations we swapped Qwen2.5-VL for a text-only Qwen2.5 of similar scale while holding the encoder, projector, and LoRA fixed. The text-only variant underperformed the VL variant by 8% on validation loss, suggesting that vision-conditioned attention patterns from VLM pretraining transfer usefully to radar tokens. The VLM’s cross-modal attention appears to generalize beyond the specific pixel statistics it was trained on. Object Count          
+
+> RMSE ( )
+> Bus/Truck
+> Accuracy ( )
+> 0.0
+> 0.5
+> 1.0
+> 1.5
+> 2.0
+> 2.5
+> 3.0
+> Count RMSE (  ) 2.20 2.03
+> 66ch wins both
+> Encoder Features
+> (linear probe)
+> Class F1
+> ()
+> Recall
+> ()
+> Hallucination
+> ()
+> 0.0
+> 0.1
+> 0.2
+> 0.3
+> 0.4
+> 0.5
+> 0.6
+> 0.527
+> 0.421
+> 0.296
+> 0.473
+> 0.381 0.376
+> 5ch wins all three
+> VLM Caption Output
+> (detection metrics)
+> 5ch
+> 66ch
+> 0
+> 20
+> 40
+> 60
+> 80
+> 100
+> Accuracy % (  )
+> 81.9% 84.2%
+> 66ch encoder captures richer features, yet the frozen VLM produces worse captions. Fig. 5. Encoder–VLM utilization gap. Linear probes on frozen encoder features (left) show 66ch captures richer representations; yet the frozen VLM produces worse captions (right), suggesting alignment difficulty scales with encoder complexity under limited data.
+
+B. What the Configurations Tell Us 
+
+Alignment matters for spatial grounding. In early ab-lations, training without Stage-1 SigLIP alignment produced encoders that learned class statistics but failed to ground spatial predictions, resulting in high hallucination and poor bearing accuracy. The latent space misalignment between a randomly-initialized encoder and the frozen VLM was too large to bridge with caption loss alone at this data scale. Stage-1 alignment closes this gap, enabling all aligned radar models to achieve 7.0–7.9 ◦ azimuth MAE with substantially lower hallucination (0.30–0.38 vs. 0.54 for the unaligned camera baseline). 
+
+5ch wins captions; 66ch wins encoder features. 5ch aligned leads on F1, precision, bearing, and hallucination; 66ch aligned leads on range MAE (10.9 m vs. 13.9 m). To disentangle encoder quality from VLM utilization, we freeze each trained encoder and fit linear probes on the pooled 512-dim features. On object counting, 66ch achieves RMSE 2.03 vs. 2.20 for 5ch; on bus/truck presence, 66ch reaches 84.2% vs. 81.9%. The full Doppler spectrum produces better encoder representations, yet the frozen VLM generates worse captions, suggesting that alignment difficulty scales with encoder com-plexity, particularly under limited training data ( ∼8k frames). The simpler 5-channel input aligns more efficiently at this data scale; with more data or a richer projector, 66ch should surpass 5ch. 
+
+Hallucination tracks alignment and complexity. The aligned 5ch model achieves the lowest hallucination (0.296), while the more complex 66ch aligned model returns to 0.376 despite richer encoder features. When the encoder is over-parameterized for the data scale, the VLM’s language prior fills in plausible objects the radar signal cannot support. Alignment on a compact representation is the strongest lever against hallucination at this data scale. 
+
+C. Caption Format as a Design Axis 
+
+The JSON configurations in Table I reveal that caption format is itself a meaningful design choice. JSON with average pooling achieves the highest F1 (0.540) and recall (0.452), outperforming all prose models, because numeric values appear as literal digit tokens: the model learns to associate radar features with digit outputs directly rather than bridging through natural-language phrases. Average pooling also produces the best azimuth MAE (7.0 ◦), showing that spatial information survives pooling when the output format provides direct numeric supervision. Replacing average pooling with cross-attention pooling (32 learned queries) improves range MAE (16.6 →13.2 m) but degrades F1 (0.540 →0.491) and azimuth MAE (7.0 →7.9 ◦). The range–azimuth tradeoff across pooling strategies suggests a competition for the model’s numeric token capacity: autore-gressive generation processes spatial fields sequentially, and the model allocates learning capacity unevenly across fields depending on generation order and pooling structure. This is an artifact of using language priors for spatial prediction rather than a sensor limitation. JSON hallucination (0.329–0.336) remains higher than aligned prose (0.296). Prose detects bicycle and motorcycle where JSON does not, suggesting natural-language templates better support minority classes at low data scale. 
+
+D. Limitations 
+
+Our best test-set F1 (0.540 for JSON, 0.527 for prose) is not competitive with dedicated 4D-radar detection pipelines on localization, nor with camera VLMs on clear-weather richness. The contribution is demonstrating that vision-aligned radar encoders produce semantic representations usable by a frozen VLM, and that the pipeline persists through adverse weather where camera-based approaches fail entirely. 
+
+Dataset scale. Twelve training sequences ( ∼7.5k frames) is small by VLM standards, and our weather stratification holds out only one sequence per adverse condition. Per-condition F1 values are point estimates over a single route. Fig. 4 should be read as: captioning persists through adverse weather on at least these sequences, not that the pipeline has learned a weather-invariant representation. 
+
+Evaluation ceiling from caption format. GT captions detail at most ∼4 objects per frame regardless of scene density. On 16-object scenes the recall ceiling from the GT format is lower than the recall ceiling from the model, so absolute recall numbers are a lower bound on what a structured-output head would achieve. 
+
+Autoregressive spatial prediction. Range and azimuth are predicted as text tokens, not regressed as scalars. Range MAE (10.9–16.6 m) far exceeds the sensor’s sub-meter resolution, and adjacent meter values may share or split BPE pieces non-monotonically. A regression head would bypass this tokeniza-tion ceiling entirely, suggesting that language generation may not be the right decoder for metric spatial fields. VI. C ONCLUSION 
+
+Radar has a dearth of labeled data compared to camera and LiDAR, making large-scale supervised training impractical. By aligning a radar encoder to frozen vision embeddings and decoding through a frozen VLM, we get structured scene understanding from ∼8k frames and ∼7M trainable parameters, with no radar-specific language data collection. On held-out fog, light snow, and heavy snow sequences, radar-based captioning persists where camera input degrades or col-lapses entirely, and a single architectural fix (projector-output LayerNorm) determines whether the VLM attends to radar at all. An encoder–VLM utilization gap reveals that richer encoder features do not automatically yield better captions under limited data, highlighting alignment efficiency as a key bottleneck at this scale. Our results also show that autoregressive token prediction introduces arbitrary tradeoffs between spatial fields depend-ing on generation order, and absolute spatial errors remain far above sensor resolution. A regression head or detection decoder over the same aligned embeddings would bypass these tokenization artifacts and provide a cleaner evaluation of encoder quality. LiDAR-as-teacher alignment could provide richer 3D supervision than camera, and cross-dataset transfer (e.g. ColoRadar [8]) would test whether the learned alignment generalizes beyond a single sensor platform. ACKNOWLEDGMENTS 
+
+We thank the K-RADAR team for releasing raw 4D radar tensors across diverse weather conditions. 
+
+AI use disclosure. Claude (Anthropic) was used for copy-editing and prose polishing; all technical content, results, and analysis are the authors’ own. The pipeline architecture diagram was generated with Gemini (Google) from an author-written specification and then hand-corrected. REFERENCES [1] D.-H. Paek et al. , “K-Radar: 4D radar object detection for autonomous driving in various weather conditions,” in NeurIPS , 2022. [2] H. Liu, C. Li, Q. Wu, and Y. J. Lee, “Visual instruction tuning,” in 
+
+NeurIPS , 2023. [3] A. Brohan et al. , “RT-2: Vision-language-action models transfer web knowledge to robotic control,” arXiv:2307.15818 , 2023. [4] K. Black et al. , “ π0: A vision-language-action flow model for general robot control,” arXiv:2410.24164 , 2024. [5] A. Zhang, F. E. Nowruzi, and R. Laganiere, “RADDet: Range-azimuth-doppler based radar object detection for dynamic road users,” in CRV ,2021. [6] D.-H. Paek et al. , “Enhanced K-Radar: Optimal density reduction to improve detection performance and accessibility of 4D radar tensor-based object detection,” arXiv preprint , 2023. [7] Y. Chae et al. , “L4DR: LiDAR-4DRadar fusion for weather-robust 3D object detection,” arXiv preprint , 2024. [8] A. Kramer, K. Harlow, C. Williams, and C. Heckman, “ColoRadar: The direct 3D millimeter wave radar dataset,” International Journal of Robotics Research (IJRR) , 2022. [9] A. Pushkareva et al. , “Radar spectra-language model for automotive scene parsing,” arXiv:2406.02158 , 2024. [10] P. Mishra, K. Bansal, and D. Bharadia, “RLM: A vision-language model approach for radar scene understanding,” arXiv:2511.21105 , 2025. [11] Y. Guan et al. , “Talk2Radar: Bridging natural language with 4D mmwave radar for 3D referring expression comprehension,” in ICRA ,2025, arXiv:2405.12821. [12] Y. Liu et al. , “PETR: Position embedding transformation for multi-view 3D object detection,” in ECCV , 2022. [13] X. Zhai et al. , “Sigmoid loss for language image pre-training,” in ICCV ,2023. [14] E. J. Hu et al. , “LoRA: Low-rank adaptation of large language models,” in ICLR , 2022. [15] Qwen Team, “Qwen2.5-VL technical report,” arXiv preprint , 2025. [16] R. Xu et al. , “PointLLM: Empowering large language models to understand point clouds,” in ECCV , 2024. [17] Z. Yin et al. , “LAMM: Language-assisted multi-modal instruction-tuning dataset, framework, and benchmark,” in NeurIPS Datasets and Benchmarks , 2023. APPENDIX TABLE II K-RADAR SEQUENCE -LEVEL SPLIT . † ZERO -SHOT WEATHER (UNSEEN DURING TRAINING ). 
+
+Split Seq Frames Obj Obj/Fr Weather Road Time 
+
+Train 1 597 1,454 2.4 Normal Urban Night 2 462 192 0.4 Normal Highway Night 3 597 1,365 2.3 Normal Highway Night 4 588 576 1.0 Normal Highway Night 6 594 234 0.4 Normal Urban Night 8 567 1,440 2.5 Normal Univ. Night 9 833 4,582 5.5 Normal Highway Day 11 1,195 8,786 7.4 Normal Highway Day 14 595 406 0.7 Normal Urban Day 21 597 5,112 8.6 Rain Alleyway Night 28 597 597 1.0 Sleet Mountain Day 47 266 339 1.3 Hvy. snow Highway Night 
+
+12 seqs 7,491 25,083 3.3 
+
+Val 5 597 3,386 5.7 Normal Urban Day 7 595 1,912 3.2 Normal Alleyway Night 23 598 1,735 2.9 Rain Urban Night 
+
+3 seqs 1,790 7,033 3.9 
+
+Test 18 594 2,212 3.7 Normal Urban Day 38 597 558 0.9 Fog † Mountain Day 42 598 990 1.7 Lt. snow † Urban Day 46 598 1,302 2.2 Hvy. snow Highway Night 
+
+4 seqs 2,387 5,062 2.1 Fig. 6. Qualitative comparison across weather conditions. Columns: camera image, radar range-azimuth heatmap, parsed caption summaries. Rows: Normal (seq 5), Fog (seq 38), Heavy Snow (seq 46). Yellow × = GT, cyan × = prose predictions, green × = JSON predictions. Radar RA maps remain interpretable in fog and heavy snow where camera imagery is saturated or obscured.

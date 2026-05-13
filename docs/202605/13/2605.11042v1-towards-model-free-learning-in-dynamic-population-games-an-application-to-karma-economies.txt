@@ -1,0 +1,965 @@
+Title: Towards Model-Free Learning in Dynamic Population Games: An Application to Karma Economies
+
+URL Source: https://arxiv.org/pdf/2605.11042v1
+
+Published Time: Wed, 13 May 2026 00:03:58 GMT
+
+Number of Pages: 27
+
+Markdown Content:
+# Towards Model-Free Learning in Dynamic Population Games: An Application to Karma Economies 
+
+Matteo Cederle 
+
+Department of Information Engineering University of Padova 
+
+matteo.cederle@phd.unipd.it 
+
+Saverio Bolognani 
+
+Automatic Control Laboratory ETH Zurich 
+
+bsaverio@ethz.ch 
+
+Gian Antonio Susto 
+
+Department of Information Engineering University of Padova 
+
+gianantonio.susto@unipd.it 
+
+## Abstract 
+
+Dynamic Population Games (DPGs) provide a tractable framework for modeling strategic interactions in large populations of self-interested agents, and have been successfully applied to the design of Karma economies, a class of fair non-monetary resource allocation mechanisms. Despite their appealing theoretical properties, existing computational tools for DPGs assume full knowledge of the game model and operate in a centralized fashion, limiting their applicability in realistic settings where agents have access only to their own private experience. This paper takes a step towards addressing this gap by studying model-free equilibrium learning in Karma DPGs. First, we analyze the setting in which a novel agent joins a Karma DPG already at its Stationary Nash Equilibrium (SNE) and learns a policy via Deep Q-Networks (DQN) without knowledge of the game model. Leveraging recent convergence results for DQN, we establish a suboptimality bound consisting of a DQN approximation error of order O(1 /√Ns) and a mean field perturbation error of order O(1 /N ), where Ns is the replay buffer size and N is the population size. Second, we consider the challenging problem of learning the SNE from scratch. We show empirically that combining deep RL with fictitious play and smoothed policy iteration allows agents to converge, in a model-free fashion, to a configuration close to the centrally computed SNE. Together, these contributions support the vision of Karma economies as practical tools for fair resource allocation. 1
+
+## 1 Introduction 
+
+The allocation of scarce resources among self-interested agents is a fundamental challenge in modern engineered and socio-economic systems. Classical game-theoretic approaches model such interactions as finite N -player games, but the analysis and computation of equilibria become intractable as N
+
+grows. Mean field games (MFGs), introduced independently by Lasry and Lions [ 20 ] and Huang et al. [ 17 ], overcome this challenge by replacing individual interactions with the interaction of a representative agent with the aggregate behavior of the population, reducing an intractable N -player problem to a tractable fixed-point system. This approximation has proven effective across a wide range of applications [ 31 , 34 , 4 , 25 ], attracting rapidly growing interest from both the control and machine learning communities. 
+
+> 1Code is provided as a supplementary zip file (see supplementary material). If accepted, it will be made publicly available. Preprint.
+> arXiv:2605.11042v1 [cs.GT] 11 May 2026
+
+A particularly promising approach to fair scarce resource allocation is represented by Karma economies [10 , 6], non-monetary incentive schemes in which agents bid for shared resources using non-tradable tokens that circulate according to designer-specified exchange rules. Karma economies have been shown to achieve fairness and efficiency across multiple allocation problems [ 11 , 5 ]. Their natural mathematical framework is that of Dynamic Population Games (DPGs) [ 9], a class of discrete-time, finite state-and-action, stationary MFGs at the intersection of MFGs and classical population games [ 32 ]. DPGs generalize standard MFGs in a key way: both the reward function and transition probabilities depend on the full mean field pair (μ, π ) — the joint population state distribution and policy — rather than on the state distribution alone. This richer coupling, corresponding to the General MFG (GMFG) framework of Guo et al. [ 15 , 16 ], captures the essence of Karma economies, where incentives depend not only on how karma is distributed but also on how agents are bidding. Beyond this modeling flexibility, DPGs enjoy a remarkable structural property: their Stationary Nash Equilibrium (SNE) can be reduced to a Nash Equilibrium of an equivalent static population game, unlocking tools for equilibrium analysis and computation via evolutionary dynamics [9]. Despite these appealing properties, existing computational tools for DPGs and GMFGs either require strong contractivity assumptions [ 15 , 16 , 7] rarely verified in practice, or rely on centralized algorithms with full knowledge of the game primitives [ 9]. In practice, individuals participating in a Karma economy experience only their own private state and receive reward feedback — they cannot access the game model or observe the population distribution. This raises a natural question: can agents learn to play a DPG equilibrium in a model-free fashion, using only individual experience? Reinforcement Learning (RL) offers a natural framework for this problem, and a growing literature has studied learning in MFGs [ 15 , 16 , 43 , 33 ]. However, as discussed in section 2, model-free learning in the fully coupled DPG setting has received little attention; this paper takes a step towards addressing this gap with the following contributions: • Motivated by the plug-and-play nature of Karma economies, where new participants can join an established system, we analyze the single-agent setting in which a novel agent joins a Karma DPG already at a SNE configuration and wishes to learn a good policy via Deep Q-Networks (DQN) [ 26 ] with ε-greedy exploration, without knowledge of the game model. Leveraging recent results on the convergence of DQN [ 45 ], we establish a suboptimality bound for the learned policy, composed of a DQN approximation error of order O(1 /√Ns) and a mean field perturbation error of order O(1 /N ), where Ns is the replay buffer size and N is the population size. Moreover, the population mean field remains within O(1 /N ) of the equilibrium throughout the learning process, so that the new learning agent does not disrupt the equilibrium of the remaining population. We validate these guarantees through numerical experiments, where we practically observe the 
+
+O(1 /√Ns) and O(1 /N ) scaling of the two error components for the new agent’s policy. • We then consider the challenging problem of learning the Karma DPG equilibrium from scratch, when agents have no information about the game structure. We empirically show that combining deep RL with fictitious play [2 , 3, 30 ] and smoothed policy iteration [ 23 , 35 ] allows a population of agents to converge, in a model-free fashion, to a configuration that is close to a centrally computed SNE. While a theoretical analysis of this convergence remains an open problem, our experiments suggest that the combination of deep RL with fictitious play and smoothed policy iteration is a practically viable approach to model-free equilibrium learning in DPGs. Taken together, these contributions represent a step towards making DPGs — and Karma economies in particular — more accessible as practical tools, by showing that reasonable equilibrium behavior can emerge from model-free learning even when agents have no knowledge of the game model. We view this work as complementary to the existing literature on learning in MFGs and GMFGs, and hope it motivates further investigation into model-free learning methods for this class of games. 
+
+## 2 Related Works 
+
+Learning in Mean Field Games A growing body of work has studied how agents can learn equilibria in MFGs through reinforcement learning; we refer the reader to Laurière et al. [ 22 ] for a comprehensive survey. Early works laid the groundwork for RL-based approaches [ 15 , 33 , 42 ], but typically assume uniqueness of the Nash equilibrium via contractivity of the mean-field operator [ 44 ,7], and operate under the classical MFG formulation where rewards and transitions depend only on the state distribution, neither of which holds in Karma economies. The closest work to ours is Guo et 2al. [ 16 ], which considers a similar GMFG framework and proves convergence of value-based and policy-based RL algorithms, but still requires stability and uniqueness of the equilibrium. Other policy-based approaches [ 41 , 43 , 27 , 13 ] either impose strong structural assumptions or consider only the classical MFG setting. Notably, Yardim et al. [ 43 ] demonstrate convergence on the true 
+
+N -player game without a population generative model, but do not address the GMFG setting. From an algorithmic perspective, two main paradigms have emerged: Fictitious Play (FP) [ 30 , 8 ] and Online Mirror Descent (OMD) [ 28 , 40 ]. While OMD enjoys strong theoretical guarantees, its convergence typically requires monotonicity conditions not satisfied in Karma games. FP has proven to be a robust practical alternative [ 8 , 24 ], and its combination with deep RL has been explored previously [ 21 , 29 ], though not in the GMFG framework. Convergence guarantees for deep RL combined with FP remain an open problem even in the classical MFG setting [ 21 ], a limitation we acknowledge; what we show empirically is that this combination is practically effective in the GMFG setting of DPGs, a regime previously unexplored. Rather than proposing a new general framework for learning in MFGs, this work develops theoretical and empirical tools to support agents participating in Karma economies, enabling them to learn effective bidding strategies from individual experience alone. 
+
+Mechanisms for fair resource allocation Designing allocation mechanisms that are simultaneously fair and efficient is a longstanding challenge. Monetary mechanisms [ 38 , 37 ] are the classical ap-proach, but their reliance on money raises significant fairness concerns in socio-technical contexts [ 12 ], and a fundamental impossibility result [ 18 ] establishes that no strategy-proof, Pareto-efficient, non-dictatorial rule exists without money in single-shot settings. Non-monetary alternatives [ 19 , 14 ]address these concerns but are typically designed for finite horizons and vulnerable to budget deple-tion [ 12 ]. Karma economies [ 10 ] circumvent these limitations by exploiting the repeated nature of resource allocation: non-tradable tokens that circulate through bidding and redistribution implement Maximum Long-run Nash Welfare in a decentralized and trustworthy manner, without requiring interpersonal utility comparisons [12]. 
+
+## 3 Preliminaries 
+
+Let a, d ∈ D ⊆ N and let c ∈ C ⊆ Rn, then for a function f : D × C → R, we distinguish discrete and continuous arguments through the notation f [d]( c). Alternatively, we write f : C → R|D| as the vector-valued function f (c), with f [d]( c) denoting its d-th element. Similarly, p[a | d]( c) denotes the conditional probability of a given d and c. We denote by ∆( D) := {p ∈ R|D| 
+
+> +
+
+| P 
+
+> d∈D
+
+p[d] = 1 } the set of probability distributions over the elements of D. For a function f : D × C → R, we denote by || f || ∞ := sup d∈D,c ∈C |f [d]( c)| its infinity norm, i.e., the supremum of its absolute value over all discrete and continuous arguments. 
+
+Dynamic Population Games (DPGs) A DPG, as introduced in Elokda et al. [ 9], models a large population N = {1, . . . , N } of anonymous, homogeneous, self-interested agents, where N is large enough that agents approximately form a continuum of mass. Each agent has a private state 
+
+x ∈ X = {1, . . . , N x}, that evolves over time. Both the state and action spaces are finite. At each discrete time step, an agent in state x selects an action a ∈ A [x], according to a stationary policy 
+
+π : X → ∆( A[x]) , which maps the agent’s own state to a probability distribution over actions, without conditioning on the population distribution. The macroscopic state of the game is described by the mean field (μ, π ) ∈ M × Π, where and μ ∈ M = ∆( X ) is the state distribution of the population. Crucially, both the state transition function p[x+ | x, a ]( μ, π ) and the immediate reward function r[x, a ]( μ, π ) depend on the full mean field pair (μ, π ), capturing both the population state distribution and the population behavioral policy. This distinguishes DPGs from classical MFGs, where the coupling is only through the state distribution μ, and places DPGs within the General MFG framework of Guo et al. [15]. Each agent faces a discounted infinite-horizon Markov Decision Process (MDP) with discount factor 
+
+α ∈ [0 , 1) , aiming to maximize its expected discounted cumulative reward. Each agent’s MDP is coupled to other agents through the mean field (μ, π ). We can define the state-action value function :
+
+Q[x, a ]( μ, π ) = r[x, a ]( μ, π ) + α X
+
+> x+∈X
+
+p[x+ | x, a ]( μ, π ) V [x+]( μ, π ), (1) 3where V [x]( μ, π ) = P 
+
+> a∈A [x]
+
+π[a|x]Q[x, a ]( μ, π ) is the value function . The optimal policy for a player in state x belongs to the best response correspondence B[x]( μ, π ):
+
+π∗[· | x] ∈ B [x]( μ, π ) = arg max  
+
+> a∈A [x]
+
+Q[x, a ]( μ, π ). (2) Finally, we can define the solution concept in Dynamic Population Games. 
+
+Definition 3.1 (Stationary Nash Equilibrium [ 9]). A mean field (μ∗, π ∗) ∈ M × Π is a Stationary Nash Equilibrium (SNE) if, for all x ∈ X :
+
+μ∗[x] = X
+
+> x−∈X
+
+X
+
+> a−∈A [x−]
+
+μ∗[x−] π[a−|x−] p[x | x−, a −]( μ∗, π ∗), (SNE.1) 
+
+π∗[· | x] ∈ B [x]( μ∗, π ∗). (SNE.2) Condition (SNE.1) requires the state distribution μ∗ to be the stationary distribution of the Markov chain induced by the equilibrium policy π∗ under the equilibrium mean field, ensuring time-invariance. Condition (SNE.2) requires each agent to play optimally given the equilibrium mean field. Together, these conditions define a fixed point that is simultaneously optimal and self-consistent. A key theoretical result of Elokda et al. [9] is that every DPG can be reduced to an equivalent static population game , whose Nash Equilibria coincide with the SNEs of the DPG. This reduction unlocks a set of tools from the population games literature [ 32 ], including evolutionary dynamics for SNE computation and explicit conditions for existence of the SNE. In particular, under mild continuity assumptions on r and p, at least one SNE is guaranteed to exist [9, Proposition 1]. 
+
+Karma Economies Karma economies, introduced in [ 6 , 10 ], are a class of non-monetary resource allocation mechanisms designed to achieve fairness and efficiency in the repeated allocation of scarce resources among a large population of self-interested agents. The key idea is to issue each agent a budget of non-tradable karma tokens that can be used to bid for a shared resource. Karma flows from agents who acquire the resource to those who yield it, according to exchange rules specified by the mechanism designer. Because karma cannot be traded or accumulated indefinitely, it naturally incentivizes agents to be strategic and forward-looking: spending karma today means having less available for future high-urgency situations. In the Karma DPG model, we take the point of view of an ego agent playing against the population, from which a random opponent is drawn in every resource competition instance. The agent has a private state x = [ u, k ] ∈ X = U × { 0, ..., K },where the urgency state u represents a valuation for the resource and takes one of the values in the discrete and finite set U, and k is the current karma balance , limited by some K ∈ N\{∞} . The ego agent performs actions in the form of karma bids a ∈ A [k] = {0, ..., k }, and it is equipped with the following reward function and state transition probability, dependent on the mean field pair (μ, π ):
+
+r[u, k, a ]( μ, π ) = r[u, a ]( μ, π ) = u X
+
+> a′
+
+X
+
+> u,k
+
+μ[u, k ]π[a|u, k ]P[o = win |a, a ′], (3) 
+
+p[u+, k +|u, k, a ]( μ, π ) = ϕ[u+|u]κ[k+|k, a ]( μ, π ), (4) where o ∈ O = {win , lose } denotes the resource competition outcome, and P[o = win |a, a ′] = 1 if 
+
+a > a ′, 0 if a < a ′, and 0.5 if a = a′, with a′ being the opponent’s action, drawn from the population. Moreover, ϕ[u+|u] is an exogenous, irreducible Markov chain process, and κ[k+|k, a ]( μ, π ) is the 
+
+karma transition function , which can take various forms, depending on the mechanism designer choices; the karma transition function used for the experiments in this work is the pay bid to society 
+
+scheme, in which the winning agent pays its bid into a common pool that is then redistributed equally among all agents; the full specification of the karma transition kernel is provided in subsection A.1, along with other possible implementations. Finally, as mentioned above for generic DPGs, under mild assumptions, a Karma SNE is guaranteed to exist; however, as mentioned by Elokda et al. [ 10 ], the uniqueness of such equilibrium is still an open research question. 
+
+Deep Q-Networks In high-dimensional, decentralized settings where the game primitives r and p
+
+are unknown, the optimal action-value function Q∗ cannot be computed analytically and must instead be learned from experience. Deep Q-Networks (DQN) [ 26 ] is one of the first deep RL algorithms which approximates the optimal Q-function using a deep neural network Q(W ; x, a ), parameterized 4by weights W ∈ Rd, trained to minimize the mean squared Bellman error (MSBE): 
+
+min  
+
+> W
+
+E(x,a )∼d
+
+h
+
+Q(W ; x, a ) − r(x, a ) − α Ex′|x,a [max  
+
+> a′
+
+Q(W ; x′, a ′)] 
+
+i2
+
+, (5) where d is the distribution of (x, a ) following the optimal policy π∗. Two key stabilization techniques distinguish DQN from naive Q-learning with function approximation: an experience replay buffer 
+
+D, which stores past transitions (x, a, r, x ′) and breaks temporal correlations in the training data by sampling random mini-batches; and a target network with frozen weights ¯W , periodically updated, which provides stable regression targets y = r + α max a′ Q( ¯W ; x′, a ′) during training. Action selection follows an ε-greedy policy: with probability ε a random action is chosen for exploration, and with probability 1 − ε the greedy action arg max a Q(W ; x, a ) is selected. Decaying ε over time encourages exploration early in training and exploitation once a good policy has been found. Zhang et al. [ 45 ] provide the first theoretical convergence and sample complexity analysis of DQN with 
+
+ε-greedy exploration, showing that with decaying ε the learned weights converge geometrically to the optimal weights W ∗, up to an estimation error of order O(1 /√Ns), where Ns is the replay buffer size. We build directly on this result in section 4. 
+
+## 4 Decentralized Learning for a Novel Agent in a Karma Economy via DQN 
+
+We consider a Karma DPG operating at a Stationary Nash Equilibrium (μ∗, π ∗). This setting is prac-tically motivated by the deployment nature of Karma economies: in any real-world implementation, new participants continuously join an existing system in which the incumbent population has already learned to play at equilibrium. A Karma economy must ideally be plug-and-play in the sense that new agents can join at any time and learn effective bidding strategies from scratch, without disrupting the equilibrium behavior of the existing population. As a first step towards this goal, we analyze the single-agent case, in which one novel non-infinitesimal agent joins the population and seeks to learn a good policy through direct interaction with the game, without any knowledge of the reward function r, the transition kernel p, or the equilibrium mean field (μ∗, π ∗). The agent employs DQN with ε-greedy exploration [ 26 ] as its learning algorithm. The central question we address is whether such an agent can learn a policy that is close to the equilibrium policy π∗, and whether its presence disrupts the equilibrium of the remaining population. The new agent faces a perturbed MDP: since its policy πt differs from π∗ during learning, the full mean field shifts from (μ∗, π ∗) to a perturbed value 
+
+(˜ μt, ˜πt), which in turn affects the rewards and transitions experienced by the agent. Our main result, stated in Theorem 4.1, shows that the new agent’s learned policy is guaranteed to be close to the equilibrium policy, with a suboptimality bound that decomposes into two independent components. 
+
+Assumption 4.1. The Stationary Nash Equilibrium (μ∗, π ∗) is non-degenerate, in the sense that the equilibrium Q-function has a strict argmax (action gap) at every state: 
+
+δ := min 
+
+> x∈X
+
+
+
+Q∗[x, π ∗(x)]( μ∗, π ∗) − max  
+
+> a̸=π∗[x]
+
+Q∗[x, a ]( μ∗, π ∗)
+
+
+
+> 0. (6) The concept of action gap plays a central role in approximate reinforcement learning methods, where a larger separation between optimal and suboptimal actions improves the robustness of greedy policies to estimation and approximation errors [ 1]. Moreover, as already shown by [ 16 , Section 4.2], Assumption 4.1 should not be viewed as practically restrictive in our scenario, given the compactness of the probability simplex P(X × A ) and the finiteness of the action set A.With this, we can now present a preliminary lemma, followed by the main result of this section, whose proof is provided in subsection A.2. 
+
+Lemma 4.1. The immediate reward function r[·]( μ, π ) and the state transition probability p[·]( μ, π )
+
+are Lipschitz continuous in (μ, π ) on M × Π. That is, there exist constants Lr , L p > 0 such that for all s = ( μ, π ) and s′ = ( μ′, π ′):
+
+∥r[·]( s) − r[·]( s′)∥∞ ≤ Lr ∥s − s′∥ , ∥p[·]( s) − p[·]( s′)∥∞ ≤ Lp ∥s − s′∥ .
+
+Theorem 4.1. Let Assumption 4.1 hold. Consider a Karma DPG with N agents at a SNE con-figuration (μ∗, π ∗), with population size satisfying: N > 2CM F /δ , where CM F is defined in 
+
+(8) and δ is the action gap from (6) . A new agent joins the population and runs DQN with ε-greedy exploration [ 26 ] with replay buffer of size Ns and decaying εt. The final learned policy is 
+
+5ˆπ[x] = arg max a∈A [x] Q( ˆW ; x, a ), where the learned Q-function Q( ˆW ; ·, ·) satisfies: 
+
+sup 
+
+> (x,a )∈X ×A
+
+Q( ˆW ; x, a ) − Q∗[x, a ]( μ∗, π ∗) ≤ CDQN 
+
+√Ns
+
++ CM F 
+
+N , (7) 
+
+where CDQN is the DQN approximation constant from Zhang et al. [45] and: 
+
+CM F = (1 − α)Lr + αR max |X | Lp
+
+(1 − α)2 · C0, (8) 
+
+with C0 = sup s,s ′∈M× Π ∥s − s′∥∞ and Rmax the largest immediate reward achievable in the game. 
+
+The error bound in (7) admits a natural decomposition into two independent components. The first is the DQN approximation error, of order O(1 /√Ns), which decreases with the number of training samples and is independent of the population size N . The second is a mean-field perturbation term, of order O(1 /N ), which vanishes as the population grows and is independent of the sample size. Finally, we remark that our result does not rely neither on uniqueness of the Stationary Nash Equilibrium nor on global stability conditions on the DPG, which is indeed not guaranteed in the Karma model [ 10 ]. 
+
+## 5 Towards Model-Free Equilibrium Learning in Karma DPGs 
+
+We now turn to the more challenging and practically relevant problem of learning the Stationary Nash Equilibrium of a Karma DPG entirely from scratch, without any prior knowledge of the game model or access to the centrally computed equilibrium. In this setting, the agents start from uninformed, arbitrary policies and learn through individual experience. 
+
+FP-DQN Algorithm Our simple approach combines deep reinforcement learning with fictitious play [ 2, 30 ] and smoothed policy iteration [ 23 , 35 ], two paradigms for equilibrium learning in games in which a representative player best-responds to an empirical average of its own past policies. In DPGs, the analog of the empirical average is the time-averaged mean field (¯ μi, ¯πi), which aggregates the population distribution and policy across all past iterations. The averaging prevents the algorithm from overreacting to the noisy policy estimates produced by the DQN agent in early iterations, and it ensures that the mean field seen by the representative player evolves smoothly across outer iterations rather than jumping abruptly in response to the most recent learned policy. The full procedure is described in Algorithm 1. At each outer iteration i, the representative agent runs DQN for E episodes against a fixed population playing (¯ μi, ¯πi), the current time-averaged mean field. The population is reset to this configuration at the beginning of each episode, ensuring that the MDP faced by the learning agent is stationary within each outer iteration, consistently with the theoretical setting of section 4. After E episodes, the agent’s learned policy πi,E and the empirical state distribution μi,E — computed at the end of iteration i as the normalized histogram of the population states: 
+
+μi,E [x] = 1
+
+N
+
+> N
+
+X
+
+> j=1
+
+1[xj = x], ∀x ∈ X , (9) where xj denotes the state of agent j at the end of the final episode — are recorded and used to update the running averages of the state distribution and population policy, following equation (10). The algorithm is initialized with a uniform policy π0,0 and state distribution μ0,0, representing a fully uninformed starting point. At convergence, the returned pair (¯ μI , ¯πI ) represents the algorithm’s best estimate of the equilibrium policy and state distribution, which can be directly compared against the centrally computed SNE (μ∗, π ∗), as we will do in subsection 6.2. 
+
+Discussion and Limitations Algorithm 1 is best understood as an application-specific tool rather than a general contribution to the MFG learning literature. It combines three well-established techniques — DQN for model-free policy optimization, fictitious play for mean field averaging, and smoothed policy iteration for population policy averaging — and applies them to the Karma DPG, a practically motivated instance of the GMFG framework, which has received relatively little attention from the learning community. We therefore do not present Algorithm 1 as a general-purpose algorithm for learning in GMFGs. Rather, we view it as a first step towards making Karma economies 6Algorithm 1 FP-DQN: Fictitious Play with DQN for Model-Free Equilibrium Learning  
+
+> 1:
+
+Initialize uniform distribution ¯μ0 ← μ0,0 
+
+> 2:
+
+Initialize uniform policy ¯π0 ← π0,0 
+
+> 3:
+
+for i = 0 , 1, . . . , I − 1 do  
+
+> 4:
+
+Initialize DQN agent with fresh network weights  
+
+> 5:
+
+for e = 0 , 1, . . . , E − 1 do  
+
+> 6:
+
+Reset environment with population playing (¯ μi, ¯πi) 
+
+> 7:
+
+Representative agent plays episode e against the population and updates DQN [26, 45]  
+
+> 8:
+
+end for  
+
+> 9:
+
+Compute πi,E as the greedy policy of the trained DQN agent  
+
+> 10:
+
+Compute μi,E [x] = 1
+
+> N
+
+PNj=1 1[xj = x] for any x ∈ X as the empirical population state distribution at the end of episode E 
+
+> 11:
+
+Update the state distribution and population policy: 
+
+¯μi+1 ← ii + 1 ¯μi + 1
+
+i + 1 μi,E , ¯πi+1 ← ii + 1 ¯πi + 1
+
+i + 1 πi,E (10)  
+
+> 12:
+
+end for  
+
+> 13:
+
+return (¯ μI , ¯πI )
+
+practically implementable, and as a demonstration that the combination of deep RL and fictitious play is a viable approach to model-free equilibrium learning in the DPG setting. Finally, we acknowledge that a theoretical analysis of the convergence of Algorithm 1 remains an open problem. Existing convergence results for model-free learning in GMFGs typically rely on strong structural assumptions that are not satisfied by the Karma DPG, such as the contractivity of the mean field operator and the uniqueness of the equilibrium [ 15 , 16 ]. As discussed in section 3, the Karma DPG only guarantees existence of at least one SNE under continuity of the game primitives [10], making it a challenging but practically relevant setting for convergence analysis. 
+
+## 6 Experimental Evaluation 
+
+The experiments are structured in two parts. In subsection 6.1, we validate the theoretical guarantees of Theorem 4.1 by analyzing the behavior of a single novel agent joining a Karma DPG already at its SNE. In subsection 6.2, we evaluate the FP-DQN algorithm empirically, showing that a population of agents can converge to a configuration close to the centrally computed SNE starting from scratch, without any knowledge of the game model. For both parts, full implementation details, including hyperparameter configurations and training schedules, are reported in subsection A.3. 
+
+6.1 Novel Learning Agent in a Karma Economy at Equilibrium 
+
+We consider a simple instance of Karma economy, where the players possess an average amount of karma equal to ¯k = 10 , with K = 40 . The agents also have two different urgency levels, i.e., 
+
+U = {u1 = 1 , u 2 = 5 }, and ϕ[u2|u1] = ϕ[u1|u2] = 0 .5. The SNE (μ∗, π ∗) is computed centrally using the evolutionary dynamics algorithm of Elokda et al. [ 9 ], and serves as the ground truth against which the learned policy is evaluated throughout. The novel agent is trained with DQN [ 26 ] with 
+
+ε-greedy exploration for 1M steps. 
+
+Metrics To measure the distance between the learned policy ˆπ and the equilibrium policy π∗
+
+throughout training, we adopt the Wasserstein-1 distance averaged over states: 
+
+W(ˆ π, π ∗) = 1
+
+|X | 
+
+X
+
+> x∈X
+
+W1
+
+ ˆπ(· | x), π ∗(· | x), (11) where W1(·, ·) denotes the Wasserstein-1 [ 39 , 22 ] distance between two probability distributions over A, which measures the minimum cost of transporting one distribution into the other, with cost proportional to the distance between bid values. As an additional metric, we also report the value gap 
+
+between the learned policy ˆπ and the equilibrium policy π∗, estimated by periodically running an 7evaluation phase during training. Specifically, every 10k training steps, we run 10 evaluation episodes in which the population plays at the SNE (μ∗, π ∗). The agent is evaluated twice: once following greedily its current learned policy ˆπ, and once following the equilibrium policy π∗. The value gap is then estimated as the difference in average cumulative undiscounted returns bE(ˆ π) = ¯Gπ∗
+
+− ¯Gˆπ ,where ¯Gπ denotes the average cumulative undiscounted return across the 10 evaluation episodes under policy π, with the population playing at (μ∗, π ∗) throughout. By construction, bE(ˆ π) ≥ 0, with 
+
+bE(ˆ π) = 0 indicating that the agent achieves the same return as an equilibrium player. 1 2 3 4 5 6 7 8 9 10                        
+
+> Environment Steps (×10 5)
+> 1.00
+> 1.25
+> 1.50
+> 1.75
+> 2.00
+> Wasserstein distance
+> 12345678910
+> Environment Steps (×10 5)
+> 0.08
+> 0.16
+> 0.24
+> 0.32
+> 0.40
+> Value gap
+> Ns= 50k Ns= 100k Ns= 500k Ns= 1M Ns= 50k Ns= 100k Ns= 500k Ns= 1M
+
+(a) Wasserstein distance and value gap during training for varying buffer sizes Ns, with the agent trained against the fixed mean field (μ∗, π ∗). Shaded regions: 95% confidence interval across 10 seeds. 1 2 3 4 5 6 7 8 9 10                        
+
+> Environment Steps (×10 5)
+> 1.2
+> 1.5
+> 1.8
+> 2.1
+> Wasserstein distance
+> 12345678910
+> Environment Steps (×10 5)
+> 0.15
+> 0.30
+> 0.45
+> Value gap
+> N= 100 N= 200 N= 500 N= 1000 N= 100 N= 200 N= 500 N= 1000
+
+(b) Wasserstein distance and value gap during training for varying population sizes N , with fixed Ns = 1M . Shaded regions: 95% confidence interval across 10 seeds. 
+
+Figure 1: Empirical validation of Theorem 4.1. 
+
+Results To evaluate separately the two sources of suboptimality identified in Theorem 4.1, we conduct two experi-ments corresponding to the two compo-nents of the bound. In the first experi-ment, the novel agent is trained directly against the centrally computed mean field 
+
+(μ∗, π ∗), i.e., in the setting described in section 4. This isolates the DQN ap-proximation error by removing any mean field perturbation. We train the agent for 
+
+Ns ∈ { 50 k, 100 k, 500 k, 1M}, and report 
+
+W(ˆ π, π ∗) and bE(ˆ π) during training for each configuration in Figure 1a. Both met-rics exhibit an overall decreasing trend across training for all buffer size configu-rations, confirming that the DQN agent progressively learns a policy closer to the equilibrium. As predicted by Theo-rem 4.1, larger replay buffers lead to lower asymptotic error: the agent trained with 
+
+Ns = 1M achieves the lowest Wasserstein distance and value gap at convergence, while Ns = 50k converges to a notice-ably higher error floor. In the second experiment instead, the novel agent is trained against an actual population of N agents playing at the SNE (μ∗, π ∗). This introduces the mean field perturbation effect analyzed in section 4. We fix the replay buffer size to 
+
+Ns = 1M and vary the population size N ∈ { 100 , 200 , 500 , 1000 }, reporting W(ˆ π, π ∗) and bE(ˆ π)
+
+during training for each configuration in Figure 1b. The qualitative behavior mirrors that of the first experiment: both metrics decrease during training for almost all population sizes, with larger 
+
+N leading to lower asymptotic error, consistently with the O(1 /N ) mean field perturbation bound of Theorem 4.1. As the population grows, the influence of the new agent’s non-equilibrium policy on the mean field diminishes, and the MDP it faces becomes progressively closer to the stationary equilibrium MDP of the first experiment. Notably, the agent trained with N = 1000 achieves perfor-mance comparable to the fixed mean field setting with Ns = 1M , suggesting that for sufficiently large populations the mean field perturbation error becomes negligible relative to the DQN approximation error, consistently with Theorem 4.1. A visual comparison of the learned and equilibrium policies is reported in subsection A.4. 
+
+6.2 From scratch Equilibrium Learning in Karma DPGs 
+
+We now evaluate the FP-DQN algorithm, studying whether a population of N agents can converge to a configuration close to the centrally computed SNE starting from a uniform initialization, without any knowledge of the game model. We consider two instances of Karma economy: the instance introduced in subsection 6.1, whose results are reported in subsection A.4 for completeness, and a second instance which we use as the primary setting for the results presented in this section. The players possess an average amount of karma equal to ¯k = 10 , with K = 40 , and they have three different urgency levels, i.e., U = {u1 = 1 , u 2 = 1 , u 3 = 10 }. The agents are typically lowly urgent 8(u1 = 1) , and have a rare occurrence of being highly urgent (u3 = 10) , following the urgency process 
+
+ϕ[u+|u], with rows (0 .95 , 0.05 , 0) , (0 , 0.5, 0.5) , and (0 .95 , 0.05 , 0) for u1, u 2, u 3 respectively. For both instances, the centralized SNE (μ∗, π ∗) is computed also in this case using the evolutionary dynamics algorithm of Elokda et al. [9], serving as the ground truth benchmark. 
+
+Metrics We track across outer iterations i = 0 , 1, . . . , I − 1 of Algorithm 1 the Wasserstein distances W(¯ πi, π ∗) and W1(¯ μi, μ ∗) between the current fictitious play iterates and the centralized Stationary Nash Equilibrium, where W(·, ·) is defined in (11) and W1(·, ·) denotes the Wasserstein-1 distance between state distributions, as described in subsection 6.1. 0 20 40 60 80 100     
+
+> Fictitious Play Iterations
+> 1.5
+> 3.0
+> 4.5
+> 6.0
+> Wasserstein distance  W1( ¯ μi, μ ∗)
+> W( ¯ πi, π ∗)
+
+Figure 2: Wasserstein dis-tances between the FP-DQN it-erates and the centralized SNE 
+
+(μ∗, π ∗) across fictitious play it-erations. Shaded regions rep-resent 95% confidence interval across 10 random seeds. 
+
+Results Figure 2 reports the Wasserstein distances between the FP-DQN iterates (¯ μi, ¯πi) and the centralized SNE (μ∗, π ∗) across training. Both W1(¯ μi, μ ∗) and W(¯ πi, π ∗) decrease rapidly and stabilize at low values, indicating that the algorithm converges to a configuration close to the centrally computed SNE within a mod-erate number of iterations. The policy distance W(¯ πi, π ∗) starts from a higher value than the distribution distance W1(¯ μi, μ ∗),which is consistent with the fact that learning a good policy is a harder task than converging to the correct state distribution: the distribution is shaped passively by the dynamics once the policy improves, while the policy itself must be actively learned by the DQN agent. We remark that convergence to a configuration close to (μ∗, π ∗) was not guaranteed a priori: in the absence of unique-ness conditions, the algorithm could in principle have converged to a different fixed point or failed to converge altogether. Remarkably, agents with no knowledge of the game appear to rediscover the same SNE that a centralized algorithm computes with complete access to the game primitives. Finally, Figure 3 presents a direct visual comparison between the centrally computed SNE (μ∗, π ∗)
+
+and the approximate equilibrium (¯ μI , ¯πI ) returned by FP-DQN at convergence, confirming that the algorithm correctly captures the qualitative structure of both the equilibrium policy and distribution. 0 5 10 15 20 25 30 35 40                                                               
+
+> Karma
+> 0
+> 5
+> 10
+> 15
+> 20
+> 25
+> 30
+> 35
+> 40
+> Expected bid
+> u1= 1
+> 0510 15 20 25 30 35 40
+> Karma
+> 0
+> 5
+> 10
+> 15
+> 20
+> 25
+> 30
+> 35
+> 40
+> u2= 1
+> 0510 15 20 25 30 35 40
+> Karma
+> 0
+> 5
+> 10
+> 15
+> 20
+> 25
+> 30
+> 35
+> 40
+> u3= 10
+> 0510 15 20 25 30 35 40
+> Karma
+> 0.00
+> 0.03
+> 0.06
+> 0.09
+> 0.12
+> Probability
+> u1= 1
+> 0510 15 20 25 30 35 40
+> Karma
+> 0.00
+> 0.03
+> 0.06
+> 0.09
+> 0.12
+> u2= 1
+> 0510 15 20 25 30 35 40
+> Karma
+> 0.00
+> 0.03
+> 0.06
+> 0.09
+> 0.12
+> u3= 10
+> SNE (μ∗, π ∗)FP-DQN ( ¯ μI,¯πI)SNE (μ∗, π ∗)FP-DQN ( ¯ μI,¯πI)
+
+Figure 3: Comparison of the centrally computed SNE (μ∗, π ∗) and the approximate equilibrium 
+
+(¯ μI , ¯πI ) returned by FP-DQN, averaged across 10 seeds. Top: expected bid as a function of karma balance for each urgency level. Bottom: stationary karma distribution for each urgency level. 
+
+## 7 Conclusions 
+
+This paper studied model-free equilibrium learning in Karma DPGs, a class of GMFGs for fair resource allocation. We provided theoretical guarantees for a novel agent joining a Karma DPG at its SNE and learning via DQN, establishing a suboptimality bound on the learned policy. Additionally, we showed empirically that combining deep RL with FP and smoothed policy iteration allows agents 9to converge close to the centrally computed SNE without any knowledge of the game model. We acknowledge that extending convergence guarantees to the from-scratch setting remains an open problem, as well as the uniqueness of the SNE. Additionally, the explicit histogram representation of the population state distribution is feasible in the finite state-action setting of DPGs, but would become intractable in continuous state spaces; extending the framework to such settings, for instance by leveraging generative models [29] is a promising avenue for future work. 
+
+Broader Impact This work contributes to the practical deployment of a class of fair non-monetary resource allocation mechanisms. By enabling agents to learn from individual experience alone, our results bring such mechanisms closer to real-world applicability in domains where fairness and accessibility are critical. We do not foresee significant negative societal impacts from this work. 
+
+## References 
+
+[1] Marc G Bellemare, Georg Ostrovski, Arthur Guez, Philip Thomas, and Rémi Munos. Increasing the action gap: New operators for reinforcement learning. In Proceedings of the AAAI conference on artificial intelligence , volume 30, 2016. [2] George W Brown. Iterative solution of games by fictitious play. Act. Anal. Prod Allocation ,13(1):374, 1951. [3] Pierre Cardaliaguet and Saeed Hadikhanloo. Learning in mean field games: the fictitious play. 
+
+ESAIM: Control, Optimisation and Calculus of Variations , 23(2):569–591, 2017. [4] Pierre Cardaliaguet and Charles-Albert Lehalle. Mean field game of controls and an application to trade crowding. Mathematics and Financial Economics , 12(3):335–363, 2018. [5] Matteo Cederle, Saverio Bolognani, and Gian Antonio Susto. Towards fair and efficient allocation of mobility-on-demand resources through a karma economy. In Proceedings of the 24th European Control Conference (ECC) , 2026. [6] Andrea Censi, Saverio Bolognani, Julian G Zilly, Shima Sadat Mousavi, and Emilio Frazzoli. Today me, tomorrow thee: Efficient resource allocation in competitive settings using karma games. arXiv preprint arXiv:1907.09198 , 2019. [7] Kai Cui and Heinz Koeppl. Approximately solving mean field games via entropy-regularized deep reinforcement learning. In International Conference on Artificial Intelligence and Statistics ,pages 1909–1917. PMLR, 2021. [8] Romuald Elie, Julien Perolat, Mathieu Laurière, Matthieu Geist, and Olivier Pietquin. On the convergence of model free learning in mean field games. In Proceedings of the AAAI Conference on Artificial Intelligence , volume 34, pages 7143–7150, 2020. [9] Ezzat Elokda, Saverio Bolognani, Andrea Censi, Florian Dörfler, and Emilio Frazzoli. Dynamic population games: A tractable intersection of mean-field games and population games. IEEE Control Systems Letters , 8:1072–1077, 2024. [10] Ezzat Elokda, Saverio Bolognani, Andrea Censi, Florian Dörfler, and Emilio Frazzoli. Aself-contained karma economy for the dynamic allocation of common resources. Dynamic Games and Applications , 14(3):578–610, 2024. [11] Ezzat Elokda, Carlo Cenedese, Kenan Zhang, Andrea Censi, John Lygeros, Emilio Frazzoli, and Florian Dörfler. Carma: Fair and efficient bottleneck congestion management via nontradable karma credits. Transportation Science , 59(2):340–359, 2025. [12] Ezzat Elokda, Andrea Censi, Emilio Frazzoli, Florian Dörfler, and Saverio Bolognani. A vision for trustworthy, fair, and efficient socio-technical control using karma economies. Annual Reviews in Control , 60:101026, 2025. [13] Jean-Pierre Fouque, Mathieu Laurière, and Mengrui Zhang. Convergence of actor-critic learning for mean field games and mean field control in continuous spaces. arXiv preprint arXiv:2511.06812 , 2025. 10 [14] Yuan Gao, Alex Peysakhovich, and Christian Kroer. Online market equilibrium with application to fair division. Advances in Neural Information Processing Systems , 34:27305–27318, 2021. [15] Xin Guo, Anran Hu, Renyuan Xu, and Junzi Zhang. Learning mean-field games. Advances in neural information processing systems , 32, 2019. [16] Xin Guo, Anran Hu, Renyuan Xu, and Junzi Zhang. A general framework for learning mean-field games. Mathematics of Operations Research , 48(2):656–686, 2023. [17] Minyi Huang, Roland P Malhamé, and Peter E Caines. Large population stochastic dynamic games: closed-loop mckean-vlasov systems and the nash certainty equivalence principle. 2006. [18] Aanund Hylland. Strategy proofness of voting procedures with lotteries as outcomes and infinite sets of strategies. Technical report, mimeo, 1980. [19] Aanund Hylland and Richard Zeckhauser. The efficient allocation of individuals to positions. 
+
+Journal of Political economy , 87(2):293–314, 1979. [20] Jean-Michel Lasry and Pierre-Louis Lions. Mean field games. Japanese journal of mathematics ,2(1):229–260, 2007. [21] Mathieu Lauriere, Sarah Perrin, Sertan Girgin, Paul Muller, Ayush Jain, Theophile Cabannes, Georgios Piliouras, Julien Pérolat, Romuald Elie, Olivier Pietquin, et al. Scalable deep rein-forcement learning algorithms for mean field games. In International conference on machine learning , pages 12078–12095. PMLR, 2022. [22] Mathieu Laurière, Sarah Perrin, Julien Pérolat, Sertan Girgin, Paul Muller, Romuald Élie, Matthieu Geist, and Olivier Pietquin. Learning in mean field games: A survey. arXiv preprint arXiv:2205.12944 , 2022. [23] Mathieu Laurière, Jiahao Song, and Qing Tang. Policy iteration method for time-dependent mean field games systems with non-separable hamiltonians. Applied Mathematics & Optimization ,87(2):17, 2023. [24] Lorenzo Magnino, Jiacheng Shen, Matthieu Geist, Olivier Pietquin, and Mathieu Laurière. Bench-mfg: A benchmark suite for learning in stationary mean field games. arXiv preprint arXiv:2602.12517 , 2026. [25] Weichao Mao, Haoran Qiu, Chen Wang, Hubertus Franke, Zbigniew Kalbarczyk, Ravishankar Iyer, and Tamer Basar. A mean-field game approach to cloud resource management with function approximation. Advances in Neural Information Processing Systems , 35:36243–36258, 2022. [26] Volodymyr Mnih, Koray Kavukcuoglu, David Silver, Andrei A Rusu, Joel Veness, Marc G Bellemare, Alex Graves, Martin Riedmiller, Andreas K Fidjeland, Georg Ostrovski, et al. Human-level control through deep reinforcement learning. nature , 518(7540):529–533, 2015. [27] Antonio Ocello, Daniil Tiapkin, Lorenzo Mancini, Mathieu Lauriere, and Eric Moulines. Finite-sample convergence bounds for trust region policy optimization in mean-field games. arXiv preprint arXiv:2505.22781 , 2025. [28] Julien Perolat, Sarah Perrin, Romuald Elie, Mathieu Laurière, Georgios Piliouras, Matthieu Geist, Karl Tuyls, and Olivier Pietquin. Scaling up mean field games with online mirror descent. 
+
+arXiv preprint arXiv:2103.00623 , 2021. [29] Sarah Perrin, Mathieu Laurière, Julien Pérolat, Matthieu Geist, Romuald Élie, and Olivier Pietquin. Mean field games flock! the reinforcement learning way. arXiv preprint arXiv:2105.07933 , 2021. [30] Sarah Perrin, Julien Pérolat, Mathieu Laurière, Matthieu Geist, Romuald Elie, and Olivier Pietquin. Fictitious play for mean field games: Continuous time analysis and applications. 
+
+Advances in neural information processing systems , 33:13199–13213, 2020. 11 [31] Viktoriya Petrakova and Olga Krivorotko. Mean field game for modeling of covid-19 spread. 
+
+Journal of Mathematical Analysis and Applications , 514(1):126271, 2022. [32] William H Sandholm. Population games and evolutionary dynamics . MIT press, 2010. [33] Jayakumar Subramanian and Aditya Mahajan. Reinforcement learning in stationary mean-field games. In Proceedings of the 18th international conference on autonomous agents and multiagent systems , pages 251–259, 2019. [34] Mohammad Amin Tajeddini and Hamed Kebriaei. A mean-field game method for decentralized charging coordination of a large population of plug-in electric vehicles. IEEE Systems Journal ,13(1):854–863, 2018. [35] Qing Tang and Jiahao Song. Learning optimal policies in potential mean field games: Smoothed policy iteration algorithms. SIAM Journal on Control and Optimization , 62(1):351–375, 2024. [36] Hado Van Hasselt, Arthur Guez, and David Silver. Deep reinforcement learning with double q-learning. In Proceedings of the AAAI conference on artificial intelligence , volume 30, 2016. [37] William Vickrey. Counterspeculation, auctions, and competitive sealed tenders. The Journal of finance , 16(1):8–37, 1961. [38] William S Vickrey. Congestion theory and transport investment. The American economic review , 59(2):251–260, 1969. [39] Cédric Villani et al. Optimal transport: old and new , volume 338. Springer, 2009. [40] Zida Wu, Mathieu Laurière, Samuel Jia Cong Chua, Matthieu Geist, Olivier Pietquin, and Ankur Mehta. Population-aware online mirror descent for mean-field games by deep reinforcement learning. arXiv preprint arXiv:2403.03552 , 2024. [41] Qiaomin Xie, Zhuoran Yang, Zhaoran Wang, and Andreea Minca. Learning while playing in mean-field games: Convergence and optimality. In International Conference on Machine Learning , pages 11436–11447. PMLR, 2021. [42] Yaodong Yang, Rui Luo, Minne Li, Ming Zhou, Weinan Zhang, and Jun Wang. Mean field multi-agent reinforcement learning. In International conference on machine learning , pages 5571–5580. PMLR, 2018. [43] Batuhan Yardim, Semih Cayci, Matthieu Geist, and Niao He. Policy mirror ascent for efficient and independent learning in mean field games. In International Conference on Machine Learning , pages 39722–39754. PMLR, 2023. [44] Sihan Zeng, Sujay Bhatt, Alec Koppel, and Sumitra Ganesh. A policy optimization approach to the solution of unregularized mean field games. In ICML 2024 Workshop: Foundations of Reinforcement Learning and Control–Connections and Perspectives , 2024. [45] Shuai Zhang, Hongkang Li, Meng Wang, Miao Liu, Pin-Yu Chen, Songtao Lu, Sijia Liu, Keerthiram Murugesan, and Subhajit Chaudhury. On the convergence and sample complexity analysis of deep q-networks with ε-greedy exploration. Advances in Neural Information Processing Systems , 36:13064–13102, 2023. 12 A Appendix 
+
+This appendix provides theoretical derivations, algorithmic details, and extended empirical results to support the main paper. It is organized as follows: • subsection A.1 : Karma transition probability • subsection A.2 : Complete derivations for Lemma 4.1 and Theorem 4.1 • subsection A.3 : Hyperparameters, experimental details, and hardware configuration • subsection A.4 : Additional results 13 A.1 Karma transition probability 
+
+As already mentioned in section 3, we consider for this work the pay bid to society scheme [ 10 ], where each agent pays its bid if it is selected, and nothing otherwise. We begin by defining the resource competition outcome probability for the ego agent, given its bid and the full mean field: 
+
+γ[o|a]( μ, π ) = X
+
+> a′
+
+X
+
+> u′,k ′
+
+μ[u′, k ′]π[a′|u′, k ′]P[o|a, a ′]. (12) According to this scheme, the conditional payment of the ego agent is p[a, o ] = a if o = win , and 0
+
+otherwise. Therefore, the average generated surplus is 
+
+¯p(μ, π ) = X
+
+> u,k
+
+μ[u, k ] X
+
+> a
+
+π[a|u, k ]γ[o = win |a]( μ, π )a, (13) which leads to the following redistribution rule: distribute ⌊¯p(μ, π )⌋ to a fraction f low (μ, π ) := 
+
+⌈¯p(μ, π )⌉ − ¯p(μ, π ) of randomly selected agents, and ⌈¯p(μ, π )⌉ to the remaining fraction f high := 1 − f low . Finally, we get the following karma transition function: 
+
+κ[k+|k, a ]( μ, π ) = X
+
+> o
+
+γ[o|a]( μ, π )κ[k+|k, a, o ]( μ, π ), with (14) 
+
+κ[k+|k, a, o ]( μ, π ) = 
+
+
+
+f low (μ, π ), o = win , k + = k − a + ⌊¯p(μ, π )⌋
+
+f high (μ, π ), o = win , k + = k − a + ⌈¯p(μ, π )⌉
+
+f low (μ, π ), o = lose , k + = k + ⌊¯p(μ, π )⌋
+
+f high (μ, π ), o = lose , k + = k + ⌈¯p(μ, π )⌉
+
+0, otherwise .
+
+(15) 14 A.2 Complete derivations for Lemma 4.1 and Theorem 4.1 
+
+Proof. of Lemma 4.1 
+
+Reward function: Recall that in the Karma DPG, the reward function can be written as 
+
+r[u, k, a ]( μ, π ) = r[u, a ]( μ, π ) = u X
+
+> a′
+
+X
+
+> u,k
+
+μ[u, k ]π[a|u, k ]P[o = win |a, a ′], (16) The map (μ, π ) 7 → r is bilinear on the finite-dimensional set M × Π, hence Lipschitz. 
+
+State transition probability: The state transition probability p[x+ | x, a ]( μ, π ) in the Karma DPG is 
+
+p[x+ | x, a ]( μ, π ) = ϕ[u+|u]κ[k+|k, a ]( μ, π ). (17) The kernel κ, defined in (14) , depends on (μ, π ) only through expectations, and is formed through finite sums and piecewise affine operations. Hence κ, and therefore also p is Lipschitz on M × Π.Since M × Π is compact, all Lipschitz constants can be chosen uniformly over (x, a, x +).
+
+Proof. of Theorem 4.1 With N − 1 agents at equilibrium playing policy π∗ and one new agent with current policy ˜πt, the empirical population mean field at outer iteration t of the DQN algorithm [45] is: 
+
+˜st = (˜ μt, ˜πpop t ) = 
+
+ N − 1
+
+N μ∗ + 1
+
+N ˜μagent t , N − 1
+
+N π∗ + 1
+
+N ˜πt
+
+
+
+, (18) where ˜μagent t is the stationary state distribution induced by ˜πt on the perturbed MDP. Therefore: 
+
+∥˜st − s∗∥ = 1
+
+N
+
+ ˜μagent t − μ∗, ˜πt − π∗ ≤ C0
+
+N , (19) where C0 = sup s,s ′∈M× Π ∥s − s′∥ is the diameter of M × Π, which is finite since both spaces are probability simplices over finite sets. This bound holds uniformly over all t ≥ 0 and all possible policies ˜πt ∈ Π, regardless of the learning trajectory of the new agent. Now, we observe that under Lemma 4.1, for any two mean fields s, s ′ ∈ M × Π:
+
+∥Q∗[·, ·]( s) − Q∗[·, ·]( s′)∥∞ ≤ L ∥s − s′∥ , (20) where 
+
+L := (1 − α)Lr + αR max |X | Lp
+
+(1 − α)2 . (21) This is because for fixed s, the optimal Q-function Q∗[·, ·]( s) is the unique fixed point of the Bellman operator: 
+
+(TsQ)[ x, a ] := r[x, a ]( s) + α X
+
+> x′∈X
+
+p[x′ | x, a ]( s) max  
+
+> a′∈A [x′]
+
+Q[x′, a ′], (22) which is a contraction with modulus α ∈ [0 , 1) in the ∥·∥ ∞ norm. Denote Q = Q∗[·, ·]( s) and 
+
+Q′ = Q∗[·, ·]( s′). Since both are fixed points of their respective operators: 
+
+Q − Q′ = TsQ − T s′ Q′ = ( TsQ − T sQ′)
+
+| {z }
+
+> (A)
+
++ ( TsQ′ − T s′ Q′)
+
+| {z }
+
+> (B)
+
+. (23) By the contraction property of Ts:
+
+∥(A)∥∞ ≤ α ∥Q − Q′∥∞ . (24) Then, expanding using the definition of Ts and Ts′ :
+
+∥(B)∥∞ ≤ ∥ r[·, ·]( s) − r[·, ·]( s′)∥∞ + α|X | ∥ p[·|· , ·]( s) − p[·|· , ·]( s′)∥∞ · ∥ V ∗[·]( s′)∥∞ , (25) where V ∗[x]( s′) = max a′ Q′[x, a ′]( s′) satisfies ∥V ∗[·]( s′)∥∞ ≤ Rmax /(1 − α). Applying Lemma 4.1: 
+
+∥(B)∥∞ ≤
+
+
+
+Lr + αR max |X | 
+
+1 − α Lp
+
+
+
+∥s − s′∥ . (26) 15 Now, taking the ∥·∥ ∞ norm of (23) and applying (24)–(26): 
+
+∥Q − Q′∥∞ ≤ α ∥Q − Q′∥∞ +
+
+
+
+Lr + αR max |X | 
+
+1 − α Lp
+
+
+
+∥s − s′∥ . (27) Rearranging (valid since α < 1) yields (20) with L as in (21). Finally, applying (20) with s = ˜ st, s′ = s∗, and using (19): 
+
+∥Q∗[·, ·](˜ st) − Q∗[·, ·]( s∗)∥∞ ≤ L · C0
+
+N = CM F 
+
+N , (28) where CM F = L · C0 as in (8) . This bound holds uniformly in t and independently of the learning trajectory. We are now ready to show that the DQN algorithm converges to a policy close to π∗. A key observation is that within each outer iteration t of Algorithm 1 in [ 45 ], the target network weights 
+
+W (t, 0) are fixed. Since the new agent’s policy is determined by W (t, 0) , the mean field ˜st is also fixed within iteration t (cf. (18) ). Therefore, within each outer iteration t, the new agent faces a stationary 
+
+MDP Mt with fixed mean field ˜st. The MDP only changes when moving from outer iteration t
+
+to t + 1 , which is exactly the across-iteration non-stationarity already handled in [ 45 ] through the time-varying replay buffer Dt and the distribution shift term Ct ∈ [0 , 1] , defined by Zhang et al. as the fraction of non-optimal state-action pairs (x, a ) in the greedy policy with respect to Q(W (t, 0) ).Since Mt is a stationary MDP with finite state-action space, Assumption 1 in [ 45 ] guarantees the existence of W ∗(˜ st) achieving zero MSBE on Mt. The results of [ 45 ] (Theorem 1) therefore apply directly to Mt at each outer iteration t, giving convergence of the DQN iterates to Q∗[·, ·](˜ st) up to estimation error O(1 /√Ns).We recall that the term Ct in [ 45 ] measures the fraction of state-action pairs where the current greedy policy differs from the optimal policy. In our setting, the optimal policy of Mt is π∗ 
+
+> ˜st
+
+, which potentially differs from π∗ 
+
+> s∗
+
+because the MDP changes across iterations. We now show that under Assumption 4.1 and the condition N > 2CM F /δ , this difference is in fact zero. The optimal policies π∗ 
+
+> ˜st
+
+and π∗ 
+
+> s∗
+
+can only disagree at states x where the perturbation is large enough to flip the argmax, i.e. where there exist actions a1̸ = a2 such that: 
+
+Q∗[x, a 1]( s∗) ≥ Q∗[x, a 2]( s∗) but Q∗[x, a 1](˜ st) < Q ∗[x, a 2](˜ st). (29) For (29) to hold, the Q-function gap between a1 and a2 under s∗ must satisfy: 
+
+Q∗[x, a 1]( s∗) − Q∗[x, a 2]( s∗) < 2 ∥Q∗[·, ·](˜ st) − Q∗[·, ·]( s∗)∥∞ ≤ 2CM F 
+
+N , (30) where the last inequality uses (28) . However, by Assumption 4.1, the minimum action gap at the equilibrium satisfies: 
+
+Q∗[x, π ∗(x)]( s∗) − max  
+
+> a̸=π∗(x)
+
+Q∗[x, a ]( s∗) ≥ δ ∀x ∈ X . (31) Recall that we have 2CM F /N < δ , so (30) cannot be satisfied for any x ∈ X . Therefore: 
+
+π∗ 
+
+> ˜st
+
+[x] = π∗ 
+
+> s∗
+
+[x] ∀x ∈ X , ∀t, (32) and hence Ct in our setting coincides exactly with Ct in [ 45 ]. The across-iteration non-stationarity introduces no additional error beyond what is already accounted for in the analysis of [45]. By the above, the conditions of Theorem 1 in [ 45 ] are fully satisfied in our setting at each outer iteration. At convergence (i.e. for T ≥ log ρ(1 /N s) outer iterations, where ρ = α + cε(1 − α) < 1,
+
+cε defined as in [45]), the learned weights ˆW satisfy: 
+
+sup 
+
+> x,a
+
+Q( ˆW ; x, a ) − Q∗[x, a ](˜ sT ) ≤ CDQN 
+
+√Ns
+
+, (33) where ˜sT is the mean field at the final outer iteration T .16 Applying the triangle inequality to (33) and (28): 
+
+sup 
+
+> x,a
+
+Q( ˆW ; x, a ) − Q∗[x, a ]( s∗) ≤ sup 
+
+> x,a
+
+Q( ˆW ; x, a ) − Q∗[x, a ](˜ sT )
+
++ ∥Q∗[·, ·](˜ sT ) − Q∗[·, ·]( s∗)∥∞
+
+≤ CDQN 
+
+√Ns
+
++ CM F 
+
+N , (34) which completes the proof. 17 A.3 Hyperparameters, experimental details, and hardware configuration 
+
+All the models were trained on a server equipped with 2 AMD EPYC 9224 CPUs (48 cores, 96 threads), 1.5 TB of RAM, and 6 NVIDIA L40S GPUs (46 GB VRAM each). All the results presented in the paper are averaged across 10 independent random seeds, with 95% confidence intervals computed via the standard error of the mean. For all the experiments, we consider the discount factor 
+
+α = 0 .98 , and episodes composed by 1000 interaction steps. 
+
+DQN architecture and training The Q-network is a fully connected neural network with 2 hidden layers of 64 neurons each, with ReLU activations. The input to the network is the state representation 
+
+x = [ u, k ] ∈ X , encoded as a one-hot vector for u, concatenated with a scalar equal to k normalized by K. The output is a vector of |A| = K + 1 values, one per action. The network is trained using the RMSprop optimizer with learning rate η = 0 .0003 . The target network is updated every 1000 gradient steps. Mini-batches of size 128 are sampled uniformly from the replay buffer at each gradient step. The ε-greedy schedule decays geometrically from ε0 = 1 to εmin = 0 .01 over 1M steps. Similarly to Zhang et al. [ 45 ], we consider the Double DQN architecture [ 36 ]. Finally, action masking is applied at each step to enforce the karma feasibility constraint a ≤ k, ensuring the agent never selects a bid exceeding its current balance. 
+
+FP-DQN hyperparameters. The FP-DQN algorithm is run for I = 100 outer iterations, each consisting of E =100 episodes of 1000 steps each. The DQN agent is re-initialized with fresh network weights at the start of each outer iteration. The empirical state distribution μi,E is computed as the normalized histogram of population states at the end of episode E, with population size 
+
+N =1000. 18 A.4 Additional results Novel Learning Agent in a Karma Economy at Equilibrium Figures 4- 7 report the expected bid as a function of karma balance for the centrally computed SNE policy π∗ and the learned policies 
+
+ˆπ obtained in all the tested configurations of the two experiments of subsection 6.1. Considering in particular Figure 7, we observe that both learned policies closely recover the qualitative structure of the equilibrium. These observations are consistent with the quantitative results of Figure 1: the policy learned with Ns = 1M is slightly closer to π∗ than the one learned with N = 1000 , reflecting the additional O(1 /N ) mean field perturbation error present in the second experiment. 0 5 10 15 20 25 30 35 40                             
+
+> Karma
+> 0
+> 3
+> 6
+> 9
+> 12
+> 15
+> Expected bid
+> SNE policy π∗
+> 0510 15 20 25 30 35 40
+> Karma
+> 0
+> 3
+> 6
+> 9
+> 12
+> 15 Learned policy ˆπwith Ns= 50 k
+> 0510 15 20 25 30 35 40
+> Karma
+> 0
+> 3
+> 6
+> 9
+> 12
+> 15 Learned policy ˆπwith N= 100
+
+u=1 u=5 u=1 u=5 
+
+Figure 4: Comparison of the centrally computed equilibrium policy π∗ and the learned policies by setting Ns = 50 k and N = 100 , respectively. The results are averaged across 10 seeds. 0 5 10 15 20 25 30 35 40                             
+
+> Karma
+> 0
+> 3
+> 6
+> 9
+> 12
+> 15
+> Expected bid
+> SNE policy π∗
+> 0510 15 20 25 30 35 40
+> Karma
+> 0
+> 3
+> 6
+> 9
+> 12
+> 15 Learned policy ˆπwith Ns= 100 k
+> 0510 15 20 25 30 35 40
+> Karma
+> 0
+> 3
+> 6
+> 9
+> 12
+> 15 Learned policy ˆπwith N= 200
+
+u=1 u=5 u=1 u=5 
+
+Figure 5: Comparison of the centrally computed equilibrium policy π∗ and the learned policies by setting Ns = 100 k and N = 200 , respectively. The results are averaged across 10 seeds. 0 5 10 15 20 25 30 35 40                             
+
+> Karma
+> 0
+> 3
+> 6
+> 9
+> 12
+> 15
+> Expected bid
+> SNE policy π∗
+> 0510 15 20 25 30 35 40
+> Karma
+> 0
+> 3
+> 6
+> 9
+> 12
+> 15 Learned policy ˆπwith Ns= 500 k
+> 0510 15 20 25 30 35 40
+> Karma
+> 0
+> 3
+> 6
+> 9
+> 12
+> 15 Learned policy ˆπwith N= 500
+
+u=1 u=5 u=1 u=5 
+
+Figure 6: Comparison of the centrally computed equilibrium policy π∗ and the learned policies by setting Ns = 500 k and N = 500 , respectively. The results are averaged across 10 seeds. 19 0 5 10 15 20 25 30 35 40                               
+
+> Karma
+> 0
+> 3
+> 6
+> 9
+> 12
+> 15
+> Expected bid
+> SNE policy π∗
+> 0510 15 20 25 30 35 40
+> Karma
+> 0
+> 3
+> 6
+> 9
+> 12
+> 15 Learned policy ˆπwith Ns= 1 M
+> 0510 15 20 25 30 35 40
+> Karma
+> 0
+> 3
+> 6
+> 9
+> 12
+> 15 Learned policy ˆπwith N= 1000
+> u=1 u=5 u=1 u=5
+
+Figure 7: Comparison of the centrally computed equilibrium policy π∗ and the learned policies by setting Ns = 1 M and N = 1000 , respectively. The results are averaged across 10 seeds. 0 20 40 60 80 100     
+
+> Fictitious Play Iterations
+> 1.5
+> 3.0
+> 4.5
+> 6.0
+> Wasserstein distance  W1( ¯ μi, μ ∗)
+> W( ¯ πi, π ∗)
+
+Figure 8: Wasserstein distances between the FP-DQN iterates and the centralized SNE (μ∗, π ∗) across fictitious play iter-ations, for the first Karma economy in-stance. Shaded regions represent 95% con-fidence interval across 10 random seeds. 
+
+From scratch Equilibrium Learning in Karma DPGs 
+
+We report here the results of the FP-DQN algorithm on the first Karma economy instance introduced in subsec-tion 6.1, with two urgency levels U = {u1 = 1 , u 2 = 5 }
+
+and ϕ[u2|u1] = ϕ[u1|u2] = 0 .5. Figure 8 reports the Wasserstein distances between the FP-DQN iterates and the centralized SNE across fictitious play iterations, and Figure 9 shows the visual comparison between the cen-trally computed SNE and the approximate equilibrium returned by FP-DQN at convergence. The results are qualitatively consistent with those reported in subsec-tion 6.2 for the second instance: both metrics decrease and stabilize at low values within a moderate number of outer iterations, and the learned policy and distribu-tion closely match the structure of the equilibrium. This confirms that the convergence behavior of FP-DQN is robust across different Karma economy configurations and is not specific to a single parameter regime. 0 5 10 15 20 25 30 35 40 
+
+> Karma
+> 0
+> 5
+> 10
+> 15
+> 20
+> 25
+> 30
+> 35
+> 40
+> Expected bid
+
+u1 = 1         
+
+> 0510 15 20 25 30 35 40
+> Karma
+> 0
+> 5
+> 10
+> 15
+> 20
+> 25
+> 30
+> 35
+> 40
+
+u2 = 5         
+
+> 0510 15 20 25 30 35 40
+> Karma
+> 0.000
+> 0.015
+> 0.030
+> 0.045
+> 0.060
+> Probability
+
+u1 = 1          
+
+> 0510 15 20 25 30 35 40
+> Karma
+> 0.000
+> 0.015
+> 0.030
+> 0.045
+> 0.060
+
+u2 = 5 
+
+SNE (μ ∗ , π ∗ ) FP-DQN ( ¯ μI, ¯πI)SNE (μ ∗ , π ∗ ) FP-DQN ( ¯ μI, ¯πI)
+
+Figure 9: Comparison of the centrally computed SNE (μ∗, π ∗) and the approximate equilibrium 
+
+(¯ μI , ¯πI ) returned by FP-DQN at convergence, averaged across 10 seeds, for the first Karma economy instance. Top: expected bid as a function of karma balance for each urgency level. Bottom: stationary karma distribution for each urgency level. 20 NeurIPS Paper Checklist 
+
+1. Claims 
+
+Question: Do the main claims made in the abstract and introduction accurately reflect the paper’s contributions and scope? Answer: [Yes] Justification: The abstract and introduction accurately reflect the paper’s contributions and scope: theoretical guarantees are explicitly scoped to the single-agent setting, and the from-scratch convergence result is consistently presented as empirical. Guidelines: • The answer [N/A] means that the abstract and introduction do not include the claims made in the paper. • The abstract and/or introduction should clearly state the claims made, including the contributions made in the paper and important assumptions and limitations. A [No] or [N/A] answer to this question will not be perceived well by the reviewers. • The claims made should match theoretical and experimental results, and reflect how much the results can be expected to generalize to other settings. • It is fine to include aspirational goals as motivation as long as it is clear that these goals are not attained by the paper. 2. Limitations 
+
+Question: Does the paper discuss the limitations of the work performed by the authors? Answer: [Yes] Justification: Both in the conclusions and in the sections presenting the new methods, limitations are highlighted, including the restriction of theoretical guarantees to the single-agent setting, and the scalability of the framework to continuous state spaces. Guidelines: • The answer [N/A] means that the paper has no limitation while the answer [No] means that the paper has limitations, but those are not discussed in the paper. • The authors are encouraged to create a separate “Limitations” section in their paper. • The paper should point out any strong assumptions and how robust the results are to violations of these assumptions (e.g., independence assumptions, noiseless settings, model well-specification, asymptotic approximations only holding locally). The authors should reflect on how these assumptions might be violated in practice and what the implications would be. • The authors should reflect on the scope of the claims made, e.g., if the approach was only tested on a few datasets or with a few runs. In general, empirical results often depend on implicit assumptions, which should be articulated. • The authors should reflect on the factors that influence the performance of the approach. For example, a facial recognition algorithm may perform poorly when image resolution is low or images are taken in low lighting. Or a speech-to-text system might not be used reliably to provide closed captions for online lectures because it fails to handle technical jargon. • The authors should discuss the computational efficiency of the proposed algorithms and how they scale with dataset size. • If applicable, the authors should discuss possible limitations of their approach to address problems of privacy and fairness. • While the authors might fear that complete honesty about limitations might be used by reviewers as grounds for rejection, a worse outcome might be that reviewers discover limitations that aren’t acknowledged in the paper. The authors should use their best judgment and recognize that individual actions in favor of transparency play an impor-tant role in developing norms that preserve the integrity of the community. Reviewers will be specifically instructed to not penalize honesty concerning limitations. 3. Theory assumptions and proofs 
+
+21 Question: For each theoretical result, does the paper provide the full set of assumptions and a complete (and correct) proof? Answer: [Yes] Justification: In the appendix, we provide formal proofs for each theoretical result in the main text, with numbered equations. Guidelines: • The answer [N/A] means that the paper does not include theoretical results. • All the theorems, formulas, and proofs in the paper should be numbered and cross-referenced. • All assumptions should be clearly stated or referenced in the statement of any theorems. • The proofs can either appear in the main paper or the supplemental material, but if they appear in the supplemental material, the authors are encouraged to provide a short proof sketch to provide intuition. • Inversely, any informal proof provided in the core of the paper should be complemented by formal proofs provided in appendix or supplemental material. • Theorems and Lemmas that the proof relies upon should be properly referenced. 4. Experimental result reproducibility 
+
+Question: Does the paper fully disclose all the information needed to reproduce the main ex-perimental results of the paper to the extent that it affects the main claims and/or conclusions of the paper (regardless of whether the code and data are provided or not)? Answer: [Yes] Justification: Both in the main text and in the appendix, we provide details on the setup, hyperparameters, and hardware being used. Furthermore, for easy better interpretation, we include in the main text a pseudocode of the from-scratch learning algorithm. Finally, we provide the code as supplementary material. Guidelines: • The answer [N/A] means that the paper does not include experiments. • If the paper includes experiments, a [No] answer to this question will not be perceived well by the reviewers: Making the paper reproducible is important, regardless of whether the code and data are provided or not. • If the contribution is a dataset and/or model, the authors should describe the steps taken to make their results reproducible or verifiable. • Depending on the contribution, reproducibility can be accomplished in various ways. For example, if the contribution is a novel architecture, describing the architecture fully might suffice, or if the contribution is a specific model and empirical evaluation, it may be necessary to either make it possible for others to replicate the model with the same dataset, or provide access to the model. In general. releasing code and data is often one good way to accomplish this, but reproducibility can also be provided via detailed instructions for how to replicate the results, access to a hosted model (e.g., in the case of a large language model), releasing of a model checkpoint, or other means that are appropriate to the research performed. • While NeurIPS does not require releasing code, the conference does require all submis-sions to provide some reasonable avenue for reproducibility, which may depend on the nature of the contribution. For example (a) If the contribution is primarily a new algorithm, the paper should make it clear how to reproduce that algorithm. (b) If the contribution is primarily a new model architecture, the paper should describe the architecture clearly and fully. (c) If the contribution is a new model (e.g., a large language model), then there should either be a way to access this model for reproducing the results or a way to reproduce the model (e.g., with an open-source dataset or instructions for how to construct the dataset). 22 (d) We recognize that reproducibility may be tricky in some cases, in which case authors are welcome to describe the particular way they provide for reproducibility. In the case of closed-source models, it may be that access to the model is limited in some way (e.g., to registered users), but it should be possible for other researchers to have some path to reproducing or verifying the results. 5. Open access to data and code 
+
+Question: Does the paper provide open access to the data and code, with sufficient instruc-tions to faithfully reproduce the main experimental results, as described in supplemental material? Answer: [Yes] Justification: The code for the proposed methods is included in the supplementary material and publicly available. All data can be generated during training. Guidelines: • The answer [N/A] means that paper does not include experiments requiring code. • Please see the NeurIPS code and data submission guidelines ( https://neurips.cc/ public/guides/CodeSubmissionPolicy ) for more details. • While we encourage the release of code and data, we understand that this might not be possible, so [No] is an acceptable answer. Papers cannot be rejected simply for not including code, unless this is central to the contribution (e.g., for a new open-source benchmark). • The instructions should contain the exact command and environment needed to run to reproduce the results. See the NeurIPS code and data submission guidelines ( https: //neurips.cc/public/guides/CodeSubmissionPolicy ) for more details. • The authors should provide instructions on data access and preparation, including how to access the raw data, preprocessed data, intermediate data, and generated data, etc. • The authors should provide scripts to reproduce all experimental results for the new proposed method and baselines. If only a subset of experiments are reproducible, they should state which ones are omitted from the script and why. • At submission time, to preserve anonymity, the authors should release anonymized versions (if applicable). • Providing as much information as possible in supplemental material (appended to the paper) is recommended, but including URLs to data and code is permitted. 6. Experimental setting/details 
+
+Question: Does the paper specify all the training and test details (e.g., data splits, hyperpa-rameters, how they were chosen, type of optimizer) necessary to understand the results? Answer: [Yes] Justification: We list important hyperparameters, neural network architectures, and other training details in the appendix Guidelines: • The answer [N/A] means that the paper does not include experiments. • The experimental setting should be presented in the core of the paper to a level of detail that is necessary to appreciate the results and make sense of them. • The full details can be provided either with the code, in appendix, or as supplemental material. 7. Experiment statistical significance 
+
+Question: Does the paper report error bars suitably and correctly defined or other appropriate information about the statistical significance of the experiments? Answer: [Yes] Justification: We assume normally distributed errors. All results are averaged over 10 runs and reported with 95% confidence interval. Guidelines: 23 • The answer [N/A] means that the paper does not include experiments. • The authors should answer [Yes] if the results are accompanied by error bars, confidence intervals, or statistical significance tests, at least for the experiments that support the main claims of the paper. • The factors of variability that the error bars are capturing should be clearly stated (for example, train/test split, initialization, random drawing of some parameter, or overall run with given experimental conditions). • The method for calculating the error bars should be explained (closed form formula, call to a library function, bootstrap, etc.) • The assumptions made should be given (e.g., Normally distributed errors). • It should be clear whether the error bar is the standard deviation or the standard error of the mean. • It is OK to report 1-sigma error bars, but one should state it. The authors should preferably report a 2-sigma error bar than state that they have a 96% CI, if the hypothesis of Normality of errors is not verified. • For asymmetric distributions, the authors should be careful not to show in tables or figures symmetric error bars that would yield results that are out of range (e.g., negative error rates). • If error bars are reported in tables or plots, the authors should explain in the text how they were calculated and reference the corresponding figures or tables in the text. 8. Experiments compute resources 
+
+Question: For each experiment, does the paper provide sufficient information on the com-puter resources (type of compute workers, memory, time of execution) needed to reproduce the experiments? Answer: [Yes] Justification: In the appendix, the hardware specifications and usages are specified. Guidelines: • The answer [N/A] means that the paper does not include experiments. • The paper should indicate the type of compute workers CPU or GPU, internal cluster, or cloud provider, including relevant memory and storage. • The paper should provide the amount of compute required for each of the individual experimental runs as well as estimate the total compute. • The paper should disclose whether the full research project required more compute than the experiments reported in the paper (e.g., preliminary or failed experiments that didn’t make it into the paper). 9. Code of ethics 
+
+Question: Does the research conducted in the paper conform, in every respect, with the NeurIPS Code of Ethics https://neurips.cc/public/EthicsGuidelines ?Answer: [Yes] Justification: Our paper conforms to the NeurIPS Code of Ethics. Guidelines: • The answer [N/A] means that the authors have not reviewed the NeurIPS Code of Ethics. • If the authors answer [No], they should explain the special circumstances that require a deviation from the Code of Ethics. • The authors should make sure to preserve anonymity (e.g., if there is a special consid-eration due to laws or regulations in their jurisdiction). 10. Broader impacts 
+
+Question: Does the paper discuss both potential positive societal impacts and negative societal impacts of the work performed? Answer: [Yes] 24 Justification: We discuss them at the end of the main paper. Guidelines: • The answer [N/A] means that there is no societal impact of the work performed. • If the authors answer [N/A] or [No], they should explain why their work has no societal impact or why the paper does not address societal impact. • Examples of negative societal impacts include potential malicious or unintended uses (e.g., disinformation, generating fake profiles, surveillance), fairness considerations (e.g., deployment of technologies that could make decisions that unfairly impact specific groups), privacy considerations, and security considerations. • The conference expects that many papers will be foundational research and not tied to particular applications, let alone deployments. However, if there is a direct path to any negative applications, the authors should point it out. For example, it is legitimate to point out that an improvement in the quality of generative models could be used to generate Deepfakes for disinformation. On the other hand, it is not needed to point out that a generic algorithm for optimizing neural networks could enable people to train models that generate Deepfakes faster. • The authors should consider possible harms that could arise when the technology is being used as intended and functioning correctly, harms that could arise when the technology is being used as intended but gives incorrect results, and harms following from (intentional or unintentional) misuse of the technology. • If there are negative societal impacts, the authors could also discuss possible mitigation strategies (e.g., gated release of models, providing defenses in addition to attacks, mechanisms for monitoring misuse, mechanisms to monitor how a system learns from feedback over time, improving the efficiency and accessibility of ML). 11. Safeguards 
+
+Question: Does the paper describe safeguards that have been put in place for responsible release of data or models that have a high risk for misuse (e.g., pre-trained language models, image generators, or scraped datasets)? Answer: [N/A] Justification: We find that this paper poses no such risk. Guidelines: • The answer [N/A] means that the paper poses no such risks. • Released models that have a high risk for misuse or dual-use should be released with necessary safeguards to allow for controlled use of the model, for example by requiring that users adhere to usage guidelines or restrictions to access the model or implementing safety filters. • Datasets that have been scraped from the Internet could pose safety risks. The authors should describe how they avoided releasing unsafe images. • We recognize that providing effective safeguards is challenging, and many papers do not require this, but we encourage authors to take this into account and make a best faith effort. 12. Licenses for existing assets 
+
+Question: Are the creators or original owners of assets (e.g., code, data, models), used in the paper, properly credited and are the license and terms of use explicitly mentioned and properly respected? Answer: [Yes] Justification: We implemented most of our algorithms from scratch. All our results are generated during training. Guidelines: • The answer [N/A] means that the paper does not use existing assets. • The authors should cite the original paper that produced the code package or dataset. • The authors should state which version of the asset is used and, if possible, include a URL. 25 • The name of the license (e.g., CC-BY 4.0) should be included for each asset. • For scraped data from a particular source (e.g., website), the copyright and terms of service of that source should be provided. • If assets are released, the license, copyright information, and terms of use in the package should be provided. For popular datasets, paperswithcode.com/datasets 
+
+has curated licenses for some datasets. Their licensing guide can help determine the license of a dataset. • For existing datasets that are re-packaged, both the original license and the license of the derived asset (if it has changed) should be provided. • If this information is not available online, the authors are encouraged to reach out to the asset’s creators. 13. New assets 
+
+Question: Are new assets introduced in the paper well documented and is the documentation provided alongside the assets? Answer: [Yes] Justification: We provide our code and instructions to run the experiments. Guidelines: • The answer [N/A] means that the paper does not release new assets. • Researchers should communicate the details of the dataset/code/model as part of their submissions via structured templates. This includes details about training, license, limitations, etc. • The paper should discuss whether and how consent was obtained from people whose asset is used. • At submission time, remember to anonymize your assets (if applicable). You can either create an anonymized URL or include an anonymized zip file. 14. Crowdsourcing and research with human subjects 
+
+Question: For crowdsourcing experiments and research with human subjects, does the paper include the full text of instructions given to participants and screenshots, if applicable, as well as details about compensation (if any)? Answer: [N/A] Justification: The paper does not involve crowdsourcing nor research with human subjects. Guidelines: • The answer [N/A] means that the paper does not involve crowdsourcing nor research with human subjects. • Including this information in the supplemental material is fine, but if the main contribu-tion of the paper involves human subjects, then as much detail as possible should be included in the main paper. • According to the NeurIPS Code of Ethics, workers involved in data collection, curation, or other labor should be paid at least the minimum wage in the country of the data collector. 15. Institutional review board (IRB) approvals or equivalent for research with human subjects 
+
+Question: Does the paper describe potential risks incurred by study participants, whether such risks were disclosed to the subjects, and whether Institutional Review Board (IRB) approvals (or an equivalent approval/review based on the requirements of your country or institution) were obtained? Answer: [N/A] Justification: The paper does not involve crowdsourcing nor research with human subjects. Guidelines: • The answer [N/A] means that the paper does not involve crowdsourcing nor research with human subjects. 26 • Depending on the country in which research is conducted, IRB approval (or equivalent) may be required for any human subjects research. If you obtained IRB approval, you should clearly state this in the paper. • We recognize that the procedures for this may vary significantly between institutions and locations, and we expect authors to adhere to the NeurIPS Code of Ethics and the guidelines for their institution. • For initial submissions, do not include any information that would break anonymity (if applicable), such as the institution conducting the review. 16. Declaration of LLM usage 
+
+Question: Does the paper describe the usage of LLMs if it is an important, original, or non-standard component of the core methods in this research? Note that if the LLM is used only for writing, editing, or formatting purposes and does not impact the core methodology, scientific rigor, or originality of the research, declaration is not required. Answer: [N/A] Justification: LLMs have been used only for writing, editing, and formatting purposes. Guidelines: • The answer [N/A] means that the core method development in this research does not involve LLMs as any important, original, or non-standard components. • Please refer to our LLM policy in the NeurIPS handbook for what should or should not be described. 27
