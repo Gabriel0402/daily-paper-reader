@@ -1,0 +1,490 @@
+Title: SAMOFT: Robust Multi-Object Tracking via Region and Flow
+
+URL Source: https://arxiv.org/pdf/2605.09417v1
+
+Published Time: Tue, 12 May 2026 01:28:06 GMT
+
+Number of Pages: 12
+
+Markdown Content:
+> 1
+
+# SAMOFT: Robust Multi-Object Tracking via Region and Flow 
+
+Yanchao Wang, Dawei Zhang, Chengzhuan Yang, Wei Liu, Minglu Li, Fellow, IEEE , Hua Wang, Fellow, IEEE ,Zhonglong Zheng, and Ming-Hsuan Yang, Fellow, IEEE 
+
+Abstract —Multi-object tracking (MOT) is a fundamental task in computer vision that requires continuously tracking multiple targets while maintaining consistent identities across frames. However, most existing approaches primarily rely on instance-level object features for trajectory association, which often leads to degraded performance under challenging conditions such as object deformation, nonlinear motion, and occlusion. In this work, we propose SAMOFT, a robust tracker that leverages pixel-level cues to improve robustness under complex motion scenarios. Specifically, we introduce a Pixel Motion Matching (PMM) module that integrates the Segment Anything Model (SAM) with dense optical flow to refine Kalman filter-based motion prediction using instantaneous foreground pixel motion. To further enhance robustness under unreliable detections, we design a Centroid Distance Matching (CDM) module that performs flexible mask-based centroid matching for low-confidence or partially occluded observations. Moreover, a Distribution-Based Correction (DBC) module models long-tailed motion patterns in a training-free manner using historical optical flow statistics and dynamically corrects trajectory states online. We also incorporate a Cluster-Aware ReID (CA-ReID) strategy to improve the stability and discriminative power of trajectory appearance features. Extensive experiments on the DanceTrack and MOTChallenge benchmarks demonstrate that SAMOFT consistently improves baseline track-ers and achieves competitive performance compared with recent state-of-the-art methods, validating the effectiveness of leveraging pixel-level cues for robust multi-object tracking. 
+
+Index Terms —Multi-object tracking, tracking-by-detection, pixel-level cues, optical flow, segment anything model. 
+
+I. I NTRODUCTION 
+
+# MULTI-OBJECT tracking (MOT) is a fundamental prob-lem in computer vision and plays an important role in applications such as video surveillance [1] and motion analy-sis [2]. The long-standing tracking-by-detection paradigm [3]– [5] decomposes MOT into two subproblems: object detec-tion in each frame and trajectory association across frames. With the rapid progress of modern deep object detectors [6], 
+
+This research was supported by the National Natural Science Foundation of China under Grants No. 62272419 and No. 62402449, and the Major Program of the Natural Science Foundation of Zhejiang Province under Grant No. LD26F020003. (Yanchao Wang and Dawei Zhang contributed equally to this work.) (Corresponding author: Zhonglong Zheng.) 
+
+Yanchao Wang, Dawei Zhang, Chengzhuan Yang, Minglu Li, and Zhonglong Zheng are with the School of Computer Science and Technology, Zhejiang Normal University, Jinhua 321004, China (email: yanchaowang@zjnu.edu.cn; davidzhang@zjnu.edu.cn; czyang@zjnu.edu.cn; mlli@zjnu.edu.cn; zhonglong@zjnu.edu.cn). Wei Liu is with the School of Automation and Intelligent Sensing, the Institute of Image Processing and Pattern Recognition, and the Institute of Medical Robotics, Shanghai Jiao Tong University, Shanghai 200240, China (e-mail: weiliucv@sjtu.edu.cn). Hua Wang is with the Institute for Sustainable Industries and Liveable Cities, College of Engineering and Science, Victoria University, Melbourne, VIC 8001, Australia (e-mail: hua.wang@vu.edu.au) Ming-Hsuan Yang is with the School of Electrical Engineering and Com-puter Science, University of California at Merced, Merced, CA 95343 USA (e-mail: mhyang@ucmerced.edu). 
+
+Fig. 1. (a) Pixel motion (i.e., optical flow magnitude) effectively captures drastic motion events at local peaks (marked by red stars). (b) SAMOFT incorporates the Segment Anything Model (SAM) and an optical flow (OF) model to generate object masks and pixel motion, enabling more robust association through pixel-level cues. 
+
+detection accuracy has improved substantially, making the association stage the primary factor affecting overall tracking performance. In typical tracking-by-detection pipelines, the association stage constructs a cost matrix based on motion and appearance cues and solves the optimal assignment problem using the Hungarian algorithm. A major line of research under the tracking-by-detection paradigm therefore focuses on designing effective association strategies and cost formulations to better exploit motion and appearance cues. Existing studies have explored confidence-based cascaded matching strategies [7], incorporated motion-direction information into the association cost [4], leveraged auxiliary weak cues such as detection confidence and object height [5], and designed adaptive appearance update mecha-nisms [8]. However, these explorations remain at the instance level. Although they achieve strong performance in pedestrian tracking, their reliance on bounding-box geometry and patch-level embeddings limits discriminability under challenging conditions such as nonlinear motion, non-rigid deformation, and occlusion, often leading to suboptimal performance. To enhance robustness in such challenging scenarios, re-cent studies have explored integrating multi-modal cues from additional sensors (e.g., depth [9] or thermal infrared [10], [11]) or multi-view camera systems [12], [13] to enable more comprehensive scene modeling. While effective, these approaches impose additional requirements on data annotation, hardware support, and computational resources for modality fusion, which may limit practical deployment. In contrast, we focus on the raw image and explore finer-
+
+> arXiv:2605.09417v1 [cs.CV] 10 May 2026 2
+
+grained pixel-level cues. A natural starting point is dense optical flow, which provides instantaneous motion estimates for every pixel. Unlike instance-level motion modeling based on bounding boxes, pixel-wise motion remains reliable under partial occlusion or bounding-box distortion, where global motion estimation becomes unstable. Moreover, optical flow captures abrupt local variations when a target deviates from its regular motion pattern. As illustrated in Fig. 1(a), we analyze temporal pixel-wise motion within an object. The mean optical flow magnitude shows periodic fluctuations aligned with the target’s motion cycle, while local peaks correspond to long-tailed events. For example, at frames 888 and 997, sharp increases in flow magnitude coincide with limb movements and bounding-box deformation. These observations suggest that pixel-level motion cues can anticipate state transitions before global displacement becomes apparent. However, directly extracting optical flow from bounding boxes introduces contamination from background pixels and nearby overlapping objects, compromising the reliability of pixel-level cues and potentially misleading motion modeling. This motivates integrating a segmentation model to isolate true target pixels. Since MOT datasets typically lack pixel-level annotations, training task-specific segmentation models is impractical. Instead, we leverage the Segment Anything Model (SAM) [14], a foundation model with strong zero-shot generalization, to generate high-quality object masks. By filtering optical flow within object regions, pixel-level motion is restricted to accurate foreground areas and better reflects true target dynamics rather than background inter-ference. Beyond motion refinement, segmentation masks also provide alternative spatial anchors for low-confidence detec-tions. Under partial occlusion or motion blur, bounding-box geometry and appearance embeddings often degrade, whereas segmentation masks preserve more accurate object boundaries and pixel-level spatial locations. These observations motivate mask-based association strategies that complement traditional box-level matching. By combining segmentation masks with per-pixel optical flow, we obtain robust pixel-level cues that improve tracking performance in complex scenarios, as illus-trated in Fig. 1(b). Based on these insights, we propose the SAM meets Optical Flow Tracker (SAMOFT), a novel MOT framework that leverages pixel-level cues to enhance trajectory association ro-bustness under challenging conditions. Specifically, SAMOFT comprises four key components: i) Pixel Motion Matching (PMM), which refines instance-level prediction using instanta-neous per-pixel motion to address Kalman filter failures under nonlinear motion; ii) Centroid Distance Matching (CDM), designed for low-confidence detections affected by occlusion, using mask-based centroid distance for reliable association; iii) Distribution-Based Correction (DBC), which models long-tailed motion caused by bounding-box deformation and adap-tively corrects box geometry based on optical flow magnitude statistics; and iv) Cluster-Aware ReID (CA-ReID), which improves appearance feature representation through a selective update strategy based on detection clusters formed via IoU connectivity. While maintaining the simplicity of the tracking-by-detection framework, our method leverages the strong generalization ability of foundation models to enable robust, training-free tracking with existing tools. We evaluate SAMOFT on DanceTrack [2], a challenging MOT benchmark characterized by complex target motion. The competitive performance of SAMOFT validates the effective-ness of our motivation and proposed modules. Furthermore, results on the widely used MOT17 [1] and MOT20 [15] bench-marks demonstrate the generalization ability of our method across diverse tracking scenarios. Our main contributions are summarized as follows:  
+
+> •
+
+We propose SAMOFT, a tracking framework that lever-ages pixel-level cues derived from segmentation and optical flow to enhance trajectory association robustness in multi-object tracking. By exploiting instantaneous fore-ground pixel motion and statistics-based motion correc-tion, SAMOFT complements conventional instance-level observations and improves robustness under complex motion patterns.  
+
+> •
+
+To refine coarse instance-level motion predictions, we design the PMM module to exploit foreground pixel motions. The CDM module leverages mask centroids to approximate object centers while reducing geometric interference from background pixels. The DBC module models historical trajectory statistics to detect and cor-rect motion prediction errors under long-tailed patterns. Meanwhile, we introduce CA-ReID to improve the sta-bility and discriminative power of trajectory appearance features.  
+
+> •
+
+Experimental results on three popular MOT benchmarks validate the effectiveness of our design and the superior association robustness of SAMOFT. II. R ELATED WORK 
+
+Multi-object tracking (MOT) has received extensive atten-tion in recent years. Tracking-by-detection is one of the domi-nant MOT paradigms, where object trajectories are constructed by associating detections across frames using various matching cues. Recent studies have also explored end-to-end MOT architectures that jointly model detection and association [16]– [19]. However, these approaches fall outside the scope of this paper, which focuses on improving association cues within the tracking-by-detection paradigm. In the following, we review the most relevant studies from four perspectives: tracking-by-detection frameworks, matching cues for trajectory associa-tion, SAM-assisted MOT methods, and point-based tracking approaches. 
+
+A. Tracking-by-Detection 
+
+The widely adopted tracking-by-detection paradigm [3], [4], [7] decouples MOT into object detection and trajectory asso-ciation. With the advancement of robust object detectors [6], [20], [21], current research mainly focuses on designing ef-fective association strategies. Typically, the association step constructs a cost matrix between detections and trajectories, followed by matching via the Hungarian algorithm [22]. To achieve accurate data association, many methods focus on state modeling, where motion prediction–based spatial cues 3
+
+and ReID-based appearance cues are utilized. For motion modeling, the Kalman filter (KF) [23] is the most widely used predictor, which iteratively updates its state using matched observations and predicts target motion in each frame. Several studies improve the KF formulation [24]–[26] or design neural KFs [27], [28] to enhance prediction capability, while others adopt alternative predictors [29] to replace KF. For appear-ance modeling, ReID networks extract appearance embeddings from detection patches frame-by-frame [30]. The trajectory appearance feature is updated online using exponential moving average [31] once a successful association is established. Studies have explored improvements through stronger feature extractors [32], [33], improved feature update mechanisms [8], [34], or affinity computation based on transformed represen-tations [35]. Beyond state modeling, some methods explore adaptive weighting strategies [8] or collaboration mechanisms between motion and appearance cues [32] to obtain more discriminative cost matrices. Other methods focus on as-sociation strategies, such as cascade association [7], [30], penalty terms [36], or alternative matching algorithms [36]. Additionally, several works investigate post-processing steps, including matched-pair correction [37] and trajectory interpo-lation [7], [24]. Our method follows the tracking-by-detection paradigm and adopts the same motion predictor, appearance feature extractor, and matching algorithm as prior methods [4], [5]. Unlike previous approaches that rely solely on historical state modeling, we explicitly incorporate instantaneous target changes to compensate for motion prediction errors and sup-press noise in appearance updates. 
+
+B. Matching Cues in MOT 
+
+Association cues play a fundamental role in accurate multi-object tracking. By integrating diverse cues, trackers can maintain robust performance across varied scenarios. Beyond the motion and appearance cues discussed in Section II-A, additional instance-level cues such as detection confidence [5], [25], motion direction [4], object height [5], and pseudo-depth [9], [38] have been incorporated to enrich object mod-eling and improve matching reliability. In recent years, optical flow has emerged as an effective cue for capturing additional motion information. DK-flow-tracking [39] integrates flow networks to estimate average flow of near-camera objects and corner-point motion for distant small-scale targets. FOLT [40] encodes optical flow maps centered on past target locations to predict inter-frame displacement. More recently, OFTrack [41] uses a shared backbone for detection and optical flow, where a flow head predicts multi-frame object motion. In the UAV tracking field, MoDe-Track [42] decomposes dense optical flow into background and foreground components to com-pensate for camera motion and guide feature propagation. Despite their effectiveness in capturing motion dynamics, most approaches aggregate flow information at the instance level, which may limit robustness under severe shape deformation or occlusion. In contrast, SAMOFT combines segmentation and dense optical flow to exploit pixel-level motion cues and constructs explicit pixel-level motion affinity metrics, enabling finer-grained motion guidance and more flexible association in challenging tracking scenarios. 
+
+C. SAM-Assisted MOT 
+
+SAM has demonstrated strong effectiveness in tracking tasks when applied in a training-free manner [43]. Among SAM-assisted MOT methods, MASA [44] leverages SAM’s instance-level priors to train an adapter for generalizable asso-ciation, achieving zero-shot matching across open-vocabulary and driving-scene MOT benchmarks. SAM2MOT [45] in-corporates trajectory management and an occlusion-aware correction mechanism into the SAM2 tracker, significantly improving performance but requiring sequence-specific hy-perparameter tuning to handle distribution shifts. DVA [46] employs SAM for data augmentation by segmenting objects, perturbing backgrounds, and recomposing scenes to enhance the model’s attention to pedestrian features. In contrast, we utilize SAM in a training-free manner to generate pixel-level motion cues rather than instance-level priors, maintaining the simplicity of the tracking-by-detection framework while improving association robustness in complex motion scenarios. 
+
+D. Point Tracking in MOT 
+
+To handle highly dynamic MOT scenarios, NetTrack [47] leverages keypoints as fine-grained cues for association and builds a point tracker on top of CoTracker [48]. However, NetTrack selects keypoints using a fixed uniform sampling strategy, which may not align with task-relevant pixels on the target. Consequently, the sampled keypoints are susceptible to sampling-induced errors, potentially limiting accurate motion modeling. In contrast, our approach derives pixel-level motion and spatial cues from all target pixels by integrating SAM with a dense optical flow model. This segmentation-guided dense modeling strategy enables more complete motion perception and more adaptive keypoint sampling, thereby improving robustness under challenging dynamic conditions. III. M ETHOD 
+
+A. Overview of SAMOFT 
+
+We propose SAMOFT, which leverages the Segment Any-thing Model (SAM) [14] and an optical flow model [49] to provide pixel-level auxiliary cues for tracking under complex motion scenarios, as illustrated in Fig. 2. An object detector first produces instance bounding boxes in the current frame for trajectory association. Unlike conventional approaches that rely solely on the Kalman Filter (KF) motion model and appearance embeddings to represent each instance, we incorporate an optical flow model to estimate pixel-level motion. Meanwhile, SAM is used to ensure that the selected pixels belong to the target object and to provide additional association cues for potentially occluded targets. The SAM- and optical-flow–driven modules include Pixel Motion Matching (PMM) and Centroid Distance Matching (CDM). SAMOFT also introduces a Distribution-Based Cor-rection (DBC) module that models and corrects long-tailed motion events using pixel motion statistics. In addition, a Cluster-Aware ReID (CA-ReID) module provides more dis-criminative appearance cues. Finally, the costs from CA-ReID, PMM, CDM, and the DBC-corrected instance-level motion 4 
+
+> Fig. 2. Overall pipeline of SAMOFT. In the motion branch, PMM and CDM use SAM and an optical flow model to provide pixel-level matching cues, while DBC models long-tailed object motion and corrects trajectory motion states accordingly. In the appearance branch, CA-ReID selects the highest-quality embedding from each detection cluster to obtain discriminative appearance cues.
+
+Algorithm 1: Overall Pipeline of SAMOFT 
+
+Input: Current trajectories Tt−1; current detections Dt
+
+Output: Updated trajectories Tt 
+
+> 1
+
+for each track Ti ∈ T t−1 do  
+
+> 2
+
+Estimate KF prediction Xi, mask Mi, and pixel locations Pti; 
+
+> 3
+
+Load appearance feature Fi; 
+
+> 4
+
+end  
+
+> 5
+
+for each detection Dj ∈ D t do  
+
+> 6
+
+Extract ReID embedding Fj and mask Mj ; 
+
+> 7
+
+end  
+
+> 8
+
+for each track Ti ∈ T t−1 and detection Dj ∈ D t do  
+
+> 9
+
+Compute CILM (Ti, X i, D j ) using IoU and OCM;  
+
+> 10
+
+CILM (Ti, D j ) ← DBC (CILM (Ti, D j )) ; 
+
+> 11
+
+Compute CP (Pti, Mj ); 
+
+> 12
+
+Compute CC (Mi, Mj ); 
+
+> 13
+
+Compute appearance cost CCA −ReID (Fi, Fj ); 
+
+> 14
+
+end  
+
+> 15
+
+Perform multi-stage Hungarian matching with the above costs to obtain Matches t; 
+
+> 16
+
+for each matched pair (Ti, D j ) ∈ Matches t do  
+
+> 17
+
+Update KF and DBC statistics;  
+
+> 18
+
+end  
+
+> 19
+
+Build IoU graph for matched detections;  
+
+> 20
+
+Obtain clusters Clusters t via connected components;  
+
+> 21
+
+for each cluster ci ∈ Clusters t do  
+
+> 22
+
+Select highest-confidence detection Dtop ∈ ci; 
+
+> 23
+
+Update trajectory appearance using Ftop ; 
+
+> 24
+
+end  
+
+> 25
+
+Update Tt with new-born trajectories and matched pairs;  
+
+> 26
+
+return Tt;cues are fused to construct the final cost matrix for Hungarian association. Algorithm 1 summarizes the overall pipeline of SAMOFT.  
+
+> Fig. 3. Illustration of Pixel Motion Matching (PMM). Target pixel positions in the next frame are predicted using segmentation masks and optical flow, and the predicted pixels are matched with detection masks.
+
+B. Pixel Motion Matching 
+
+Most tracking-by-detection methods rely on instance-level motion predictions (i.e., track bounding boxes) from the KF to match detections. However, bounding-box prediction is sensitive to target deformation. In non-rigid scenarios (e.g., human tracking), body movements cause significant shape variations that degrade prediction robustness. Moreover, the KF state transition and observation models assume linear motion, which leads to inaccuracies under nonlinear dynamics, and these errors may accumulate over time. To address these issues, we propose Pixel Motion Matching (PMM), which leverages SAM to extract target pixels within track and detection boxes and uses an optical flow model to estimate instantaneous pixel motion between consecutive frames, as illustrated in Fig. 3. By extracting pixels using a reliable segmentation model (SAM in our implementation), 5 
+
+> Fig. 4. Illustration of mask centroids of a trajectory in the previous frame and a detection in the current frame. The centroids may lie outside the mask pixels.
+
+PMM reduces the effect of bounding-box deformation. In addition, pixel-level motion estimated from optical flow is independent of historical track states, providing a finer and deformation-invariant motion representation. For all trajectories and detections, we first apply SAM to obtain the target pixel masks within their bounding boxes: 
+
+Mi = SAM (Ti), Mj = SAM (Dj ), (1) where Ti and Dj denote the bounding boxes of trajectory 
+
+i’s last observation and detection j, and SAM (·) extracts the corresponding target pixel mask. Meanwhile, the optical flow model computes the flow field between consecutive frames. By adding the flow displacement to trajectory pixels, we estimate their locations in the next frame: 
+
+Pt+1  
+
+> i
+
+= Pti + Flow (Pti), (2) where Pti denotes the pixel coordinates of Mi at frame t, and Flow (Pti) represents the optical flow displacement between frames t and t + 1 .Finally, we construct the PMM association cost matrix as 
+
+CP (i, j ) = − |Pt+1  
+
+> i
+
+∩ Mj ||Pt+1  
+
+> i
+
+| , (3) where CP (i, j ) denotes the PMM cost between trajectory 
+
+i and detection j, computed as the negative proportion of predicted trajectory pixels falling within the detection mask. 
+
+C. Centroid Distance Matching 
+
+Previous work [7] shows that low-confidence detections may still correspond to valid targets, although low confidence often indicates occlusion or motion blur. To better utilize such detections, we propose Centroid Distance Matching (CDM), which uses target masks to assist association. Unlike con-ventional distance matching based on bounding-box centers, CDM computes centroids from visible mask pixels, enabling more robust localization under partial occlusion. This design provides greater flexibility when handling complex motion patterns. For trajectory i and detection j, we compute the centroids of their masks, as illustrated in Fig. 4, and measure their Euclidean distance: 
+
+dij = ∥Centroid (Mi) − Centroid (Mj )∥2 . (4)           
+
+> Fig. 5. Illustration of Distribution-Based Correction (DBC). Based on the historical distribution and current value of optical flow magnitude, IoU correction is triggered adaptively.
+
+To further improve discriminability, we normalize the dis-tance matrix using a Gaussian-based transformation, yielding the CDM association cost: 
+
+CC (i, j ) = −e1− dij  
+
+> Min (di)
+
+, (5) where Min (di) denotes the smallest centroid distance between trajectory i and its nearest detection. This normalization pri-oritizes nearby detections while enlarging distance differences among overlapping detections and leaving distant detections largely unaffected. 
+
+D. Distribution-Based Correction 
+
+We observe that when a target undergoes long-tailed motion, its optical flow magnitude often deviates from its normal periodic range. During significant bounding-box deformation, strong limb movements may produce peaks in flow magni-tude. Based on this observation, we propose a training-free Distribution-Based Correction (DBC) module. DBC statisti-cally models the optical flow magnitude distribution of target pixels to capture long-tailed motion patterns. During associa-tion, it adaptively corrects KF-predicted bounding boxes using pixel-level motion cues. The optical flow magnitude of pixel p is defined as 
+
+m(p) = pu(p)2 + v(p)2, (6) where u(·) and v(·) denote the horizontal and vertical flow components. After a successful association, we compare the IoU be-tween the optical-flow–predicted bounding box and the KF prediction. If the flow-based IoU exceeds the KF-based IoU by a threshold τD , we update the long-tailed flow distribution statistics: 
+
+nnew = nprev + nt, (7) 
+
+μnew = nprev μprev + ntμt
+
+nprev + nt
+
+, (8) 
+
+σnew =
+
+q
+
+nprev σ2 
+
+> prev
+
++ ntσ2 
+
+> t
+
++ nprev nt(μprev −μt)2 
+
+> nprev +nt
+
+nprev + nt
+
+, (9) where (n, μ, σ ) denote the number of pixels, mean, and standard deviation of the flow magnitude distribution after update, before update, and from the current mask, respectively. 6
+
+As illustrated in Fig. 5(a), during association, if the mean magnitude of a trajectory mask falls within one standard deviation of the distribution mean, DBC correction is trig-gered. The flow-based predicted bounding box is obtained from the minimum and maximum pixel coordinates of the predicted trajectory pixels pi ∈ Pi, as shown in Fig. 5(b). The resulting box replaces the KF prediction for IoU computation if it produces a higher score. Since optical flow estimation is instantaneous and independent of historical states, it effectively compensates for KF prediction errors. 
+
+E. Cluster-Aware ReID 
+
+The effectiveness of appearance cues for association has been widely demonstrated [5], [8], [32]. To further improve robustness, we incorporate an independent appearance branch, as shown in Fig. 2. Detection patches are fed into an appear-ance network to extract ReID features, and trajectory features are updated online using an exponential moving average. The appearance cost is then computed using cosine distance between trajectory and detection embeddings. Different from previous approaches, our Cluster-Aware ReID (CA-ReID) introduces a clustering step before feature update. Detections in the current frame are grouped based on IoU connectivity. Specifically, we construct an undirected graph where each node represents a detection, and edges connect detections whose IoU exceeds a threshold (0.3 in our experiments). Connected components in this graph are treated as detection clusters. For each cluster, only the embedding of the highest-confidence detection is used to update the trajectory feature. This strategy reduces noise in feature updates and improves discriminative capability. 
+
+F. Multi-Stage Hungarian Association 
+
+Our multi-stage Hungarian association follows the baseline framework, with an additional BYTE [7] association stage when CDM is enabled. Specifically, the association mod-ule consists of three stages: (i) high-confidence detection matching, (ii) low-confidence association via BYTE, and (iii) trajectory recovery via OCR (as in OC-SORT). The instance-level motion cost inherited from OC-SORT [4] combines spatial localization and velocity direction consis-tency: 
+
+CILM = CIoU + λOCM COCM . (10) SAMOFT retains this formulation while refining CIoU through DBC and incorporating additional pixel-level and appearance cues: 
+
+Cf inal = λILM · DBC (CILM ) + Cours , (11) 
+
+Cours = Cmotion + λappr · CCA −ReID , (12) 
+
+Cmotion = λP CP + λC CC , (13) where λP and λC are empirically determined weights, while 
+
+λOCM , λILM , and λappr follow the settings in prior work [4], [5]. IV. E XPERIMENTS 
+
+A. Experiment Setups 1) Datasets and Metrics: We conduct experiments on sev-eral public datasets to evaluate the generalization capability of our method, including DanceTrack, MOT17, and MOT20. DanceTrack consists of 100 video sequences, with 40 for training, 25 for validation, and 35 for testing. MOT17 contains 14 sequences for pedestrian tracking. MOT20 includes 4training and 4 testing sequences for pedestrian tracking and features denser scenes with higher target density than MOT17. We emphasize results on DanceTrack due to its diverse motion patterns and long target durations. For quantitative evaluation, we adopt Higher Order Tracking Accuracy (HOTA) [50] as the primary metric. Meanwhile, IDF1 [51], AssA [50], and AssR [50] assess association quality, while MOTA [52] and DetA [50] reflect detection-related performance. 
+
+2) Implementation Details: Unless otherwise specified, all results are reported under the private detection protocol. We choose OC-SORT [4] as the primary baseline due to its simple yet extensible architecture and follow its original implemen-tation and hyperparameter settings for instance-level motion matching. In SAMOFT, the motion cost matrix consists of three components: the instance-level motion matching cost, the PMM cost, and the CDM cost. Their weights are set to 
+
+λILM = 1 .0, λP = 0 .2, and λC = 1 .0, where λC is applied only during the BYTE association stage. The DBC update threshold is τD = 0 .1.To ensure fair comparisons, we adopt the same publicly available detection (YOLOX [6]) and ReID (BoT [5]) models and weights, together with the same appearance weighting. For our proposed modules, we use SEA-RAFT [49] with weights trained on Spring [69] for optical flow estimation and the SAM model [14] with provided weights for mask generation. All experiments are conducted on an Intel i5-13600K CPU and an NVIDIA GeForce RTX 4090 GPU. 
+
+B. Benchmark Evaluation 
+
+We compare SAMOFT with recent state-of-the-art methods on DanceTrack, MOT17, and MOT20. Besides the OC-SORT implementation, we also integrate our modules into Hybrid-SORT [5] to evaluate their generalization across different trackers and demonstrate improvements with a stronger base-line. 
+
+1) DanceTrack: We compare SAMOFT with representative trackers on the DanceTrack test set to evaluate its effectiveness under complex motion scenarios. As shown in Table I, our method achieves notable gains when built upon both OC-SORT and HybridSORT. Specifically, integrating SAMOFT with OC-SORT improves performance by +9.2 HOTA, +11.3 IDF1, and +2.0 MOTA, indicating enhanced association ac-curacy and overall tracking performance. When applied to HybridSORT, SAMOFT still yields consistent gains of +6.0 HOTA and +5.2 IDF1, demonstrating the robustness and generality of our modules across different trackers. These results show that our design effectively complements trackers relying mainly on instance-level motion cues by incorporating pixel-level cues, distribution-based correction, 7                                                                                                                                                                           
+
+> TABLE I PERFORMANCE COMPARISON ON THE DANCE TRACK TEST SET UNDER THE PRIVATE DETECTION PROTOCOL . M ETHODS IN THE BOTTOM BLOCK USE THE SAME DETECTIONS . T HE GRAY BLOCK INDICATES OUR INTEGRATION . T HE TOP THREE RESULTS IN EACH BLOCK ARE HIGHLIGHTED IN RED ,BLUE ,AND GREEN .Tracker Venue HOTA ↑IDF1 ↑MOTA ↑DetA ↑AssA ↑
+> Different Detection Settings:
+> GTR [53] CVPR22 48.0 50.3 84.7 72.5 31.9 MOTR [16] ECCV22 54.2 51.5 79.7 73.5 40.2 SUSHI [54] CVPR23 63.3 63.4 88.7 80.1 50.1 MOTRv2 [17] CVPR23 69.9 71.7 91.9 83.0 59.0 DiffusionTrack [55] AAAI24 52.4 47.5 89.3 82.2 33.5 MOTIP [56] CVPR25 69.6 74.7 90.6 80.4 60.4
+> Same Detection:
+> ByteTrack [7] ECCV22 47.3 52.5 89.5 71.6 31.4 FineTrack [57] CVPR23 52.7 59.8 89.9 72.4 38.5 GHOST [33] CVPR23 56.7 57.7 91.3 81.1 39.8 StrongSORT++ [24] TMM23 55.6 55.2 91.1 80.7 38.6 STAT [34] TMM23 60.4 61.4 91.6 81.1 45.1 Deep OC-SORT [8] ICIP23 61.3 61.5 92.3 82.2 45.8 AHOR-ReID [58] TCSVT24 60.7 59.9 91.5 82.3 44.9 CMTrack [59] ICIP24 61.8 63.3 92.3 82.2 45.8 DiffMOT [29] CVPR24 63.4 64.0 92.7 82.5 48.8 GeneralTrack [60] CVPR24 59.2 59.7 91.8 82.0 42.8 UCMCTrack+ [61] AAAI24 63.6 65.0 88.9 -51.3 CoNo-Link [62] AAAI24 63.8 64.1 89.7 80.2 50.7 Hybrid-SORT-ReID [5] AAAI24 65.7 67.4 91.8 --DfTrack-Hybrid [63] TCSVT25 65.5 68.2 92.7 82.1 52.4 TOPICTrack [35] TIP25 58.3 58.4 90.9 80.7 42.3 OFTrack-ReID [41] AAAI25 63.4 65.6 91.2 82.1 48.7 TrackTrack [36] CVPR25 66.5 67.8 93.6 -52.9 OC-SORT [4] CVPR23 54.6 54.6 89.6 80.4 40.2
+> OC-SORT+SAMOFT Ours 63.8 65.9 91.6 82.0 49.8 Hybrid-SORT [5] AAAI24 62.2 63.0 91.6 --
+> Hybrid-SORT+SAMOFT Ours 68.2 71.5 91.5 81.7 57.1
+
+and noise-reduced appearance modeling. As illustrated in Fig. 6, SAMOFT surpasses the baselines and ranks among the top OC-SORT variants. We also note that Transformer-based methods (e.g., MOTRv2 and MOTIP) achieve higher performance on DanceTrack but require expensive training. In contrast, SAMOFT improves association robustness within the tracking-by-detection framework in a training-free manner. 
+
+2) MOTChallenge: We further evaluate SAMOFT on the MOT17 and MOT20 benchmarks for pedestrian tracking, as reported in Tables II and III. SAMOFT consistently improves the corresponding baselines while achieving performance com-petitive with recent state-of-the-art approaches. Specifically, when built upon OC-SORT, SAMOFT im-proves performance by +0.8 HOTA and +1.3 IDF1 on MOT17, and +1.9 HOTA and +3.0 IDF1 on MOT20. When integrated into Hybrid-SORT, SAMOFT yields gains of +0.7 HOTA, +1.0 IDF1, and +0.7 MOTA on MOT17, and +1.7 HOTA, +2.7 IDF1, and +0.4 MOTA on MOT20. On MOT17, MotionTrack [68] and DeconfuseTrack [37] achieve higher HOTA scores than ours under the same de-tection setting. MotionTrack benefits from its ability to han-dle long-term occlusions, while DeconfuseTrack emphasizes refined association through post-matching correction. In ad-dition, SUSHI achieves strong results on both MOT17 and MOT20 due to its graph neural network–based matcher and offline tracking pipeline that jointly optimizes association across frames. In contrast, SAMOFT focuses on improving motion mod-eling within the tracking-by-detection framework through segmentation-guided pixel-level cues and distribution-aware correction, without introducing additional training stages or complex optimization schemes. Although the improvements on MOT17 and MOT20 are smaller than those on DanceTrack, this observation aligns with prior analyses [2], [5], [70], which show that the limited sequence diversity and predominantly linear motion patterns in these datasets reduce the benefits of advanced motion modules. Nevertheless, the consistent gains demonstrate the effectiveness of leveraging pixel-level cues and confirm the generalization ability of SAMOFT across both simple motion scenarios and densely crowded scenes. 
+
+C. Ablation Studies 
+
+We systematically analyze the effectiveness and design choices of SAMOFT. First, we evaluate the contribution of each component. Next, we study the effect of key hyperparam-eters in PMM, CDM, and DBC. Finally, we validate several design decisions, including the selective correction strategy in DBC, the cluster-aware update strategy in CA-ReID, the choice of optical flow estimator, and the segmentation-based pixel filtering strategy. 
+
+1) Component-Wise Analysis: Table IV summarizes the impact of integrating the proposed components. Each module independently improves HOTA, and their combination pro-gressively enhances overall tracking performance. The PMM module improves localization under nonlinear motion and partially overlapping trajectories by introducing 8
+
+TABLE II PERFORMANCE COMPARISON ON THE MOT17 TEST SET UNDER THE PRIVATE DETECTION PROTOCOL . M ETHODS IN THE BOTTOM BLOCK USE THE SAME DETECTIONS . G RAY ROWS INDICATE OUR INTEGRATION . T OP -3 
+
+> RESULTS IN EACH BLOCK ARE HIGHLIGHTED IN RED
+
+, BLUE , AND GREEN .Tracker Venue HOTA ↑ IDF1 ↑ MOTA ↑
+
+Different Detection Settings: 
+
+GTR [53] CVPR22 59.1 71.5 75.3 MOTR [16] ECCV22 57.8 68.6 73.4 SUSHI [54] CVPR23 66.5 83.1 81.1 MOTRv2 [17] CVPR23 62.0 75.0 78.6 SMILEtrack [64] AAAI24 65.3 80.5 81.1 DiffusionTrack [55] AAAI24 60.8 73.8 77.9 TGFormer [65] AAAI25 60.3 72.0 74.9 FDTracker [66] AAAI25 64.2 79.2 81.8 LA-MOTR [67] ICCV25 62.6 73.8 80.7 MOTIP [56] CVPR25 59.3 71.3 75.3 
+
+Same Detection: 
+
+ByteTrack [7] ECCV22 63.1 77.3 80.3 GHOST [33] CVPR23 62.8 77.1 78.7 MotionTrack [68] CVPR23 65.1 80.1 81.1 STAT [34] TMM23 63.7 79.0 78.7 Hybrid-SORT-ReID [5] AAAI24 64.0 78.7 79.9 GeneralTrack [60] CVPR24 64.0 78.3 80.6 DeconfuseTrack [37] CVPR24 64.9 80.6 80.4 TOPICTrack [35] TIP25 63.9 78.7 78.8 OFTrack-ReID [41] AAAI25 64.1 78.8 80.1 OC-SORT [4] CVPR23 63.2 77.5 78.0 
+
+OC-SORT+SAMOFT Ours 64.0 78.8 79.9 Hybrid-SORT [5] AAAI24 63.6 78.4 79.3 
+
+Hybrid-SORT+SAMOFT Ours 64.3 79.4 80.0 TABLE III PERFORMANCE COMPARISON ON THE MOT20 TEST SET UNDER THE PRIVATE DETECTION PROTOCOL . M ETHODS IN THE BOTTOM BLOCK USE THE SAME DETECTIONS . G RAY ROWS INDICATE OUR INTEGRATION . T OP -3 
+
+> RESULTS IN EACH BLOCK ARE HIGHLIGHTED IN RED
+
+, BLUE , AND GREEN .Tracker Venue HOTA ↑ IDF1 ↑ MOTA ↑
+
+Different Detection Settings: 
+
+SUSHI [54] CVPR23 64.3 79.8 74.3 MOTRv2 [17] CVPR23 61.0 73.1 76.2 SMILEtrack [64] AAAI24 63.4 77.5 78.2 DiffusionTrack [55] AAAI24 55.3 66.3 72.8 FDTracker [66] AAAI25 63.4 76.9 78.3 TGFormer [65] AAAI25 54.2 67.1 70.3 
+
+Same Detection: 
+
+ByteTrack [7] ECCV22 61.3 75.2 77.8 GHOST [33] CVPR23 61.2 75.2 73.7 MotionTrack [68] CVPR23 62.8 76.5 78.0 STAT [34] TMM23 62.5 76.4 75.5 StrongSORT++ [24] TMM23 62.6 77.0 73.8 Hybrid-SORT-ReID [5] AAAI24 63.9 78.4 76.7 GeneralTrack [60] CVPR24 61.4 74.0 77.2 DeconfuseTrack [37] CVPR24 63.3 77.6 78.1 TOPICTrack [35] TIP25 62.6 77.6 72.4 OFTrack-ReID [41] AAAI25 63.4 76.9 75.6 OC-SORT [4] CVPR23 62.1 75.9 75.5 
+
+OC-SORT+SAMOFT Ours 64.0 78.9 75.5 Hybrid-SORT [5] AAAI24 62.5 76.2 76.4 
+
+Hybrid-SORT+SAMOFT Ours 64.2 78.9 76.8 
+
+pixel-level motion cues. The CDM module increases the utilization of low-confidence detections via mask-centroid matching while maintaining reliable associations. The DBC module models the distribution of optical flow magnitudes to statistically correct bounding box geometry when abnormal motion occurs, strengthening motion robustness. 
+
+Fig. 6. Comparison of HOTA, IDF1, and MOTA scores on the DanceTrack test set for OC-SORT and its variants. The radius of each circle indicates the MOTA score, the overall tracking performance of different methods. TABLE IV COMPONENT ABLATION STUDY ON THE DANCE TRACK VALIDATION SET .EACH PROPOSED MODULE PROGRESSIVELY IMPROVES TRACKING AND ASSOCIATION PERFORMANCE .PMM CDM DBC CA-ReID HOTA ↑ IDF1 ↑ MOTA ↑
+
+OC-SORT Implementation: 
+
+52.2 51.9 87.3 
+
+! 53.3 53.7 87.4 
+
+! 53.5 53.3 88.8 
+
+! 52.6 52.5 87.5 
+
+! ! 53.6 54.2 87.5 
+
+! ! 54.8 55.4 88.7 
+
+! ! ! 55.8 56.2 88.9 
+
+! ! ! ! 60.6 61.1 89.2 
+
+Hybrid-SORT Implementation: 
+
+59.2 60.4 89.5 
+
+! 62.9 64.6 89.9 
+
+! ! ! ! 64.9 67.7 89.5 
+
+Building upon these motion-level refinements, the CA-ReID module further improves ID consistency by reducing noise accumulation in trajectory-level appearance features. With all components combined, SAMOFT achieves substantial improvements over the baseline, with gains of +8.4 HOTA, +9.2 IDF1, and +1.9 MOTA, demonstrating strong association robustness in complex motion scenarios. We also verify the generalization of our design by integrating the modules into Hybrid-SORT, where consistent improvements are observed without additional tuning. 
+
+2) Weighting Factor of PMM: To effectively fuse instanta-neous pixel-level cues with KF-predicted instance-level cues in the association matrix, we study the effect of the PMM weighting hyperparameter λP , as summarized in Table V. Results show that incorporating PMM consistently improves performance across most λP values, indicating that masked optical flow effectively captures target motion. The best results in HOTA, AssA, DetA, and AssR, along with near-optimal IDF1, are obtained when λP = 0 .2, which we adopt in our implementation. 9
+
+TABLE V EFFECT OF THE WEIGHTING FACTOR λP USED FOR PIXEL MOTION MATCHING . T HE RESULTS SHOW THAT INCORPORATING PMM IMPROVES ASSOCIATION ACCURACY ACROSS A WIDE RANGE OF VALUES .
+
+λP HOTA ↑ IDF1 ↑ AssA ↑ DetA ↑ AssR ↑
+
+0.1 53.1 53.0 36.6 77.4 42.0 0.2 53.3 53.7 36.8 77.4 42.4 
+
+0.3 53.3 53.7 36.8 77.4 42.3 0.4 53.2 53.9 36.7 77.3 42.3 0.5 52.8 53.6 36.2 77.1 42.1 0.6 52.7 53.4 36.1 77.2 42.0 TABLE VI EFFECT OF THE WEIGHTING FACTOR λC USED FOR THE CDM MODULE .THE RESULTS SHOW THAT AN APPROPRIATE WEIGHTING IMPROVES ASSOCIATION ACCURACY AND OVERALL TRACKING PERFORMANCE .
+
+λC HOTA ↑ IDF1 ↑ AssA ↑ DetA ↑ AssR ↑
+
+0.0 (BYTE-only) 52.9 52.4 35.9 78.2 42.0 0.1 53.0 52.6 36.1 78.2 42.2 0.2 53.1 52.5 36.2 78.2 42.2 0.3 53.1 52.8 36.2 78.2 42.3 0.4 53.0 52.4 36.1 78.2 42.1 0.5 53.1 52.6 36.2 78.2 42.2 0.6 53.1 52.5 36.2 78.1 42.1 0.7 53.1 52.7 36.2 78.2 42.3 0.8 53.3 53.0 36.5 78.0 42.7 0.9 53.3 53.0 36.6 78.1 42.8 1.0 53.5 53.3 36.7 78.3 42.9 
+
+3) Weighting Factor of CDM: We also study the effect of the CDM weighting factor λC , as summarized in Table VI. Since CDM targets low-confidence detections, we introduce an additional BYTE association step [7] for these detections when CDM is enabled. This extra matching round relies solely on IoU-based association. When λC = 0 (i.e., the BYTE-only configuration), the additional association already improves performance by utilizing more detections. As λC
+
+increases, the tracker further improves detection utilization and association accuracy, yielding gains of +0.6 HOTA, +0.9 IDF1, +0.8 AssA, +0.1 DetA, and +0.9 AssR compared with the BYTE-only setting. These results indicate that CDM effectively captures characteristics of low-confidence targets, enabling more flexible and reliable association. 
+
+4) Update Threshold in DBC: We analyze the effect of the update threshold τD . A small threshold may include samples unrelated to true long-tailed motion events, while a large value may lead to insufficient samples for reliable modeling. As shown in Table VII, the best performance and association accuracy are achieved when τD = 0 .1, which we adopt in our implementation. 
+
+5) Effectiveness of DBC: Table VIII evaluates the effec-tiveness of our DBC correction strategy for IoU computation. Naively applying IoU correction to all detection-track pairs degrades performance because long-tailed motion occurs only sporadically during tracking. By detecting abnormal motion and activating correction through the distribution-based strat-egy, DBC mitigates motion-matching degradation caused by bounding-box deformation and improves association robust-ness. 
+
+TABLE VII EFFECT OF THE UPDATE THRESHOLD τD IN THE DBC MODULE . T HE THRESHOLD CONTROLS WHEN DISTRIBUTION -BASED CORRECTION IS ACTIVATED FOR POTENTIAL LONG -TAILED MOTION EVENTS . B EST OVERALL TRACKING AND ASSOCIATION PERFORMANCE IS ACHIEVED WHEN τD = 0 .1.
+
+τD HOTA ↑ IDF1 ↑ AssA ↑ DetA ↑ AssR ↑
+
+0.05 52.4 52.2 35.6 77.2 40.4 0.1 52.6 52.5 35.9 77.4 40.7 
+
+0.2 52.3 52.0 35.4 77.4 40.3 0.3 51.8 51.1 34.7 77.5 39.5 0.4 52.1 51.7 35.2 77.5 40.0 0.5 52.4 52.1 35.5 77.4 40.5 0.6 52.2 51.9 35.3 77.4 40.2 TABLE VIII IMPACT OF DIFFERENT CORRECTION STRATEGIES . O UR DBC 
+
+> SELECTIVELY CAPTURES LONG
+
+-TAILED MOTION EVENTS AND TRIGGERS CORRECTION ONLY WHEN NECESSARY , LEADING TO IMPROVED ASSOCIATION ACCURACY COMPARED TO APPLYING CORRECTION TO ALL PAIRS .Method HOTA ↑ IDF1 ↑ AssA ↑ DetA ↑ AssR ↑
+
+Correct All 51.7 50.6 34.9 77.1 39.6 DBC 52.6 52.5 35.9 77.4 40.7 
+
+6) Effectiveness of Cluster-Aware Update Strategy: Ta-ble IX evaluates the cluster-aware update strategy. Updating trajectory appearance features using all matched embeddings (Simple ReID Update) degrades tracking and association ac-curacy due to low-quality embeddings. In contrast, the cluster-aware strategy detects potential occlusions and selectively updates features, reducing noise accumulation and producing more discriminative trajectory embeddings. 
+
+7) Comparison with Other Optical Flow Method: For optical flow, we adopt SEA-RAFT, which offers a better trade-off between cross-dataset generalization and runtime efficiency. Keeping all other settings identical, we compare Farneback with SEA-RAFT in Table X. SEA-RAFT consis-tently improves all metrics, indicating that accurate optical flow estimation is crucial for exploiting pixel-level motion cues. 
+
+8) Comparison with Heuristic Filtering Strategy: As shown in Table XI, removing pixel filtering (i.e., using all bounding-box pixels) causes a noticeable performance drop. This occurs because optical flow extracted from the entire bounding box inevitably includes background pixels and pixels belonging to nearby objects. These noisy pixels introduce inconsistent motion signals that degrade the reliability of pixel-level motion cues. To further evaluate the benefit of SAM, we design a heuristic alternative called Pixel Denoising Filtering (PDF). PDF filters noisy pixels through two mechanisms. 
+
+i) Background Noise Filtering. Assuming background pixels exhibit minimal motion, we compute the optical flow magni-tude for each pixel and apply min-max normalization within the target region. Pixels with normalized flow magnitude below threshold τm are removed: 
+
+˜Mt =
+
+
+
+(x, y ) m(p) − min( mt)max( mt) − min( mt) ≥ τm
+
+
+
+. (14) 10 
+
+TABLE IX IMPACT OF THE CLUSTER -AWARE SELECTIVE UPDATE STRATEGY .CA-R EID REDUCES NOISE IN THE MAINTAINED TRAJECTORY APPEARANCE FEATURES BY SELECTIVELY UPDATING EMBEDDINGS FROM RELIABLE DETECTIONS , LEADING TO IMPROVED ASSOCIATION ACCURACY AND OVERALL TRACKING PERFORMANCE .Method HOTA ↑ IDF1 ↑ AssA ↑ DetA ↑ AssR ↑
+
+Simple ReID Update 59.6 60.5 45.2 79.0 50.9 CA-ReID Update 60.6 61.1 46.9 79.1 52.2 
+
+TABLE X COMPARISON BETWEEN FARNEBACK AND SEA-RAFT FOR OPTICAL FLOW ESTIMATION . SEA-RAFT PROVIDES MORE ACCURATE MOTION ESTIMATION THAN THE TRADITIONAL FARNEBACK METHOD , LEADING TO CONSISTENT IMPROVEMENTS ACROSS ALL TRACKING METRICS .
+
+Method HOTA ↑ IDF1 ↑ MOTA ↑
+
+Baseline 52.2 51.9 87.3 Farneback 53.8 52.7 87.2 SEA-RAFT 55.8 56.2 88.9 
+
+ii) Interference from Adjacent Targets. We further apply a center-cross mask to suppress pixels near box boundaries where overlaps are likely: 
+
+˜Ct = (x, y ) |x − xc| ≤ αW ∨ | y − yc| ≤ αH . (15) The final key pixel set used for PMM is 
+
+P P DF t = ˜Mt ∩ ˜Ct. (16) Table XI compares PDF and SAM filtering. Both improve performance over the baseline, while SAM achieves the best results without introducing extra hyperparameters. Here, the best PDF configuration uses τm = 0 .7 and 2α = 0 .9.
+
+D. Qualitative Results 
+
+Figure 7 shows qualitative comparisons under challenging scenarios. The baseline suffers from identity switches under occlusion, severe bounding-box deformation, and trajectory overlap. Examples include: DanceTrack0005, where ID 1switches after occlusion; DanceTrack0007, where IDs 6 and 8 swap; DanceTrack0035, where severe deformation causes ID 1 to switch to ID 5; and DanceTrack0097, where heavy over-lap causes cascading identity switches. SAMOFT maintains consistent identities by leveraging reliable pixel-level motion cues and improved appearance updates. A potential concern is that near-complete occlusion may limit segmentation-based modules. However, results in Tables I and III show that our method still outperforms baselines on datasets with frequent occlusions. Under severe occlusion, motion prediction from historical states remains useful, while under moderate occlusion SAM still provides reliable segmen-tation (Fig. 8). Long-term tracking under complete occlusion remains an open problem for future work. 
+
+E. Limitations and Prospects 1) Computational Overhead: SAMOFT introduces addi-tional computation by integrating SAM segmentation and 
+
+TABLE XI COMPARISON BETWEEN HEURISTIC PDF FILTERING AND SAM-BASED PIXEL SELECTION . B OTH STRATEGIES AIM TO REMOVE NOISY PIXELS INTRODUCED BY BACKGROUND REGIONS OR ADJACENT TARGETS . W HILE 
+
+PDF RELIES ON MOTION SALIENCY AND SPATIAL HEURISTICS TO FILTER PIXELS , SAM DIRECTLY PRODUCES ACCURATE TARGET MASKS . T HE RESULTS SHOW THAT SAM-BASED FILTERING YIELDS MORE RELIABLE PIXEL -LEVEL CUES AND IMPROVES TRACKING PERFORMANCE .
+
+Method HOTA ↑ IDF1 ↑ MOTA ↑
+
+Baseline 52.2 51.9 87.3 w/o Filtering 52.0 52.0 87.3 PDF Filtering 52.9 53.2 87.4 
+
+SAM Filtering 53.3 53.7 87.4 
+
+Fig. 7. Tracking comparison between the baseline tracker and SAMOFT. Under challenging scenarios such as occlusion, bounding-box deformation, and trajectory overlap, the baseline often produces identity switches, while SAMOFT maintains consistent identities by leveraging pixel-level motion cues and refined appearance updates. 
+
+SEA-RAFT optical flow. On the DanceTrack validation set, the baseline runs at 28.6 FPS. Adding SEA-RAFT reduces speed to 23.8 FPS, while integrating SAM further reduces it to 14.1 FPS. Despite this overhead, the improved performance justifies the use of pixel-level cues. We expect this gap to narrow as lightweight segmentation and optical flow models continue to improve. 
+
+2) Future Directions: Our design follows a compact prin-ciple to explore pixel-level cues within SORT-style tracking-by-detection frameworks. Future work may further improve pixel-level modeling by developing lightweight segmentation and optical flow models tailored for MOT, designing more advanced interaction mechanisms between motion and seg-mentation, or exploring learnable fusion strategies. Ultimately, fully pixel-level cue-driven trackers may re-place traditional bounding-box-based tracking-by-detection approaches. 11 
+
+Fig. 8. SAM segmentation under partial occlusion. Despite significant overlap between targets, SAM is able to produce accurate masks that isolate individual objects. These masks provide reliable pixel-level cues that support robust motion estimation and trajectory association in our framework. 
+
+V. C ONCLUSION 
+
+In this work, we show that pixel-level cues derived from segmentation and optical flow can effectively improve the association robustness of MOT trackers. Instantaneous pixel motion complements Kalman filter-based motion prediction when historical observations become unreliable, while mask-based spatial cues provide more stable localization under partial occlusion. Furthermore, modeling the statistical dis-tribution of optical flow magnitudes enables the detection of long-tailed motion patterns, allowing adaptive correction of trajectory states under complex motion conditions. In addition, awareness of target states reduces the effect of low-quality embeddings on maintained trajectory features. Based on these insights, we propose SAMOFT, a ro-bust tracking framework that achieves strong performance on multiple public benchmarks, validating the effectiveness of the proposed design. We hope this work encourages further exploration of integrating context-aware and pixel-level cues into MOT systems, potentially complementing or replacing traditional instance-level matching strategies and introducing statistical reasoning into online trajectory association. REFERENCES [1] A. Milan, L. Leal-Taix´ e, I. Reid, S. Roth, and K. Schindler, “Mot16: A benchmark for multi-object tracking,” arXiv preprint arXiv:1603.00831 ,2016. 1, 2 [2] P. Sun, J. Cao, Y. Jiang, Z. Yuan, S. Bai, K. Kitani, and P. Luo, “Dancetrack: Multi-object tracking in uniform appearance and diverse motion,” in Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , 2022, pp. 20 993–21 002. 1, 2, 7 [3] A. Bewley, Z. Ge, L. Ott, F. Ramos, and B. Upcroft, “Simple online and realtime tracking,” in IEEE International Conference on Image Processing , 2016, pp. 3464–3468. 1, 2 [4] J. Cao, J. Pang, X. Weng, R. Khirodkar, and K. Kitani, “Observation-centric sort: Rethinking sort for robust multi-object tracking,” in Pro-ceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , 2023, pp. 9686–9696. 1, 2, 3, 6, 7, 8 [5] M. Yang, G. Han, B. Yan, W. Zhang, J. Qi, H. Lu, and D. Wang, “Hybrid-sort: Weak cues matter for online multi-object tracking,” in 
+
+Proceedings of the AAAI Conference on Artificial Intelligence , vol. 38, no. 7, 2024, pp. 6504–6512. 1, 3, 6, 7, 8 [6] Z. Ge, S. Liu, F. Wang, Z. Li, and J. Sun, “Yolox: Exceeding yolo series in 2021,” arXiv preprint arXiv:2107.08430 , 2021. 1, 2, 6 [7] Y. Zhang, P. Sun, Y. Jiang, D. Yu, F. Weng, Z. Yuan, P. Luo, W. Liu, and X. Wang, “Bytetrack: Multi-object tracking by associating every detection box,” in European Conference on Computer Vision , 2022, pp. 1–21. 1, 2, 3, 5, 6, 7, 8, 9 [8] G. Maggiolino, A. Ahmad, J. Cao, and K. Kitani, “Deep oc-sort: Multi-pedestrian tracking by adaptive re-identification,” in IEEE International Conference on Image Processing , 2023, pp. 3025–3029. 1, 3, 6, 7 [9] P. Dendorfer, V. Yugay, A. Osep, and L. Leal-Taix´ e, “Quo vadis: Is trajectory forecasting the key towards long-term multi-object track-ing?” Advances in Neural Information Processing Systems , vol. 35, pp. 15 657–15 671, 2022. 1, 3 [10] W. El Ahmar, A. Sappa, and R. Hammoud, “Thermal pedestrian multiple object tracking challenge (tp-mot),” in Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , 2025, pp. 4602–4609. 1 [11] Y. Zhu, Q. Wang, C. Li, J. Tang, C. Gu, and Z. Huang, “Visible–thermal multiple object tracking: Large-scale video dataset and progressive fusion approach,” Pattern Recognition , vol. 161, p. 111330, 2025. 1 [12] Y. He, X. Wei, X. Hong, W. Shi, and Y. Gong, “Multi-target multi-camera tracking by tracklet-to-target assignment,” IEEE Transactions on Image Processing , vol. 29, pp. 5191–5205, 2020. 1 [13] K. Luo, H. Shi, S. Wu, F. Teng, M. Duan, C. Huang, Y. Wang, K. Wang, and K. Yang, “Omnidirectional multi-object tracking,” in Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition ,2025, pp. 21 959–21 969. 1 [14] A. Kirillov, E. Mintun, N. Ravi, H. Mao, C. Rolland, L. Gustafson, T. Xiao, S. Whitehead, A. C. Berg, W.-Y. Lo et al. , “Segment anything,” in Proceedings of the IEEE/CVF International Conference on Computer Vision , 2023, pp. 4015–4026. 2, 3, 6 [15] P. Dendorfer, H. Rezatofighi, A. Milan, J. Shi, D. Cremers, I. Reid, S. Roth, K. Schindler, and L. Leal-Taix´ e, “Mot20: A bench-mark for multi object tracking in crowded scenes,” arXiv preprint arXiv:2003.09003 , 2020. 2 [16] F. Zeng, B. Dong, Y. Zhang, T. Wang, X. Zhang, and Y. Wei, “Motr: End-to-end multiple-object tracking with transformer,” in European Conference on Computer Vision , 2022, pp. 659–675. 2, 7, 8 [17] Y. Zhang, T. Wang, and X. Zhang, “Motrv2: Bootstrapping end-to-end multi-object tracking by pretrained object detectors,” in Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition ,2023, pp. 22 056–22 065. 2, 7, 8 [18] R. Li, B. Zhang, J. Liu, W. Liu, and Z. Teng, “Inference-domain network evolution: A new perspective for one-shot multi-object tracking,” IEEE Transactions on Image Processing , vol. 32, pp. 2147–2159, 2023. 2 [19] H. Liu, C. Zhang, B. Fan, and J. Xu, “Pro2diff: Proposal propagation for multi-object tracking via the diffusion model,” IEEE Transactions on Image Processing , vol. 33, pp. 6508–6520, 2024. 2 [20] S. Ren, K. He, R. Girshick, and J. Sun, “Faster r-cnn: Towards real-time object detection with region proposal networks,” Advances in Neural Information Processing Systems , vol. 28, 2015. 2 [21] C.-Y. Wang, A. Bochkovskiy, and H.-Y. M. Liao, “Yolov7: Trainable bag-of-freebies sets new state-of-the-art for real-time object detectors,” in Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , 2023, pp. 7464–7475. 2 [22] H. W. Kuhn, “The hungarian method for the assignment problem,” Naval Research Logistics Quarterly , vol. 2, no. 1-2, pp. 83–97, 1955. 2 [23] R. E. Kalman et al. , “Contributions to the theory of optimal control,” 
+
+Bol. Soc. Mat. Mexicana , vol. 5, no. 2, pp. 102–119, 1960. 3 [24] Y. Du, Z. Zhao, Y. Song, Y. Zhao, F. Su, T. Gong, and H. Meng, “Strong-sort: Make deepsort great again,” IEEE Transactions on Multimedia ,vol. 25, pp. 8725–8737, 2023. 3, 7, 8 [25] H. Jung, S. Kang, T. Kim, and H. Kim, “Conftrack: Kalman filter-based multi-person tracking by utilizing confidence score of detection box,” in Proceedings of the IEEE/CVF Winter Conference on Applications of Computer Vision , 2024, pp. 6583–6592. 3 [26] Y. Gao, H. Xu, J. Li, and X. Gao, “Bpmtrack: Multi-object tracking with detection box application pattern mining,” IEEE Transactions on Image Processing , vol. 33, pp. 1508–1521, 2024. 3 [27] Z. Li, D. Zhang, S. Wu, M. Song, and G. Chen, “Sampling-resilient multi-object tracking,” in Proceedings of the AAAI Conference on Artificial Intelligence , vol. 38, no. 4, 2024, pp. 3297–3305. 3 [28] Y. Du, C. Lei, Z. Zhao, and F. Su, “ikun: Speak to trackers without retraining,” in Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , 2024, pp. 19 135–19 144. 3 [29] W. Lv, Y. Huang, N. Zhang, R.-S. Lin, M. Han, and D. Zeng, “Diffmot: A real-time diffusion-based multiple object tracker with non-linear prediction,” in Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , 2024, pp. 19 321–19 330. 3, 7 [30] N. Wojke, A. Bewley, and D. Paulus, “Simple online and realtime track-ing with a deep association metric,” in IEEE International Conference on Image Processing , 2017, pp. 3645–3649. 3 [31] Z. Wang, L. Zheng, Y. Liu, Y. Li, and S. Wang, “Towards real-time multi-object tracking,” in European Conference on Computer Vision ,2020, pp. 107–122. 3 [32] N. Aharon, R. Orfaig, and B.-Z. Bobrovsky, “Bot-sort: Robust associa-tions multi-pedestrian tracking,” arXiv preprint arXiv:2206.14651 , 2022. 3, 6 12 
+
+[33] J. Seidenschwarz, G. Bras´ o, V. C. Serrano, I. Elezi, and L. Leal-Taix´ e, “Simple cues lead to a strong multi-object tracker,” in Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition ,2023, pp. 13 813–13 823. 3, 7, 8 [34] J. Zhang, M. Wang, H. Jiang, X. Zhang, C. Yan, and D. Zeng, “Stat: Multi-object tracking based on spatio-temporal topological constraints,” 
+
+IEEE Transactions on Multimedia , vol. 26, pp. 4445–4457, 2023. 3, 7, 8[35] X. Cao, Y. Zheng, Y. Yao, H. Qin, X. Cao, and S. Guo, “Topic: A parallel association paradigm for multi-object tracking under complex motions and diverse scenes,” IEEE Transactions on Image Processing ,vol. 34, pp. 743–758, 2025. 3, 7, 8 [36] K. Shim, K. Ko, Y. Yang, and C. Kim, “Focusing on tracks for online multi-object tracking,” in Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , 2025, pp. 11 687–11 696. 3, 7[37] C. Huang, S. Han, M. He, W. Zheng, and Y. Wei, “Deconfusetrack: Dealing with confusion for multi-object tracking,” in Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition ,2024, pp. 19 290–19 299. 3, 7, 8 [38] Z. Liu, X. Wang, C. Wang, W. Liu, and X. Bai, “Sparsetrack: Multi-object tracking by performing scene decomposition based on pseudo-depth,” IEEE Transactions on Circuits and Systems for Video Technol-ogy , vol. 35, no. 5, pp. 4870–4882, 2025. 3 [39] Y. Chen, D. Zhao, and H. Li, “Deep kalman filter with optical flow for multiple object tracking,” in 2019 IEEE International Conference on Systems, Man and Cybernetics (SMC) , 2019, pp. 3036–3041. 3 [40] M. Yao, J. Wang, J. Peng, M. Chi, and C. Liu, “Folt: Fast multiple object tracking from uav-captured videos based on optical flow,” in Proceedings of the 31st ACM International Conference on Multimedia , 2023, pp. 3375–3383. 3 [41] Z. Song, R. Luo, L. Ma, Y. Tang, Y.-P. P. Chen, J. Yu, and W. Yang, “Temporal coherent object flow for multi-object tracking,” in Proceed-ings of the AAAI Conference on Artificial Intelligence , vol. 39, no. 7, 2025, pp. 6978–6986. 3, 7, 8 [42] Z. Song, Y. Li, S. Zhou, W. Tang, and L. Wang, “Mode-track: Robust multi-object tracking with motion decoupling in uav videos,” IEEE Transactions on Multimedia , pp. 1–11, 2026. 3 [43] C.-Y. Yang, H.-W. Huang, W. Chai, Z. Jiang, and J.-N. Hwang, “Samu-rai: Motion-aware memory for training-free visual object tracking with sam 2,” IEEE Transactions on Image Processing , vol. 35, pp. 970–982, 2026. 3 [44] S. Li, L. Ke, M. Danelljan, L. Piccinelli, M. Segu, L. Van Gool, and F. Yu, “Matching anything by segmenting anything,” in Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition ,2024, pp. 18 963–18 973. 3 [45] J. Jiang, Z. Wang, M. Zhao, Y. Li, and D. Jiang, “Sam2mot: A novel paradigm of multi-object tracking by segmentation,” arXiv preprint arXiv:2504.04519 , 2025. 3 [46] S. Chen, E. Yu, J. Li, and W. Tao, “Delving into the trajectory long-tail distribution for muti-object tracking,” in Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , 2024, pp. 19 341–19 351. 3 [47] G. Zheng, S. Lin, H. Zuo, C. Fu, and J. Pan, “Nettrack: Tracking highly dynamic objects with a net,” in Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , 2024, pp. 19 145–19 155. 3 [48] N. Karaev, I. Rocco, B. Graham, N. Neverova, A. Vedaldi, and C. Rup-precht, “Cotracker: It is better to track together,” in European Conference on Computer Vision , 2024, pp. 18–35. 3 [49] Y. Wang, L. Lipson, and J. Deng, “Sea-raft: Simple, efficient, accurate raft for optical flow,” in European Conference on Computer Vision , 2024, pp. 36–54. 3, 6 [50] J. Luiten, A. Osep, P. Dendorfer, P. Torr, A. Geiger, L. Leal-Taix´ e, and B. Leibe, “Hota: A higher order metric for evaluating multi-object tracking,” International Journal of Computer Vision , vol. 129, no. 2, pp. 548–578, 2021. 6 [51] E. Ristani, F. Solera, R. Zou, R. Cucchiara, and C. Tomasi, “Performance measures and a data set for multi-target, multi-camera tracking,” in 
+
+European Conference on Computer Vision , 2016, pp. 17–35. 6 [52] K. Bernardin and R. Stiefelhagen, “Evaluating multiple object tracking performance: The clear mot metrics,” EURASIP Journal on Image and Video Processing , vol. 2008, no. 1, p. 246309, 2008. 6 [53] X. Zhou, T. Yin, V. Koltun, and P. Kr¨ ahenb¨ uhl, “Global tracking transformers,” in Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , 2022, pp. 8771–8780. 7, 8 [54] O. Cetintas, G. Bras´ o, and L. Leal-Taix´ e, “Unifying short and long-term tracking with graph hierarchies,” in Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , 2023, pp. 22 877–22 887. 7, 8 [55] R. Luo, Z. Song, L. Ma, J. Wei, W. Yang, and M. Yang, “Diffusiontrack: Diffusion model for multi-object tracking,” in Proceedings of the AAAI Conference on Artificial Intelligence , vol. 38, no. 5, 2024, pp. 3991– 3999. 7, 8 [56] R. Gao, J. Qi, and L. Wang, “Multiple object tracking as id prediction,” in Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , 2025, pp. 27 883–27 893. 7, 8 [57] H. Ren, S. Han, H. Ding, Z. Zhang, H. Wang, and F. Wang, “Focus on details: Online multi-object tracking with diverse fine-grained repre-sentation,” in Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , 2023, pp. 11 289–11 298. 7 [58] H. Jin, X. Nie, Y. Yan, X. Chen, Z. Zhu, and D. Qi, “Ahor: Online multi-object tracking with authenticity hierarchizing and occlusion recovery,” 
+
+IEEE Transactions on Circuits and Systems for Video Technology ,vol. 34, no. 9, pp. 8253–8265, 2024. 7 [59] K. Shim, J. Hwang, K. Ko, and C. Kim, “A confidence-aware matching strategy for generalized multi-object tracking,” in IEEE International Conference on Image Processing , 2024, pp. 4042–4048. 7 [60] Z. Qin, L. Wang, S. Zhou, P. Fu, G. Hua, and W. Tang, “Towards generalizable multi-object tracking,” in Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , 2024, pp. 18 995–19 004. 7, 8 [61] K. Yi, K. Luo, X. Luo, J. Huang, H. Wu, R. Hu, and W. Hao, “Ucmc-track: Multi-object tracking with uniform camera motion compensation,” in Proceedings of the AAAI Conference on Artificial Intelligence , vol. 38, no. 7, 2024, pp. 6702–6710. 7 [62] Y. Gao, H. Xu, J. Li, N. Wang, and X. Gao, “Multi-scene generalized trajectory global graph solver with composite nodes for multiple object tracking,” in Proceedings of the AAAI Conference on Artificial Intelli-gence , vol. 38, no. 3, 2024, pp. 1842–1850. 7 [63] C. Huang, S. Han, M. He, W. Zheng, and Y. Wei, “Dftrack: Deconfused data association framework for multi-object tracking,” IEEE Transac-tions on Circuits and Systems for Video Technology , vol. 35, no. 10, pp. 10 367–10 381, 2025. 7 [64] Y.-H. Wang, J.-W. Hsieh, P.-Y. Chen, M.-C. Chang, H.-H. So, and X. Li, “Smiletrack: Similarity learning for occlusion-aware multiple object tracking,” in Proceedings of the AAAI Conference on Artificial Intelligence , vol. 38, no. 6, 2024, pp. 5740–5748. 8 [65] R. Zeng, Y. Huang, and S. Pei, “Tgformer: Transformer with track query group for multi-object tracking,” in Proceedings of the AAAI Conference on Artificial Intelligence , vol. 39, no. 9, 2025, pp. 9824–9832. 8 [66] T. Fu, H. Yu, K. Niu, B. Li, and X. Xue, “Foundation model driven ap-pearance extraction for robust multiple object tracking,” in Proceedings of the AAAI Conference on Artificial Intelligence , vol. 39, no. 3, 2025, pp. 3031–3039. 8 [67] P. Wang, Y. Wang, H. Cao, W. Chen, and D. Li, “La-motr: End-to-end multi-object tracking by learnable association,” in Proceedings of the IEEE/CVF International Conference on Computer Vision , 2025, pp. 12 438–12 448. 8 [68] Z. Qin, S. Zhou, L. Wang, J. Duan, G. Hua, and W. Tang, “Motiontrack: Learning robust short-term and long-term motions for multi-object tracking,” in Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , 2023, pp. 17 939–17 948. 7, 8 [69] L. Mehl, J. Schmalfuss, A. Jahedi, Y. Nalivayko, and A. Bruhn, “Spring: A high-resolution high-detail dataset and benchmark for scene flow, optical flow and stereo,” in Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , 2023, pp. 4981–4991. 6 [70] B. Shuai, A. Bergamo, U. Buechler, A. Berneshawi, A. Boden, and J. Tighe, “Large scale real-world multi-person tracking,” in European Conference on Computer Vision , 2022, pp. 504–521. 7
