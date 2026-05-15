@@ -1,0 +1,645 @@
+Title: Runtime Monitoring of Perception-Based Autonomous Systems via Embedding Temporal Logic
+
+URL Source: https://arxiv.org/pdf/2605.12651v2
+
+Published Time: Fri, 15 May 2026 00:27:15 GMT
+
+Number of Pages: 19
+
+Markdown Content:
+# Runtime Monitoring of Perception-Based Autonomous Systems via Embedding Temporal Logic 
+
+Parv Kapoor ∗
+
+Software and Societal Systems Department Carnegie Mellon University 
+
+parvk@andrew.cmu.edu 
+
+Abigail Hammer ∗
+
+Software and Societal Systems Department Carnegie Mellon University 
+
+arhammer@andrew.cmu.edu 
+
+Ashish Kapoor 
+
+General Robotics 
+
+ashish@generalrobotics.company 
+
+Karen Leung 
+
+Aeronautics and Astronautics Department University of Washington 
+
+kymleung@uw.edu 
+
+Eunsuk Kang 
+
+Software and Societal Systems Department Carnegie Mellon University 
+
+eunsukk@andrew.cmu.edu 
+
+# Abstract 
+
+Runtime monitoring of autonomous systems traditionally relies on mapping con-tinuous sensor observations to discrete logical propositions defined over low-dimensional state variables. This abstraction breaks down in perception-driven settings, where such mappings require additional learned modules that are often computationally expensive, brittle, and semantically misaligned. In this work, we propose Embedding Temporal Logic (ETL), a temporal logic that performs monitoring directly in learned embedding spaces. ETL defines predicates through distances between observed embeddings and target embeddings derived from ref-erence observations. This formulation allows specifications to capture high-level perceptual concepts, such as similarity to visual goals or avoidance of semantic regions, that are difficult or impossible to express using traditional predicates. By composing these predicates with temporal operators, ETL naturally expresses temporally extended and sequential perceptual behaviors. We introduce ETL mon-itors for evaluating specifications over bounded embedding traces, along with a conformal calibration procedure that provides reliable and safety-oriented predicate evaluation. We evaluate our approach across multiple manipulation environments to show that ETL achieves strong empirical agreement with ground-truth semantics, including accurate monitoring of temporally composed behaviors. 
+
+# 1 Introduction 
+
+Modern autonomous systems, from self-driving vehicles to robotic manipulators, increasingly rely on learned representations for perception, prediction, and decision making [Hafner et al., 2020, Hansen et al., 2024, Zhou et al., 2025, Kim et al., 2024, Intelligence et al., 2025, Ye et al., 2026]. These repre-sentations allow autonomous systems to overcome the challenges of operating on explicit state space representations (such as object poses and velocities), which often require state estimation pipelines 
+
+> ∗Indicates equal contribution Preprint.
+> arXiv:2605.12651v2 [cs.LG] 14 May 2026
+
+and auxiliary localization modules. We refer to systems that operate on learned representations as 
+
+perception-based systems . Perception-based systems map high-dimensional sensor streams such as images, video, or lidar to compact latent representations, which are then consumed by downstream policies, planners, or world models [NVIDIA et al., 2026, Baniodeh et al., 2025]. A promising approach to achieving high-assurance autonomy involves formally specifying desired properties of a system and applying techniques such as formal verification [Luckcuck et al., 2019] and runtime monitoring [Maler and Nickovic, 2004] to check whether the system satisfies these properties [Seshia et al., 2018]. In particular, runtime monitoring has attracted considerable interest as it can be deployed online to provide rigorous guarantees about the system behavior without incurring the cost of an exhaustive offline analysis. A runtime monitor periodically evaluates the execution of a system and raises an alert when the system exhibits undesirable behavior [Colombo and Pace, 2022]. This ability to provide lightweight but rigorous online assurance has led to successful applications in domains such as autonomous vehicles [Schön and Lindemann, 2026], drones [Gu et al., 2023], and robotic manipulators [Lin and Baras, 2019]. Runtime monitoring relies on the availability of formal specifications that capture the desired prop-erties of a system. For systems with low-dimensional state representations, specification notations such as signal temporal logic (STL) [Maler and Nickovic, 2004] provide an expressive formalism to specify behavioral properties over logical predicates . Each predicate encodes a condition over a state variable that can be evaluated as true or false at each step of execution, e.g., whether its position, velocity, or force is below or above a given threshold. However, for perception-based systems, writing such formal specifications over learned represen-tations remains an open challenge [Seshia et al., 2018]. For these systems, low-dimensional state representations are often unavailable or require specialized, ad-hoc perception modules. For example, translating a property such as “the robot is near the obstacle” or “the gripper is holding the object” into predicates requires either an additional classifier or detector, or a handcrafted feature extractor tailored to the task (e.g., to detect whether the concept of the gripper “holding” an object is present in the current scene) [Hekmatnejad et al., 2024]. Adding these modules can introduce new sources of brittleness, calibration errors, and domain dependence into the system. Worse, whenever the vocabulary of concepts for specification evolves (e.g., to also be able to express properties about the gripper “dropping” an object), it may be necessary to augment the existing perception modules or add new ones to support the new concepts. Overall, there is a fundamental mismatch between (i) the latent space over which typical perception systems operate and (ii) the low-dimensional state space over which specifications in existing temporal logic notations are expressed. In this paper, we propose a new approach for formally specifying and monitoring the behavioral prop-erties of perception-based autonomous systems. The key idea is to employ embeddings , pretrained vector representations of observations, as a first-class concept in specifications, and express a property in terms of distances between a target embedding (an ideal representation of real-world concepts that the system interacts with) and an observed embedding (a representation generated by an encoder from a sensor observation during system execution). The key insight is that pretrained encoders already embed semantic proximity in geometry [Radford et al., 2021, Oquab et al., 2024]: observations of semantically similar scenes map to nearby vectors in latent space. This makes perceptual properties directly expressible as geometric predicates; for instance, “being near the obstacle” can be represented as “ ∥zt − zobstacle ∥2 is small,” where zobstacle is an encoder representation of a reference image of that obstacle and zt is an encoding of the current scene image. An expressive temporal logic specification can then be constructed by combining multiple embedding-based predicates and used as part of a runtime monitor to ensure that the system satisfies its desired property (e.g., “If the gripper is holding an object, it will not drop the object until it is moved to a deposit box”). Although this idea is conceptually simple, making it useful for formal specification poses multiple challenges. First, there is the question of how target embeddings are generated: they can come from a reference image, a demonstration, or a set of both, and different choices can induce meaningfully different predicates. Additionally, embeddings are learned, continuous, and model-dependent repre-sentations, and geometric proximity is not guaranteed to align perfectly with the logical distinctions required for monitoring. A central challenge, therefore, is to turn embedding-space similarity into a well-defined specification primitive: one must decide which geometric relationships correspond to predicate satisfaction, how to calibrate decision thresholds, and how these predicates are composed to 2create system specifications. These issues make embedding-based specifications substantially more challenging than simply reusing learned features inside an existing monitor. In this paper, we make the following four contributions: (i) we introduce Embedding Temporal Logic 
+
+(ETL), a temporal logic for specifying perceptual behaviors directly over observations (Section 3.1); (ii) we formally define Boolean satisfaction semantics over bounded embedding traces, yielding an online monitor for perceptual specifications (Sections 3.1 and 3.2); (iii) we propose data-driven methods for calibrating embedding predicate thresholds, making them feasible for safety-oriented monitoring (Section 4); and (iv) we evaluate ETL-based monitors across navigation and manipulation domains, showing that they can faithfully monitor atomic and sequential perceptual behaviors across diverse environments (Section 5). 
+
+# 2 Background and Related Work 
+
+Formal Specifications for Robotic Systems Temporal logics, such as Linear Temporal Logic (LTL), STL, and Metric Temporal Logic (MTL) have been used to formally verify complex behaviors in cyber-physical and robotic systems. These logics have been used for trajectory planning [Kress-Gazit et al., 2009, Sun et al., 2022, Leung et al., 2023], reinforcement learning [Aksaray et al., 2016, Alur et al., 2023, Aloor et al., 2023], runtime monitoring [Bartocci et al., 2018], and adaptive control [Raman et al., 2014, Belta and Sadraddini, 2019, Lindemann and Dimarogonas, 2019, Kapoor et al., 2025]. These logics can struggle with systems that rely on ML for perception, where input data can have a variable number of objects in frame and evolving bounding boxes. Recently, Spatiotemporal Perception Logic (STPL) [Hekmatnejad et al., 2024] was introduced, which combined Timed Quality Temporal Logic [Dokhanchi et al., 2018] with spatial logic and allows quantification over objects, as well as 2D and 3D spatial reasoning. 
+
+Pretrained Vision Encoders Recent advances in representation learning have produced pretrained vision encoders that are sufficiently expressive to serve as general-purpose perceptual representations across a wide range of visual domains [Oquab et al., 2024]. As a result, these models provide a practical foundation for extending temporal logic beyond low-dimensional state space representations. Pretrained vision encoders such as CLIP [Radford et al., 2021] and DINOv2 [Oquab et al., 2024] provide a shared embedding space in which perceptual similarity can be measured, making them a natural choice for defining specification predicates over observations. 
+
+Specification Based Runtime Monitoring Given a logical specification that is well-defined over bounded traces and encodes a desired system property, a runtime monitor is an online evaluation at each time step during an execution to assess whether the execution satisfies the given specification [Maler and Nickovic, 2004, Bartocci et al., 2018]. In practice, runtime monitoring often goes beyond Boolean verdicts and employs quantitative semantics, such as robustness measures in temporal logic, which provide a real-valued signal indicating how much a trace satisfies or violates the specification [Fainekos and Pappas, 2009]. These quantitative monitors are particularly useful in continuous and stochastic systems, as they enable graded feedback and can be integrated with optimization or control algorithms for real-time decision making. 
+
+Conformal Prediction Conformal prediction [Vovk et al., 2005] is a distribution-free calibration framework that turns a held-out calibration set into a finite-sample statistical guarantee under only an 
+
+exchangeability assumption. The exchangeability of data means that the calibration and test samples are identically distributed and order-independent. At a high level, it is a method for calibrating a model so that its predictions on unseen examples come with a reliability guarantee. We employ conformal prediction theory for calibrating thresholds for ETL predicates in Section 4. 
+
+# 3 Embedding Temporal Logic 
+
+3.1 Syntax and Semantics 
+
+In our approach, a perception-based system is assumed to make an observation about the real world through a sensor (e.g., camera) at each step in its execution. This observation is then passed through 3Threshold    
+
+> Target Images
+> Pretrained Encoder
+> t = 0 t = 15 t = 50 t = 60
+> Obse rvation Sequence
+> Embedding
+> predicate
+> Runtime Monitoring Latent Trajectory
+> Trajectory
+> Target
+> Observation
+
+Figure 1: Overview of embedding-based runtime monitoring. Top: Target observations OG =
+
+{og1, . . . , o gn } and the online observation ot are encoded by a pretrained vision encoder into target embeddings zG and the current embedding zt. An embedding predicate then evaluates whether zt
+
+reaches the target set. Bottom left: The embedding trajectory is projected onto its first two principal components, showing its evolution relative to the target embeddings. Bottom right: Runtime monitoring computes the distance from zt to zG over time, thresholds it using ϵ, and evaluates the temporal logic specification. an encoder that translates the observation into an embedding. We formally model such a system as an 
+
+Embedding Temporal Structure .
+
+Definition 1 (Embedding Temporal Structure) . An Embedding Temporal Structure is a tuple 
+
+M ≡ (S, O, Z, ϕ obs , ψ enc , D Z , AP z ),
+
+where S, O, Z denote the sets of ground-truth states, observations, and embedding spaces, respec-tively; ϕobs : S → O is the observation function that maps the ground-truth states to the states that can be observed with the given sensor(s); ψenc : O → Z is the embedding function that converts an observation into an embedding; DZ is a set of admissible distance/similarity functions 
+
+d : Z × Z → R≥0; and AP z is the set of embedding predicates (Definition 5). 
+
+Conceptually, z is an approximation of a latent variable; i.e., the state of the world that is only indirectly observable by the system. The organization of latent representations of observations within the embedding space Z is induced by the encoder ψenc and the downstream models that subsequently consume this embedding for further tasks (e.g., object identification and prediction) and shape the embedding organization as part of their training. This organization of embeddings in turn has a pronounced effect on the distances between embeddings. To reason about a system’s temporal behavior, we must consider not only individual states but sequences of states over time. We therefore define an execution of the system and the corresponding embedding-space representation induced by the observation and encoder mappings. 
+
+Definition 2 (Execution) . An execution of the system M is a finite or infinite sequence of states 
+
+ς = s0, s 1, s 2, . . . such that each state st belongs to the state space S for every time index t ∈ N.
+
+Each state in an execution can be mapped through ϕobs and ψenc , yielding a corresponding represen-tation in the embedding space. 
+
+Definition 3 (Representation Map) . The mapping from the ground-truth states to embeddings is the 
+
+representation map η ≡ ψenc ◦ ϕobs : S → Z .
+
+Definition 4 (Trace) . Given an execution ς = ( si)i∈N, the associated trace is the sequence σ =(zi)i∈N, where zi = η(si) for all i ∈ N.
+
+4Embedding Predicates Unlike classical temporal logics where atomic propositions are Boolean predicates over S, ETL predicates are defined over the embedding space Z.
+
+Definition 5 (Embedding Predicate) . An embedding predicate ap ∈ AP z is a tuple ap ≡
+
+(Ztarget , d, ϵ, ▷◁, a ) where: Ztarget ⊆ Z is a set of target embeddings; d ∈ DZ , where 
+
+d : Z × Z → R≥0, is a distance function; ϵ ∈ R≥0 is a threshold; and a is an aggregation operator (e.g., min , max ). 
+
+The set of target embeddings identifies sensor inputs that the system should either reach or avoid in order for the system to either be considered safe or to have reached as a goal. Additional details for specifying target embeddings are discussed in Appendix A.1. We now define how an Embedding Predicate can be evaluated. 
+
+Definition 6 (Predicate Satisfaction) . For a given embedding predicate ap ∈ AP z and embedding z,the evaluation of an embedding predicate is defined as: 
+
+δap (z) = a({d(z, z g ) | zg ∈ Z target })
+
+Then, the satisfaction of the predicate is the Boolean value determined by δap (z) ▷◁ ϵ .
+
+Example 1. Consider an embedding predicate ap as illustrated in Figure 1, where the target images depict a desired visual concept (e.g., object not grasped) and are encoded into a target set Ztarget .Given the embedding zt of the current observation, predicate evaluation measures the distance between zt and the target set. Let d be the L2 distance, a = min , and ▷◁ =≤. Then, 
+
+δap (zt) = min  
+
+> zg∈Z target
+
+d(zt, z g ).
+
+Using a = min , we ensure that δap (zt) is the distance from the current observation to the closest target in the embedding space. Then, the predicate is satisfied if δap (zt) ≤ ϵ, meaning that the current observation embedding lies sufficiently close to at least one target embedding, indicating that the desired visual concept is present. Now that we have defined embedding predicates, we next define the syntax and semantics of ETL to reason over sequences of embeddings over time. 
+
+Definition 7 (ETL Syntax) . The ETL syntax of formula φ is recursively defined as follows: 
+
+φ ::= ap | ¬ φ | φ1 ∧ φ2 | φ1Uφ2
+
+As in LTL, the until operator U can be used to express the eventually (F) operator and always (G)operator: Fφ = True Uφ and Gφ = ¬F¬φ.
+
+Definition 8 (ETL Semantics) . For a given trace σ, the ETL semantics for timestep i are defined similarly to those of LTL, but over embedding traces: 
+
+σ, i |= ap ⇐⇒ δap (zi) ▷◁ ϵ σ, i |= ¬φ ⇐⇒ σ, i ̸ |= φσ, i |= φ1 ∧ φ2 ⇐⇒ σ, i |= φ1 and σ, i |= φ2
+
+σ, i |= φ1Uφ2 ⇐⇒ ∃ j ≥ i such that σ, j |= φ2 and ∀k ∈ [i, j ), σ, k |= φ1
+
+Robustness of ETL Certain types of temporal logics, such as STL [Maler and Nickovic, 2004], allow for a quantitative notion of satisfaction, called robustness [Fainekos and Pappas, 2009], that represents the degree to which the system satisfies or violates a specification. To enable ETL to be used for quantitative monitoring, we also introduce a notion of robustness for ETL. For the sake of brevity, the formal semantics for robustness are provided in Appendix B. 
+
+Example 2 Reusing the embedding predicate ap as defined in Example 1, consider the ETL specification φ = G(ap ), which requires that the visual concept encoded by predicate ap is always observed. Suppose the system generates the embedding trace σ = z12 , z 13 , z 14 , z 15 , with minimum distances to Ztarget as [δap (zt)] 15  
+
+> t=12
+
+= [0 .327 , 0.374 , 0.403 , 0.427] .
+
+Using the robustness semantics for predicates, ρ(ap, σ, t, 3) = ϵ − δap (zt), and setting ϵ = ϵg =0.409 , the predicate robustness at each timestep is: [0 .082 , 0.035 , 0.006 , −0.019] . The robustness of the temporal specification is then ρ(φ, σ, 0, 3) = min t∈[0 ,3] ρ(ap, σ, t, 3) = −0.019 . Intuitively, although the system remains close to the object not being grasped for most of the window, the specifi-cation is violated because at timestep 15 the embedding moves outside the threshold ϵ, corresponding to the frame t=15 in Figure 1 where the object is grasped. 53.2 ETL Specification Monitors 
+
+An ETL monitor evaluates the satisfaction of a specification over an embedding trace for a given system. ETL monitors are defined only over the finite trace of a system in order to be evaluated during the execution of the system, and thus are only defined for specifications that are well-defined over finite traces. 
+
+Definition 9 (Finite Trace) . For a given trace σ, a finite trace σ≤t is a trace consisting of the first 
+
+t + 1 states of σ.
+
+We refer to a finite trace as a trace when clear from context. An ETL monitor is formally defined over a finite trace of embeddings by the following definition. 
+
+Definition 10 (ETL Monitor) . For a trace σ≤t, system M, and specification φ, an ETL Monitor 
+
+is Mφ(σ≤t) = ( rφ 
+
+> 0
+
+, . . . , r φt ) ∈ {− 1, +1 }t+1 , where rφi = sgn( ρ(φ, σ ≤i, 0, i )) for each 0 ≤ i ≤ t,with sgn( x) = +1 if x ≥ 0 and −1 otherwise. 
+
+Intuitively, when the monitor is positive for a timestep, the system satisfies the ETL specification at that timestep. However, when the robustness of the system becomes negative at timestep i, the monitor raises an alert to indicate that the observed execution violates φ over the prefix [0 , i ].
+
+Semantic Correctness We denote an ETL monitor to be semantically correct iff it is equivalent with evaluation over ground-truth executions. A formal definition of semantic correctness is provided in Appendix C. This notion of semantic correctness provides the basis for evaluating ETL monitors in practice. In our experiments (Section 5), we approximate semantic correctness by comparing the outputs of the ETL monitor against ground-truth monitors derived from state-based specifications. 
+
+3.3 Constructing ETL Specifications in Practice 
+
+Utilizing the formal semantics presented in Section 3.1 requires several design choices for concrete instantiation: one must determine how target embeddings are specified, how observations are mapped into the representation space, which distance function is used to compare embeddings, and how predicate thresholds are calibrated in order to align with the intended semantic concept. In practice, target embeddings should be selected by the engineer in the same format as the sensor input; e.g., for a camera, a target would be provided as a reference image. The distance function selection depends on the training objective of the encoder and ideally should align with the organization of the embedded space. Additional discussion on these design decisions can be found in Appendix A. 
+
+# 4 Threshold Calibration for ETL Predicates 
+
+The preceding section described how ETL predicates are instantiated in practice through target embeddings, encoders, and distance functions. We now turn to threshold calibration. Recall from Definition 5 that ETL predicates are evaluated by comparing embedding distances against a threshold ϵ.These thresholds play a critical role: they determine when a continuous similarity measure corresponds to predicate satisfaction. As a result, ETL specifications are not only parameterized by the encoder and distance function, but also by calibrated thresholds that define when a predicate holds. We propose two approaches to calibrate thresholds. For formal definitions of the thresholds, we refer readers to Appendix D. 
+
+4.1 F1-Optimal Threshold 
+
+We calibrate each predicate threshold on a held-out set, Dcal , of trajectories with ground-truth labels per timestep. For each timestep t, we compute the embedding distance dt to the target embedding and, for a candidate threshold ϵ1, predict that the predicate holds whenever dt ≤ ϵ1. We then search over possible threshold values based on the observed calibration distances and select the threshold, 
+
+ϵF 1, that maximizes the F1 score with respect to the ground-truth labels. Intuitively, this chooses the threshold that best matches the intended concept by balancing false positives and false negatives on the calibration data. 64.2 Conformal Threshold with Recall Guarantee 
+
+In safety-critical monitoring, missing a true positive event is often more costly than raising a false alarm. To bias threshold selection toward high recall, we compute an alternative threshold using split conformal prediction , ϵCP [Lei et al., 2017, Angelopoulos and Bates, 2023]. We employ conformal prediction as it allows us to make no assumptions about the underlying distribution of embedding distances and provides a guarantee that transfers directly to deployment-time predicate evaluation. In this work, we propose conformal ETL predicate calibration by adapting conformal prediction to select predicate thresholds from embedding distance scores. Let ς1, . . . , ς ncal be calibration demon-strations, disjoint from training, with zg denoting the target latent embedding with a semantically corresponding ground-truth specification ω. For each calibration, ςi, a score is computed based on the maximum distance from the frame to the target such that the target satisfies ω. Then, for a user-given error level α ∈ (0 , 1) , we sort the calibration scores, compute k = ⌈(1 − α)( ncal + 1) ⌉ and select 
+
+ϵCP to be the k-th smallest score. The formal definition and proof for conformal recall guarantees based on calibration demonstrations can be found in Appendix D. 
+
+# 5 Evaluation 
+
+We evaluate the semantic correctness of ETL monitors by comparing embedding predicate outputs against ground-truth propositions. 2 All experiments were run on a compute cluster using two NVIDIA GeForce RTX 5090 GPUs, each with 34.2 GB of memory. 
+
+5.1 Simple Navigation Dubins Car 
+
+First, we evaluate ETL specification based runtime monitoring in a two dimensional navigation task where privileged information about the state space is available, similar to the one proposed in Agrawal et al. [2025]. This fully observable setup allows direct comparison between embedding-based predicates and ground-truth specifications. 
+
+Setup The navigation task is defined for a robot that respects discrete-time Dubins car dynamics in a controlled environment. We generate N = 100 trajectories using a feedback controller with obstacle avoidance. For each task, we construct pairs of equivalent specifications in the ground-truth state space, ωi, and in the embedding space, φi. We utilize the encoder from the world model used in Agrawal et al. [2025], which is based on Dreamer [Hafner et al., 2025]. The encoder produces a task-relevant representation space in which distances reflect semantic similarity between observations. We evaluate four specification patterns: Reach (FA), Avoid (G¬C), Reach-Avoid (FA ∧ G¬C), and 
+
+Sequential (F(A ∧ FB)). A, B, and C denote reaching a goal in the top-right, the top-left, and the bottom-right corners of the environment respectively. For visualization, see the goals in Figure 2a. ETL monitoring is evaluated by comparing the satisfaction of each embedding-based specification 
+
+φ with the satisfaction of corresponding ground-truth specifications ω on the respective latent and state traces for each timestep of each trace. We report precision, recall, and F1 to assess how closely ETL predicates match ground-truth events. For temporal specifications, we measure trajectory-level satisfaction agreement with the ground-truth monitor; for sequential specifications, we also report ordering accuracy of detected subgoals. Additional details can be found in Appendix E.1. 
+
+Results We now discuss our findings; a tabularized version of results can be found in Appendix E.2. 
+
+Can ETL monitors achieve semantic correctness as defined in Definition 15 with respect to ground-truth specifications in a controlled environment? ETL shows strong semantic correctness for atomic predicates, visualized in Figure 2a. Across reach, avoid, and reach-avoid specifications, the F1-optimal monitor achieves F1 scores of 0.80 –0.85 with agreement above 96% , indicating that embedding predicates closely match the corresponding state-based events. This implies that embedding-space predicates can serve as faithful proxies for state-based propositions. Additionally, for the sequential specification A → B, the monitor achieves 100% precision, recall, and ordering agreement at the episode level. Thus, ETL is not limited to detecting isolated semantic events; ETL can also correctly track their ordering over time.  
+
+> 2Artifacts for reproducibility are provided at https://github.com/ETLMonitoringAuthors/ETLMonitoring
+
+7t = 20  
+
+> t = 125
+> Goal A Goal C Goal B
+
+(a) Boolean predicate traces on the Dubins car. Goals A, B, and C are visualized along top of the image; the graph plots the L2 distance between embeddings and along with the F1-optimal thresholds. The bars along the bottom show when the latent and ground-truth predicates are satisfied (darker bars); two observation states are displayed on the left of the graph. Stacking Sorting MW-Pick-Place    
+
+> (grasp place)
+> Environment
+> 0.0
+> 0.2
+> 0.4
+> 0.6
+> 0.8
+> 1.0
+> F1
+> 0.897
+> 0.593
+> 0.961
+> 0.852
+> 0.585
+> 0.815 0.844
+> 0.534
+> 0.992
+> F1 scores for monitoring: ETL vs logpZO and kmeans
+> ETL PCA-kmeans logpZO
+
+(b) Predicate-monitoring F1 scores across domains. Phase F1 Phase Agreement Seq. Correct   
+
+> Metric
+> 0.0
+> 0.2
+> 0.4
+> 0.6
+> 0.8
+> 1.0
+> Score
+> 0.780
+> 0.390
+> 0.932
+> 0.567
+> 0.800
+> 0.400
+> Phasic Detection: ETL vs. VLM Baseline
+> ETL (ours) VLM (Qwen2-VL-2B)
+
+(c) Comparison of ETL and Qwen2-VL-2B on phasic DROID episodes. 
+
+Figure 2: Qualitative and quantitative ETL results. 
+
+Does threshold calibration produce the intended precision–recall tradeoff for safety-oriented monitoring? Relative to the F1-optimal threshold, ϵCP increases recall for reach (from 0.83 to 0.93 )while incurring only a modest drop in precision (from 0.87 to 0.79 ), with essentially no change in agreement. This shows that conformal calibration provides a practical safety-oriented operating point: it makes the monitor more conservative against missed detections without substantially changing overall semantic alignment. Overall, the Dubins results show that ETL monitors align closely with state-based specification monitors, support monitoring of temporally composed behaviors, and exhibit a clear precision–recall tradeoff under threshold calibration. 
+
+5.2 Simulated Manipulation Tasks 
+
+To assess whether ETL remains effective beyond the controlled navigation domain, we evaluate it for simulated contact-rich manipulation tasks with richer visual scenes, complex object interactions, and additional distractor objects that make perceptual monitoring harder. We consider two environments with complementary task structure: D3IL [Jia et al., 2024] and MetaWorld [Nicklas Hansen, 2026]. For D3IL we consider two complex tasks: S ORTING requires a Franka robot to push two blocks into their corresponding color-matching target boxes, while S TACKING requires the robot to arrange colored blocks in a target region. For MetaWorld, we evaluate ETL on robotic-arm pick-and-place tasks with sequential grasp and place subgoals. Unlike single-goal manipulation tasks, these benchmarks expose phase-like progress structures, making them a natural testbed for evaluating whether ETL predicates can monitor task-relevant semantic milestones in rich manipulation settings. 
+
+Setup We compare our ETL-based monitoring approach against recent embedding-based monitor-ing baselines: PCA-kmeans [Liu et al., 2024] and logpZO [Xu et al., 2025]. PCA-kmeans clusters principal components of successful observation embeddings and scores a new observation by its dis-tance to the nearest cluster center, while logpZO fits a flow-matching density model over observation 8embeddings and uses the inferred latent norm as an uncertainty score. These baselines are the most direct comparison for ETL because they operate on observation embeddings and detect distributional deviations. We evaluate monitoring performance by comparing predicted satisfaction or violation labels against ground-truth labels derived from simulator rewards and state variables. Additional details regarding our experimental setup are provided in Appendix F.1. 
+
+Results: Can ETL outperform embedding-based monitoring baselines on simulated manipula-tion tasks? Figure 2b shows that ETL matches or exceeds the observation embedding baselines on average across the three simulated manipulation environments. Using ϵF 1, ETL achieves the highest average F1 score of 0.817 , compared with 0.790 for logpZO and 0.751 for PCA-kmeans. ETL improves over the strongest baseline on S TACKING (0.897 vs. 0.852 ) and slightly outperforms PCA-kmeans on S ORTING (0.593 vs. 0.585 ). S ORTING is the hardest setting for all methods, sug-gesting that its OOD shifts induce more ambiguous changes in the embedding space. On MetaWorld pick-place-wall, logpZO reaches near-saturated performance ( 0.992 F1), indicating that the predicate boundary aligns closely with the support of successful embeddings. ETL remains competitive at 
+
+0.961 F1, while PCA-kmeans lags behind at 0.815 .
+
+5.3 Real World Evaluation via DROID 
+
+Finally, we evaluate ETL on real-world robot data to assess its effectiveness for monitoring in-the-wild temporally extended manipulation behaviors. To this end, we utilize the manipulation dataset DROID [Khazatsky et al., 2024], which contains large-scale, diverse, and compositional manipulation demonstrations in more realistic settings. 
+
+Setup We analyze manipulation episodes with compositional, multi-phase structure. We instantiate ETL specifications over phase-based predicates, where each phase corresponds to a contiguous interaction window in the demonstration. This setup allows us to evaluate how ETL monitoring performs over real-world manipulation episodes in comparison to a Vision Language Model (VLM)-based baseline monitor. For evaluation, we compute F1 score, agreement, and sequential ordering accuracy over phase-based predicates. For our baseline, we use a state-of-the-art VLM: Qwen2-VL [Wang et al., 2024]. For each phase, the VLM is prompted with the ground-truth desired behavior and phase frame to determine if a task was completed; the response is distilled to a Boolean value, which is then used to compute frame-level F1, agreement, and sequential ordering accuracy for comparison with the ETL monitor. 
+
+Results: Can ETL accurately monitor perceptual specifications on real-world manipulation data in comparison to a VLM-based baseline for monitoring phasic manipulation behaviors? 
+
+ETL achieves a mean F1 score of 0.813 and mean agreement of 0.940 , whereas the Qwen2-VL baseline reaches a mean F1 score of 0.390 and mean agreement of 0.567 . Though ETL and Qwen2-VL perform competitively on one of the five tasks, these results demonstrate that ETL generalizes to diverse, unstructured manipulation scenes, and is markedly more reliable overall, especially on phases that are visually similar but semantically distinct. Additionally, ETL correctly identifies that sequential phasic ordering in 4/5 episodes (Figure 2c), indicating it can monitor compositional task structure beyond isolated phase detection. The single failure occurs in an episode with low inter-phase separability, suggesting that monitoring performance degrades when distinct phases occupy overlapping regions of the latent space. Tabularized results can be found in Appendix G.1. Overall, these results show that ETL extends beyond simulation to real-world manipulation data. ETL successfully monitors temporal and sequential task structure across demonstrations. Moreover, compared to a VLM-based baseline, ETL provides substantially more reliable monitoring of phasic behaviors without requiring explicit language supervision. 
+
+# 6 Conclusion and Limitations 
+
+In this work we propose a novel temporal logic (ETL) defined over the embedding space of pretrained encoders for perception-based autonomous systems. Our experiments support three main conclusions. First, embedding predicates can faithfully approximate ground-truth propositions across controlled navigation and manipulation tasks. Second, ETL supports monitoring temporally extended properties: sequential specifications are accurately tracked across all evaluated environments. Third, threshold 9calibration provides a meaningful operating tradeoff: the F1-optimal threshold yields the strongest overall alignment with ground truth, while the conformal threshold prioritizes high recall with a distribution-free guarantee. The current approach has two main limitations: latent predicates are not yet fully interpretable in human-understandable terms, and monitoring performance depends on whether task-relevant semantic concepts are well separated in the encoder’s representation. These limitations point to promising directions for future work, including more transparent predicate explanations, encoder selection and adaptation for improved semantic separation Zarlenga et al. [2022], temporal abstraction over subtask boundaries Wang et al. [2026], and adaptive online thresholding Areces et al. [2025]. 
+
+# References 
+
+Sankalp Agrawal, Junwon Seo, Kensuke Nakamura, Ran Tian, and Andrea Bajcsy. Anysafe: Adapting latent safety filters at runtime via safety constraint parameterization in the latent space, 2025. URL https: //arxiv.org/abs/2509.19555 .Derya Aksaray, Austin Jones, Zhaodan Kong, Mac Schwager, and Calin Belta. Q-learning for robust satisfaction of signal temporal logic specifications, 2016. Jasmine Jerry Aloor, Jay Patrikar, Parv Kapoor, Jean Oh, and Sebastian Scherer. Follow the rules: Online signal temporal logic tree search for guided imitation learning in stochastic domains. In 2023 IEEE International Conference on Robotics and Automation (ICRA) , pages 1320–1326, 2023. doi: 10.1109/ICRA48891.2023. 10160953. Rajeev Alur, Osbert Bastani, Kishor Jothimurugan, Mateo Perez, Fabio Somenzi, and Ashutosh Trivedi. Policy synthesis and reinforcement learning for discounted ltl. In International Conference on Computer Aided Verification , pages 415–435. Springer, 2023. Anastasios N. Angelopoulos and Stephen Bates. Conformal prediction: A gentle introduction. Found. Trends Mach. Learn. , 16(4):494–591, March 2023. ISSN 1935-8237. doi: 10.1561/2200000101. URL https: //doi.org/10.1561/2200000101 .Felipe Areces, Christopher Mohri, Tatsunori Hashimoto, and John Duchi. Online conformal prediction via online optimization. In Forty-second International Conference on Machine Learning , 2025. URL https: //openreview.net/forum?id=KwGc2JUIDK .Mustafa Baniodeh, Kratarth Goel, Scott Ettinger, Carlos Fuertes, Ari Seff, Tim Shen, Cole Gulino, Chenjie Yang, Ghassen Jerfel, Dokook Choe, Rui Wang, Vinutha Kallem, Sergio Casas, Rami Al-Rfou, Benjamin Sapp, and Dragomir Anguelov. Scaling laws of motion forecasting and planning – a technical report, 2025. URL https://arxiv.org/abs/2506.08228 .Ezio Bartocci, Jyotirmoy Deshmukh, Alexandre Donzé, Georgios Fainekos, Oded Maler, Dejan Niˇ ckovi´ c, and Sriram Sankaranarayanan. Specification-Based Monitoring of Cyber-Physical Systems: A Survey on Theory, Tools and Applications. In Ezio Bartocci and Yliès Falcone, editors, Lectures on Runtime Verification: Introductory and Advanced Topics , Lecture Notes in Computer Science, pages 135–175. Springer International Publishing, Cham, 2018. ISBN 978-3-319-75632-5. doi: 10.1007/978-3-319-75632-5_5. Calin Belta and Sadra Sadraddini. Formal methods for control synthesis: An optimiza-tion perspective. Annual Review of Control, Robotics, and Autonomous Systems , 2(1):115– 140, 2019. doi: 10.1146/annurev-control-053018-023717. URL https://doi.org/10.1146/ annurev-control-053018-023717 .Christian Colombo and Gordon J Pace. What is runtime verification. In Runtime Verification: A Hands-On Approach in Java , pages 9–15. Springer, 2022. Adel Dokhanchi, Heni Ben Amor, Jyotirmoy V Deshmukh, and Georgios Fainekos. Evaluating perception systems for autonomous vehicles using quality temporal logic. In Runtime Verification: 18th International Conference, RV 2018, Limassol, Cyprus, November 10–13, 2018, Proceedings 18 , pages 409–416. Springer, 2018. Georgios E. Fainekos and George J. Pappas. Robustness of temporal logic specifications for continuous-time signals. Theoretical Computer Science , 410(42):4262–4291, 2009. Yue Gu, William Hunt, Blair Archibald, Mengwei Xu, Michele Sevegnani, and Mohammad D Soorati. Successful swarms: operator situational awareness with modelling and verification at runtime. In 2023 32nd IEEE International Conference on Robot and Human Interactive Communication (RO-MAN) , pages 541–548. IEEE, 2023. 
+
+10 Yanjiang Guo, Lucy Xiaoyang Shi, Jianyu Chen, and Chelsea Finn. Ctrl-world: A controllable generative world model for robot manipulation, 2026. URL https://arxiv.org/abs/2510.10125 .Danijar Hafner, Timothy Lillicrap, Jimmy Ba, and Mohammad Norouzi. Dream to control: Learning behaviors by latent imagination, 2020. URL https://arxiv.org/abs/1912.01603 .Danijar Hafner, Jurgis Pasukonis, Jimmy Ba, and Timothy Lillicrap. Mastering diverse control tasks through world models. Nature , 640(8059):647–653, Apr 2025. ISSN 1476-4687. doi: 10.1038/s41586-025-08744-2. URL https://doi.org/10.1038/s41586-025-08744-2 .Nicklas Hansen, Hao Su, and Xiaolong Wang. Td-mpc2: Scalable, robust world models for continuous control, 2024. URL https://arxiv.org/abs/2310.16828 .Mohammad Hekmatnejad, Bardh Hoxha, Jyotirmoy V. Deshmukh, Yezhou Yang, and Georgios Fainekos. Formalizing and evaluating requirements of perception systems for automated vehicles using spatio-temporal perception logic. The International Journal of Robotics Research , 43(2):203–238, 2024. doi: 10.1177/ 02783649231223546. URL https://doi.org/10.1177/02783649231223546 .Physical Intelligence, Ali Amin, Raichelle Aniceto, Ashwin Balakrishna, Kevin Black, Ken Conley, Grace Connors, James Darpinian, Karan Dhabalia, Jared DiCarlo, Danny Driess, Michael Equi, Adnan Esmail, Yunhao Fang, Chelsea Finn, Catherine Glossop, Thomas Godden, Ivan Goryachev, Lachy Groom, Hunter Hancock, Karol Hausman, Gashon Hussein, Brian Ichter, Szymon Jakubczak, Rowan Jen, Tim Jones, Ben Katz, Liyiming Ke, Chandra Kuchi, Marinda Lamb, Devin LeBlanc, Sergey Levine, Adrian Li-Bell, Yao Lu, Vishnu Mano, Mohith Mothukuri, Suraj Nair, Karl Pertsch, Allen Z. Ren, Charvi Sharma, Lucy Xiaoyang Shi, Laura Smith, Jost Tobias Springenberg, Kyle Stachowicz, Will Stoeckle, Alex Swerdlow, James Tanner, Marcel Torne, Quan Vuong, Anna Walling, Haohuan Wang, Blake Williams, Sukwon Yoo, Lili Yu, Ury Zhilinsky, and Zhiyuan Zhou. π∗
+
+> 0.6
+
+: a vla that learns from experience, 2025. URL https://arxiv.org/ abs/2511.14759 .Xiaogang Jia, Denis Blessing, Xinkai Jiang, Moritz Reuss, Atalay Donat, Rudolf Lioutikov, and Gerhard Neumann. Towards diverse behaviors: A benchmark for imitation learning with human demonstrations. In 
+
+The Twelfth International Conference on Learning Representations , 2024. URL https://openreview. net/forum?id=6pPYRXKPpw .Parv Kapoor, Kazuki Mizuta, Eunsuk Kang, and Karen Leung. STLCG++: A masking approach for differentiable signal temporal logic specification. IEEE Robotics and Automation Letters , 10(9):9240–9247, 2025. Alexander Khazatsky, Karl Pertsch, Suraj Nair, Ashwin Balakrishna, Sudeep Dasari, Siddharth Karamcheti, Soroush Nasiriany, Mohan Kumar Srirama, Lawrence Yunliang Chen, Kirsty Ellis, Peter David Fagan, Joey Hejna, Masha Itkina, Marion Lepert, Yecheng Jason Ma, Patrick Tree Miller, Jimmy Wu, Suneel Belkhale, Shivin Dass, Huy Ha, Arhan Jain, Abraham Lee, Youngwoon Lee, Marius Memmel, Sungjae Park, Ilija Radosavovic, Kaiyuan Wang, Albert Zhan, Kevin Black, Cheng Chi, Kyle Beltran Hatch, Shan Lin, Jingpei Lu, Jean Mercat, Abdul Rehman, Pannag R Sanketi, Archit Sharma, Cody Simpson, Quan Vuong, Homer Rich Walke, Blake Wulfe, Ted Xiao, Jonathan Heewon Yang, Arefeh Yavary, Tony Z. Zhao, Christopher Agia, Rohan Baijal, Mateo Guaman Castro, Daphne Chen, Qiuyu Chen, Trinity Chung, Jaimyn Drake, Ethan Paul Foster, Jensen Gao, Vitor Guizilini, David Antonio Herrera, Minho Heo, Kyle Hsu, Jiaheng Hu, Muhammad Zubair Irshad, Donovon Jackson, Charlotte Le, Yunshuang Li, Kevin Lin, Roy Lin, Zehan Ma, Abhiram Maddukuri, Suvir Mirchandani, Daniel Morton, Tony Nguyen, Abigail O’Neill, Rosario Scalise, Derick Seale, Victor Son, Stephen Tian, Emi Tran, Andrew E. Wang, Yilin Wu, Annie Xie, Jingyun Yang, Patrick Yin, Yunchu Zhang, Osbert Bastani, Glen Berseth, Jeannette Bohg, Ken Goldberg, Abhinav Gupta, Abhishek Gupta, Dinesh Jayaraman, Joseph J Lim, Jitendra Malik, Roberto Martín-Martín, Subramanian Ramamoorthy, Dorsa Sadigh, Shuran Song, Jiajun Wu, Michael C. Yip, Yuke Zhu, Thomas Kollar, Sergey Levine, and Chelsea Finn. Droid: A large-scale in-the-wild robot manipulation dataset. 2024. Moo Jin Kim, Karl Pertsch, Siddharth Karamcheti, Ted Xiao, Ashwin Balakrishna, Suraj Nair, Rafael Rafailov, Ethan Foster, Grace Lam, Pannag Sanketi, Quan Vuong, Thomas Kollar, Benjamin Burchfiel, Russ Tedrake, Dorsa Sadigh, Sergey Levine, Percy Liang, and Chelsea Finn. Openvla: An open-source vision-language-action model. arXiv preprint arXiv:2406.09246 , 2024. Hadas Kress-Gazit, Georgios E Fainekos, and George J Pappas. Temporal-logic-based reactive mission and motion planning. IEEE transactions on robotics , 25(6):1370–1381, 2009. Jing Lei, Max G’Sell, Alessandro Rinaldo, Ryan J. Tibshirani, and Larry Wasserman. Distribution-free predictive inference for regression, 2017. URL https://arxiv.org/abs/1604.04173 .Karen Leung, Nikos Aréchiga, and Marco Pavone. Backpropagation through signal temporal logic specifications: Infusing logical structure into gradient-based methods. The International Journal of Robotics Research , page 02783649221082115, 2023. 
+
+11 Zhenyu Lin and John S. Baras. Planning and runtime monitoring of robotic manipulator using metric interval temporal logic. In 2019 IEEE International Systems Conference (SysCon) , pages 1–8, 2019. doi: 10.1109/ SYSCON.2019.8836933. Lars Lindemann and Dimos V. Dimarogonas. Control barrier functions for signal temporal logic tasks. IEEE Con-trol Systems Letters , 3:96–101, 2019. URL https://api.semanticscholar.org/CorpusID:50767137 .Huihan Liu, Yu Zhang, Vaarij Betala, Evan Zhang, James Liu, Crystal Ding, and Yuke Zhu. Multi-task interactive robot fleet learning with visual world models, 2024. URL https://arxiv.org/abs/2410.22689 .Matt Luckcuck, Marie Farrell, Louise A. Dennis, Clare Dixon, and Michael Fisher. Formal specification and verification of autonomous robotic systems: A survey. ACM Comput. Surv. , 52(5), September 2019. Oded Maler and D. Nickovic. Monitoring temporal properties of continuous signals. In FORMATS/FTRTFT ,2004. URL https://api.semanticscholar.org/CorpusID:15642684 .Xiaolong Wang Nicklas Hansen, Hao Su. Learning massively multitask world models for continuous control, 2026. NVIDIA, :, Arslan Ali, Junjie Bai, Maciej Bala, Yogesh Balaji, Aaron Blakeman, Tiffany Cai, Jiaxin Cao, Tianshi Cao, Elizabeth Cha, Yu-Wei Chao, Prithvijit Chattopadhyay, Mike Chen, Yongxin Chen, Yu Chen, Shuai Cheng, Yin Cui, Jenna Diamond, Yifan Ding, Jiaojiao Fan, Linxi Fan, Liang Feng, Francesco Ferroni, Sanja Fidler, Xiao Fu, Ruiyuan Gao, Yunhao Ge, Jinwei Gu, Aryaman Gupta, Siddharth Gururani, Imad El Hanafi, Ali Hassani, Zekun Hao, Jacob Huffman, Joel Jang, Pooya Jannaty, Jan Kautz, Grace Lam, Xuan Li, Zhaoshuo Li, Maosheng Liao, Chen-Hsuan Lin, Tsung-Yi Lin, Yen-Chen Lin, Huan Ling, Ming-Yu Liu, Xian Liu, Yifan Lu, Alice Luo, Qianli Ma, Hanzi Mao, Kaichun Mo, Seungjun Nah, Yashraj Narang, Abhijeet Panaskar, Lindsey Pavao, Trung Pham, Morteza Ramezanali, Fitsum Reda, Scott Reed, Xuanchi Ren, Haonan Shao, Yue Shen, Stella Shi, Shuran Song, Bartosz Stefaniak, Shangkun Sun, Shitao Tang, Sameena Tasmeen, Lyne Tchapmi, Wei-Cheng Tseng, Jibin Varghese, Andrew Z. Wang, Hao Wang, Haoxiang Wang, Heng Wang, Ting-Chun Wang, Fangyin Wei, Jiashu Xu, Dinghao Yang, Xiaodong Yang, Haotian Ye, Seonghyeon Ye, Xiaohui Zeng, Jing Zhang, Qinsheng Zhang, Kaiwen Zheng, Andrew Zhu, and Yuke Zhu. World simulation with video foundation models for physical ai, 2026. URL https://arxiv.org/abs/2511.00062 .Maxime Oquab, Timothée Darcet, Théo Moutakanni, Huy Vo, Marc Szafraniec, Vasil Khalidov, Pierre Fernandez, Daniel Haziza, Francisco Massa, Alaaeldin El-Nouby, Mahmoud Assran, Nicolas Ballas, Wojciech Galuba, Russell Howes, Po-Yao Huang, Shang-Wen Li, Ishan Misra, Michael Rabbat, Vasu Sharma, Gabriel Synnaeve, Hu Xu, Hervé Jegou, Julien Mairal, Patrick Labatut, Armand Joulin, and Piotr Bojanowski. Dinov2: Learning robust visual features without supervision, 2024. URL https://arxiv.org/abs/2304.07193 .Alec Radford, Jong Wook Kim, Chris Hallacy, Aditya Ramesh, Gabriel Goh, Sandhini Agarwal, Girish Sastry, Amanda Askell, Pamela Mishkin, Jack Clark, et al. Learning transferable visual models from natural language supervision. In International conference on machine learning , pages 8748–8763. PMLR, 2021. Vasumathi Raman, Alexandre Donze, Mehdi Maasoumy, Richard M Murray, Alberto Sangiovanni-Vincentelli, and Sanjit Seshia. Model predictive control with signal temporal logic specifications. In Conference on Decision and Control , 2014. Oliver Schön and Lars Lindemann. Spatiotemporal robustness of temporal logic tasks using multi-objective reasoning. arXiv preprint arXiv:2603.29868 , 2026. Sanjit A. Seshia, Ankush Desai, Tommaso Dreossi, Daniel J. Fremont, Shromona Ghosh, Edward Kim, Sumukh Shivakumar, Marcell Vazquez-Chanlatte, and Xiangyu Yue. Formal specification for deep neural networks. In Automated Technology for Verification and Analysis , pages 20–34, 2018. Dawei Sun, Jingkai Chen, Sayan Mitra, and Chuchu Fan. Multi-agent motion planning from signal temporal logic specifications. IEEE Robotics and Automation Letters , PP:1–1, 2022. URL https: //api.semanticscholar.org/CorpusID:245986629 .Vladimir Vovk, Alex Gammerman, and Glenn Shafer. Algorithmic Learning in a Random World . Springer-Verlag, Berlin, Heidelberg, 2005. ISBN 0387001522. Peng Wang, Shuai Bai, Sinan Tan, Shijie Wang, Zhihao Fan, Jinze Bai, Keqin Chen, Xuejing Liu, Jialin Wang, Wenbin Ge, Yang Fan, Kai Dang, Mengfei Du, Xuancheng Ren, Rui Men, Dayiheng Liu, Chang Zhou, Jingren Zhou, and Junyang Lin. Qwen2-vl: Enhancing vision-language model’s perception of the world at any resolution, 2024. URL https://arxiv.org/abs/2409.12191 .Ying Wang, Oumayma Bounou, Gaoyue Zhou, Randall Balestriero, Tim G. J. Rudner, Yann LeCun, and Mengye Ren. Temporal straightening for latent planning, 2026. URL https://arxiv.org/abs/2603.12231 .
+
+12 Chen Xu, Tony Khuong Nguyen, Emma Dixon, Christopher Rodriguez, Patrick Miller, Robert Lee, Paarth Shah, Rares Ambrus, Haruki Nishimura, and Masha Itkina. Can we detect failures without failure data? uncertainty-aware runtime failure detection for imitation learning policies, 2025. URL https://arxiv. org/abs/2503.08558 .Seonghyeon Ye, Yunhao Ge, Kaiyuan Zheng, Shenyuan Gao, Sihyun Yu, George Kurian, Suneel Indupuru, You Liang Tan, Chuning Zhu, Jiannan Xiang, Ayaan Malik, Kyungmin Lee, William Liang, Nadun Ranawaka, Jiasheng Gu, Yinzhen Xu, Guanzhi Wang, Fengyuan Hu, Avnish Narayan, Johan Bjorck, Jing Wang, Gwanghyun Kim, Dantong Niu, Ruijie Zheng, Yuqi Xie, Jimmy Wu, Qi Wang, Ryan Julian, Danfei Xu, Yilun Du, Yevgen Chebotar, Scott Reed, Jan Kautz, Yuke Zhu, Linxi "Jim" Fan, and Joel Jang. World action models are zero-shot policies, 2026. URL https://arxiv.org/abs/2602.15922 .Mateo Espinosa Zarlenga, Pietro Barbiero, Gabriele Ciravegna, Giuseppe Marra, Francesco Giannini, Michelan-gelo Diligenti, Zohreh Shams, Frederic Precioso, Stefano Melacci, Adrian Weller, Pietro Lio, and Mateja Jamnik. Concept embedding models: Beyond the accuracy-explainability trade-off, 2022. URL 
+
+https://arxiv.org/abs/2209.09056 .Gaoyue Zhou, Hengkai Pan, Yann LeCun, and Lerrel Pinto. Dino-wm: World models on pre-trained visual features enable zero-shot planning, 2025. URL https://arxiv.org/abs/2411.04983 .
+
+# A Constructing ETL Specifications in Practice 
+
+The formal semantics proposed in the preceding section define ETL as a specification language over embedding traces. To use ETL in practice, however, several design choices must be instantiated concretely: one must determine how target embeddings are specified, how observations are mapped into the representation space, which distance function is used to compare embeddings, and how predicate thresholds are calibrated so that they align with the intended semantic concept. In this section, we first outline how target embeddings are specified. Then, we highlight the different choices of encoders and distance functions. 
+
+A.1 Specifying Target Embeddings 
+
+ETL is specified using predicates over target embeddings that correspond to parts of the physical world against which current observations are evaluated. In practice, the specifier (e.g., a system engineer) would not directly specify the mathematical representations of embeddings. Instead, the targets would be provided in the same format as the sensor’s input, e.g., for a camera, a target would be provided as a reference image, that is then translated into the target embeddings via the pretrained encoder. This allows specifications such as “eventually reach a state similar to this image” or “always avoid states resembling fire” without requiring explicit symbolic labels. By enabling specification directly over learned representations rather than explicit symbolic labels, our approach removes the need to manually define a finite predicate vocabulary from observations, a process that has traditionally depended on substantial expert knowledge and task-specific engineering in robotics. 
+
+A.2 Choice of Encoders and Distance functions 
+
+The choice of distance function is another key practical consideration in evaluating ETL satisfaction. Distances over pretrained image embeddings capture perceptual similarity, but lack temporal context because these encoders are trained on static observations. World models mitigate this limitation by mapping observations into a latent space that evolves as a function of past states and actions. When trained with reconstruction-based objectives, such models often preserve much of the geometry of the original embedding space while enriching it with temporal structure. Consequently, similarity relationships defined over observation embeddings can often be carried over to the latent space in a meaningful way. Accordingly, the choice of d should align with the geometry induced by the representation. For instance, cosine distance is a natural choice for contrastive embeddings, whereas L2 distance is often more appropriate for reconstruction-based latent representations. More generally, the selected distance should be one that best reflects semantic similarity in the underlying space. We empirically study the effect of this design choice in Section 5. 
+
+13 B Quantitative semantics of ETL 
+
+Definition 11 (ETL Robustness) . For a trace σ, the robustness of an ETL formula at timestep i is defined as follows: 
+
+ρ(ap, σ, i, b) =
+
+(
+
+ϵ − δap (zi) ▷◁ ∈ {≤ , < }
+
+δap (zi) − ϵ ▷◁ ∈ {≥ , > }
+
+ρ(¬φ, σ, i, b) = −ρ(φ, σ, i, b)
+
+ρ(φ1 ∧ φ2, σ, i, b) = min  ρ(φ1, σ, i, b), ρ (φ2, σ, i, b)
+
+ρ(Gφ, σ, i, b) = inf k∈[i, b]ρ(φ, σ, k, b)
+
+ρ(Fφ, σ, i, b) = sup k∈[i, b]ρ(φ, σ, k, b)
+
+where inf and sup are the infimum and supremum operators, respectively. Note that the computation of the satisfaction score is restricted to a subsequence of σ between i to b (i.e., zi, z i+1 , ...., z b). The bound b may be determined by, for example, the planning horizon used by a planner (i.e., the length of action sequence used by the planner for behavioral prediction). For brevity, the definition for the until ( U) operator is omitted, but similar to the one described in Fainekos and Pappas [2009]. 
+
+# C Semantic Correctness of ETL Monitors 
+
+To compare ETL monitors to ground-truth executions, we define a ground-truth monitor over finite executions. 
+
+Definition 12 (Finite Execution) . For a given execution ς, a finite execution ς≤t is an execution consisting of the first t + 1 states of ς.
+
+We refer to a finite execution as an execution when clear from context. 
+
+Definition 13 (Ground-Truth Monitor) . Let ω be a temporal logic formula over symbolic predicates, and let 
+
+ς≤t be a finite execution prefix. The ground-truth monitor for ω on ς≤t is the binary-valued trace 
+
+GT ω (ς≤t) =  bω 
+
+> 0
+
+, b ω 
+
+> 1
+
+, . . . , b ωt
+
+ ∈ {− 1, +1 }t+1 ,
+
+where, for each prefix ς≤i with 0 ≤ i ≤ t,
+
+bωi =
+
+(
+
++1 if ς≤i |= ω, 
+
+−1 otherwise. Here, satisfaction ς≤i |= ω is defined by the semantics of the underlying temporal logic over symbolic predicates. 
+
+We define the semantic correctness of monitor M using the following definitions. 
+
+Definition 14 (Semantic Correspondence) . Let M be an embedding temporal structure with representation map η = ψenc ◦ ϕobs . Let ω be a specification over ground-truth state trajectories ς≤t and let φ be an ETL specification over finite embedding traces σ≤t. We say that φ corresponds semantically to ω with respect to M if, for every finite execution prefix ς≤t = ( s0, . . . , s t), letting σ≤t = ( η(s0), . . . , η (st)) , we have 
+
+σ≤t |= φ ⇐⇒ ς≤t |= ω. 
+
+Intuitively, we say that φ is a latent space specification semantically corresponds with the ground-truth specifica-tion ω if both are intended to capture the same behavioral property, with ω defined over state-based predicates and φ defined over embedding-space predicates. 
+
+Definition 15 (Semantic Correctness of an ETL Monitor) . Let ω be a ground-truth specification and let φ be an ETL specification that corresponds semantically to ω. An ETL monitor M is semantically correct with respect to 
+
+(φ, ω ) if, for every execution prefix, Mφ(σ≤t) = GT ω (ς≤t).
+
+# D Formal Definitions of Threshold Calibration 
+
+We provide additional details and intuitive understanding of thresholds and their calibration for ETL monitoring. Intuitively, ϵ defines the boundary of a concept in the representation space (e.g., how close an observation must be to a goal embedding to count as “reached”). Unlike state-based predicates, thresholds in embedding spaces depend on the geometry induced by the encoder and the choice of distance function. Poorly chosen thresholds can lead to high false negatives (overly strict predicates) or false positives (overly permissive predicates), making calibration essential. We propose a data-driven approach to calibrate thresholds for ETL predicates. We assume access to a dataset of trajectories (e.g., simulator rollouts or demonstrations) with ground-truth signals ς≤t that satisfy a TL 
+
+14 specification ω at timestep t in the underlying state space. Here, ω is a TL specification that semantically corresponds to the ETL specification being instantiated. Then, each trajectory is mapped to an embedding trace using the representation map η, yielding embeddings zt = η(st). From these embeddings, we compute distances to the target set as dt = du(zt, T u). We then select thresholds using a held-out calibration set of size 
+
+ncal .
+
+D.1 F1-Optimal Threshold 
+
+Definition 16 (F1-Optimal Threshold) . Let Dcal = {(dt, y t)}Nt=1 be the calibration set, where dt ∈ R≥0 is the embedding distance at timestep t and yt ∈ { 0, 1} is the corresponding ground-truth predicate label. For any candidate threshold ϵ ∈ R≥0, define the induced prediction 
+
+ˆyt(ϵ) = 1[dt ≤ ϵ].
+
+Let 
+
+F1( ϵ) = 2 TP( ϵ)2 TP( ϵ) + FP( ϵ) + FN( ϵ) ,
+
+where TP( ϵ), FP( ϵ), and FN( ϵ) denote the numbers of true positives, false positives, and false negatives, respectively, obtained by comparing ˆyt(ϵ) against yt over Dcal .The F1-optimal threshold is defined as 
+
+ϵF 1 ∈ arg max  
+
+> ϵ∈{ d1,...,d N}
+
+F1( ϵ).
+
+If multiple thresholds achieve the same maximum F1 score, ties may be broken arbitrarily. 
+
+D.2 Conformal Threshold with Recall Guarantee 
+
+In this work, we propose conformal ETL predicate calibration by adapting conformal prediction to select predicate thresholds from embedding distance scores. Here, the goal is not to produce a prediction interval around a model output, but to calibrate the threshold used for ETL predicate evaluation. We do this in two stages. Within each calibration trajectory, we compute a single score from all satisfying timesteps by taking the largest embedding distance among the frames that satisfy the predicate. This score represents the hardest positive case in that trajectory: any threshold smaller than this value would miss at least one true positive frame in that same trajectory. Then across trajectories, we collect one such score from each calibration trajectory and apply split conformal prediction to these held-out scores. The resulting threshold ϵCP is therefore calibrated not to individual frames, but between different trajectories. As a result, for a new trajectory drawn from the same distribution, with probability at least 1 − α, the threshold is large enough to cover that trajectory’s hardest positive case, and hence will detect every ground-truth positive timestep in that trajectory. Here, α ∈ (0 , 1) is a user-specified error level. 
+
+Setup Let ς1, . . . , ς ncal be ncal calibration demonstrations, disjoint from training, and let zg denote the target latent embedding that semantically corresponds to a ground-truth specification ω (see Definition 14). For each calibration demonstration ςi, define the nonconformity score 
+
+score i = max 
+
+> t∈[0 ,|ςi|]
+
+(
+
+d(z(i) 
+
+> t
+
+, z g ) if δGT ω (s(i) 
+
+> t
+
+) = 1 
+
+−∞ otherwise .
+
+for a distance function d ∈ DZ and where δGT ω (s(i) 
+
+> t
+
+) = 1 indicates that the ground-truth state at time t satisfies predicate ω. Intuitively, score i is the most difficult positive timestep in demonstration ςi: any threshold below 
+
+score i would fail to classify at least one ground-truth positive frame in that demonstration. Each calibration demonstration contains at least one ground-truth positive timestep. 
+
+Definition 17 (Conformal Calibration Threshold) . For a calibration set of size ncal and a target mis-recall level 
+
+α ∈ (0 , 1) , a conformal calibration threshold ϵCP is a value in R≥0 defined as follows: 
+
+ϵCP = score (k), k = ⌈(1 − α)( ncal + 1) ⌉ ,
+
+where score (k) denotes the k-th smallest value among {score i}ncal  
+
+> i=1
+
+.
+
+Theorem 1 (Conformal Recall Guarantee) . Assume the calibration demonstrations and a future test demonstra-tion are exchangeable. Then 
+
+P
+
+
+
+∀t : δGT ω (s(i) 
+
+> t
+
+) = 1 ⇒ d(zt, z ω ) ≤ ϵCP 
+
+
+
+≥ 1 − α. 
+
+Equivalently, with probability at least 1 − α over a newly drawn test demonstration, the embedding predicate achieves perfect per-demonstration recall, i.e., it detects every ground-truth positive timestep. 
+
+15 Table 1: ETL predicate evaluation on the Dubins car. 
+
+ϵ∗ (F1-optimal) ϵCP (α=0 .10 )Spec Scope F1 Prec. Rec. Agree Prec. Rec. Agree Reach A frames 0.85 0.87 0.83 98.6% 0.79 0.93 98.5% Avoid C frames 0.80 0.69 0.94 96.5% 0.70 0.92 96.5% RA A ∧ ¬ C frames 0.85 0.87 0.83 98.6% 0.79 0.93 98.5% Seq. A → B episodes 1.00 1.00 1.00 100% 1.00 1.00 100% 
+
+Proof sketch. By exchangeability, the augmented set of scores 
+
+score 1, . . . , score ncal , score test 
+
+is exchangeable, where 
+
+score test = max  
+
+> t∈ςtest
+> δGT ω(st)=1
+
+d(zt, z ω ) .
+
+The standard split conformal order-statistic argument implies 
+
+P score test ≤ score (k)
+
+ ≥ kncal + 1 ≥ 1 − α. 
+
+By construction, the event score test ≤ ϵCP is exactly the event that every positive timestep in the test demon-stration satisfies d(zt, z ω ) ≤ ϵCP , which proves the recall guarantee. At deployment, the predicate is evaluated solely by checking whether 
+
+d(zt, z ω ) ≤ ϵCP ,
+
+The guarantee holds for any embedding function and any underlying data distribution, provided the calibration and test demonstrations remain exchangeable. 
+
+# E Additional Evaluation Details for Dubins Car 
+
+E.1 Details for Dubins Car Setup 
+
+The navigation task is defined for a robot that respects discrete-time Dubins car dynamics. A state is defined as s = [ px, p y , θ ] where st+1 = st + ∆ t[v cos( θt), v sin( θt), a t] with continuous angular velocity at ∈
+
+A = [ −amax , a max ]. We fix amax = 1 .25 rad/s and v = 1 m/s, with discretization at ∆t = 0 .05 s. We generate N = 100 trajectories using a feedback controller with obstacle avoidance. For each task, we construct pairs of equivalent specifications in the ground-truth state space and the embedding space. The ground-truth specifications, ωi, are defined over the state space of the car (e.g., the position px, p y , angular velocity y, etc.). In parallel, the ETL specifications, φi, are defined over the embedded images observed during simulation; target embeddings are obtained from the simulated observations corresponding to selected goal states. We utilize the encoder from the world model used in Agrawal et al. [2025], which is based on Dreamer [Hafner et al., 2025] with a Recurrent State Space Model (RSSM). The encoder produces a task-relevant representation space in which distances reflect semantic similarity between observations. We evaluate four specification patterns: Reach (FA), Avoid (G¬C), Reach-Avoid (FA ∧ G¬C), and Sequential 
+
+(F(A ∧ FB)). A, B, and C denote reaching the top-right goal |pt − (0 .8, 0.8) | < 0.25 , reaching the top-left goal |pt − (−0.8, 0.8) | < 0.25 , and entering the obstacle proximity zone |pt − (0 .8, −0.8) | < 0.5, respectively. This setup enables direct comparison between embedding-based satisfaction and ground-truth logical semantics. Thresholds are calibrated on a 40/60 calibration/test split using both F1-optimal and conformal procedures. In all experiments, we use α = 0 .10 for computing ϵcp .
+
+E.2 Results for Dubins Car 
+
+The results for the experiments with the Dubins car can be found in Table 1, including F1, Precision, Recall, and Agreement scores for both F1-Optimal and Conformal Prediction thresholds. 
+
+# F Additional Details for Manipulation Tasks 
+
+We provide qualitative visualizations of ETL predicate behavior on manipulation tasks. These plots illustrate how embedding distances evolve over time and how predicate satisfaction aligns with ground-truth signals. 
+
+16 Table 2: ETL predicate evaluation on MetaWorld (test split). Frame-level metrics are reported for all predicates. 
+
+Task F1 Prec. Rec. Agree CP Rec. CP Prec. Grasp ( A) 0.985 0.971 0.999 97.3% 0.883 0.976 Place ( B) 0.948 0.901 1.000 91.4% 0.916 0.926 Sequential 100% ordering agreement (24/24) 
+
+Table 3: F1 score for failure / predicate detection across three environments. All methods use the F1-optimal threshold; ETL (CP) additionally reports the class-conditional split-CP threshold. Per-column best in bold .Method STACKING SORTING MW-P ICK -P LACE Avg logpZO 0.844 0.534 0.992 0.790 PCA-kmeans 0.852 0.585 0.815 0.751 ETL (best F1) 0.897 0.593 0.961 0.817 
+
+ETL (CP) 0.887 0.556 0.923 0.789 
+
+F.1 Tabularized Results 
+
+We present tabularized results from the experiments from Section 5.2 in Table 2 and Table 3. 
+
+F.2 Sequential Predicate Trace 
+
+Figure 3 illustrates dual-predicate traces for the pick-place-wall task. The plots show distances to both subgoal embeddings ( zA for grasp and zB for place), along with corresponding predicate activations. The embedding distances to zA and zB decrease at distinct timesteps corresponding to grasp and placement events. This temporal separation is preserved in the embedding space, allowing ETL to correctly identify the ordering of subgoals across all trajectories. 
+
+# G Additional DROID Evaluation Details 
+
+G.1 Tabularized Results 
+
+We present tabularized results from the experiments from Section 5.3 in Table 4. 
+
+G.2 Ground Truth Construction 
+
+Unlike simulation environments, DROID does not provide explicit task-phase annotations. We derive ground-truth predicates directly from proprioceptive signals: 
+
+πhold (t) : gripper (t) > 0.5
+
+πrelease (t) : gripper (t) < 0.15 ∧ ∃ t′ < t, π hold (t′)
+
+The sequential specification is defined as: 
+
+∃ t1 < t 2 : πhold (t1) ∧ πrelease (t2),
+
+Table 4: Comparison of ETL and Qwen2-VL-2B on phasic DROID episodes. 
+
+ETL Qwen2-VL-2B Task Ph. F1 Agr. Seq. F1 Agr. Seq. 
+
+Obj. → paper 2 0.968 0.977 ✓ 0.493 0.383 ✓
+
+Tap → spoon 2 0.839 0.937 ✗ 0.292 0.700 ✓
+
+4-way chain 4 0.531 0.862 ✓ 0.585 0.811 ✗
+
+White → blue cloth 3 0.884 0.959 ✓ 0.335 0.258 ✗
+
+Bottles → stove 3 0.844 0.966 ✓ 0.244 0.685 ✗
+
+Mean – 0.813 0.940 4/5 0.390 0.567 2/5 
+
+17 0
+
+2
+
+4 
+
+> dist( zt, zA)
+> (grasp)  A
+
+(F1=2.85) A (CP=2.66) 
+
+0
+
+2
+
+4 
+
+> dist( zt, zB)
+> (place)  B
+
+(F1=2.82) B (CP=2.22) 
+
+pred A
+
+GT A
+
+pred B
+
+GT B
+
+## Timestep    
+
+> 028 57 100
+
+Figure 3: Dual-predicate Boolean timelines for mw-pick-place-wall . Top panels show distances to grasp ( zA) and place ( zB ) embeddings with thresholds ϵ∗ and ϵCP . Lower panels show ETL and ground-truth predicate activations. 
+
+corresponding to a pick-and-place interaction. For tasks where proprioception is not sufficient to identify phase of tasks, we manually annotate the videos and generate the ground truth predicates. 
+
+G.3 Encoder and Representation 
+
+We use the SVD VAE from Ctrl-World [Guo et al., 2026], a video diffusion model trained directly on DROID data. Each frame is encoded into a 4×24 ×40 latent tensor, flattened to a 3,840-dimensional vector. Distances are computed using cosine similarity. This encoder is domain-matched to DROID and provides stronger geometric separation than general-purpose encoders such as DINOv2. 
+
+G.4 Sequential Evaluation Details 
+
+We identify 25 episodes containing valid grasp-then-release transitions, using 10 for calibration and 15 for evaluation. 
+
+Table 5: Sequential predicate evaluation on DROID (SVD VAE, wrist camera). 
+
+Predicate F1 Precision Recall Agreement Seq. Agreement 
+
+πhold 0.666 0.721 0.750 0.701 1.000 
+
+πrelease 0.258 0.162 1.000 0.163 
+
+18 The release predicate exhibits low precision due to visual ambiguity: the approach phase with an open gripper is visually similar to the post-release phase. Despite this, sequential ordering is correctly identified in all episodes. 
+
+G.5 Discussion of Failure Modes 
+
+ETL performance depends on the separability of task-relevant concepts in the embedding space. For manipulation tasks, success states (e.g., button press, object placement) are highly distinctive, leading to sharp transitions in embedding distance and high predicate accuracy. Failure modes arise when embeddings corresponding to different semantic states overlap in the latent space, which can result in delayed or premature predicate activation near decision boundaries. However, such cases are rare in these tasks, and conformal thresholds help mitigate missed detections by prioritizing recall. Overall, these qualitative results reinforce that embedding distances provide a reliable and interpretable signal for detecting semantic events and temporal structure in manipulation tasks. We evaluate whether Embedding Temporal Logic (ETL) monitoring can serve as a competitive, interpretable alternative to state of the art failure predictors for generative robot policies. Our central hypothesis is that explicitly encoding the sequential milestone structure of a task into a small number of latent spec anchors, and then asking whether each anchor was ever approached during execution, yields a sharper failure signal than methods that either model the full observation distribution or score each timestep independently against a single goal embedding. 
+
+19
