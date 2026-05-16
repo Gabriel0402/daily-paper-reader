@@ -1,0 +1,654 @@
+Title: Multi-Property Temporal Logic Monitoring
+
+URL Source: https://arxiv.org/pdf/2605.13668v1
+
+Published Time: Thu, 14 May 2026 01:29:41 GMT
+
+Number of Pages: 10
+
+Markdown Content:
+Formal Methods in Computer-Aided Design 2026 
+
+# Multi-Property Temporal Logic Monitoring 
+
+Arınc ¸ Demir 
+
+Bo˘ gazic ¸i University 
+
+Istanbul, T¨ urkiye arinc.demir@std.bogazici.edu.tr 
+
+Dogan Ulus 
+
+Bo˘ gazic ¸i University 
+
+Istanbul, T¨ urkiye dogan.ulus@bogazici.edu.tr 
+
+Abstract —Runtime verification enables checking temporal logic specifications over individual execution traces and offers a scalable alternative to exhaustive formal verification. In practice, systems must satisfy dozens to hundreds of temporal properties simultaneously; however, existing approaches monitor each prop-erty in isolation, resulting in redundant computation and limited scalability. In this work, we present an online multi-property monitoring framework that compiles past-time LTL and MTL specifications into a shared directed acyclic graph of subformulas with one output per property. Unlike prior approaches that con-struct monitors independently, our method extends compositional sequential network-based temporal logic monitor construction to a shared setting, enabling reuse of intermediate results across properties while preserving their individual structure. Central to our approach is a data-oriented execution model based on an arena-allocated, double-buffered layout that stores intermediate results for each subformula in compact, contiguous memory. This design favors spatial locality and enables incremental updates with minimal overhead. Experimental results demonstrate per-property throughput improvements of 2× to 4.5× and 6× to 
+
+12 × in multi-property configurations compared to conventional single-property monitoring, enabling scalability to large specifi-cation sets and deployment in high-performance and resource-constrained systems. 
+
+I. I NTRODUCTION 
+
+Runtime verification has emerged as a practical technique for ensuring the correctness of complex systems by checking formal specifications against execution traces at runtime. Un-like exhaustive verification methods such as model checking or theorem proving, runtime verification operates on concrete ex-ecutions, making it particularly suitable for systems where full state-space exploration is infeasible due to complexity, concur-rency, or interaction with unpredictable environments. Among specification formalisms, Linear Temporal Logic (LTL) [1] and Metric Temporal Logic (MTL) [2] are particularly expressive, enabling the capture of qualitative temporal relations and quantitative timing constraints that are essential in domains such as embedded systems, cyber-physical systems, and real-time software. In many realistic scenarios, systems must be verified against not just a single property, but a collection of many small temporal logic specifications simultaneously. A straightfor-ward approach instantiates an independent monitor for each property, each processing the same execution trace. However, properties often share common subformulas, resulting in re-peated evaluation of identical substructures across monitors, while intermediate results are maintained in isolation. As the 
+
+1
+
+2
+
+3
+
+4
+
+5
+
+6
+
+7
+
+8
+
+9
+
+10 
+
+11 
+
+12 
+
+(a) 
+
+Bprev 
+
+Bcur 
+
+(b) 
+
+Fig. 1: Overview of multi-property monitoring framework. (a) A unified computation graph built from multiple properties. (b) A double buffering implementation for storing and updat-ing internal node states efficiently at runtime. number and complexity of monitored properties increase, this redundancy leads to poor performance and limited scalability. In this work, we present an online monitoring frame-work, LoomRV , that compiles a collection of past-time LTL (PastLTL ) and MTL ( PastMTL ) specifications into a single unified monitor with one output per property, supporting both discrete and dense time models. Our approach extends compositional sequential network-based monitor synthesis [3] by merging equivalent subformulas across specifications into a shared computation structure. In the original construction, a temporal logic specification is translated into a sequential network in which each subformula is represented by a node with an associated state variable. The network follows the syntactic structure of the formula, and each node computes its value from the current input and its dependencies. Tem-poral operators are realized through stateful update rules that propagate information from their previous valuations. Figure 1 illustrates the two orthogonal aspects of our pro-posed multi-property extension: a unified computation graph and a data-oriented execution model. The unified computation graph, shown in Figure 1a, is compiled from multiple specifi-       
+
+> https://doi.org/ This article is licensed under aCreative Commons Attribution 4.0 International License
+> arXiv:2605.13668v1 [cs.LO] 13 May 2026
+
+TABLE I: Comparison of multi-property monitoring                    
+
+> Single-property monitoring [3] Multi-property monitoring (This work) Specification Single property Multiple properties Monitor structure One dedicated monitor One shared monitor Construction Independent Unified Shared subformulas Duplicated Unique Computation topology Tree DAG Computation reuse None Shared Update semantics Synchronous Synchronous Evaluation Multiple passes Single pass Memory layout Scattered memory allo-cations on heap Double-buffered contiguous storage Outputs One per monitor One per property
+
+cations into a single shared structure. Each node represents a unique subformula, and directed edges encode the data dependencies governing the propagation of intermediate values during evaluation. Equivalent subformulas across specifica-tions are merged into a single node, allowing results to be computed once and reused. The graph can therefore be evaluated in a single pass over the input trace, producing verdicts for all properties simultaneously. The second aspect addresses runtime efficiency through a data-oriented execution model. Eliminating common subfor-mulas reduces redundant computation; however, the increased number of nodes and irregular memory access patterns can still degrade performance. To mitigate this, we store all subformula states in compact, contiguous memory buffers as shown in Figure 1b. The monitor alternates between two buffers representing successive time steps, since each state depends only on its previous value and the current valuations. This double-buffered layout separates read and write phases, enabling structured, sequential updates without overwriting required data. Together, the shared graph and data-oriented execution model enable efficient single-pass monitoring of multiple specifications. We summarize the key architectural and execution-level differences between baseline single-property monitoring and our unified framework in Table I. The comparison highlights the transition from independent, tree-structured monitors with duplicated subformulas and scattered state storage to a shared DAG-based representation with explicit subformula reuse and a data-oriented, double-buffered execution model. The remainder of the paper is organized as follows. Sec-tion II introduces the necessary preliminaries on PastMTL and briefly reviews the monitoring approach underlying existing tools, which serves as the baseline for our work. Section III presents our multi-property monitoring framework, detailing how specifications are compiled and deduplicated into a shared computation graph, followed by the data-oriented execution model that drives the evaluation. Section IV describes the implementation and experimental setup, and evaluates the proposed approach against existing techniques in terms of performance and scalability. Section V discusses prior work in runtime verification and related areas. Section VI discusses our contributions and outlines directions for future work. II. B ACKGROUND 
+
+Past-time Linear Temporal Logic ( PastLTL ) extends propo-sitional logic with past temporal operators, while past-time Metric Temporal Logic ( PastMTL ) further augments these operators with timing constraints. This section reviews the construction of sequential network-based monitors for such temporal logic specifications, following the approach intro-duced in [3]. For clarity of exposition, we focus on discrete-time PastMTL . The underlying execution model and compo-sitional monitor construction extend to dense-time settings in an analogous manner, although semantic differences between the two settings require additional considerations. Given a finite set P of atomic predicates, the formulas of discrete-time PastMTL are inductively defined by the grammar: 
+
+φ := ⊥ | p | ¬ φ | φ1 ∧ φ2 | Y φ | φ1 S[a:b ] φ2
+
+where p ∈ P , the unary operator Y denotes the Previous 
+
+modality, and the binary operator S[a:b ] denotes the timed version of the Since temporal modality, whose range of quantification is restricted by interval bounds a and b. The satisfaction relation of a PastMTL formula φ over a discrete-time trace w at time t, denoted as (w, t ) ⊨ φ, is defined inductively as follows: 
+
+(w, t ) ⊨ ⊥ ↔ false 
+
+(w, t ) ⊨ p ↔ wp(t) = true 
+
+(w, t ) ⊨ ¬φ ↔ (w, t ) ⊭ φ
+
+(w, t ) ⊨ φ1 ∧ φ2 ↔ (w, t ) ⊨ φ1 and (w, t ) ⊨ φ2
+
+(w, t ) ⊨ Y φ ↔ (w, t − 1) ⊨ φ
+
+(w, t ) ⊨ φ1 S[a:b ] φ2 ↔ ∃t′ < t. (w, t ′) ⊨ φ2 and 
+
+∀t′′ ∈ (t′, t ). (w, t ′′ ) ⊨ φ1 and 
+
+t − b ≤ t′ < t − a
+
+The remaining Boolean operators such as disjunction ( ∨)and logical implication ( →) are defined in the standard way. From the timed Since S[a:b ] modality, one can derive the 
+
+Past Eventually (P) and Past Always (H) temporal modalities, along with their timed variants. A temporal operator is called 
+
+untimed if it is not parameterized by interval bounds. The monitor construction for a single formula proceeds by associating a computation node with each subformula, together with an update rule determined by its syntactic type. At runtime, the state of each node is stored explicitly and updated at every time step, making the memory access pattern a central aspect of the monitoring procedure. Atomic predicates and Boolean operators require only a single Boolean value representing the current valuation. In contrast, untimed past temporal operators such as Previous and Since depend on history and therefore require access to the state at the previous step. For metric temporal operators, the node must additionally maintain a symbolic set of marked time points determined by the update rule. This set can be represented compactly using intervals, with its size depending on the input trace and bounded by the interval parameters of the operator. In practice, worst-case growth is rarely observed on typical traces. φ1
+
+> φ2
+> φ3
+> φ4
+> φ5
+> φ6
+> φ7
+
+Fig. 2: Object-oriented execution model where each computa-tion node maintains its own local storage in memory. We illustrate the baseline monitor construction using a rep-resentative example that demonstrates how different operator types are translated into a computation graph. Consider the 
+
+PastMTL formula 
+
+φ := H[a:b ](Y(r) ∧ (p S[c:d ] q)) ,
+
+which has seven subformulas, including φ itself. The construc-tion associates one computation node with each subformula. For this formula, the resulting computation graph contains three atomic-predicate nodes for φ1 := p, φ2 := q, and 
+
+φ3 := r, one untimed temporal node for φ5 := Y(φ3), one Boolean node for φ6 := φ4 ∧ φ5, and two metric temporal nodes for φ4 := φ1 S[c:d ] φ2 and φ = φ7 := H[a:b ] φ6.Figure 2 illustrates the resulting computation graph together with its memory organization. The nodes are shown on the left, with φ7 representing the top-level formula φ, and the storage associated with each node is depicted on the right. In this execution model, each computation node maintains its own local state in memory, resulting in a per-node, object-oriented storage layout. Predicate, Boolean, and untimed tem-poral nodes require only a constant amount of storage, since their evaluation depends on the current input and, at most, the immediately preceding state. In contrast, metric temporal nodes maintain sets of intervals with variable sizes. A crucial observation is that memory is fragmented across nodes: each subformula allocates and manages its own buffer independently. As a result, the overall memory layout consists of multiple disjoint regions, with no guarantee of spatial locality between dependent nodes. During execution, updating a node requires accessing its own buffer as well as the buffers of its predecessors, leading to scattered memory accesses. This object-oriented layout directly mirrors the compositional structure of the formula, but it introduces overhead due to redundant allocation, fragmented memory access, and lack of coordination between node states. These limitations motivate the transition to a unified, data-oriented memory organization discussed later. III. M ETHODS 
+
+This section presents the architecture and design of our multi-property monitoring framework. Figure 3 illustrates the monitor’s external interface. A collection of property spec-ifications (shown as stacked pages on the left) is compiled into a single multi-property monitor. At each time step, the monitor receives n atomic-predicate valuations p1, . . . , p n as input and produces m property verdicts y1, . . . , y m as output, where m is the number of registered properties. The monitor supports both discrete-time and dense-time traces. In discrete-time mode it is called once per timestamp and maintains scalar Boolean outputs; in dense-time mode the monitor is presented with one time interval per call and maintains interval-valued outputs. Both modes share the same underlying infrastructure. Figure 4 shows the internal architecture, which is divided into a frontend and a runtime . As explained in Section II, each temporal logic formula is initially translated into a tree structure mirroring its syntax. The parser module performs this translation for all incoming property specifications. Rather than keeping these trees independent, the runtime builder 
+
+generates a unified DAG of computation nodes from the parsed formulas; this is where structural deduplication takes place, merging equivalent subformulas into shared nodes. The config module finalizes the monitor by selecting the time model (discrete or dense). The runtime handles trace evaluation through a three-step pipeline. First, the input processor handles the necessary transformations from rich message formats (in-cluding JSON records, binary formats, and raw structs) into the atomic predicate valuations expected by the monitor. Second, the execution engine consumes these valuations and walks through the DAG nodes in topological order. As introduced in Section II, each node is evaluated according to the update rule determined by its syntactic type, computing its new value from the current valuations of its dependencies and, for tem-poral operators, its previously stored state. Third, the output processor reads the evaluated results from the root nodes of 
+
+X1 Multi-property monitor                   
+
+> Property #1
+> 
+> p1: 0
+> p2: 1
+> · · ·
+> pn: 0
+> 
+> 
+> p1: 0
+> p2: 1
+> · · ·
+> pn: 0
+> 
+> 
+> p1: 0
+> p2: 1
+> · · ·
+> pn: 0
+> 
+> 
+> y1: 0
+> y2: 1
+> · · ·
+> ym: 0
+> 
+> 
+> y1: 0
+> y2: 1
+> · · ·
+> ym: 0
+> 
+> 
+> y1: 0
+> y2: 1
+> · · ·
+> ym: 0
+> 
+
+# · · · · · · 
+
+# · · · · · · 
+
+time      
+
+> t−1tt+ 1
+
+Fig. 3: Multi-property monitor compiled from properties pro-cessing input vectors p1, . . . , p n and yielding output vectors 
+
+y1, . . . , y m at each time step. Frontend   
+
+> Parser Module
+> Config Module
+> Shared DAG
+> Runtime Builder
+> Specs Options
+> Runtime
+> Input Processor
+> Execution Engine
+> Output Processor
+> Trace Data Verdicts
+> Compiled Monitor
+
+Fig. 4: Architecture overview of the monitoring framework, illustrating the parsing and compilation pipeline, configuration interface, and runtime execution components. each property and delivers the final verdicts to the user. The remainder of this section describes these components in more detail in two parts: Section III-A details the frontend and its structural node deduplication, while Section III-B describes the runtime along with its linearized execution schedule and double-buffered arena execution model. 
+
+A. Frontend: Property Compilation 
+
+The frontend compiles a set of property specifications into a shared computation structure. Properties are specified using the Reelay Expression Format [4], a textual notation for past-time temporal logic formulas. The parser module processes each specification and constructs a syntax tree, which is then passed to the runtime builder for node generation. 
+
+a) Content-addressable node database: Rather than building one independent computation graph per property, the runtime builder maintains a single shared DAG across all reg-istered properties, together with a set of designated root nodes 
+
+identifying each property’s top-level formula. Deduplication is realized through a content-addressable database that keys each computation node by its structural signature. Each node is assigned a unique identifier, and the database maps structural hashes to these identifiers. During bottom-up construction, before inserting any sub-formula node, the runtime builder computes a structural hash 
+
+that encodes the semantics of the node. The hash always includes the operator type; the remaining components depend on the node category: for atomic predicates , the predicate name; for unary operators (negation), the child identifier; for unary temporal operators (Once, Historically), the child identifier and interval bound parameters; for commutative binary operators (conjunction, disjunction), the canonicalized pair of child identifiers, sorted so that p ∧ q and q ∧ p produce the same hash; and for the non-commutative binary temporal operator (Since), the ordered pair of child identifiers and interval bound parameters. 
+
+Parser Context Database 
+
+construct node 
+
+compute hash 
+
+exists? 
+
+equals? 
+
+return existing id 
+
+assign new id 
+
+return new id 
+
+record node 
+
+propagate 
+
+yes 
+
+yes 
+
+no 
+
+no 
+
+Fig. 5: Node creation and lookup workflow across parser, context, and content-addressable database components. 
+
+b) Integration into the parsing process: Figure 5 shows the node creation and lookup workflow. During parsing, each subformula is constructed bottom-up. The parser creates a node description and passes it to a context layer, which com-putes the structural hash. The hash is looked up in the content-addressable database: if a matching entry exists and structural equality is confirmed, the existing identifier is returned and reused; otherwise, a new identifier is assigned and the node is recorded in the database. The returned identifier is then propagated upward to serve as a child reference in parent nodes. Consider two properties φ1 = P[0 ,10] (p ∧ q) and φ2 =
+
+H(p ∧ q). Figure 6 illustrates how the two formula trees merge into a single shared DAG. The atomic predicates p and q and the conjunction p ∧ q are shared between both properties; only the two distinct root operators are unique. The resulting shared DAG contains five nodes rather than the eight that would result from independent compilation. The sub-expression (p ∧ q) is evaluated only once per timestep, regardless of how many properties reference it. A single pass through the shared DAG in topological order computes all property outputs simultaneously; results are read directly from each property’s root node. 
+
+c) Configuration and linearized execution schedule: 
+
+Properties may be registered incrementally; each registration appends newly created nodes to the shared DAG and records the new root index. After all properties are registered, the config module finalizes the monitor by selecting the time model. At this stage, the compiler serializes the shared DAG into a linearized execution schedule : a contiguous array of p q
+
+∧
+
+P[0 ,10] H   
+
+> root 1(φ1)root 2(φ2)
+
+Fig. 6: Structural deduplication: two properties φ1 =
+
+P[0 ,10] (p∧q) and φ2 = H(p∧q) compiled into a shared DAG. Green nodes are shared; colored roots are property-specific. node records arranged in strict topological order (operands before operators). Instead of generating heap-allocated objects connected by memory pointers, the entire formula graph is packed into a single contiguous memory region where child references are simple integer array indices. This ordering enables the runtime to evaluate the entire graph in a single forward pass without recursion. Once finalized, the execution schedule is immutable and the monitor begins accepting trace data. 
+
+B. Runtime: Data-Oriented Execution Model 
+
+The runtime adopts a data-oriented design that elimi-nates heap allocations for intermediate partial results during the monitoring loop. As discussed in Section II, classical object-oriented implementations rely on heap-allocated nodes connected by pointers, leading to fragmented memory and irregular access patterns during tree traversal. Because our frontend instead pre-compiles the DAG into a linearized exe-cution schedule (as described in Section III-A), the runtime is structured to benefit from spatial locality. However, beyond the nodes themselves, storing intermediate interval sets as heap-allocated objects adds significant alloca-tion pressure inside the hot evaluation loop. To resolve this, the framework relies on a zero-allocation double-buffered arena. 
+
+Zero-Allocation Double-Buffered Arena: Each monitoring operator produces or consumes an interval set representing the set of time points for which a sub-formula could hold. Rather than scattering these sets across individual heap-allocated objects, the framework manages all interval-set data using a 
+
+double-buffered arena consisting of two contiguous memory buffers. As illustrated in Figure 7a, the arena maintains a previous buffer (Bprev ) holding the accumulated state from the previous timestep, and a current buffer (Bcur ) into which the current timestep’s state is accumulated. At the end of each timestep, the roles of the two buffers are swapped and the write cursor is reset to zero. As a result, the newly written states become the previous-timestep history, and the new current buffer is effectively cleared for the next evaluation. While Figure 7a shows the global state of both buffers, Figure 7(b-c) zooms in exclusively on Bcur to illustrate the    
+
+> Bprev
+> Bcur
+> idx write
+> swap
+> (a) Global buffer roles and swap mechanism. The previous buffer (Bprev ) holds the previous timestep’s states; the current buffer ( Bcur )accumulates the current timestep’s states. Buffers are swapped at each timestep boundary.
+> read read
+> write
+> (b) Initial position of pointers before the current node evaluation
+> read read
+> write
+> (c) Progression of pointers during the current node evaluation
+
+Fig. 7: Zero-allocation double-buffered arena. (a) Global buffer roles and swap mechanism. (b) Initial position of pointers. (c) Progression of pointers. internal access pattern during a single evaluation step. Because nodes are evaluated in topological order, a node’s children have already been evaluated and their states occupy earlier regions of this current buffer (shown in color). The node reads these regions via read pointers, computes its result, and appends its updated state at the write cursor; the advancing cursor then allocates a fresh interval-set handle for the evaluated node. Temporal operators such as Since additionally read their own accumulated state from Bprev .The consequence is that no dynamic memory allocation takes place during any evaluation timestep : all interval data occupies a single contiguous memory block, and the two arena buffers are provisioned exactly once at monitor creation based on a strict static upper bound, detailed in Section IV. IV. I MPLEMENTATION AND EVALUATION 
+
+This section outlines implementation details of our multi-property monitoring framework, LoomRV , and presents our experimental results. Throughout this section, we compare 
+
+LoomRV against Reelay [4], a state-of-the-art online runtime monitor for past-time LTL and MTL. Reelay follows the same compositional sequential-network construction [3] as the single-property baseline of Section II, but synthesizes one independent monitor per property and uses an object-oriented design. We first detail how the linearized execution schedule is concretely laid out and how the arena’s memory capacity is statically bounded, and describe the common hardware and measurement setup used in every subsequent experiment. Sections IV-A, IV-B, and IV-C then evaluate the impact of cross-property sharing on the shared-DAG speedup, the per-property evaluation cost against Reelay, and multi-property throughput, respectively. 
+
+LoomRV is implemented in C++. Its modules mirror the architecture of Figure 4: the Parser and Runtime Builder 
+
+jointly compile PastMTL specifications into the linearized execution schedule of Section III-A, the Execution Engine 
+
+evaluates that array against incoming traces using the interval set implementation with the double-buffered arena of Sec-tion III-B, and the Input Processor ingests trace data in one of two interchangeable realizations: a JSON mode that parses newline-delimited JSON records with a SIMD-accelerated JSON parser [5], and a binary mode that reads a compact pre-encoded bitfield format, eliminating JSON parsing overhead from the hot path. 
+
+Execution Schedule Layout. Concretely, each entry of the linearized execution schedule is a fixed-size record holding (i) the operator tag (proposition, negation, conjunction, dis-junction, Previous, Since, Once, Historically, . . . ), (ii) two integer child indices into the same array, (iii) the operator’s temporal bound parameters, (iv) an interval-set-valued per-sistent state carried across timesteps, and (v) an interval-set-valued current output written in the present timestep. In discrete-time mode the current output degrades to a scalar Boolean while the persistent state remains an interval set; in dense-time mode both fields are interval-set handles into the double-buffered arena. 
+
+Buffer Sizing and Memory Limits. Because the arena buffers are fully reset at each timestep boundary, the required memory capacity is strictly determined by the maximum fragmentation of the interval sets evaluated during a single pass. For predicate, Boolean, and untimed temporal nodes, the output is a single contiguous interval or scalar state, requiring 
+
+O(1) space. For metric temporal nodes, the memory footprint is dictated by the future temporal marking mechanism [3], which maintains a set of future intervals within a sliding window bounded by the operator’s upper time constraint b.The worst-case memory limit is reached when this valuation set undergoes maximum fragmentation. This occurs under adversarial conditions, for example, when a highly alternating input signal is evaluated against a point-interval property such as P[b:b] q. In this scenario, marked time points are completely disjoint and non-adjacent. Within a window of size b, the maximum number of strictly non-overlapping, non-adjacent points is exactly ⌈b/ 2⌉. Consequently, a timed node must store at most O(b) distinct intervals. For a shared DAG containing 
+
+N nodes with a maximum upper time bound B, the total required buffer capacity is strictly bounded by O(N · B).Because this worst-case space complexity depends entirely on the static temporal parameters of the compiled formulas rather than the trace length, the framework computes this upper bound and allocates the arena exactly once at monitor creation, guaranteeing zero dynamic allocations and zero overflow over-head during runtime evaluation. It is worth noting that in our experiments, actual buffer consumption remained well below this theoretical maximum. In typical monitoring scenarios, overlapping temporal markings naturally merge into a small number of contiguous blocks, ensuring the memory footprint remains highly compact in practice. 
+
+Experimental Setup. In all our experiments, we report per-formance results from our Linux-based containerized bench-marking environment, which was run on an Intel Core i7-10750H (6 cores, 2.60 GHz base, 12 MB L3 cache). The trace corpora and comparison baselines differ across experiments and are described within each subsection below. 
+
+A. Impact of Cross-Property Sharing 
+
+To quantify how much the speedup of multi-property mon-itoring depends on the degree of structural sharing among formulas, we designed four synthetic formula sets with known sharing characteristics. We measure this sharing in terms of node compression: the ratio of total nodes required for inde-pendent monitors to the number of nodes in the unified shared DAG. Each set contains 10 PastMTL formulas evaluated over the same 1 000 000-step traces in both discrete and dense time. We compare three configurations: Reelay Sequential (one Reelay monitor per formula), LoomRV Sequential (one independent LoomRV monitor per formula), and LoomRV Multi (a single unified monitor). We evaluate the following four scenarios:  
+
+> •
+
+Best-case shared core. All 10 formulas take the form 
+
+(φcore ∨P[: k](p)) where φcore = H(P[:10] (q) → (¬pSr)) 
+
+is identical across all properties, and only the time bound 
+
+k ∈ { 1, . . . , 10 } of the small P term differs. Only the 10-node φcore subtree is shared across all 10 properties. This yields a 3.57 × node compression (72% of nodes deduplicated).  
+
+> •
+
+Nested best-case. Property k is H(Lk) where Lk =(Lk−1 ∨ sk), sk ∈ { p, q, r } cycling with k, and L1 =(p∨q). Since Lk−1 appears identically as a subtree in for-mula k, structural deduplication reuses every previously compiled ∨ subexpression as a prefix, yielding 4.09 ×
+
+node compression (75% of nodes deduplicated).  
+
+> •
+
+Worst-case unique leaves. Formulas share a structural template but carry distinct temporal bounds on every operator, preventing bound-sensitive deduplication. Only propositions and a few structural operators are shared, resulting in 1.67 × node compression (40% of nodes deduplicated).  
+
+> •
+
+Nested worst-case. Escalating AND chains with unique 
+
+once bounds at every nesting level, so almost every node is distinct. This offers minimal sharing, yielding just 
+
+1.31 × node compression (23% of nodes deduplicated). Tables II and III report the results. The data confirm that multi-property speedup scales directly with the degree of structural sharing across both trace models. In discrete-time (Table II), at maximum sharing (nested best-case, 4.09 × compression), LoomRV Multi is 16 .1×
+
+(JSON) and 10 .6× (binary) faster than Reelay Sequential, and 5.3× (JSON) and 3.1× (binary) faster than LoomRV TABLE II: Impact of cross-property sharing (discrete): ex-ecution time (s) for four scenarios with 10 properties over 1 000 000 timesteps.                                     
+
+> Scenario Comp. Reelay Seq LoomRV Seq LoomRV Multi
+> JSON feeder
+> Best-case shared 3.57 ×5.09 1.39 0.252
+> Nested best-case 4.09 ×3.32 1.10 0.206
+> Worst-case unique 1.67 ×3.62 1.33 0.420
+> Nested worst-case 1.31 ×4.40 1.23 0.385
+> Binary feeder
+> Best-case shared 3.57 ×2.80 0.61 0.175
+> Nested best-case 4.09 ×1.34 0.39 0.127
+> Worst-case unique 1.67 ×1.98 0.52 0.346
+> Nested worst-case 1.31 ×2.23 0.50 0.340
+
+TABLE III: Impact of cross-property sharing (dense): exe-cution time (s) for four scenarios with 10 properties over 1 000 000 timesteps.                                     
+
+> Scenario Comp. Reelay Seq LoomRV Seq LoomRV Multi
+> JSON feeder
+> Best-case shared 3.57 ×18.08 3.61 0.850
+> Nested best-case 4.09 ×7.44 2.16 0.604
+> Worst-case unique 1.67 ×9.16 3.03 1.792
+> Nested worst-case 1.31 ×8.69 2.69 1.476
+> Binary feeder
+> Best-case shared 3.57 ×12.26 2.47 0.715
+> Nested best-case 4.09 ×5.63 1.12 0.490
+> Worst-case unique 1.67 ×7.52 1.97 1.576
+> Nested worst-case 1.31 ×6.84 1.55 1.286
+
+Sequential. At minimal sharing (nested worst-case, 1.31 ×
+
+compression), Multi remains 11 .4× (JSON) and 6.6× (binary) faster than Reelay Sequential, and 3.2× (JSON) and 1.5×
+
+(binary) faster than LoomRV Sequential. Notably, achieving up to a 3.2× speedup over LoomRV Sequential despite only a 
+
+1.31 × reduction in nodes highlights a critical characteristic of discrete-time evaluation: because individual node processing is computationally trivial (scalar Booleans), execution time is dominated by program initialization and trace parsing overhead. Since the sequential baseline must initialize the framework and parse the trace 10 separate times, the multi-property monitor achieves a massive speedup simply by ingest-ing the trace once and distributing the inputs to all properties simultaneously. This also explains why the relative speedup multipliers are lower for the binary feeder: because binary parsing is highly optimized, the sequential baseline wastes far less time on I/O. Consequently, avoiding redundant parsing passes yields a smaller relative multiplier, even though the binary monitor achieves the fastest absolute execution times overall. In dense-time (Table III), the same trends hold: at max-imum sharing, LoomRV Multi is 12 .3× (JSON) and 11 .5×
+
+(binary) faster than Reelay Sequential, and 3.6× (JSON) and 
+
+2.3× (binary) faster than LoomRV Sequential. At minimal sharing, the advantage over LoomRV Sequential shrinks to 
+
+1.8× (JSON) and 1.2× (binary). Because dense-time node processing involves heavier interval-set operations rather than simple Booleans, the evaluation loop demands a larger share of the overall execution time. Consequently, parsing overhead becomes less dominant, and the multi-property speedups align more closely with the actual structural compression ratio. Yet, Multi still remains 5.9× (JSON) and 5.3× (binary) faster than Reelay Sequential, as the linearized-schedule evaluator and zero-allocation arena continue to provide substantial baseline efficiency. 
+
+B. Single-Property Comparison 
+
+To isolate the per-property evaluation cost from multi-property effects, we compare LoomRV against Reelay on each of the 30 properties independently. Here, each property is evaluated on its own dedicated trace generated by the 
+
+timescales benchmark generator [6]. The tool synthesizes traces with tunable event frequencies, allowing us to evaluate the monitors under varying degrees of temporal density. Each generated trace spans a maximum simulated time of 1,000,000. We verified that none of the 30 timescales formulas contain repeated subexpressions, so no intra-formula deduplication occurs during compilation. Table IV reports discrete-time results using both the JSON and binary feeders. In discrete-time mode, LoomRV maintains a consistent advantage with a median speedup of 2.00 × (JSON feeder, mean 2.01 ×) and 1.81 × (binary feeder, mean 2.01 ×), with individual speedups ranging from 1.55 × to 2.82 ×. Ta-bles V and VI report the corresponding dense-time results across three temporal densities (Dense1, Dense10, Dense100). Across all 90 dense-time configurations, LoomRV consistently outperforms Reelay: the median per-configuration speedup is 
+
+3.45 × (JSON feeder, mean 3.46 ×) and 4.53 × (binary feeder, mean 4.43 ×), with individual speedups ranging from 2.2×
+
+to 5.8× depending on the formula and timescale granularity. Across both trace models, the binary feeder yields additional speedup over the JSON feeder for both tools, as it eliminates JSON parsing overhead from the hot path. 
+
+C. Multi-Property Monitoring Performance 
+
+This experiment evaluates the end-to-end throughput of our multi-property framework when all 30 timescales benchmark properties [6] are monitored simultaneously. 
+
+a) Configurations: We compare five configurations that progressively isolate the contributions of the linearized execu-tion schedule, the zero-allocation arena, and the shared DAG:  
+
+> •
+
+Reelay-Sequential : 30 independent single-property Reelay monitors, each processing the full trace in a separate pass.  
+
+> •
+
+Reelay-AND : all 30 properties conjoined into a single formula via explicit conjunction operators ( ∧), monitored by one Reelay instance. This simulates a best-case single-monitor strategy without structural deduplication.  
+
+> •
+
+LoomRV Sequential : 30 independent LoomRV moni-tors, one per property. This isolates the benefit of the linearized execution schedule and zero-allocation arena described in Sections III-A and III-B, without any cross-property sharing. TABLE IV: Execution time (s) for single-property discrete-time monitoring. Reelay vs. LoomRV using JSON and binary feeders. 
+
+JSON Feeder (s) Binary Feeder (s) Benchmark Reelay LoomRV Reelay LoomRV 
+
+AbsentAQ10 0.154 0.088 0.070 0.039 
+
+AbsentAQ100 0.143 0.086 0.061 0.038 
+
+AbsentAQ1000 0.142 0.087 0.060 0.038 
+
+AbsentBQR10 0.243 0.118 0.088 0.050 
+
+AbsentBQR100 0.217 0.114 0.071 0.050 
+
+AbsentBQR1000 0.216 0.114 0.067 0.050 
+
+AbsentBR10 0.163 0.082 0.090 0.032 
+
+AbsentBR100 0.165 0.082 0.089 0.032 
+
+AbsentBR1000 0.162 0.082 0.089 0.032 
+
+AlwaysAQ10 0.154 0.088 0.068 0.037 
+
+AlwaysAQ100 0.145 0.086 0.060 0.037 
+
+AlwaysAQ1000 0.142 0.087 0.059 0.037 
+
+AlwaysBQR10 0.236 0.111 0.082 0.043 
+
+AlwaysBQR100 0.219 0.105 0.069 0.042 
+
+AlwaysBQR1000 0.211 0.105 0.066 0.042 
+
+AlwaysBR10 0.164 0.081 0.088 0.031 
+
+AlwaysBR100 0.164 0.082 0.088 0.032 
+
+AlwaysBR1000 0.162 0.081 0.088 0.032 
+
+RecurBQR10 0.281 0.117 0.109 0.052 
+
+RecurBQR100 0.255 0.114 0.089 0.051 
+
+RecurBQR1000 0.252 0.114 0.086 0.051 
+
+RecurGLB10 0.126 0.064 0.076 0.028 
+
+RecurGLB100 0.098 0.061 0.051 0.028 
+
+RecurGLB1000 0.094 0.061 0.048 0.028 
+
+RespondBQR10 0.369 0.147 0.131 0.062 
+
+RespondBQR100 0.342 0.145 0.102 0.063 
+
+RespondBQR1000 0.333 0.142 0.100 0.064 
+
+RespondGLB10 0.242 0.093 0.115 0.042 
+
+RespondGLB100 0.205 0.091 0.083 0.041 
+
+RespondGLB1000 0.201 0.090 0.078 0.041 
+
+TABLE V: Execution time (s): Reelay JSON vs. LoomRV JSON, single-property, dense-time. 
+
+Dense1 (s) Dense10 (s) Dense100 (s) Benchmark Reelay LoomRV Reelay LoomRV Reelay LoomRV 
+
+AbsentAQ10 0.447 0.131 0.260 0.075 0.248 0.073 
+
+AbsentAQ100 0.401 0.122 0.204 0.063 0.172 0.053 
+
+AbsentAQ1000 0.395 0.121 0.194 0.061 0.164 0.052 
+
+AbsentBQR10 0.495 0.202 0.358 0.135 0.349 0.137 
+
+AbsentBQR100 0.339 0.148 0.109 0.044 0.065 0.022 
+
+AbsentBQR1000 0.316 0.142 0.078 0.031 0.029 0.007 
+
+AbsentBR10 0.361 0.108 0.219 0.063 0.215 0.062 
+
+AbsentBR100 0.334 0.104 0.190 0.056 0.171 0.049 
+
+AbsentBR1000 0.337 0.103 0.187 0.055 0.169 0.049 
+
+AlwaysAQ10 0.462 0.127 0.254 0.073 0.246 0.070 
+
+AlwaysAQ100 0.406 0.118 0.195 0.061 0.158 0.051 
+
+AlwaysAQ1000 0.396 0.117 0.187 0.059 0.154 0.050 
+
+AlwaysBQR10 0.694 0.186 0.482 0.123 0.482 0.123 
+
+AlwaysBQR100 0.471 0.138 0.149 0.041 0.082 0.020 
+
+AlwaysBQR1000 0.449 0.128 0.101 0.029 0.034 0.007 
+
+AlwaysBR10 0.374 0.105 0.219 0.062 0.212 0.060 
+
+AlwaysBR100 0.349 0.100 0.185 0.056 0.164 0.048 
+
+AlwaysBR1000 0.345 0.099 0.183 0.054 0.157 0.047 
+
+RecurBQR10 0.647 0.197 0.390 0.112 0.396 0.112 
+
+RecurBQR100 0.484 0.155 0.133 0.040 0.063 0.016 
+
+RecurBQR1000 0.467 0.152 0.103 0.032 0.031 0.007 
+
+RecurGLB10 0.246 0.090 0.152 0.052 0.152 0.053 
+
+RecurGLB100 0.183 0.071 0.060 0.020 0.035 0.009 
+
+RecurGLB1000 0.175 0.069 0.049 0.016 0.023 0.004 
+
+RespondBQR10 1.144 0.288 0.816 0.199 0.814 0.198 
+
+RespondBQR100 0.777 0.210 0.245 0.063 0.137 0.033 
+
+RespondBQR1000 0.718 0.196 0.156 0.042 0.044 0.010 
+
+RespondGLB10 0.649 0.168 0.420 0.102 0.425 0.101 
+
+RespondGLB100 0.449 0.127 0.133 0.035 0.070 0.016 
+
+RespondGLB1000 0.417 0.123 0.095 0.028 0.031 0.006 
+
+TABLE VI: Execution time (s): Reelay binary vs. LoomRV binary, single-property, dense-time. 
+
+Dense1 (s) Dense10 (s) Dense100 (s) Benchmark Reelay LoomRV Reelay LoomRV Reelay LoomRV 
+
+AbsentAQ10 0.378 0.084 0.220 0.048 0.209 0.046 
+
+AbsentAQ100 0.332 0.077 0.169 0.039 0.143 0.034 
+
+AbsentAQ1000 0.326 0.077 0.159 0.038 0.135 0.033 
+
+AbsentBQR10 0.403 0.131 0.282 0.087 0.287 0.088 
+
+AbsentBQR100 0.261 0.096 0.087 0.029 0.051 0.015 
+
+AbsentBQR1000 0.239 0.091 0.060 0.021 0.023 0.006 
+
+AbsentBR10 0.299 0.066 0.184 0.039 0.182 0.038 
+
+AbsentBR100 0.277 0.063 0.161 0.035 0.142 0.032 
+
+AbsentBR1000 0.274 0.063 0.155 0.035 0.141 0.031 
+
+AlwaysAQ10 0.391 0.081 0.216 0.046 0.210 0.044 
+
+AlwaysAQ100 0.350 0.075 0.163 0.038 0.133 0.032 
+
+AlwaysAQ1000 0.343 0.074 0.157 0.037 0.127 0.031 
+
+AlwaysBQR10 0.596 0.116 0.413 0.075 0.407 0.075 
+
+AlwaysBQR100 0.402 0.084 0.126 0.026 0.067 0.012 
+
+AlwaysBQR1000 0.369 0.079 0.084 0.018 0.028 0.005 
+
+AlwaysBR10 0.310 0.063 0.183 0.037 0.177 0.035 
+
+AlwaysBR100 0.289 0.060 0.154 0.033 0.133 0.029 
+
+AlwaysBR1000 0.287 0.060 0.150 0.032 0.130 0.029 
+
+RecurBQR10 0.545 0.133 0.329 0.078 0.333 0.077 
+
+RecurBQR100 0.412 0.106 0.111 0.028 0.053 0.012 
+
+RecurBQR1000 0.387 0.104 0.086 0.023 0.026 0.005 
+
+RecurGLB10 0.210 0.057 0.131 0.033 0.131 0.033 
+
+RecurGLB100 0.150 0.045 0.050 0.013 0.029 0.006 
+
+RecurGLB1000 0.143 0.043 0.040 0.010 0.019 0.004 
+
+RespondBQR10 0.949 0.201 0.693 0.140 0.679 0.141 
+
+RespondBQR100 0.663 0.145 0.202 0.044 0.112 0.024 
+
+RespondBQR1000 0.607 0.136 0.129 0.030 0.036 0.008 
+
+RespondGLB10 0.570 0.106 0.369 0.064 0.369 0.065 
+
+RespondGLB100 0.380 0.081 0.112 0.022 0.059 0.010 
+
+RespondGLB1000 0.352 0.077 0.080 0.018 0.026 0.005 
+
+• LoomRV-AND : all 30 properties conjoined into a single formula and compiled by LoomRV. Because the content-addressable node database (Section III-A) deduplicates shared subformulas even within a single conjunction, this configuration benefits from both the data-oriented execution model and partial structural reuse, but retains the 29 extra conjunction nodes. 
+
+• LoomRV Multi : the full multi-property monitor, compil-ing all 30 properties into a single shared DAG with one root node per property. This is the primary configuration of this work. LoomRV is evaluated in both JSON and binary feeder modes in every configuration. TABLE VII: Total wall-clock time (s) to monitor 30 PastMTL 
+
+properties over 1 000 000 discrete-time steps. Speedup is rel-ative to the Reelay-Sequential baseline for the same feeder type. 
+
+Configuration Time (s) Speedup 
+
+JSON feeder 
+
+Reelay-Sequential (JSON) 9.34 1.0× (baseline) Reelay-AND (JSON) 6.38 1.5×
+
+LoomRV Sequential (JSON) 4.42 2.1×
+
+LoomRV-AND (JSON) 0.80 11 .6×
+
+LoomRV Multi (JSON) 0.80 11 .7×
+
+Binary feeder 
+
+Reelay-Sequential (binary) 4.66 1.0× (baseline) Reelay-AND (binary) 3.63 1.3×
+
+LoomRV Sequential (binary) 1.58 3.0×
+
+LoomRV-AND (binary) 0.70 6.6×
+
+LoomRV Multi (binary) 0.71 6.6×TABLE VIII: Total wall-clock time (s) to monitor 30 PastMTL 
+
+properties over 1 000 000 dense-time steps. Speedup is relative to the Reelay-Sequential baseline for the same feeder type.                         
+
+> Configuration Time (s) Speedup
+> JSON feeder
+> Reelay-Sequential (JSON) 27.49 1.0×(baseline) Reelay-AND (JSON) 24.26 1.1×
+> LoomRV Sequential (JSON) 9.63 2.9×
+> LoomRV-AND (JSON) 4.05 6.8×
+> LoomRV Multi (JSON) 3.77 7.3×
+> Binary feeder
+> Reelay-Sequential (binary) 22.28 1.0×(baseline) Reelay-AND (binary) 21.78 1.0×
+> LoomRV Sequential (binary) 5.80 3.8×
+> LoomRV-AND (binary) 3.72 6.0×
+> LoomRV Multi (binary) 3.45 6.4×
+
+Tables VII and VIII report the results for discrete and dense time, respectively. 
+
+b) Execution model contribution: Even without cross-property sharing, LoomRV Sequential already achieves 2.1–
+
+3.0× speedup over Reelay-Sequential in discrete-time and 
+
+2.9–3.8× in dense-time (lower and upper bounds correspond to JSON and binary feeders, respectively). This improvement is consistent with the benefits of the linearized execution schedule and the zero-allocation arena, confirming that the data-oriented execution model contributes independently of shared computation. 
+
+c) Effect of structural deduplication: Reelay-AND, which eliminates redundant trace parsing by conjoining all properties into a single formula, yields only a modest 1.0–
+
+1.5× improvement over Reelay-Sequential, since its object-oriented evaluator still processes every node independently. In contrast, both LoomRV-AND and LoomRV Multi combine single-pass evaluation with the content-addressable dedupli-cation of Section III-A, achieving 6.0–11 .7× speedup over Reelay-Sequential across both time models and feeders. 
+
+d) Multi vs. AND conjunction: In discrete-time, LoomRV Multi and LoomRV-AND perform nearly identically ( 0.80 vs 
+
+0.80 s JSON; 0.71 vs 0.70 s binary). Because discrete-time node evaluation operates on scalar Booleans, the cost of the 29 additional conjunction nodes present in the AND formulation is negligible. In dense-time, however, each node evaluation involves interval-set operations, making those extra nodes measurable: the shared DAG contains 107 nodes compared to 136 for the AND formulation. Accordingly, LoomRV Multi achieves the best overall results ( 7.3× JSON, 6.4× binary), outperforming LoomRV-AND by a margin that directly reflects the avoided conjunction nodes ( 3.77 vs 4.05 s; 3.45 vs 3.72 s). V. R ELATED WORK 
+
+The idea of executing temporal logic specifications dates back to the seminal work on Tempura [7] and the Metatem framework [8]. The latter specifically leverages past-time reasoning to enable monitoring and reactive execution. A closely related paradigm appears in synchronous languages such as Lustre [9], Signal [10], and Esterel [11], where reactive programs are compiled into deterministic code under a global logical clock. Our work follows this synchronous execution model and focuses on the unified evaluation of multiple past temporal logic specifications. Modern runtime verification frameworks build on these foundations to monitor temporal properties over execution traces. Early work [12] influenced the development of mod-ern tools [13], [14] as well as frameworks with extended semantics [15], [16], [4]. Another line of work is stream-based monitoring [17], [18], [19], closely resembling syn-chronous programming languages in both syntax and execution semantics. In these approaches, each specification is typically compiled into an independent monitor evaluated over the same trace. Despite the practical importance of monitoring large sets of properties, the problem of multi-property monitoring has received comparatively limited attention. Existing efforts addressing multiple properties primarily arise in formal veri-fication contexts [20], [21], [22], [23], [24], where the focus is on state-space reduction and incremental evaluation. In contrast, our work targets the online runtime verification setting and treats multi-property monitoring as a first-class citizen, combining cross-property subformula deduplication with a data-oriented execution model. Related ideas appear in optimizations for runtime monitors based on common subexpression elimination [25], [14], [26]; our approach gen-eralizes this principle from local expression-level optimization to a multi-property construction integrated with the execution model. VI. C ONCLUSION 
+
+In this paper, we presented LoomRV , a highly efficient run-time monitoring framework designed from the ground up for the simultaneous evaluation of multiple PastMTL properties. By compiling specifications into a deduplicated, linearized execution schedule and employing a double-buffered arena for zero-allocation state management, LoomRV significantly mitigates the redundant computation and memory allocation overhead that traditionally limits scaling to large specifica-tion sets. Our comprehensive evaluation demonstrates per-property throughput improvements of 2× to 4.5× from the data-oriented execution model alone, scaling to 6× to 12 ×
+
+end-to-end when monitoring 30 properties simultaneously, outperforming the state-of-the-art sequential network monitor 
+
+Reelay across both discrete and dense-time traces. Our findings also highlight a pressing need for standardized multi-property benchmark suites, since existing benchmarks target single-property evaluation and the degree of subexpres-sion overlap in industrial specification sets remains difficult to quantify. Future extensions will focus on deployment over publish-subscribe networks for distributed monitoring, and on FPGA-based hardware synthesis, for which the zero-allocation, con-tiguous memory layout is inherently well suited. REFERENCES [1] A. Pnueli, “The temporal logic of programs,” in Proceedings of the Symposium on Foundations of Computer Science (FOCS) , 1977, pp. 46–57. [2] R. Koymans, “Specifying real-time properties with metric temporal logic,” Real-Time Systems , vol. 2, no. 4, pp. 255–299, 1990. [3] D. Ulus, “Online monitoring of metric temporal logic using sequential networks,” Logical Methods in Computer Science , vol. 22, 2026. [4] ——, “Reelay: Online temporal logic monitoring framework,” arXiv preprint arXiv:2604.22384 , 2026. [5] G. Langdale and D. Lemire, “Parsing gigabytes of JSON per second,” 
+
+The VLDB Journal , vol. 28, no. 6, pp. 941–960, 2019. [6] D. Ulus, “Timescales: A benchmark generator for MTL monitoring tools,” in International Conference on Runtime Verification . Springer, 2019, pp. 402–412. [7] B. Moszkowski, “Executing temporal logic programs: preliminary ver-sion,” in International Conference on Concurrency . Springer, 1984, pp. 111–130. [8] D. Gabbay, “The declarative past and imperative future: Executable tem-poral logic for interactive systems,” in Temporal Logic in Specification ,ser. LNCS, vol. 398. Springer, 1989, pp. 409–448. [9] N. Halbwachs, P. Caspi, P. Raymond, and D. Pilaud, “The synchronous data flow programming language lustre,” Proceedings of the IEEE ,vol. 79, no. 9, pp. 1305–1320, 1991. [10] T. Gautier, P. Le Guernic, and L. Besnard, “Signal: A declarative language for synchronous programming of real-time systems,” in Con-ference on Functional Programming Languages and Computer Archi-tecture . Springer, 1987, pp. 257–277. [11] F. Boussinot and R. De Simone, “The esterel language,” Proceedings of the IEEE , vol. 79, no. 9, pp. 1293–1304, 1991. [12] K. Havelund and G. Ros ¸u, “Efficient monitoring of safety properties,” 
+
+International Journal on Software Tools for Technology Transfer , vol. 6, no. 2, pp. 158–173, 2004. [13] L. Pike, A. Goodloe, R. Morisset, and S. Niller, “Copilot: A hard real-time runtime monitor,” in International Conference on Runtime Verification . Springer, 2010, pp. 345–359. [14] C. Johannsen, P. Jones, B. Kempa, K. Y. Rozier, and P. Zhang, “R2u2 version 3.0: Re-imagining a toolchain for specification, resource estimation, and optimized observer generation for runtime verification in hardware and software,” in International Conference on Computer Aided Verification . Springer, 2023, pp. 483–497. [15] D. Basin, F. Klaedtke, and E. Zalinescu, “The MonPoly monitoring tool,” in RV-CuBES 2017. An International Workshop on Competitions, Usability, Benchmarks, Evaluation, and Standardisation for Runtime Verification Tools , vol. 3, 2017, pp. 19–28. [16] K. Havelund, D. Peled, and D. Ulus, “Dejavu: A monitoring tool for first-order temporal logic,” in Proceedings of the Workshop on Monitoring and Testing of Cyber-Physical Systems (MT-CPS) , 2018, pp. 12–13. [17] B. D’Angelo, S. Sankaranarayanan, C. S´ anchez, W. Robinson, B. Finkbeiner, H. B. Sipma, S. Mehrotra, and Z. Manna, “Lola: Runtime monitoring of synchronous systems,” in Proceedings of the Symposium on Temporal Representation and Reasoning (TIME) , 2005, pp. 166–174. [18] F. Gorostiaga and C. S´ anchez, “Striver: Stream runtime verification for real-time event-streams,” in International Conference on Runtime Verification . Springer, 2018, pp. 282–298. [19] H. Kallwies, M. Leucker, M. Schmitz, A. Schulz, D. Thoma, and A. Weiss, “Tessla–an ecosystem for runtime verification,” in Interna-tional Conference on Runtime Verification . Springer, 2022, pp. 314– 324. [20] E. Goldberg, M. G¨ udemann, D. Kroening, and R. Mukherjee, “Efficient verification of multi-property designs (the benefit of wrong assump-tions),” in 2018 Design, Automation & Test in Europe Conference & Exhibition (DATE) . IEEE, 2018, pp. 43–48. [21] R. Dureja, J. Baumgartner, A. Ivrii, R. Kanzelman, and K. Y. Rozier, “Boosting verification scalability via structural grouping and semantic partitioning of properties,” in 2019 Formal Methods in Computer Aided Design (FMCAD) . IEEE, 2019, pp. 1–9. [22] S. Das, A. Hazra, P. Dasgupta, S. Kundu, and H. Jain, “PURSE: Property ordering using runtime statistics for efficient multi-property verification,” in 2024 Design, Automation & Test in Europe Conference & Exhibition (DATE) . IEEE, 2024, pp. 1–6. [23] S. Das, A. Hazra, P. Dasgupta, H. Jain, and S. Kundu, “Sisco: Selective invariant sharing, clustering and ordering for effective multi-property formal verification,” in Proceedings of the 30th Asia and South Pacific Design Automation Conference , 2025, pp. 1343–1349. [24] S. G. Roy, S. Ghosh, A. Banerjee, R. K. Gajavelly, and S. Surendran, “Mpbmc: Multi-property bounded model checking with gnn-guided clustering,” in 2026 39th International Conference on VLSI Design & 25th International Conference on Embedded Systems (VLSID) . IEEE, 2026, pp. 179–184. [25] J. Baumeister, B. Finkbeiner, M. Kruse, and M. Schwenger, “Automatic optimizations for stream-based monitoring languages,” in International Conference on Runtime Verification . Springer, 2020, pp. 451–461. [26] J. Baumeister, A. Correnson, B. Finkbeiner, and F. Scheerer, “An inter-mediate program representation for optimizing stream-based languages,” in International Conference on Computer Aided Verification . Springer, 2025, pp. 393–407.
