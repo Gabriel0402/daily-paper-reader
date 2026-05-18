@@ -1,0 +1,1239 @@
+Title: Ensuring Logic in the Fog: Sound POMDP Synthesis with LTL Objectives
+
+URL Source: https://arxiv.org/pdf/2605.12581v1
+
+Published Time: Thu, 14 May 2026 00:05:09 GMT
+
+Number of Pages: 12
+
+Markdown Content:
+# Ensuring Logic in the Fog: Sound POMDP Synthesis with LTL Objectives 
+
+# Can Zhou 1 , Yulong Gao 1 , Pian Yu 21Imperial College London, United Kingdom 
+
+> 2
+
+# University College London, United Kingdom 
+
+# {c.zhou24, yulong.gao }@imperial.ac.uk, pian.yu@ucl.ac.uk 
+
+# Abstract 
+
+Synthesising autonomous agents that can navigate uncertain environments while adhering to complex temporal constraints remains a fundamental chal-lenge. While Linear Temporal Logic (LTL) pro-vides a rigorous language for specifying such tasks, the inherent undecidability of qualitatively verify-ing LTL satisfaction in partially observable Markov decision processes renders quantitative synthesis difficult, especially when designing reliable re-ward signals for approximate solvers. In this paper, we bridge this gap with a novel, sound reward-shaping mechanism that dynamically gen-erates belief-dependent rewards grounded in cer-tified LTL satisfaction. By integrating this mech-anism into an enhanced Monte Carlo Planning framework, we empower agents to navigate the ‘fog’ of partial observability with a search process focused on maximising verifiable success. Our ex-periments demonstrate that this approach not only thrives in scenarios where existing solvers fail but also maintains effectiveness and scalability across diverse benchmark domains. 
+
+# 1 Introduction 
+
+Partially Observable Markov Decision Processes (POMDPs) provide a principled framework for sequential decision-making amidst the fog of uncertainty, accounting for both stochastic dynamics and incomplete state information [Kael-bling et al. , 1995; Sebastian et al. , 2005]. When cou-pled with ω-regular properties like Linear Temporal Logic (LTL) [Pnueli, 1977], they allow for the synthesis of poli-cies that satisfy complex, temporally extended goals over in-finite traces in uncertain, partially observable environments. Therefore, POMDP-LTL synthesis has attracted considerable interest across AI, robotics, and control [Sharan and Burdick, 2014; Bouton et al. , 2020; Kalagarla et al. , 2024]. Despite its potential, quantitative POMDP-LTL synthe-sis, aiming to maximise satisfaction probability, remains no-tably challenging. Optimal policy synthesis for general plan-ning tasks in infinite-horizon POMDPs is undecidable, even for simple reachability objectives, as it necessitates reason-ing over an uncountable belief space and may require un-
+
+> Figure 1: A POMDP where states sharing the same observation are indicated by a common background colour. This colour-coding con-vention is maintained throughout all subsequent figures.
+
+bounded memory [Chatterjee et al. , 2016]. Practical ap-proaches therefore rely on tractable approximations that re-formulate the problem as reward maximisation, with reward functions encoding task satisfaction, and apply approximate solvers such as Point-Based Value Iteration (PBVI) [Pineau 
+
+et al. , 2003] and Partially Observable Monte Carlo Planning (POMCP) [Silver and Veness, 2010]. However, constructing appropriate reward signals for full LTL is non-trivial, since its semantics concern non-terminating behaviour over infinite traces. Existing ap-proaches either restrict attention to finite-trace LTL (LTL f ), which reduces satisfaction to a one-shot reachability prob-lem [Kalagarla et al. , 2022; Liu et al. , 2021], or apply opti-mistic reward shaping based on state-space accepting maxi-mal end components (AMECs) [Bouton et al. , 2020]. Never-theless, due to partial observability, POMDP policy synthesis must operate over the belief space, and many objectives such as recurrence and persistence require full LTL. Furthermore, an optimistic reward for POMDP-LTL may assign a positive satisfaction signal to a belief state even when no single belief-based policy (defined as a policy shared by all states within the belief’s support) can realise the implied satisfaction prob-ability. This challenge, which we term the common policy issue , is illustrated in the following example. 
+
+Example 1. Consider the POMDP in Figure 1 with action set {a, c } and initial belief b0 = {s1 : 1 .0}. The LTL objec-tive φ = □♢ (s2 ∨ s3), requiring the system to visit states s2
+
+or s3 infinitely often. Under full observability, two AMECs exist: 1. {s0, s 3}, which achieves almost-sure satisfaction (i.e. probability one) by alternating actions a and c, and 2. 
+
+{s2, s 5}, which succeeds by repeatedly playing a. This sug-gests that all beliefs supported on AMECs yield satisfaction 
+
+> arXiv:2605.12581v1 [cs.LO] 12 May 2026
+
+with probability one. However, with partial observability, no belief-based policy supported on {s0, s 3} can satisfy φ al-most surely: state s0 requires action c, but taking c in s3 leads to the sink s4. Conversely, beliefs supported on {s2, s 5} can still satisfy φ almost surely by playing a.Furthermore, assigning positive reward one to all states within the state-space AMECs (i.e., {s0, s 2, s 3, s 5}) incor-rectly suggests that actions a and c are equally optimal at 
+
+b0. In reality, c is the uniquely optimal action. 
+
+More fundamentally, encoding exact LTL satisfaction as a reward signal is undecidable for POMDPs because of the probability leakage inherent in belief transitions, as shown in Example 1 for beliefs supported on {s0, s 3}. For such beliefs, deciding whether a policy with positive satisfaction probabil-ity exists is undecidable [Baier et al. , 2008]. These theoretical barriers make it difficult to construct sound reward signals. Without these, approximate solvers struggle to converge on reliable, belief-based policies for LTL objectives. 
+
+Contributions. We bridge the theoretical and practical gaps in quantitative POMDP-LTL synthesis by introducing a novel mechanism for sound reward shaping. In contrast to fixed scalar reward structures, our approach defines re-ward assignment rules that integrate with an enhanced online POMCP planner. This allows the system to dynamically eval-uate rewards and guide the search toward maximising certi-fied satisfaction, thereby enabling reliable belief-based pol-icy synthesis. To the best of our knowledge, this is the first sound and practical anytime synthesis algorithm for full LTL in POMDPs. Our main contributions are summarised as fol-lows: 1) Sound Reward Shaping: We introduce a sound re-ward shaping mechanism over the belief space by leveraging belief support structures, grounded in the insight that almost-sure satisfaction is the only certifiable property in POMDP-LTL. A pruning strategy streamlines reward construction, and the resulting rewards provide a certified lower bound on the true LTL satisfaction probability. 2) Sound Anytime Syn-thesis: We integrate our reward assignment rules into an en-hanced POMCP algorithm specialised for anytime LTL syn-thesis. Once the search reaches a certified belief region, the agent may continue exploring for higher satisfaction or switch to a verified policy that guarantees satisfaction. This offers the first sound and practical method for real-time POMDP-LTL synthesis. 3) Empirical Validation: We show that our method synthesises reliable belief-based policies in scenarios where existing approaches fail. We further show its effective-ness and scalability on three standard POMDP benchmarks with diverse LTL tasks. 
+
+Related Work. Owing to the undecidability of quantitative synthesis for POMDPs with LTL, prior work has turned to tractable approximations. One possible approach is to restrict policies to randomised finite-state controllers (FSCs) [Chat-terjee et al. , 2015; Sharan and Burdick, 2014; Ahmadi et al. , 2020; Carr et al. , 2020; Carr et al. , 2021]. However, such finite-memory restrictions impose key limitations: op-timisation remains only locally optimal for any fixed mem-ory size, and while performance is highly sensitive to that size, the minimal required memory is undecidable [Madani et al. , 1999]. A complementary line of work [Liu et al. , 2021; Kalagarla et al. , 2022; Kalagarla et al. , 2024] considers belief-based policies for finite-trace LTL (LTL f ). However, many complex planning tasks require infinite-horizon recur-rence and persistence, necessitating full LTL. [Bouton et al. ,2020] addresses this by applying PBVI with reward signals derived from state-based AMECs. As illustrated in Exam-ple 1, such state-based reward shaping can be overly opti-mistic under partial observability. A detailed discussion of related work is provided in Appendix A. 
+
+# 2 Preliminaries and Problem Statement 
+
+This section first outlines the preliminaries of LTL and its equivalent Limit-Deterministic B¨ uchi Automaton (LDBA) representation. We then provide the foundations of POMDPs and the POMCP algorithm for online planning. Finally, the problem under consideration is formulated. 
+
+2.1 Linear Temporal Logic 
+
+LTL [Pnueli, 1977] extends propositional logic by introduc-ing temporal operators that enable the specification of task requirements over time. The syntax of an LTL path formula over a finite set of atomic propositions ( AP ) is defined induc-tively as follows: 
+
+φ ::= true | a ∈ AP | ¬ φ | φ ∧ φ | ⃝ φ | φUφ, 
+
+where ⃝ (Next) and U (Until) are temporal operators. Ad-ditional derived temporal operators include: ♢φ ≡ trueU φ
+
+(Eventually) and □φ ≡ ¬(♢¬φ) (Always). Standard Boolean operators, such as ∨ (or) and → (implies), are used conventionally. The detailed semantics with satisfaction rela-tion of LTL can be found in [Baier and Katoen, 2008]. For a formula φ and an infinite word w = w0w1w2 · · · ∈ (2 AP )ω ,we write L(φ) to denote the language of φ, which is the set of infinite words over (2 AP )ω that satisfy φ.Every LTL formula admits an equivalent representation as a Nondeterministic B¨ uchi Automaton (NBA) [Vardi and Wolper, 1994] that accepts the language L(φ). More recently, a subclass of NBAs, known as limit-deterministic B¨ uchi au-tomata, has shown particularly suitable for the quantitative analysis of probabilistic systems [Sickert et al. , 2016]. In this paper, we also make use of LDBAs to support our approach. 
+
+Definition 1 (LDBA [Sickert et al. , 2016]) . An LDBA A is defined as a tuple A = (Σ , Q, q 0, ∆, Acc ) where Σ is an al-phabet, Q = Qi ⊎ Qacc is the set of states partitioned into two disjoint sets Qi and Qacc . q0 ∈ Qi is the initial state. 
+
+∆ = ∆ i ⊎ ∆acc where: ∆i : Qi × (Σ ∪ { ϵ}) → 2Q, ∆acc :
+
+Qacc × Σ → 2Qacc is singleton-valued, and Acc ⊆ Qacc is the accepting set. 
+
+An infinite word w ∈ Σω is recognised by an LDBA A if there exists an infinite run r = r0r1r2 · · · ∈ Qω , beginning from q0 and satisfying ri+1 ∈ ∆( ri, ω i) for all i ≥ 0 as well as Inf (r) ∩ Acc ̸ = ∅, where Inf (r) denotes transitions in the accepting set appearing infinitely often in r. The set of infinite words accepted by the LDBA A is denoted by L(A).An LTL formula φ over AP can be efficiently translated into an equivalent LDBA A with Σ = 2 AP , such that L(A) = 
+
+L(φ), using state-of-the-art tools such as Owl [Sickert et al. ,2016] and Rabinizer4 [Kˇ ret´ ınsk` y et al. , 2018]. 2.2 Partially Observable MDPs 
+
+In this paper, we consider the following mathematical model: 
+
+Definition 2 (Labelled POMDPs) . A labelled POMDP is de-fined as a tuple M = ( S, S 0, A, O, T, Z, L ), where S, S0,
+
+A, and O are finite sets of states, initial states, actions, and observations, respectively. The state transition function 
+
+T : S × A → Dist (S), where T (s, a )( s′) denotes the proba-bility of transitioning to state s′ from state s by taking action 
+
+a. The observation function Z : S × A → Dist (O), where 
+
+Z(s′, a )( o) denotes the probability of observing o after tak-ing action a and reaching state s′. The labelling function 
+
+L : S → 2AP maps each state s ∈ S to the set of atomic propositions in AP that hold true at s.
+
+A belief state b of M is a probability distribution over its state space S. Let b0 denote the initial belief state and let B
+
+be the set of all possible belief states for a given POMDP M.The belief support of a belief state b ∈ B is the set of states with positive belief, defined as Supp (b) := { s ∈ S | b(s) >
+
+0}. The set of all possible belief supports in M is then given by BSupp :=  Θ ⊆ S ∃ o ∈ O, ∀ s ∈ Θ, o ∈ obs (s) ,
+
+where obs : S → 2O . We write b(Θ) := P 
+
+> s∈Θ
+
+b(s) for the probability mass assigned by b ∈ B to Θ ⊆ S, called its belief mass . The enabled action set at state s is defined as AE(s) := 
+
+{a ∈ A | Post s(a)̸ = ∅} where Post s(a) = Supp (T (s, a )) .We then define AE(Θ) := T 
+
+> s∈Θ
+
+AE(s). Without loss of gen-erality, we assume that states with the same observation ad-mit the same set of enabled actions; that is, for any s, s ′ ∈ Θ,
+
+AE(s) = AE(s′) = AE(Θ) .
+
+Paths. A history at time t is a finite sequence ht =(a0, o 1, . . . , a t−1, o t) ∈ (A × O)t capturing the agent’s ob-servable interaction with the environment. A belief path is an infinite sequence ρ = ( b0, a 0, o 1, b 1, a 1, o 2, . . . ) in which each belief bt+1 = τ (bt, a t, o t+1 ) is obtained via Bayesian update. The set of such paths starting from b0 is denoted by BPaths (b0). For any ρ, the set of compatible state paths 
+
+SPaths (ρ) ⊆ S ω contains all sequences (s0, s 1, . . . ) such that 
+
+s0 ∼ b0, st+1 ∼ T (st, a t), and ot+1 ∼ Z(st+1 , a t), consis-tent with the induced belief evolution. 
+
+Policy and LTL Satisfaction. We consider a deterministic belief-based policy π ∈ Π : B → A that maps a belief state to an action. Denote by Π the set of these policies. Under a given policy π, the probability that an LTL specification φ
+
+holds at belief state b is denoted by 
+
+Pr π 
+
+> b
+
+(φ) = Pr {ρb ∈ BPaths (b) , ρ s ∈ SPaths (ρb) | ρs |= φ},
+
+which measures all belief executions induced by π whose compatible underlying state paths satisfy φ. Accordingly, the satisfaction probability for a POMDP M (under the policy π)with initial belief b0 is defined as Pr π
+
+> M
+
+(φ) := Pr π 
+
+> b0
+
+(φ).
+
+Undecidability. Optimal policy synthesis for POMDPs is generally undecidable under B¨ uchi objectives induced by LTL. [Baier et al. , 2008] show that, for B¨ uchi objectives, both qualitative verification of positive (non-zero) satisfaction probability and quantitative verification are undecidable. The only property that can be certified is almost-sure satisfaction. 
+
+Product POMDP. Analogous to the product construction for MDPs [Baier and Katoen, 2008], the product POMDP 
+
+M× synchronises the evolution of the POMDP M with the LDBA Aφ generated from the LTL φ. This allows satisfac-tion of φ to be checked by tracking accepting runs of the LDBA along paths of M.
+
+Definition 3 (Product POMDP) . Given a labelled POMDP M = (S, S 0, A, O, T, Z, L ) and an LDBA Aφ = (Σ , Q, q 0, ∆, Acc ) from the given LTL formula φ, the product POMDP is a tuple 
+
+M× = (S×, S × 
+
+> 0
+
+, A ×, O, T ×, Z ×, L ×, Acc ×) with state-space S× = S × Q. The set of accepting states is given by 
+
+Acc × = {(s, q ) ∈ S× | q ∈ Acc }.
+
+Given the initial belief state b0 of M, we have 
+
+b× 
+
+> 0
+
+(( s, ∆( q0, L(s)))) = b0(s), ∀s ∈ S0. The set of all pos-sible belief states of M× is denoted by B×. The complete definition of the product POMDP is provided in Appendix B. 
+
+2.3 Partially Observable Monte-Carlo Planning 
+
+POMCP [Silver and Veness, 2010] is a widely adopted online planning algorithm for POMDPs, as it effectively mitigates the curse of dimensionality through state sampling and the 
+
+curse of history via history sampling with a black-box simula-tor. At each step t, it uses Monte Carlo Tree Search [Coulom, 2006] to build and explore a search tree rooted at T (ht) = 
+
+⟨N (ht), V(ht), P(ht)⟩, where N (ht) tracks the number of visits to the history ht, V(ht) estimates the expected return, and P(ht) holds particles that approximate the belief state bt.Due to space limitations, details on how POMCP works are provided in Appendix C. 
+
+2.4 Problem Statement 
+
+We study the following policy synthesis problem: 
+
+Problem 1. Given a POMDP M and an LTL specification 
+
+φ, synthesise a deterministic belief-based policy π that max-imises the probability of satisfying φ, i.e. max π∈Π Pr π
+
+> M
+
+(φ).
+
+Following the standard product construction for LTL and probabilistic systems [Baier and Ka-toen, 2008], we form the product POMDP M× =(S×, S × 
+
+> 0
+
+, A ×, O, T ×, Z ×, L ×, Acc ×) of the POMDP M
+
+with the LDBA Aφ derived from φ (Definition 3). This synchronises the executions of M and Aφ and reduces LTL satisfaction in M to the B¨ uchi objective □♢ Acc × in M×:
+
+max  
+
+> π∈Π
+
+Pr π
+
+> M
+
+(φ) = max 
+
+> π×∈Π×
+
+Pr π× 
+
+> M×
+
+(□♢ Acc ×).
+
+Accordingly, we further reformulate Problem 1 as an equiv-alent reward-based policy synthesis problem over M×. The goal is to design a belief-based reward function that induces an optimal policy whose expected reward is equal to the max-imum satisfaction probability of B¨ uchi objective. 
+
+Problem 2 (Reward-Based Policy Synthesis) . Given the product POMDP M× induced by a POMDP M and an LTL objective φ, design a belief-based reward function R : B× →
+
+[0 , 1] and synthesis a policy π× : B× → A× such that 
+
+max  
+
+> π×∈Π×
+
+Eπ×
+
+> M×
+
+" ∞X
+
+> t=0
+
+R(b× 
+
+> t
+
+)
+
+#
+
+= max  
+
+> π×∈Π×
+
+Pr π× 
+
+> M×
+
+(□♢ Acc ×).3 Solution Technique 
+
+Solving Problem 2 presents significant theoretical hurdles. Encoding LTL satisfaction via a fixed scalar reward is infea-sible since assigning an exact reward is equivalent to comput-ing exact satisfaction probabilities, which is known to be un-decidable (Section 1). Moreover, even if such a reward were available, maximising the expected reward within a POMDP remains undecidable [Madani et al. , 1999]. Practical methods must therefore rely on approximations in both reward shaping and policy synthesis. We address this gap by proposing a sound approxima-tion framework designed for practical POMDP-LTL synthe-sis. Exploiting the fact that almost-sure satisfaction is the only certifiable property, we first show that the exact reward signal in Problem 2 can be soundly approximated by the be-lief mass over certified satisfaction regions derived from the belief-support structure (Section 3.1). We then develop a belief-dependent reward-shaping mechanism that uses a set of assignment rules to generate sound rewards dynamically, together with a pruning strategy that streamlines reward con-struction (Section 3.2). Finally, we integrate this mechanism into an enhanced POMCP algorithm that steers the search to-ward maximising certified satisfaction and synthesising reli-able belief-based policies (Section 3.3). 
+
+3.1 Sound Approximation of Rewards Signal 
+
+For POMDPs with B¨ uchi objectives, while determining ex-act or zero satisfaction is undecidable, almost-sure satisfac-tion fortunately admits a decidable property. Specifically, it depends only on the belief support rather than the precise probability distribution [Chatterjee et al. , 2007]: if a belief 
+
+b is almost-sure winning, then any belief b′ with Supp (b′) = 
+
+Supp (b) is also almost-sure winning. This allows the contin-uous belief space to be discretised into a finite belief-support MDP (BSMDP), enabling structural evaluation of certified satisfaction over belief support. In this abstraction, each state corresponds to a belief support Θ ⊆ 2S×
+
+, and transitions mimic the belief executions in the product POMDP. 
+
+Definition 4 (BSMDP [Junges et al. , 2021]) . Given a product POMDP M× = ( S×, S × 
+
+> 0
+
+, A ×, O, T ×, Z ×, L ×, Acc ×), let 
+
+B× 
+
+> Supp
+
+be belief supports induced by M×. The corresponding BSMDP is the tuple M× 
+
+> BSupp
+
+= ( B×
+
+> Supp
+
+, Θ0, T ×
+
+> Supp
+
+, A ×), where 
+
+Θ0 is the initial belief support, and the transition function 
+
+T × 
+
+> Supp
+
+is defined as Θ′ ∈ T ×
+
+> Supp
+
+(Θ , a ∈ A× 
+
+> E
+
+(Θ)) if 
+
+Θ′ ∈ ∪s∈ΘPost s(a) ∩ { s | o ∈ obs (s)} | o ∈ O× . (1) The BSMDP serves as a formal bridge between qualitative almost-sure satisfaction and general quantitative analysis. By reasoning over the BSMDP, we can identify specific winning supports: subsets of state from which a belief-support based policy exists to satisfy the B¨ uchi objective with probability 1. These winning supports enable the construction of a sound reward signal that, for any belief, lower-bounds the true sat-isfaction probability by the portion of belief mass guaranteed to satisfy the objective almost surely. We now formalise the notion of winning supports and classify beliefs based on their underlying support structure. 
+
+> Figure 2: Partially winning belief (supports).
+
+Definition 5 (Winning Support and Winning Region) . A sub-set Θ ⊆ S× is a winning support if there exists a belief-support policy ˆπ× : B× 
+
+> Supp
+
+→ A× beginning with Θ such that every state s× ∈ Θ satisfies the LTL objective with probabil-ity one under ˆπ×. We denote the union of all winning supports as a winning region W× := S Θ.
+
+Definition 6 (Belief Categorisation) . A belief b× ∈ B×
+
+can be categorised by the relationship between its support 
+
+Supp (b×) and W× as follows: 1. Almost-sure Winning: if Supp (b×) ∈ W ×;2. Partially Winning: if ∃Θ ∈ W × s.t. Θ ⊂ Supp (b×);3. Non-Winning: if ∀Θ ∈ W × and Θ̸ ⊆ Supp (b×).
+
+Note that even if the initial belief is non-winning, the agent may reach a (partially) winning belief during belief evolution. 
+
+Example 2. In the left of Figure 2, beliefs supported on 
+
+{s× 
+
+> 0
+
+, s × 
+
+> 1
+
+, s × 
+
+> 2
+
+} are not almost-sure winning, but they contains a winning support {s× 
+
+> 1
+
+} under action c. The satisfaction probability for any belief supported by {s× 
+
+> 0
+
+, s × 
+
+> 1
+
+, s × 
+
+> 2
+
+} is lower-bounded by the belief mass assigned to {s× 
+
+> 1
+
+} by repeating c.
+
+Notably, winning supports are defined with respect to belief-support policies. Since a partially winning belief may contain multiple winning supports (each associated with a distinct policy), obtaining the tightest sound lower bound re-quires selecting the specific winning support that maximises the belief mass. Simply taking the union of all winning states would result in the common policy issue (as discussed in Ex-ample 1), where no single policy can satisfy the entire set. This principle is illustrated in the following example. 
+
+Example 3. Consider beliefs supported by {s× 
+
+> 3
+
+, s × 
+
+> 4
+
+, s × 
+
+> 5
+
+, s × 
+
+> 6
+
+}
+
+in the right of Figure 2. The winning supports and their admissible actions are: {s× 
+
+> 3
+
+} with {a}, {s× 
+
+> 4
+
+} with {a},
+
+{s× 
+
+> 3
+
+, s × 
+
+> 4
+
+} with {a}, and {s× 
+
+> 6
+
+} with {c}. These cannot be merged into {s× 
+
+> 3
+
+, s × 
+
+> 4
+
+, s × 
+
+> 6
+
+} when computing a sound lower bound, as no single policy is winning for all three states. The tightest lower bound is therefore determined by whichever has the larger belief mass: {s× 
+
+> 3
+
+, s × 
+
+> 4
+
+} or {s× 
+
+> 6
+
+}.
+
+We now define Kb× as the collection of all winning sup-ports contained within the support of a belief state b× in the product POMDP M×. For instance, in Example 3, a belief 
+
+b× with support {s× 
+
+> 3
+
+, s × 
+
+> 4
+
+, s × 
+
+> 5
+
+, s × 
+
+> 6
+
+} would have the set of win-ning supports Kb× = {{ s× 
+
+> 3
+
+}, {s× 
+
+> 4
+
+}, {s× 
+
+> 3
+
+, s × 
+
+> 4
+
+}, {s× 
+
+> 6
+
+}} . Then a sound belief-based reward signal can be defined as the max-imum belief mass assigned to any winning support, reducing Problem 2 to the following sound approximation: 
+
+Theorem 1. Given a product POMDP M×, the maximum expected reward in Problem 2 is lower-bounded by a belief-based policy ˜π× : B× → A× that maximises the probability of reaching a (partially) winning belief b× with maximal be-lief mass over its winning supports Kb× :
+
+max 
+
+> π×∈Π×
+
+Eπ×
+
+> M×
+
+" ∞X
+
+> t=0
+
+R(b× 
+
+> t
+
+)
+
+#
+
+≥ max 
+
+> ˜π×∈Π×
+
+E˜π×
+
+> M×
+
+
+
+max 
+
+> Θ∈Kb×
+
+b×(Θ) 
+
+
+
+,
+
+where b×(Θ) is the belief mass assignment to the set of states contained in Θ.
+
+Tightness. The lower bound in Theorem 1 attains the max-imum certified LTL satisfaction probability. The remaining gap to the true value reflects satisfaction probability that can-not be certified by any belief-support policy, arising from the undecidable leakage illustrated in Example 1. 
+
+3.2 Sound Reward Shaping 
+
+Theorem 1 allows sound reward signals to be constructed by identifying winning supports in the BSMDP. However, the state space of BSMDP grows exponentially with the state space of the product POMDP, rendering all winning supports and their associated winning policies computationally expen-sive. To maintain tractability, we extract a sufficient subset of winning supports, together with their almost-sure or par-tially winning beliefs, by pruning the search space according to two principles: (i) restricting the state space of the BSMDP to obtain a sub-BSMDP; and (ii) focusing on structurally relevant regions within this sub-BSMDP. A sound reward-shaping mechanism is then derived from this refined subset. 
+
+Pruned Search Regions. Recall that in fully observable product MDPs with a B¨ uchi objective, any satisfying run eventually enters and remains within a state-based AMEC. We hence restrict the BSMDP construction to belief supports that intersect the set of underlying state AMECs E× 
+
+> S
+
+in M×:
+
+ˆB× 
+
+> Supp
+
+:= {Θ ∈ B× 
+
+> Supp
+
+| Θ ∩ E ×
+
+> S
+
+̸ = ∅} . (2) This restriction gives an over-approximation of the belief-support states relevant for satisfaction under belief-based policies, while substantially reducing the BSMDP state space. Moreover, since every winning support ensures almost-sure satisfaction, any belief-support path must almost surely enter a trapping region of the BSMDP in which each support state recurs infinitely often with satisfaction proba-bility one. In the BSMDP, such closed recurrent accepting regions correspond to belief-support accepting MECs (BS-AMECs), defined formally below. 
+
+Definition 7 (BS-(A)MECs) . A belief-support end compo-nent (BS-EC) of an BSMDP M× 
+
+> BSupp
+
+is a sub-MDP (E, A E )
+
+such that the digraph induced by (E, A E ) is strongly con-nected. A belief-support MEC (BS-MEC) is an BS-EC 
+
+(E, A E ) that is not strictly contained in any other BS-EC 
+
+(E′, A ′ 
+
+> E
+
+). We call a BS-MEC (E, A E ) accepting (BS-AMEC) if all belief supports Θ ∈ E are winning. 
+
+Sufficient Winning Region. We therefore restrict the search for the set of winning-supports ˆW× ( ˆW× ⊆ W ×)to those contained in the BS-AMECs of the sub-BSMDP 
+
+ˆM× 
+
+> BSupp
+
+, constructed over belief supports that intersect the state-space AMECs defined in Eq. (2). Any other winning support will almost surely reach ˆW× (thus ˆW× is sufficient). 
+
+> Figure 3: BS-MEC structure under differing acceptance conditions.
+
+Determining, however, whether a BS-MEC is accepting is non-trivial, since the presence of Acc × alone is insuf-ficient. As illustrated in Figure 3, a BS-MEC may con-tain no winning support, may be only partially accepting, or is a BS-AMEC (from left to right in Figure 3). Hence, belief-support information alone is inadequate: one must verify the existence of a belief-support-based policy under which all underlying states are winning. To this end, Algo-rithm 1 identifies BS-AMECs by constructing an auxiliary product MDP M×× = ( S×× , A ×× , T ×× , Acc ×× ), where 
+
+S×× = {(s×, Θ) | s× ∈ Θ, Θ ∈ E}, A×× (s×, Θ) = 
+
+AE× (Θ) , T ×× (( s×, Θ) , a )(( s′× , Θ′)) = T ×(s×, a )( s′× ),and Acc ×× = {(s×, Θ) ∈ S×× | s× ∈ Acc ×}. One can see that M×× couples each BS-MEC with the underlying state-space dynamics, permitting joint reasoning over belief-support policies and state transitions. A BS-MEC is accepting iff all states in this product MDP are winning. 
+
+Theorem 2. Given the sub-BSMDP ˆM× 
+
+> BSupp
+
+and its BS-MECs 
+
+(E× 
+
+> BSupp
+
+, A E× ), Algorithm 1 returns a sound and complete union set ˆW× over all BS-AMECs. Proof scratch. Soundness. If there exists Θ ∈ E with Θ ⊆
+
+Acc ×, then E is a winning support and (E, A E ) is a BS-AMEC by the MEC property. Otherwise, consider the ran-domised belief-support policy ¯π× that selects uniformly from 
+
+AE . If S××  
+
+> w
+
+= S×× , every BSCC induced by ¯π× is accept-ing. By Lemma 1 of [Chatterjee et al. , 2010], a correspond-ing deterministic policy ˜π× exists; hence (E, A E ) is a BS-AMEC. Completeness. Immediate from Definitions 5 and 7. A full proof is provided in Appendix D. 
+
+Algorithm 1 Compute BS-AMECs 
+
+Input: BS-MECs (E× 
+
+> BSupp
+
+, A E× ) of sub-BSMDP ˆM×
+
+> BSupp
+
+Output: Sufficient winning region ˆW× 
+
+> 1:
+
+ˆW× ← ∅  
+
+> 2:
+
+for all (E, A E ) ∈ (E× 
+
+> BSupp
+
+, A E× ) do  
+
+> 3:
+
+if ∃ Θ ∈ E s.t. Θ ⊆ Acc × then  
+
+> 4:
+
+ˆW× ← ˆW× ∪ { Θ ∈ E} 
+
+> 5:
+
+else  
+
+> 6:
+
+Construct the product MDP M××  
+
+> 7:
+
+Compute the winning state set S××  
+
+> w
+
+of M××  
+
+> 8:
+
+if S××  
+
+> w
+
+= S×× then  
+
+> 9:
+
+ˆW× ← ˆW× ∪ { Θ ∈ E}
+
+Sound Reward Assignment Rules. We then define the sound reward structure based on the sufficient winning re-gion ˆW× computed by Algorithm 1. We call a belief sup-port Θ ∈ ˆW× a certified winning support . Furthermore, Θis called a certified partially winning support if there exists a certified winning support Θ′ ∈ ˆW× such that Θ′ ⊂ Θ.The set of all certified partially winning support is denoted by 
+
+ˆW×
+
+> PW
+
+. Since a belief b× with certified partially winning sup-port Supp (b×) ∈ ˆW× 
+
+> PW
+
+may contain multiple certified win-ning supports (see Example 3), we let ˆKb× be the collection of all such supports contained within Supp (b×).Following the lower bound established in Theorem 1, the sound reward function ˆR(·) is defined as: 
+
+ˆR(b×) = 
+
+
+
+1, if Supp (b×) ∈ ˆW×,
+
+max  
+
+> Θ∈ˆKb×
+
+b×(Θ) , if Supp (b×) ∈ ˆW×
+
+> PW
+
+,
+
+0, otherwise ,
+
+(3) where b×(Θ) is the belief mass assignment to the set Θ.
+
+3.3 Online POMDP Planning 
+
+To synthesise reliable belief-based policies for POMDP-LTL using the proposed sound reward function ˆR(·) in Eq. (3), we develop an enhanced POMCP algorithm as an anytime ap-proximation method. Standard POMCP, however, is not di-rectly applicable, as it relies on Monte Carlo simulations that assign rewards to individual state particles, which is incom-patible with our belief-based reward signal. The termination conditions for the Monte Carlo simulation also require rigor-ous treatment. While entering a belief with a certified win-ning support is terminal as it already yields the maximum re-ward, entering a belief with a certified partially winning sup-port is not necessarily so. In the latter case, the agent may continue to explore beliefs that offer higher satisfaction prob-abilities, a distinction further illustrated in Example 4. 
+
+Example 4. Consider a belief node b× in the Monte Carlo search tree with ideal distribution {s× 
+
+> 0
+
+: 0 .8, s × 
+
+> 1
+
+: 0 .1, s × 
+
+> 2
+
+:0.1} in the left of Figure 2. It is clear that b× is partially win-ning since its support contains a winning support {s× 
+
+> 1
+
+}. If simulations terminate whenever a particle reaches any (certi-fied) winning support, the resulting satisfaction probability of 
+
+b× is 0.1 by the belief mass on {s× 
+
+> 1
+
+}. However, if simulations do not terminate early and all particles continue exploring, taking action a leads to the belief {s× 
+
+> 0
+
+: 0 .08 , s × 
+
+> 1
+
+: 0 .73 , s × 
+
+> 2
+
+:0.19 }, which yields a higher lower bound as 0.73 .
+
+We address reward assignment for particles by augment-ing each POMCP tree node T (ht+k), which represents the belief b× 
+
+> t+k
+
+at time t and simulation depth k, with its ground-truth belief support Θ( ht+k) = Supp (b×
+
+> t+k
+
+). This support is directly recoverable from the history. Intuitively, the search tree simulates BSMDP: each particle path induces a belief-support trace determined only by the history, allowing be-lief supports to be recovered without explicitly tracking belief distributions. Hence, for each particle s×
+
+> t+k
+
+, we assign reward 1 if the associated belief support Θ( ht+k) is in ˆW×, or if it is in ˆW× 
+
+> PW
+
+and the particle lies in a certified winning support 
+
+Θ ∈ ˆKb×
+
+> t+k
+
+. All remaining particles receive reward 0. To handle termination for a POMCP tree node with a certified partially winning support, the Upper Confidence 
+
+> Figure 4: Motivating Toy Example.
+
+Bound (UCB) rule evaluates both terminal and exploratory options. Consider, for instance, a belief b× with support 
+
+{s× 
+
+> 3
+
+, s × 
+
+> 4
+
+, s × 
+
+> 5
+
+, s × 
+
+> 6
+
+}, as shown on the right of Figure 2. As dis-cussed in Example 3, the tightest lower bound for satisfaction is determined by the maximum belief mass assigned to either 
+
+{s× 
+
+> 3
+
+, s × 
+
+> 4
+
+} or {s× 
+
+> 6
+
+}. Consequently, the UCB selection mecha-nism identifies the optimal path by switching between: 1) the terminal policy for {s× 
+
+> 3
+
+, s × 
+
+> 4
+
+} if it carries the dominant mass; 2) the terminal policy for {s× 
+
+> 6
+
+} if it is more probable; or 3) any available exploration actions if they promise higher sat-isfaction through further search. Exploration proceeds until a certified winning support is reached or the maximum depth is exceeded. This mechanism allows the planner to terminate at any time during execution by selecting an optimal belief-support policy; the resulting satisfaction probability is then guaranteed by the lower bound max Θ∈ ˆKb× b×(Θ) . The full planning algorithm are given in Appendix E.2. 
+
+# 4 Experiments 
+
+We implemented our framework in Python 1. In the follow-ing, We first evaluate a motivating toy example demonstrating that existing methods fail even in simple cases, while our ap-proach succeeds in synthesising reliable belief-based policies. We further assess the effectiveness of our method on three standard POMDP benchmarks under various LTL tasks. The implementation details, experimental setup and additional re-sults are provided in Appendix E and F. 
+
+4.1 Motivating Toy Example 
+
+Consider the POMDP in Figure 4 with initial belief b0 =
+
+{s0 : 1 } and actions left ( l), right ( r), and down ( d). The LTL specification is φ = □¬(s2 ∨ s7) ∧ □♢ (s3 ∨ s8), which requires visiting s3 or s8 infinitely often while always avoid-ing s2 and s7. We compare our approach against optimistic reward shaping [Bouton et al. , 2020] and a deterministic FSC variant [Sharan and Burdick, 2014]. 
+
+Our method. Our analysis identifies a single winning sup-port, {s8}. The sound reward shaping assigns to each be-lief a value equal to its belief mass on {s8}. Running our solver obtains the following belief-based policy and history: 
+
+b0 : {s0 : 1 } r
+
+−→ b1 : {s1 : 1 } d
+
+−→ b2 : {s3 : 1 } d
+
+−→ b3 : {s6 : 1 }
+
+> l
+
+−→ b4 : {s5 : 1 } d
+
+−→ b5 : {s7 : 0 .2, s 8 : 0 .8} {s8}
+
+−−−→. At b5,      
+
+> 1The source code is provided in https://github.com/Safe-Autonomy-and-Intelligence-Lab/POMDP-LTL
+
+the policy switches to the belief-support policy for {s8} (e.g. alternating r and d), ensuring Pr π 
+
+> b0
+
+(φ) ≥ 0.8. Experimental details and POMCP values are provided in Appendix F.2. 
+
+Existing approaches. Using the optimistic reward shaping in [Bouton et al. , 2020] with their PBVI solver reports a sat-isfaction probability of 1 and forces early termination at the belief b = {s3 : 1 }, preventing sufficient exploration of the reachable belief space. Hence, the solver fails to construct α-vectors valid for successor beliefs. Since the only exit actions encoded in these α-vectors are r and d, with l absent for any possible satisfaction, execution ultimately results in zero LTL satisfaction. We next consider the deterministic one-memory FSC variant in [Sharan and Burdick, 2014], which collapses to a memoryless observation-based policy. However, no FSC provides positive satisfaction for b0. For observation o0, ac-tion r leads to {s1 : 1 }, which self-loops under r; action d vi-olates □¬(s2 ∨ s7); and action l keeps the system at {s0 : 1 }.Larger memory may help, but selecting a suitable memory size is undecidable, making FSC synthesis brittle in practice. Conversely, our deterministic belief-based policy remains ex-ecutable and offers a meaningful certified lower bound. 
+
+4.2 Benchmark Domains and LTL Objectives 
+
+Hallway. We evaluate two Hallway models, HW 1 and HW 2,from [Littman et al. , 1995]. The agent moves in an office en-vironment with uncertain location and four orientations, us-ing stochastic forward and left turn actions. A short range sensor reports adjacent walls with some error. Three locations are labelled A, B and C. We consider two LTL objectives: 
+
+φ1 = ♢A ∧ □¬B, requiring the agent to eventually reach A
+
+while avoiding B at all times, and φ2 = ♢□ C, requiring the agent to reach C and remain there indefinitely. 
+
+Rock Sample. We follow the rock sample model from [Junges et al. , 2021], where a robot moves on an n × n
+
+grid with two rocks, each either good G or bad B with ini-tially unknown quality. The robot can move, sense adja-cent cells, and sample rocks. We consider two LTL tasks: 
+
+φ3 = ♢(G ∧ ♢E) ∧ □¬B, requiring it to first sample a good rock, then reach in an exit state E while never reaching or sampling a bad rock, and φ4 = ♢□ G, requiring the robot to collect a good rock and remain there indefinitely. 
+
+Grid World. The Grid (n, n ) model from [Littman et al. ,1995] is an n × n grid where each cell is labelled as a trap (T ), goal 1 ( G1), or goal 2 ( G2). The agent moves left, right, or down, with a 0.2 chance of movement failure, and receives observations of neighbouring cells. We consider three LTL tasks. The first is φ5 = ♢G1 ∧ □¬T , requiring the agent to eventually reach G1 while always avoiding traps. The second is φ6 = □(G2 → ♢G1) ∧ □¬T , requiring it to always avoid traps and, whenever it reaches G2, eventually reach G1. The third is φ7 = □♢ G1 ∧ □¬T , requiring it to visit G1 infinitely often while avoiding traps. 
+
+4.3 Results and Discussion 
+
+Table 1 summarises the performance of our approach across all tasks. For each case, we report the product model details (|S×|/|O×|/|T ×|), the LTL objective ( φi) with its satisfac-tion probability ( Pr π
+
+> M
+
+(φ)), the time to construct the sound reward function (SR (s)), and the policy synthesis time using Domain |S×|/|O×|/|T ×| SR (s) POMCP (s) Pr π                                                                                    
+
+> M(φ)
+> HW
+> HW1 φ1180 / 24 / 624 0.015 74.967 0.254
+> φ2180 / 24 / 684 0.020 52.759 0.707 HW2 φ1276 / 24 / 975 0.547 64.356 0.247
+> φ2276 / 24 / 1067 0.743 44.643 0.464
+> RS
+> 4φ31024 / 112 / 7936 42.231 79.102 0.453
+> φ4768 / 112 / 6208 0.078 91.788 0.469 5φ31600 / 132 / 12480 58.246 121.315 0.326
+> φ41200 / 132 / 9760 0.114 120.307 0.455 7φ33136/ 244 / 24640 105.475 129.259 0.180
+> φ42352 / 244 / 19264 0.210 160.291 0.003
+> Grid
+> 50 φ57500 / 1250 / 30990 10.987 82.198 0.334
+> φ67500 / 1250 / 30990 10.597 0.246 1.000
+> φ75000 / 1250 / 20660 1.843 67.959 0.530 100 φ530000 / 5000 / 120840 81.361 99.407 0.272
+> φ630000 / 5000 / 120840 82.334 0.248 1.000
+> φ720000 / 5000 / 80560 30.603 107.366 0.308 120 φ543200 / 7200 / 173580 191.431 182.667 0.000
+> φ643200 / 7200 / 173580 188.264 0.267 1.000
+> φ728800 / 7200 / 115720 66.314 183.521 0.058
+
+Table 1: Numerical Results for POMDP-LTL Policy Synthesis. 
+
+the enhanced POMCP solver (POMCP (s)). Further details on the original models and additional experimental results are provided in Appendix F.4. The results show that our method synthesises POMDP-LTL policies effectively and efficiently, scaling to product models with over forty thousand states, with both sound re-ward construction and planning completing in about 190 sec-onds on a single CPU thread. Our approach is particularly ef-fective for LTL tasks such as the reach-persistence objective 
+
+φ4 and the recurrence objective φ7. Although the underlying state-space AMECs grow proportionally with the model size, they remain confined to a small region of the overall state space, which enables efficient construction of sound reward signals. For example, in the Rock Sample domain, as the model scales, the construction time for the task φ4 increases only from 0.078 to 0.210 seconds. For the POMCP results, although theory ensures 
+
+Pr M(φ5) ≥ Pr M(φ7) as every trace satisfying φ5 also sat-isfies φ7, we observed Pr M(φ5) < Pr M(φ7) in practice. This mismatch arises from the differing sizes of their LDBAs: 
+
+|A φ5 | = 3 versus |A φ7 | = 2 . The larger automaton for φ5
+
+results a larger product POMDP, requiring more simulations and deeper search for similar approximation quality. 
+
+# 5 Conclusion 
+
+This paper presented the first sound and practical any-time belief-based policy synthesis algorithm for full LTL in POMDPs. We approximate undecidable quantitative POMDP-LTL synthesis by seeking policies that maximise verifiable success. Central to this approach is a sound belief-dependent reward-shaping mechanism, integrated into an en-hanced POMCP algorithm for reliable policy synthesis. For future work, we plan to extend this sound reward mechanism to a model-free setting, enabling safe POMDP reinforcement learning under LTL objectives. References 
+
+[Ahmadi et al. , 2020] Mohamadreza Ahmadi, Rangoli Sha-ran, and Joel W Burdick. Stochastic finite state con-trol of pomdps with ltl specifications. arXiv preprint arXiv:2001.07679 , 2020. [Baier and Katoen, 2008] Christel Baier and Joost-Pieter Katoen. Principles of model checking . MIT press, 2008. [Baier et al. , 2008] Christel Baier, Nathalie Bertrand, and Marcus Gr¨ oßer. On decision problems for probabilistic b¨ uchi automata. In International Conference on Founda-tions of Software Science and Computational Structures ,pages 287–301. Springer, 2008. [Bouton et al. , 2020] Maxime Bouton, Jana Tumova, and Mykel J Kochenderfer. Point-based methods for model checking in partially observable markov decision pro-cesses. In Proceedings of the AAAI Conference on Arti-ficial Intelligence , volume 34, pages 10061–10068, 2020. [Carr et al. , 2020] Steven Carr, Nils Jansen, and Ufuk Topcu. Verifiable rnn-based policies for pomdps under temporal logic constraints. arXiv preprint arXiv:2002.05615 , 2020. [Carr et al. , 2021] Steven Carr, Nils Jansen, and Ufuk Topcu. Task-aware verifiable rnn-based policies for partially ob-servable markov decision processes. Journal of Artificial Intelligence Research , 72:819–847, 2021. [Chatterjee et al. , 2007] Krishnendu Chatterjee, Laurent Doyen, Thomas A Henzinger, and Jean-Franc ¸ois Raskin. Algorithms for omega-regular games with imperfect information. Logical Methods in Computer Science , 3, 2007. [Chatterjee et al. , 2010] Krishnendu Chatterjee, Laurent Doyen, Hugo Gimbert, and Thomas A Henzinger. Randomness for free. In International Symposium on Mathematical Foundations of Computer Science , pages 246–257. Springer, 2010. [Chatterjee et al. , 2015] Krishnendu Chatterjee, Martin Chmelik, Raghav Gupta, and Ayush Kanodia. Qualitative analysis of pomdps with temporal logic specifications for robotics applications. In 2015 IEEE International Conference on Robotics and Automation (ICRA) , pages 325–330. IEEE, 2015. [Chatterjee et al. , 2016] Krishnendu Chatterjee, Martin Chmelik, and Mathieu Tracol. What is decidable about partially observable markov decision processes with 
+
+ω-regular objectives. Journal of Computer and System Sciences , 82(5):878–911, 2016. [Coulom, 2006] R´ emi Coulom. Efficient selectivity and backup operators in monte-carlo tree search. In Interna-tional conference on computers and games , pages 72–83. Springer, 2006. [Junges et al. , 2021] Sebastian Junges, Nils Jansen, and San-jit A Seshia. Enforcing almost-sure reachability in pomdps. In International Conference on Computer Aided Verification , pages 602–625. Springer, 2021. [Kaelbling et al. , 1995] Leslie Pack Kaelbling, Michael L Littman, and Anthony R Cassandra. Partially observable markov decision processes for artificial intelligence. In 
+
+International Workshop on Reasoning with Uncertainty in Robotics , pages 146–163. Springer, 1995. [Kalagarla et al. , 2022] Krishna C Kalagarla, Kartik Dhruva, Dongming Shen, Rahul Jain, Ashutosh Nayyar, and Pier-luigi Nuzzo. Optimal control of partially observable markov decision processes with finite linear temporal logic constraints. In Uncertainty in Artificial Intelligence , pages 949–958. PMLR, 2022. [Kalagarla et al. , 2024] Krishna C Kalagarla, Dhruva Kar-tik, Dongming Shen, Rahul Jain, Ashutosh Nayyar, and Pierluigi Nuzzo. Optimal control of logically con-strained partially observable and multiagent markov deci-sion processes. IEEE Transactions on Automatic Control ,70(1):263–277, 2024. [Kˇ ret´ ınsk` y et al. , 2018] Jan Kˇ ret´ ınsk` y, Tobias Meggendor-fer, Salomon Sickert, and Christopher Ziegler. Rabinizer 4: From ltl to your favourite deterministic automaton. In 
+
+in Proceedings of International Conference on Computer Aided Verification , pages 567–577. Springer, 2018. [Littman et al. , 1995] Michael L Littman, Anthony R Cas-sandra, and Leslie Pack Kaelbling. Learning policies for partially observable environments: Scaling up. In Ma-chine Learning Proceedings 1995 , pages 362–370. Else-vier, 1995. [Liu et al. , 2021] Jason Liu, Eric Rosen, Suchen Zheng, Ste-fanie Tellex, and George Konidaris. Leveraging tempo-ral structure in safety-critical task specifications for pomdp planning. In Proc. RSS Workshop Robot. People , 2021. [Madani et al. , 1999] Omid Madani, Steve Hanks, and Anne Condon. On the undecidability of probabilistic planning and infinite-horizon partially observable markov decision problems. Aaai/iaai , 10(315149.315395), 1999. [Pineau et al. , 2003] Joelle Pineau, Geoff Gordon, Sebastian Thrun, et al. Point-based value iteration: An anytime algo-rithm for pomdps. In Ijcai , volume 3, pages 1025–1032, 2003. [Pnueli, 1977] Amir Pnueli. The temporal logic of programs. In 18th annual symposium on foundations of computer sci-ence (sfcs 1977) , pages 46–57. ieee, 1977. [Sebastian et al. , 2005] Thrun Sebastian, Burgard Wolfram, and Fox Dieter. Probabilistic Robotics . The MIT Press, Cambridge, 2005. [Sharan and Burdick, 2014] Rangoli Sharan and Joel Bur-dick. Finite state control of pomdps with ltl specifications. In 2014 American Control Conference , pages 501–508. IEEE, 2014. [Sickert et al. , 2016] Salomon Sickert, Javier Esparza, Ste-fan Jaax, and Jan Kˇ ret´ ınsk` y. Limit-deterministic B¨ uchi automata for linear temporal logic. In International Con-ference on Computer Aided Verification , pages 312–332. Springer, 2016. [Silver and Veness, 2010] David Silver and Joel Veness. Monte-carlo planning in large pomdps. Advances in neu-ral information processing systems , 23, 2010. [Vardi and Wolper, 1994] Moshe Y Vardi and Pierre Wolper. Reasoning about infinite computations. Information and computation , 115(1):1–37, 1994. 
+
+# Appendix A Extended Related Work 
+
+For fully observable MDPs, LTL satisfaction is identi-fied structurally via Accepting Maximal End Components (AMECs) within the product system. Under B¨ uchi accep-tance conditions, a state-based policy (e.g., a Round-Robin policy) can ensure almost-sure satisfaction. Consequently, policy synthesis for MDPs under LTL is effectively reduced to a reachability problem toward AMECs, solvable via value iteration or linear programming [Baier and Katoen, 2008]. In contrast, the general problem of finding a policy to sat-isfy an LTL formula in an infinite-horizon POMDP is unde-cidable. Prior work therefore has pursued various tractable approximations. A possible approach is to restrict the pol-icy class to randomised finite-memory policies encoded as finite-State controllers (FSCs). While [Chatterjee et al. ,2015] provides heuristic procedures for qualitative (almost-sure) objectives, quantitative synthesis, seeking to maximise the satisfaction probability, typically reduces to a computa-tionally intensive non-linear or relaxed optimisation prob-lem [Sharan and Burdick, 2014; Ahmadi et al. , 2020]. Further model-free analyses of FSCs are given in [Carr et al. , 2020; Carr et al. , 2021]. However, restricting the policy class introduces fundamen-tal limitations. Probability-leakage issue, such as those in Example 1, are inherently overlooked by finite memory, and optimisation over FSCs generally yields only locally optimal solutions for the chosen memory size [Ahmadi et al. , 2020]. Moreover, performance is highly sensitive to this size, but determining the minimal memory required for a given task is undecidable [Madani et al. , 1999]. Small FSCs often fail to retain essential history, resulting in zero satisfaction proba-bility [Sharan and Burdick, 2014]. Additionally, existing ap-proaches further rely on randomised policies to facilitate con-tinuous optimisation, but in practice, particularly in safety-critical systems, such stochasticity undermines reproducibil-ity. Therefore, there is a need for deterministic belief-based policies, mapping each belief state to an action, to ensure con-sistent and predictable execution. A complementary line of work focuses on finite-trace LTL specifications (LTL f ) under belief-based policies, yielding a one-shot satisfaction formulation. Under LTL f semantics, planning reduces to reaching accepting states of a determin-istic finite automaton in the product system, enabling the use of standard approximate POMDP solvers; e.g., [Kalagarla et al. , 2022; Kalagarla et al. , 2024] employs PBVI and [Liu et al. , 2021] uses POMCP. However, many planning tasks im-pose infinite-horizon constraints, such as safety, recurrence, and persistence, that require full LTL semantics. To address this, [Bouton et al. , 2020] considers full LTL and applies PBVI to maximise satisfaction probability. A limitation is that, when state-based accepting MEC structure is used for re-ward shaping within an approximate solver, the induced value estimates can be optimistic under partial observability: the shaping signal can suggest a non-trivial satisfaction probabil-ity for a belief, without providing a corresponding certified belief-based policy that realises this probability by steering the system to and sustaining accepting behaviour (see Ex-ample 1). This motivates the development of sound reward signals that provide certified LTL satisfaction guarantees and guide approximate solvers towards synthesising sound deter-ministic belief-based policies for full LTL in POMDPs. 
+
+# B Product POMDP 
+
+The complete definition of the product POMDP is given be-low. 
+
+Definition 8 (Product POMDP) . Given a labelled POMDP M = (S, S 0, A, O, T, Z, L ) and an LDBA Aφ = (Σ , Q, q 0, ∆, Acc ) from the given LTL formula φ, the product POMDP is a tuple 
+
+M× = ( S×, S × 
+
+> 0
+
+, A ×, O, T ×, Z ×, L ×, Acc ×), where: 
+
+• S× = S × Q is the State space with initial States S× 
+
+> 0
+
+=
+
+{(s, ∆( q0, L (s))) ∈ S× | s ∈ S0}, and A× = A ∪ Aϵ
+
+where Aϵ := {ϵq | q ∈ Q};
+
+• T × : S× × A× → Dist (S×) is the probabilistic tran-sition function, where : 
+
+– for a ∈ A, T ×(( s, q ), a )(( s′, q ′)) = T (s, a )( s′) if 
+
+a ∈ AE (s) and q′ = ∆( q, L (s′)) ;
+
+– for a = ϵq′ ∈ Aϵ, T ×(( s, q ), a )(( s, q ′)) = 1 if 
+
+q ϵ
+
+−→ q′;
+
+– otherwise, T ×(( s, q ), a, (s′, q ′)) = 0 ;
+
+• Z× : S× × A× → Dist (O) is the observation function, given by Z×(( s, q ), a, o ) = Z(s, a, o ) if a ∈ A;
+
+• L× : S× → 2AP , where L×(( s, q )) = L(s);
+
+• Acc × = {(s, q ) ∈ S× | q ∈ Acc }.
+
+# C Partially Observable Monte-Carlo Planning 
+
+POMCP [Silver and Veness, 2010] is a widely adopted online planning algorithm for POMDPs, as it effectively mitigates the curse of dimensionality through State sampling and the 
+
+curse of history via history sampling with a black-box simula-tor. At each step t, it uses Monte Carlo Tree Search [Coulom, 2006] to build and explore a search tree rooted at T (ht) = 
+
+⟨N (ht), V(ht), P(ht)⟩, where N (ht) tracks the number of visits to the history ht, V(ht) estimates the expected return, and P(ht) holds particles that approximate the belief State bt.The algorithm mainly consists of four stages: (1) Selec-tion: A State s is selected uniformly from the particle set 
+
+P(ht). (2) Simulation: If the current node is internal, an ac-tion a is selected to maximise V(ha ) + c
+
+q log N (h)  
+
+> N(ha )
+
+following the upper confidence bound rule, balancing exploration and exploitation. (3) Expansion: When a leaf node is reached, child nodes T (ha ) = ⟨N (ha ), V(ha ), ∅⟩ are created for all possible actions. An action is then chosen according to a rollout policy (e.g., uniform random), and a new State s′ is generated using a simulator. The resulting State is added to P(hao ). This process continues until a predefined depth limit. (4) Backpropagation: After simulation, the statistics of the traversed nodes are updated based on the results. The agent then picks the action at = arg max a V(hta), obtains a new observation ot+1 , and initiates the next search tree from the updated root T (htatot+1 ).
+
+# D Proof of Theorem 2 
+
+Theorem 3. Given the sub-BSMDP ˆM× 
+
+> BSupp
+
+and its BS-MECs 
+
+(E× 
+
+> BSupp
+
+, A E× ), Algorithm 1 returns a sound and complete union set ˆW× over all BS-AMECs. Proof. Let (E, A E ) ∈ (E× 
+
+> Bsupp
+
+, A E× ) be a BS-MEC. We show that Algorithm 1 adds (E, A E ) to ˆW× if and only if (E, A E )
+
+is a BS-AMEC. 
+
+Soundness: Suppose (E, A E ) is added to ˆW×, then 
+
+(E, A E ) is a BS-AMEC. • Case 1: ∃ Θ ∈ E such that Θ ⊆ Acc ×.Consider a Round-Robin belief support policy ˜π× over 
+
+E. Since the digraph induced by (E, A E ) is strongly connected, the Markov chain induced by ˜π× is a sin-gle bottom strongly connected component (BSCC). By Theorem 10.27 in [Baier and Katoen, 2008], every be-lief support in E is visited infinitely often almost surely. Since Θ ⊆ Acc ×, all states s ∈ Θ are accepting states and are visited infinitely often, so Θ is a winning sup-port. By strong connectivity, every other belief support in E reaches Θ infinitely often almost surely. Thus all belief supports in E are winning supports, and (E, A E )
+
+is a BS-AMEC. • Case 2: S××  
+
+> w
+
+= S×× .In this case, we first show that there exits a randomised belief support policy ¯π× : B× 
+
+> Supp
+
+→ Dist (A×) that if 
+
+S××  
+
+> w
+
+= S×× , then Pr ¯π× 
+
+> (E,A E)
+
+(□♢ Acc ×) = 1 .We consider a randomised memoryless belief-support policy ¯π× as follows: for each belief support Θ ∈ E,
+
+¯π×(Θ)( a) := 
+
+
+
+1
+
+|AE (Θ) | , if a ∈ AE (Θ) ,
+
+0, otherwise .
+
+That is, ¯π× selects uniformly among the actions en-abled at Θ. Since the product MDP M×× synchro-nises the transitions of the belief supports Θ ∈ E with the transitions of their underlying states s× ∈ Θ and 
+
+AE (( s×, Θ)) = AE (Θ) , for M×× , this policy induce the corresponding state-based policy ¯π×× (( s×, Θ)) 
+
+with s× ∈ Θ that uniformly selects the actions enabled at (s×, Θ) as 
+
+¯π×× (( s×, Θ)) := ¯ π×(Θ) 
+
+Because S××  
+
+> w
+
+= S×× , every state of M×× is win-ning under the action restriction AE . Hence every bottom MEC of M×× is accepting, that is, E×× ∩
+
+Acc ×̸ = ∅. The Markov chain induced by ¯π×× has the same underlying graph as M×× restricted to AE .Therefore, the BSCCs T in M××  
+
+> ¯π
+
+has T ∩ Acc ̸ =
+
+∅, i.e., Pr ¯π××  
+
+> (E,A E)
+
+(□♢ Acc ×) = 1. Consequently, 
+
+Pr ¯π× 
+
+> (E,A E)
+
+(□♢ Acc ×) = 1. By Lemma 1 in [Chat-terjee et al. , 2010], for this randomised belief-support policy there exists a deterministic belief-support policy 
+
+˜π× : B× 
+
+> Supp
+
+→ A× such that Pr ˜π× 
+
+> (E,A E)
+
+(□♢ Acc ×) = 1 .
+
+Thus (E, A E ) is a BS-AMEC. 
+
+Completeness. Suppose (E, A E ) is a BS-AMEC, then 
+
+(E, A E ) is added to ˆW×. By Definition 7, every belief sup-port Θ ∈ E is winning under some belief-support policy ˜π×.If there exists Θ ∈ E such that Θ ⊆ Acc ×, then Case 1 holds. Otherwise, since every Θ ∈ E is winning, Definition 5 im-plies that, under the corresponding policy, every state s× ∈ Θ
+
+satisfies the LTL objective with probability one. Hence the winning-set computation on M×× results S××  
+
+> w
+
+= S×× .Therefore Algorithm 1 adds (E, A E ) by Case 2. Hence, Al-gorithm 1 is sound and complete. 
+
+# E Implementation Details 
+
+E.1 Algorithm 1 
+
+For the winning state set S××  
+
+> w
+
+of the product MDP M×× ,we first identify all AMECs using the standard procedure, for example Algorithm 47 in [Baier and Katoen, 2008]. We then compute the backward reachability set of these AMECs fol-lowing Algorithm 45 in [Baier and Katoen, 2008]. If every state can reach some AMEC, then all states are almost surely winning in M×× .
+
+E.2 POMCP for LTL 
+
+For reward assignment, each simulation (or rollout) propa-gates a particle s× 
+
+> t+k
+
+along with its belief support Θ( ht+k).An action a× 
+
+> t+k+1
+
+is sampled from AE (Θ( ht+k)) , the state transitions to s×
+
+> t+k+1
+
+, and an observation o× 
+
+> t+k+1
+
+is gener-ated. The belief support Θ( ht+k+1 ) is then updated accord-ing to Eq. (1) of the BSMDP model, up to a fixed depth or belief-support-based AMECs are reached. A subtlety in the product POMDP arises from the use of LDBAs, which may include the ϵ-action ϵqi . To handle ϵqi , the belief support is updated directly as Θ( ht+1 ) = {(st, q i) | (st, q t) ∈ Θ( ht)}.For termination, we include each winning support in the certified partially winning set as a terminal action. If the UCB rule selects such an action and the sampled state lies within the corresponding winning support, the simulation and the rollout both terminate immediately with a return of 1. The overall algorithm is given in Algorithm 2. 
+
+# F Experiment Details 
+
+F.1 Experimental Setup 
+
+We use the following hyperparameters for POMCP: 30,000 simulations per planning step, a simulation depth of 200 (in-creased to 250 for the Grid-120 setting), 10,000 particles sam-pled from the initial state distribution, and a UCB exploration Algorithm 2 POMCP for LTL 
+
+1: procedure SEARCH (ht)
+
+2: repeat 
+
+3: if t = 0 then 
+
+4: s ∼ b0
+
+5: else 
+
+6: s ∼ P (ht)
+
+7: SIMULATE (s, h t, 0)
+
+8: until TIMEOUT () return arg max a V (hta)
+
+9: end procedure 
+
+10: 11: procedure SIMULATE (s, h t, k, Θ( ht))
+
+12: if Θ( ht) ∈ ˆW× then return 1
+
+13: if k ≥ kmax then return 0
+
+14: if ht /∈ T then 
+
+15: for all a ∈ AE (Θ t) do 
+
+16: T (hta) ← (0 , 0, ∅, ∅)
+
+17: Tinit (hta) = ( Ninit (hta), Vinit (hta), Pinit (hta), Θinit (hta)) 
+
+return ROLLOUT (s, h t, k, Θ( ht))
+
+18: a ← arg max a V (ha ) + c
+
+q log N (h) 
+
+> N(ha )
+
+19: if a ∈ ˆW× and s ∈ a then return 1
+
+20: if a ∈ ˆW× and s̸ ∈ a then return 0
+
+21: (s′, o ) ∼ G(s, a )
+
+22: ht+1 ← htao 
+
+23: Θ( ht+1 ) ← TBSupp (Θ( ht), a )( o)
+
+24: R ← SIMULATE (s′, h t+1 , k + 1 , Θ( ht+1 )) 
+
+25: P(h) ← P (h) ∪ { s}
+
+26: N (h) ← N (h) + 1 
+
+27: N (ha ) ← N (ha ) + 1 
+
+28: V(ha ) ← V (ha ) + R−V (ha ) 
+
+> N(ha )
+
+29: return R
+
+30: end procedure 
+
+31: 32: procedure ROLLOUT (s, h t, k, Θ( ht))
+
+33: if Θ( ht) ∈ ˆW× then return 1
+
+34: if k ≥ kmax then return 0
+
+35: a ∼ πrollout (ht, ·)
+
+36: if a ∈ ˆW× and s ∈ a then return 1
+
+37: if a ∈ ˆW× and s̸ ∈ a then return 0
+
+38: (s′, o ) ∼ G(s, a )
+
+39: ht+1 ← htao 
+
+40: Θ( ht+1 ) ← TBSupp (Θ( ht), a )( o)
+
+41: return ROLLOUT (s′, h t+1 , k + 1 , Θ( ht+1 ))
+
+42: end procedure 
+
+constant of 1. All experiments were run on a workstation equipped with an Intel Xeon Gold 6230R CPU (2.10 GHz), restricted to a single thread with up to 50 GB RAM, running Ubuntu 20.04.6 LTS. All source code is provided in the sup-plementary material. 
+
+F.2 Toy Example 
+
+Winning supports: {"[’s8_0’]"} Winning supports sets: {frozenset({’s8_0’})} Partically Winning Supports: {"[’s7_0’, ’s8_0’]": [[’s8_0’]], "[’s7_sink’, ’s8_0’]": [[’s8_0’]], "[’s7_0’, ’s7_sink’, ’s8_0’]": [[’s8_0’]], "[’s8_0’, ’s8_sink’]": [[’s8_0’]], "[’s7_0’, ’s8_0’, ’s8_sink’]": [[’s8_0’]], "[’s7_sink’, ’s8_0’, ’s8_sink’]": [[’s8_0’]], "[’s7_0’, ’s7_sink’, ’s8_0’, ’s8_sink’]": [[’s8_0’]]} AMECs and Actions: ({frozenset({"[’s8_0’]"})}, {"[’s8_0’]": {’r’, ’d’}}) Time step 1 Selected action: r Value: 0.7655767387368196 Current belief: {’s0_0’: 1000} Sampled State: s0_0 Time step 2 Selected action: d Value: 0.7853010164190775 Current belief: {’s1_0’: 1000} Sampled State: s1_0 Time step 3 Selected action: d Value: 0.7900195761926022 Current belief: {’s3_0’: 1000} Sampled State: s3_0 Time step 4 Selected action: l Value: 0.7941048537727401 Current belief: {’s6_0’: 1000} Sampled State: s6_0 Time step 5 Selected action: d Value: 0.7945807309601273 Current belief: {’s5_0’: 1000} Sampled State: s5_0 Time step 6 Selected action: {’s8_0’} Value: 0.7972816433701444 Current belief: {’s8_0’: 792, ’s7_sink’: 208} Sampled State: s8_0 chose belief support policy, stop simulation, winning support: {’s8_0’} Env. Set. |S|/|O|/|T | Prop. |A φ| |S×|/|O×|/|T ×| SR (s) Pr π
+
+> M
+
+(φ) POMCP (s) Hallway HW1 60 / 24 / 208 φ1 3 180 / 24 / 624 0.015 0.254 74.967 
+
+φ2 3 180 / 24 / 684 0.020 0.707 52.759 HW2 92 / 24 / 325 φ1 3 276 / 24 / 975 0.547 0.247 64.356 
+
+φ2 3 276 / 24 / 1067 0.743 0.464 44.643 Rock Sample 4 256 / 112 / 1984 φ3 4 1024 / 112 / 7936 42.231 0.453 79.102 
+
+φ4 3 768 / 112 / 6208 0.078 0.469 91.788 5 400 / 132 /3120 φ3 4 12480 / 132 / 11200 58.246 0.326 121.315 
+
+φ4 3 1200 / 132 / 9760 0.114 0.455 120.307 7 784 / 244 / 6160 φ3 4 3136/ 244 / 24640 105.475 0.180 129.259 
+
+φ4 3 2352 / 244 / 19264 0.210 0.003 160.291 Grid 10 100 / 50 / 570 φ5 3 300 / 50 / 1710 0.892 0.689 29.396 
+
+φ6 3 300 / 50 / 1710 0.895 1.0 0.244 
+
+φ7 2 200 / 50 / 1140 0.024 0.726 24.464 50 2500 / 1250 / 10330 φ5 3 7500 / 1250 / 30990 10.987 0.334 82.198 
+
+φ6 3 7500 / 1250 / 30990 10.597 1.0 0.246 
+
+φ7 2 5000 / 1250 / 20660 1.843 0.530 67.959 100 10000 / 5000 / 40280 φ5 3 30000 / 5000 / 120840 81.361 0.272 99.407 
+
+φ6 3 30000 / 5000 / 120840 82.334 1.0 0.248 
+
+φ7 2 20000 / 5000 / 80560 30.603 0.308 107.366 120 14400 / 7200 / 57860 φ5 3 43200 / 7200 / 173580 191.431 0.0 182.667 
+
+φ6 3 43200 / 7200 / 173580 188.264 1.0 0.267 
+
+φ7 2 28800 / 7200 / 115720 66.314 0.058 183.521 
+
+> Table 2: Numerical Results for POMDP Policy Synthesis under LTL Specifications.
+
+F.3 Benchmark Domain 
+
+Hallway We consider two Hallway models of different sizes, HW 1 and HW 2, originally introduced in [Littman et al. , 1995] and also used in [Chatterjee et al. , 2015]. In this setting, an agent navigates an office building with uncertain location and orientation (North, East, South, or West). The agent can move forward or turn left, each succeeding with some probability. Its short-range sensor provides information about whether it is adjacent to a wall in its current orientation, subject to a certain probability of error. Specific locations in the office are labelled A, B and C. We consider the following LTL objectives: • φ1 = ♢A ∧ □¬B: a reach-and-avoid task where the agent must eventually reach A while always avoiding B.• φ2 = ♢□ C: a persistence task where the agent must reach A and remain there indefinitely. 
+
+Rock Sample We follow the rock sample model from [Junges et al. , 2021], where a robot operates on an n × n grid containing two rocks, each either good G or bad B, with initially unknown quality. The robot can move between cells, use a sensor on adjacent cells to observe rock quality, or sample a rock to collect it. We consider the following LTL tasks: • φ3 = ♢(G∧♢E)∧□¬B: a sequential task requiring the robot to first sample a good rock, then eventually reach exit States ( E), while never sampling a bad rock. • φ4 = ♢□ G: a persistence task in which the robot fi-nally collects the good rock and remain at that location indefinitely. 
+
+Grid World The model Grid (n, n ) is based on the problem introduced in [Littman et al. , 1995]. It comprises an n × n
+
+grid where each cell is labelled as a trap ( T ), goal 1 ( G1), or goal 2 ( G2). The agent moves left, right, or down, with a 0.2 probability of movement failure included in the transition dynamics. An observation is defined for each of the neigh-bouring States. We consider the following LTL tasks: • φ5 = ♢G1 ∧ □¬T : a reach-and-avoid task where the agent must eventually reach G1 while always avoiding traps. • φ6 = □(G2 → ♢G1) ∧ □¬T : a reactive task where the agent must always avoid traps and, whenever it reaches 
+
+G1, must eventually reach G2.• φ7 = □♢ G1 ∧ □¬T : a recurrence task where the agent must visit G1 infinitely often while avoiding traps. 
+
+F.4 Full Results 
+
+Table 2 summarises the performance of our approach across all tasks. For each case, we report the benchmark do-main (Env.) and its setting (set.), the original model de-tails ( |S|/|O|/|T |), the LTL objective ( φi), the product model details ( |S×|/|O×|/|T ×|), the time to construct the sound reward function (SR (s)), the satisfaction probability (Pr π
+
+> M
+
+(φ)), and the policy synthesis time using the enhanced POMCP solver (POMCP (s)).

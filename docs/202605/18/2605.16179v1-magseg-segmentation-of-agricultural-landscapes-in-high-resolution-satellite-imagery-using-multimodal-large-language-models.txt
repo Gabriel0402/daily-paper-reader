@@ -1,0 +1,650 @@
+Title: MAgSeg: Segmentation of Agricultural Landscapes in High-Resolution Satellite Imagery using Multimodal Large Language Models
+
+URL Source: https://arxiv.org/pdf/2605.16179v1
+
+Published Time: Mon, 18 May 2026 01:25:55 GMT
+
+Number of Pages: 18
+
+Markdown Content:
+# MAgSeg: Segmentation of Agricultural Landscapes in High-Resolution Satellite Imagery using Multimodal Large Language Models 
+
+## Piyush Tiwary 1,3,∗ , Utkarsh Ahuja 2 , Depanshu Sani 1 , Aishwarya Jayagopal 1 , Sagar Gubbi 1 , Subhashini Venugopalan 1 , Alok Talekar 1 and Vaibhav Rajan 11Google DeepMind, 2Google, 3Indian Institute of Science piyushtiwary@iisc.ac.in, 
+
+## {utkarshahuja, depanshus, ajayagopal, gubbi, vsubhashini, atalekar, vaibhavrajan }@google.com 
+
+## Abstract 
+
+Agricultural landscape segmentation in the Global South is challenging as it is characterized by frag-mented plots, high intra-class variance, and ascarcity of labeled training data. Recent advances in segmentation have been made by Multimodal Large Language Models (MLLMs). However, cur-rent approaches encounter critical context length bottlenecks and a domain alignment gap in under-standing satellite features. We address these lim-itations through MAgSeg, a novel, decoder-free MLLM segmentation approach. MAgSeg is an ar-chitecturally efficient approach that enables stan-dard MLLMs to perform segmentation of com-plex smallholder agricultural landscapes from high-resolution satellite imagery, without requiring aux-iliary vision decoders. We introduce a novel in-struction tuning data format designed to enable scalable fine-tuning and post-training on high res-olution satellite imagery, which enables MAgSeg to learn from the global context of the image while generating text tokens for only a patch within the image. Extensive evaluations on datasets spanning three countries in the Global South demonstrate that MAgSeg significantly outperforms state-of-the-art MLLM baselines, offering a scalable solu-tion to map smallholder agricultural environments. 
+
+## 1 Introduction 
+
+Agricultural Landscape Segmentation involves identifying the polygonal boundaries and constituent areas of agricul-tural features, such as crop fields, trees and water bodies, us-ing satellite imagery. It is a foundational step for large-scale mapping and analysis of agricultural environments [FAO et al. , 2023; OECD, 2023], which, in turn, support advanced, field-level analytics for multiple downstream precision agri-culture applications such as crop type and yield management, policy making and resource allocation [Rudel et al. , 2009; Kang and ¨ Ozdo˘ gan, 2019]. Effective solutions in these ap-plications can have significant impact on mitigating climate change and managing global food security [FAO et al. , 2023; 
+
+> ∗Work done as a Student Researcher at Google DeepMind.
+
+OECD, 2023]. This task is especially challenging for small-holder farms in the Global South, which are characterized by an intricate mosaic of very small fields ( < 2 ha) [Min-istry of Agriculture and Farmers Welfare, 2024], diverse land uses, and interspersion with natural vegetation and water resources [Lesiv et al. , 2019; Samberg et al. , 2016; Rada and Fuglie, 2019], and are responsible for more than half of the global agricultural production [Samberg et al. , 2016; Sylvester and others, 2015]. The nature of smallholder systems pose unique technical challenges in landscape segmentation. These include high variance within the field class (due to diverse crops, shapes, and sizes), and low variance between fields and other classes like forests; and large distribution shifts with varying land-scape characteristics across different regions, climates, and seasons [Wang et al. , 2022; Kerner et al. , 2023]. Accurate delineation of small-sized fields and other features necessi-tate the use of very-high-resolution (VHR) satellite imagery (e.g., WorldView-3 data at 0.31 to 2 m/pixel). However, adapting standard image segmentation models, primarily de-veloped for natural images, for this task remains challenging due to the high scale variation, densely packed small-scale objects and computational challenges arising from high di-mensional inputs [Zhu et al. , 2017; Rolf et al. , 2024]. More-over, nearly all previous approaches use specialized super-vised learning architectures and rely on labelled data. Obtain-ing such labeled data is labor-intensive, costly, and difficult to scale across the diverse geographies of the Global South. Multimodal Large Language Models (MLLMs) harness the inherent reasoning capabilities and broad world knowl-edge of LLMs, and have been recently used for vari-ous segmentation tasks with natural images [Zhou et al. ,2024]. MLLMs offer the potential for scalability and ac-cessibility with relatively lesser labeled data requirements to address the smallholder landscape segmentation prob-lem. However, existing MLLM-based segmentation ap-proaches perform poorly on VHR satellite images, particu-larly on this challenging task. The dominant ‘embedding-as-mask’ paradigm, exemplified by LISA [Lai et al. , 2024] and GSVA [Xia et al. , 2024], relies on auxiliary decoder heads 
+
+to generate pixel-level masks. This design introduces param-eter overhead and creates an alignment bottleneck between the LLM’s text-centric latent space and the pixel decoder. The other ‘text-as-mask’ paradigm is a decoder-free approach 
+
+> arXiv:2605.16179v1 [cs.CV] 15 May 2026
+
+proposed by Text4Seg [Lan et al. , 2025]. It encodes masks as text sequences and seamlessly integrates segmentation into the standard autoregressive generation process of MLLMs. However, this approach also fails when applied to VHR satellite imagery for two reasons. Encoding a full VHR mask (e.g., 615 × 615 px) would require about O(3 .6 × 10 5) to-kens, far exceeding the context windows of many MLLMs. Text4Seg relies on severe downsampling (e.g., to 32 × 32 px) to keep token counts of the encoded masks low. While accept-able for natural images, this destroys critical high-frequency details in satellite data required for boundary delineation. The second reason is the domain alignment gap: general-purpose MLLMs lack intrinsic understanding of overhead satellite im-agery. E.g., while they can identify ‘trees’ in a photograph, they struggle to distinguish similar features like ‘crops’ ver-sus ‘pasture’ in satellite views without explicit pixel-level grounding [Quenum et al. , 2025]. In this work, we present a decoder-free MLLM-based Agricultural Landscape Segmentation approach (MAgSeg) that systematically overcomes these limitations. We create an instruction tuning dataset with a novel format, which is designed to enable efficient fine-tuning and aims at retain-ing both local or global context in VHR masks. This re-solves the token length problem through a patch-based strat-egy: MAgSeg receives the full VHR image as context but is tasked with generating a text-based mask for only a spe-cific sub-patch. Supervised fine tuning on this data helps, but is insufficient since it is optimized for next-token prediction (for the text-based mask) and not spatial accuracy. We ad-dress this domain alignment gap via Group Relative Policy Optimization (GRPO) using the mean-DICE score as a direct reward signal. This enables MAgSeg to prioritize pixel-level accuracy over mere textual fluency on the encoded masks. We use another metric, overhead , to measure the param-eter efficiency of MLLM-based segmentation models which quantifies the additional learnable parameters (e.g., in pixel decoders and segmentation heads) beyond the base LLM backbone; and serves as a proxy for computational cost and memory footprint during inference. MAgSeg, which has zero overhead, shows dramatic gains in segmentation performance over previous zero-overhead decoder-free approaches in our experiments. Moreover, MAgSeg also significantly outper-forms previous decoder-based methods which achieve better performance, relative to previous zero-overhead methods, at the cost of high overhead. Our contributions are summarized as follows: 1. We propose an architecturally efficient, zero-overhead ap-proach, MAgSeg, that enables standard MLLMs to per-form segmentation of complex smallholder agricultural landscapes from very-high-resolution (VHR) satellite im-agery, without requiring auxiliary vision decoders. 2. MAgSeg overcomes critical context length bottlenecks and domain alignment gaps in previous decoder-free ap-proaches through instruction tuning with a novel format, tasked to generate text tokens for only a patch within a VHR image, and RL-based post-training to refine pixel-level understanding. 3. On challenging benchmark smallholder agriculture datasets spanning three countries in the Global South, MAgSeg significantly outperforms state-of-the-art LLM-based baselines. 
+
+## 2 Background and Related Works 
+
+MLLMs for Vision Tasks. MLLMs demonstrate exceptional capabilities in visual reasoning, captioning, and visual ques-tion answering. However, applying MLLMs to dense pre-diction tasks like segmentation remains non-trivial due to the inherent modality gap between language and vision. A com-mon approach, exemplified by LISA [Lai et al. , 2024] and GLaMM [Rasheed et al. , 2024], involves appending a spe-cialized pixel decoder (e.g., SAM [Kirillov et al. , 2023]) to the LLM. The LLM outputs a special token (e.g., <seg> )which cues the decoder to generate a mask. While effective, this ‘embedding-as-mask’ approach increases training com-plexity, limits model scalability and disconnects the segmen-tation process from the LLM’s native text-generation capabil-ities. Other approaches like VisionLLM [Wang et al. , 2023; Wu et al. , 2024] output polygon coordinates directly, but of-ten struggle with complex geometries in satellite imagery. To address these limitations Text4Seg [Lan et al. , 2025] introduced a decoder-free ‘text-as-mask’ approach by cast-ing segmentation as a sequence-to-sequence problem, which aligns with the autoregressive training pipeline of LLMs and enables scalable, flexible modeling with minimal architec-tural changes. The key idea is to split the mask into a grid of fixed-size patches, flatten the patches and represent each patch with a semantic descriptor , which can be a word, phrase or a more complex textual description. Thus, we obtain a se-quence of text tokens whose length can become exceedingly large with both number of patches and more complex descrip-tions. To compress this description, they apply Run-Length Encoding (RLE) to the sequence, and empirically find that applying RLE row-wise (RRLE), with each row separated by a newline character, to the mask patches works well in prac-tice. This transformed visual instruction data is used to fine tune the MLLM. However, Text4Seg, which achieves state-of-the-art perfor-mance on several segmentation tasks on natural images, fails on the challenging task of smallholder landscape segmenta-tion (as seen in our experiments). These landscapes have both large number of objects to be delineated and high scale vari-ation, e.g., ranging from small to very large fields. Hence, the masks lead to complex and long descriptions with long sequences even after RRLE. The approach of downsampling the masks used by [Lan et al. , 2025] leads to loss of criti-cal high-frequency spatial details required for boundary de-lineation, whereas increasing the number of patches leads to loss of contextual information for each instance, which, in turn, deteriorates segmentation performance. Our approach, MAgSeg, specifically addresses these problems, while retain-ing the advantages of their decoder-free approach. 
+
+Agricultural Landscape Understanding. Segmentation of agricultural landscapes has been extensively studied in re-mote sensing – see [Zheng et al. , 2025] for a recent survey. Most previous works have focussed on field boundary de-lineation, particularly in the global North, e.g., [Masoud et al. , 2020; Waldner and Diakogiannis, 2020; Waldner et al. ,2021]. A few recent works have recognized and addressed the challenges of smallholder agriculture by adapting classi-cal computer vision techniques such as panoptic segmenta-tion [Dua et al. , 2024], object detection [Mei et al. , 2022] and transfer learning based methods [Wang et al. , 2022; Kerner et al. , 2023]. All these methods rely on supervised learning (mainly CNN-based) architectures. To harness their robust reasoning capabilities, visual un-derstanding and world knowledge, MLLMs are being actively explored for various remote sensing tasks such as visual ques-tion answering and retrieval [Li et al. , 2024]. However, their use in segmentation tasks is relatively underexplored. Two re-cent segmentation models, LISAt [Quenum et al. , 2025] and FSVLM [Wu et al. , 2025] follow the same embedding-as-mask architecture of LISA [Lai et al. , 2024]: a CLIP-encoded image [Radford et al. , 2021] and a text embedding are passed to a MLLM (both use LLaVA [Liu et al. , 2023b]); segmen-tation is triggered by a dedicated <seg> token within the LLM’s vocabulary; upon generation, the token’s embedding is mapped to a SAM-based decoder through an MLP; the de-coder subsequently combines this embedding with the base image features to reconstruct the pixel-level mask. The model is trained end-to-end with loss functions to optimize text gen-eration and segmentation. FSVLM was specifically evalu-ated for farmland segmentation while LISAt demonstrated improvements over many geo-spatial foundation models on visual question answering, visual grounding and image cap-tioning tasks. In our experiments, we demonstrate significant improvements over this state-of-the-art approach on small-holder landscape segmentation datasets. 
+
+## 3 Our Approach: MAgSeg 
+
+Let D = {xi, yi}Ni=1 denote a (training) dataset, where 
+
+xi ∈ Rhx×wx×3 represents a high-resolution satellite RGB image with height hx, width wx, 3 channels, and yi is the corresponding multi-class instance map. Our aim is to train a base MLLM, πθ , with parameters θ, using D, for the task of instance segmentation. We first transform D to an instruction tuning dataset with a novel format, designed to enable efficient fine-tuning without losing local or global context in the high-resolution images. Such supervised fine tuning (SFT), which has demonstrated success with natural images, proves insufficient for complex satellite imagery as it lacks the fine-grained spatial reasoning required for pixel-perfect segmentation. Thus, we employ a Reinforcement Learning (RL) based post-training optimiza-tion step to maximize pixel-level semantic alignment. The trained model is used to generate semantic masks which are post processed to form the instance masks during inference. Figure 1 has an overview of MAgSeg. 
+
+3.1 Confronting High Resolution: Patch-based Instruction Tuning with Global Context 
+
+Given a dataset sample (xi, yi), we first derive the seman-tic segmentation map, si from the instance map yi. To fa-cilitate patch-based processing, we extract a random crop from the high-resolution input. We sample top-left coordi-nates (j, k ) uniformly such that j ∼ U(1 , h x − hp) and 
+
+k ∼ U (1 , w x − wp). Thus, from si, this yields an image patch pi of dimensions hp × wp and a spatially correspond-ing semantic mask patch ri.The mask patch ri is subsequently converted into a text-based RRLE representation, denoted as ti = RRLE (ri), fol-lowing the semantic descriptors devised for Text4Seg [Lan et al. , 2025] (cf. Algorithm 1 in Appendix A). We then con-struct an instruction-tuning sample consisting of the prompt input and the target response: Input: {I text , xi, pi} → Target: ti
+
+Here, Itext is the textual prompt instructing the LLM to gen-erate the RRLE mask for the provided patch. Note that the entire high-resolution image xi is passed with every patch pi
+
+which provides global context for each sample pair. Since the target ti contains tokens only for the patch pi, we stay within the context window of the MLLM model. This format en-ables us to leverage the decoder-free seq-to-seq framework of Text4Seg on HR satellite images, without downsampling the entire HR image and losing critical high frequency details. To fine-tune πθ we employ Low-Rank Adaptation (LoRA) [Hu et al. , 2022] in conjunction with a standard autoregressive objective. LoRA optimizes a significantly smaller set of parameters, denoted as ∆θ, by freezing θ and injecting trainable rank decomposition matrices into the lin-ear layer of the MLLM’s transformer. This approach ensures scalability, data efficiency as well as generalizability. Formally, let the ground-truth RRLE sequence be repre-sented as a series of tokens ti = {w1, w 2, . . . , w T }. The trainable parameters ∆θ are optimized by minimizing the negative log-likelihood of these target tokens conditioned on the multimodal context-
+
+∆θSFT = arg min  
+
+> ∆θ
+
+LSFT (∆ θ) (1) 
+
+LSFT (∆ θ) = −
+
+> T
+
+X
+
+> t=1
+
+log πθ+∆ θ (wt | w<t , xi, pi, Itext ) (2) where, πθ+∆ θ (·) denotes the probability distribution of the next token predicted by the adapted model. Minimizing this objective aligns the model’s visual reasoning with the textual RRLE structure, enabling segmentation of the target patch pi.After this fine-tuning stage, the MLLM is (a) conditioned to generate masks in the specified RRLE format, and (b) in-stilled with a foundational understanding of segmentation se-mantics and class labels, as established in [Lan et al. , 2025]. 
+
+3.2 Mitigating Domain Gap with GRPO 
+
+The previous SFT step primarily optimizes for next-token pre-diction rather than spatial accuracy . Consequently, the model often struggles to achieve pixel-perfect alignment between the target patch and the context image. To bridge this gap, we employ Group Relative Policy Optimization (GRPO) [Shao 
+
+et al. , 2024] as post training step, where the optimization ob-jective is shifted from maximizing likelihood to maximizing a pixel-level semantic reward. For a given input tuple {I text , xi, pi}, we sample a group of G distinct outputs from the policy model πθ , denoted as Figure 1: Overview of MAgSeg. Data Preparation : from each high-resolution satellite image xi and its segmentation map si, multiple patches pi and their corresponding masks ri are extracted, the masks are converted to a text-based RRLE representation ti to form the instruction tuning dataset: {I text , xi, pi} → ti. Training : consists of two stages: (1) LoRA Supervised Finetuning (SFT), where the base multimodal LLM is adapted to generate RRLE-encoded masks using a frozen backbone and trainable LoRA adapters; and (2) GRPO Post-Training, where we sample multiple candidate RLE sequences, decode them into segmentation masks, and use the mean-DICE score as a reward signal to update the policy, ensuring pixel-perfect alignment. Inference : uses the trained MLLM to predict on a grid of disjoint patches, which are then stitched and postprocessed to form the final segmentation map. 
+
+{ti,g }Gg=1 . Each output ti,g represents a candidate RRLE se-quence for the target patch pi. To evaluate the quality of these candidates, we first decode them into 2D semantic masks: 
+
+˜si,g = decode RRLE (ti,g ) (3) where, ˜si,g is the predicted segmentation map for the g-th sample (cf. Algorithm 2 in Appendix A). To quantify the semantic accuracy, we compute the reward ri,g as the Mean DICE score (mDICE) between the predicted mask ˜si,g and the ground truth mask si. Let C denote the set of classes (e.g., fields, ponds, trees). The reward is defined as: 
+
+ri,g = 1
+
+|C|
+
+X
+
+> c∈C
+
+2 P 
+
+> x,y
+
+(˜ s(c) 
+
+> i,g
+
+∩ s(c) 
+
+> i
+
+)
+
+P 
+
+> x,y
+
+˜s(c) 
+
+> i,g
+
++ P 
+
+> x,y
+
+s(c) 
+
+> i
+
++ ϵ (4) where, ∩ denotes the intersection of active pixels for class c,and ϵ is a smoothing term. GRPO optimizes the policy by estimating the advantage of each sample relative to the group average, eliminating the need for a separate value function critic. The advantage Ai,g for the g-th sample is computed as: 
+
+Ai,g = ri,g − μr
+
+σr
+
+(5) where, μr and σr are the mean and standard deviation of the rewards within the group of G samples. The GRPO loss ob-jective is formulated as: 
+
+LGRPO (∆ θ) = − 1
+
+G
+
+> G
+
+X
+
+> g=1
+
+min 
+
+
+
+ρi,g Ai,g , clip (ρi,g , 1 − ϵ, 1 + ϵ)Ai,g 
+
+
+
+(6) 
+
+where ρi,g = πθ+∆ θ (ti,g )   
+
+> πθ+∆ θSFT (ti,g )
+
+is the probability ratio. The final post-training objective is the GRPO loss with KL penalty: 
+
+LPT = LGRPO (∆ θ) + βD KL (πθ+∆ θSFT || πθ+∆ θ) (7) This objective encourages the model to increase the proba-bility of generating RRLE sequences that yield higher DICE scores, thereby explicitly refining the model’s pixel-level un-derstanding via the GRPO loss while at the same time avoids diverging from the reference policy obtained from Stage I, 
+
+πθ+∆ θSFT .
+
+3.3 Inference 
+
+During inference, we patchify the high-resolution input im-age into a grid of disjoint spatial patches of dimensions 
+
+hp × wp (cf. Inference pipeline in Figure 1). These patches are collated into a single batch to enable parallel processing, which significantly reduces computational latency compared to sequential execution. Once the individual patch masks are generated, they are spatially concatenated to reconstruct the full-resolution semantic map. To remove stitching artifacts and improve boundary precision, we apply the postprocess-ing steps recommended in EPOC [Chen et al. , 2025]. This includes (i) boundary detection using a SegFormer [Xie et al. , 2021] based refinement model and (ii) the Watershed al-gorithm [Vincent and Soille, 1991] on the refined semantic maps to extract discrete instance segmentation maps. 
+
+## 4 Experiments 
+
+4.1 Experiment Settings 
+
+Datasets. We conduct our experiments on two datasets which span across 3 countries in the Global South with small-holder agriculture systems. The first is the ALU dataset [Dua 
+
+et al. , 2024] which contains 2009/430/431 images in its train/val/test splits. This data is from India, annotated with five distinct semantic classes: fields, trees, clouds, ponds, and wells. The second is a publicly available benchmark dataset, AI4SmallFarms [Persello et al. , 2023], for agricul-tural field boundary delineation. The train/val/test splits con-tain 1962/90/304 images for Vietnam and 1860/605/177 im-ages for Cambodia. In both cases, VHR imagery from Google Maps Satellite View are used. We take images sampled at 0.5 m/pixel GSD, from two satellite sources: Maxar Worldview, Airbus Pleiades. 
+
+Baselines. We benchmark our approach against state-of-the-art segmentation MLLM-based methods: LISA [Lai et al. ,2024], GSVA [Xia et al. , 2024], which are decoder-dependent and the decoder-free Text4Seg [Lan et al. , 2025]. We con-sider two variants of Text4Seg – coarse predictions (C) and refined predictions (R) that uses SAM refinement. Further, we also consider LISAt [Quenum et al. , 2025] which extends LISA for segmentation in satellite images. In addition, we include Transformer-based models specialized for segmenta-tion, LAVT [Yang et al. , 2022] and GRES [Liu et al. , 2023a]. 
+
+Evaluation Metrics. Following the evaluation protocol in [Dua et al. , 2024] for smallholder farms, we report the instance-wise Mean Intersection-over-Union (mIoU), Me-dian IoU, False Positive Rate (FPR), and False Negative Rate (FNR). More details are in Appendix C. In addition to standard performance metrics, we use a pa-rameter efficiency metric, denoted as Overhead . This met-ric quantifies the additional learnable parameters required by a method beyond the base LLM backbone. For decoder-dependent baselines, this includes parameters of the external segmentation heads such as SAM-H, pixel decoders, and any projection layers. For decoder-free methods such as ours and Text4Seg, the overhead is zero. Concretely, total number of parameters of a method is denoted as -
+
+Φtotal = Φ base + Φ projection + Φ decoder (8) where, Φbase , Φprojection and Φdecoder denote the parameters in the base model, projection layers and decoder heads respec-tively. Then, the overhead is defined as -Overhead = Φprojection + Φ decoder 
+
+Φbase 
+
+(9) This metric is vital for two reasons: (1) it highlights the ef-ficacy of the base LLM’s native reasoning capabilities with-out reliance on auxiliary decoder heads, and (2) it serves as a proxy for the computational cost and memory footprint re-quired during inference 1.
+
+Implementation. For MAgSeg, we experiment with MLLMs of two sizes – 4B and 12B – versions of Gemma3 [Team et al. , 2025]. We refer to these two variants as MAgSeg (4B) and MAgSeg (12B) respectively. These are comparable to the model sizes used in the MLLM-based baseline methods: LISA (13B), LISAt (7B), GSVA (13B) and Text4Seg (7B). We use hp = wp = 32 for patch dimension as mentioned in Section 3. Appendix B has other details of MAgSeg and all the baselines. 
+
+4.2 Results 
+
+Segmentation Performance 
+
+India. The quantitative comparison on the panoptic segmen-tation dataset from India is summarized in Table 1. Our pro-
+
+> 1Here, we refer solely to the additional overhead incurred during training; inference overhead is excluded.
+
+posed method, MAgSeg, advances the state-of-the-art, out-performing all MLLM-based and transformer-based base-lines by a substantial margin. Specifically, we observe an improvement of 21 mIoU points over GRES, the closest com-petitor. 
+
+Vietnam and Cambodia. These regions are characterized by dense wetland rice cultivation, offering a different spa-tial distribution compared to India. As shown in Table 2, MAgSeg consistently achieves state-of-the-art results when trained on these diverse landscapes. The performance gap is distinct in Cambodia split. Here, baseline methods struggle to learn effective segmentation boundaries; notably, even strong decoder-based models like GRES and LISA plateau at ap-proximately 0.12 mean IoU. Text4Seg fails completely ( 0.04 
+
+mean IoU) due to the small, fragmented nature of agricultural fields which are lost during mask downsampling. In contrast, MAgSeg successfully learns the complex landscape features, achieving a mean IoU of 0.43 . This result – nearly quadru-pling the performance of the nearest baseline – demonstrates that our GRPO-based training objective enables the model to converge on difficult pixel-level tasks where standard cross-entropy or decoder-alignment losses fail. In the Vietnam data, while baseline performance improves (with GRES reaching 
+
+0.40 mean IoU), our MAgSeg-12B model maintains better performance with a mean IoU of 0.42 and a better median IoU of 0.35 .We attribute the significantly lower performance of prior methods to their inherent architectural limitations, which are addressed in MAgSeg: (a) Text4Seg: This method exhibits poor performance on satellite imagery. As noted in [Lan et al. , 2025], Text4Seg relies on downsampling masks (e.g., to 
+
+32 × 32 ) to maintain tractable token counts. In the context of high-resolution satellite data, this compression causes a severe loss of high-frequency spatial details – such as nar-row field boundaries – which cannot be recovered during in-ference. (b) Decoder-Based Models (LISA, GSVA, GRES): 
+
+While methods like GRES perform better than Text4Seg, they still struggle to match MAgSeg. Specifically, for field segmentation on the ALU dataset, our method outperforms the best decoder-based model (GRES) by 12 and 33 points in mIoU and median IoU, respectively. On the Cambodia dataset, the gains are even larger— 31 and 40 points in mIoU and median IoU. These substantial improvements validate our claim. We attribute this to the ‘domain alignment gap’: the disconnect between the LLM’s textual representation and the separate pixel decoder’s latent space, which often leads to in-consistent segmentation masks. 
+
+Qualitative Analysis 
+
+Illustrations in Figure 2 show that MAgSeg produces sharp, instance-aware boundaries for agricultural fields where com-petitors often output noisy or over-smoothed/undersegmented masks. The visual comparisons corroborate our quantita-tive findings: Text4Seg outputs suffer from severe blocki-ness due to the aforementioned downsampling artifacts. Sim-ilarly, decoder-based methods like LISA often generate ar-tifacts or fail to capture crisp boundaries, likely due to la-tent misalignment. In contrast, our proposed method gener-ates aesthetically clean, pixel-precise masks that closely align Class Metric LAVT LISA LISAt GSVA GRES Text4Seg (C) Text4Seg (R) MAgSeg (4B) 
+
+(Our) 
+
+MAgSeg (12B) 
+
+(Our) 
+
+Overhead 9.95% 9.48% 9.48% 9.35% 15 .82% 0.00 % 0.00 % 0.00 % 0.00 %
+
+Fields mean IoU 0.22 0.22 0.36 0.35 0.37 0.05 0.07 0.58 0.59 median IoU 0.13 0.05 0.30 0.29 0.31 0.02 0.02 0.62 0.64 FNR 8.08 44.25 6.06 7.85 3.48 17.24 20.36 4.71 3.13 FPR 40.66 38.72 52.28 32.58 30.98 32.59 44.99 20.15 21.22 
+
+Trees mean IoU 0.11 0.00 0.11 0.03 0.13 0.00 0.00 0.20 0.21 median IoU 0.01 0.00 0.02 0.00 0.02 0.00 0.00 0.09 0.10 FNR 45.43 98.63 39.13 87.05 39.83 89.39 91.28 37.26 34.22 FPR 52.19 100.00 54.74 61.47 37.05 68.38 76.01 42.08 42.89 
+
+Clouds mean IoU 0.19 0.00 0.07 0.03 0.14 0.08 0.09 0.25 0.25 median IoU 0.03 0.00 0.00 0.00 0.00 0.00 0.00 0.15 0.17 FNR 24.53 100.00 66.04 86.79 47.17 37.74 45.28 19.82 19.28 FPR 56.10 100.00 43.12 91.04 42.47 29.57 32.58 41.22 39.08 
+
+Ponds mean IoU 0.00 0.00 0.00 0.02 0.01 0.00 0.00 0.05 0.05 median IoU 0.00 0.00 0.00 0.00 0.00 0.00 0.00 0.00 0.00 
+
+FNR 100.00 97.66 100.00 93.38 97.90 100.00 100.00 99.56 99.16 
+
+FPR 100.00 100.00 100.00 99.47 68.42 100.00 100.00 95.62 96.31 
+
+Well mean IoU 0.00 0.00 0.00 0.00 0.00 0.00 0.00 0.00 0.00 
+
+median IoU 0.00 0.00 0.00 0.00 0.00 0.00 0.00 0.00 0.00 
+
+FNR 100.00 100.00 100.00 100.00 100.00 100.00 100.00 100.00 100.00 
+
+FPR 100.00 100.00 100.00 100.00 100.00 100.00 100.00 100.00 100.00 
+
+Table 1: Quantitative results on the India (ALU) panoptic segmentation dataset. We report instance-wise mean IoU ( ↑), median IoU ( ↑), FPR (↓), FNR ( ↓), and model overhead ( ↓).                                                                                  
+
+> Country Metric LAVT LISA LISAt GSVA GRES Text4Seg (C) Text4Seg (R) MAgSeg (4B)
+> (Our)
+> MAgSeg (12B)
+> (Our)
+> Cambodia mean IoU 0.06 0.09 0.12 0.10 0.12 0.04 0.04 0.41 0.43 median IoU 0.02 0.03 0.05 0.04 0.05 0.02 0.01 0.45 0.45 FNR 2.11 3.11 3.37 3.60 0.06 6.21 5.31 8.69 8.59
+> FPR 15.12 33.90 22.75 32.81 2.56 19.83 31.79 16.69 14.66
+> Vietnam mean IoU 0.19 0.22 0.24 0.24 0.40 0.08 0.09 0.40 0.42 median IoU 0.07 0.10 0.13 0.12 0.31 0.03 0.03 0.33 0.35 FNR 9.30 10.01 5.51 8.90 3.67 11.02 11.45 3.99 3.52 FPR 6.28 31.84 34.77 31.51 10.60 21.75 39.69 11.47 3.86
+
+Table 2: Quantitative results on the AI4SmallFarms field segmentation dataset. We report instance-wise mean IoU ( ↑), median IoU ( ↑), FPR (↓), and FNR ( ↓) for the Vietnam and Cambodia subsets.          
+
+> India Cambodia Vietnam
+> Image GT LAVT LISA GSVA GRES LISAt Text4Seg (C) Text4Seg (R) MAgSeg
+
+Figure 2: Qualitative results comparing our approach MAgSeg with SOTA baselines. GT: Ground Truth. 
+
+with the ground truth, effectively capturing the nuanced ge-ometries of agricultural fields. The consistency of these re-sults across both India (ALU) and Southeast Asia (Cambodia and Vietnam) confirms that MAgSeg’s superiority is intrin-sic to the method, and performs equally well across different landscapes. Figures 7, 8 and 9 in Appendix D.4 show addi-tional illustrations for India, Cambodia and Vietnam. 
+
+Zero Shot Generalization 
+
+To evaluate the generalization capabilities of MAgSeg across different geographical regions, we conduct a zero-shot eval-uation on the AI4SmallFarms dataset. Specifically, models trained solely on the ALU dataset (India) were evaluated di-rectly on the Cambodia and Vietnam test sets without any fine-tuning. This setting is particularly challenging due to differences in agricultural landscapes between the source and target domains. The results are presented in Table 3. We ob-serve that MAgSeg, the 4B version itself, significantly outper-forms decoder-dependent baselines in this regime. For Cam-bodia, our model achieves a mean IoU of 0.40 , surpassing the strongest baseline, LISA, which achieves 0.25 . Notably, the median IoU for our method is 0.43 , whereas baselines strug-gle to exceed 0.15 . A similar trend is observed for Vietnam, where our method achieves a mean IoU of 0.41 , compared to 0.36 for LISAt. These results indicate that decoder-based architectures may overfit to the visual statistics of the training domain, leading to poor performance when subjected to do-main shifts. In contrast, our generative approach appears to learn more robust, semantic-aware representations that trans-fer effectively to unseen agricultural landscapes.                                                        
+
+> Country Metric LAVT LISA LISAt GSVA GRES MAgSeg (4B) Cambodia mean IoU 0.09 0.25 0.22 0.21 0.20 0.40 median IoU 0.03 0.15 0.13 0.10 0.10 0.43 FNR 17.87 23.17 22.63 26.73 25.02 15.69 FPR 13.36 23.13 20.10 20.16 21.11 11.02 Vietnam mean IoU 0.13 0.30 0.36 0.29 0.33 0.41 median IoU 0.05 0.19 0.30 0.19 0.22 0.37 FNR 19.98 24.10 9.05 26.98 12.57 10.33
+> FPR 30.02 50.48 48.41 46.42 47.19 25.63
+
+Table 3: Zero-shot evaluation on field boundary segmentation: trained on India and evaluated directly on Cambodia and Vietnam. 
+
+Architectural and Training Efficiency 
+
+A critical advantage of our approach is highlighted by the 
+
+Overhead metric (Table 1, top row). We observe a clear di-chotomy in prior work: decoder-free methods like Text4Seg offer low overhead but poor performance, whereas decoder-based methods achieve better performance at the cost of high overhead. Our method successfully breaks this trade-off, delivering superior segmentation performance with zero de-coder overhead. This confirms that proper instruction tuning (via LoRA) and reinforcement learning (via GRPO) are suffi-cient to ground LLMs in pixel-level tasks without parameter-heavy auxiliary networks. We also analyze the computational efficiency of MAgSeg with the best-performing baselines in Table 4. To ensure a fair comparison across different base model sizes, we report a parameter-normalized training time , defined as the aver-age training duration per token divided by the total number of model parameters. Our decoder-free approach demon-strates superior efficiency on both metrics. First, regard-ing architectural complexity, our method incurs zero over-head, whereas decoder-dependent baselines introduce sub-stantial additional parameters, ranging from 9.35% (GSVA) to 15 .82% (GRES). Second, this streamlined architecture translates directly to training speed. Our method achieves a normalized training time of 1.33 × 10 −8 s, significantly outperforming LISA/LISAt ( 1.69 ), GRES ( 1.80 ), and GSVA (2.04 ). This reduction in latency confirms that eliminating auxiliary vision decoders not only simplifies deployment but also enhances the computational throughput of the training process.              
+
+> LISA GSVA GRES MAgSeg Overhead 9.48% 9.35% 15 .82% 0.00 %
+> Average Time (s ×10 −8)1.69 2.04 1.80 1.33
+
+Table 4: Computational efficiency: parameter overhead ( ↓) and the parameter-normalized training time per token ( ↓) of MAgSeg and the best baseline methods. Other overhead values are in Table 1. 
+
+Additional Results 
+
+We evaluate the impact of GRPO post training and EPOC re-finement during inference in MAgSeg through an ablation study . Table 5 in Appendix D.1 shows that, while each of them individually improves the mean IoU, the combination of both components yields the best performance. We qual-itatively demonstrate the importance of GRPO in suppress-ing spurious boundaries in figure 6 (Appendix D.3). We also present (in Appendix D.2) the comparative performance on field segmentation stratified by various criteria : MAgSeg outperforms the best baselines across 5 different field size ranges (< 100 m2 to 5 acres; and by a large margin for smaller field sizes < 1 acre), 5 climatic regions and 7 eco-logical regions . MAgSeg’s robustness to field sizes is partic-ularly important in smallholder landscapes, where plot sizes are highly heterogeneous. 
+
+Limitations 
+
+Our experiments, which demonstrate MAgSeg’s state-of-the-art performance, also highlight its limitations. While it excels at segmenting majority classes ( fields ), MAgSeg exhibits re-duced efficacy on minority classes (e.g., wells, ponds ), a chal-lenge common to many segmentation baselines due to class imbalance inherent in the dataset itself. Additionally, our in-dependent patch-based inference strategy prevents MAgSeg from leveraging global spatial context across patch bound-aries. This lack of cross-patch information can lead to stitch-ing artifacts and geometric discontinuities in the final maps (see figure 10 in Appendix D.5). Future work can extend our framework to address these limitations. 
+
+## 5 Conclusion 
+
+In this work, we presented MAgSeg, the first MLLM framework specifically adapted for smallholder agricul-tural landscape segmentation from VHR satellite imagery. MAgSeg successfully addresses the critical bottlenecks of prior decoder-free MLLM approaches – token-length lim-itations and domain alignment inefficiencies, without us-ing parameter-heavy auxiliary decoders. Extensive evalua-tions on smallholder agriculture datasets spanning 3 coun-tries demonstrate the superiority of our method over previ-ous MLLM-based methods, achieving up to 4× improvement over the nearest competitor while incurring zero parameter overhead. Our evaluation also confirms the robustness of MAgSeg across diverse geographies including in zero-shot settings. Ultimately, this work illustrates that with appro-priate grounding strategies, general-purpose foundation mod-els can be effectively adapted for specialized, high-precision agricultural landscape segmentation, paving the way for scal-able, accessible, and accurate global agricultural monitoring. References 
+
+[Chen et al. , 2025] Delong Chen, Samuel Cahyawijaya, Jianfeng Liu, Baoyuan Wang, and Pascale Fung. Subobject-level image tokenization. In International Con-ference on Machine Learning , 2025. [Dua et al. , 2024] Radhika Dua, Nikita Saxena, Aditi Agar-wal, Alex Wilson, Gaurav Singh, Hoang Tran, Ishan Deshpande, Amandeep Kaur, Gaurav Aggarwal, Chandan Nath, Arnab Basu, Vishal Batchu, Sharath Holla, Bindiya Kurle, Olana Missura, Rahul Aggarwal, Shubhika Garg, Nishi Shah, Avneet Singh, Dinesh Tewari, Agata Dondzik, Bharat Adsul, Milind Sohoni, Asim Rama Praveen, Aaryan Dangi, Lisan Kadivar, E Abhishek, Niranjan Sud-hansu, Kamlakar Hattekar, Sameer Datar, Musty Krishna Chaithanya, Anumas Ranjith Reddy, Aashish Kumar, Be-tala Laxmi Tirumala, and Alok Talekar. Agricultural land-scape understanding at country-scale. arXiv , 2024. https: //arxiv.org/abs/2411.05359. [FAO et al. , 2023] FAO, IFAD, UNICEF, WFP, and WHO. The state of food security and nutrition in the world 2023. urbanization, agrifood systems transformation and healthy diets across the rural–urban continuum, 2023. https://doi. org/10.4060/cc3017en. [Hu et al. , 2022] Edward J Hu, Yelong Shen, Phillip Wallis, Zeyuan Allen-Zhu, Yuanzhi Li, Shean Wang, Lu Wang, Weizhu Chen, et al. Lora: Low-rank adaptation of large language models. ICLR , 1(2):3, 2022. [Kang and ¨ Ozdo˘ gan, 2019] Y. Kang and M. ¨ Ozdo˘ gan. Field-level crop yield mapping with landsat using a hierarchical data assimilation approach. Remote Sensing of Environ-ment , 228:144–163, 2019. [Kerner et al. , 2023] Hannah Kerner, Saketh Sundar, and Mathan Satish. Multi-region transfer learning for segmen-tation of crop field boundaries in satellite images with lim-ited labels. In Proceedings of the AAAI Workshop on AI to Accelerate Science and Engineering , 2023. [Kirillov et al. , 2023] Alexander Kirillov, Eric Mintun, Nikhila Ravi, Hanzi Mao, Chloe Rolland, Laura Gustafson, Tete Xiao, Spencer Whitehead, Alexander C Berg, Wan-Yen Lo, et al. Segment anything. In Pro-ceedings of the IEEE/CVF international conference on computer vision , pages 4015–4026, 2023. [Lai et al. , 2024] Xin Lai, Zhuotao Tian, Yukang Chen, Yan-wei Li, Yuhui Yuan, Shu Liu, and Jiaya Jia. Lisa: Reason-ing segmentation via large language model. In Proceed-ings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , pages 9579–9589, 2024. [Lan et al. , 2025] Mengcheng Lan, Chaofeng Chen, Yue Zhou, Jiaxing Xu, Yiping Ke, Xinjiang Wang, Litong Feng, and Wayne Zhang. Text4seg: Reimagining image segmentation as text generation. In The Thirteenth Inter-national Conference on Learning Representations , 2025. [Lesiv et al. , 2019] M. Lesiv, J.C. Laso Bayas, L. See, M. Duerauer, D. Dahlia, N. Durando, R. Hazarika, P. Ku-mar Sahariah, M. Vakolyuk, and V. Blyshchyk. Estimating the global distribution of field size using crowdsourcing. 
+
+Global Change Biology , 25:174–186, 2019. [Li et al. , 2024] Xiang Li, Congcong Wen, Yuan Hu, Zheng-hang Yuan, and Xiao Xiang Zhu. Vision-language models in remote sensing: Current progress and future trends. IEEE Geoscience and Remote Sensing Magazine ,12(2):32–66, 2024. [Liu et al. , 2023a] Chang Liu, Henghui Ding, and Xudong Jiang. Gres: Generalized referring expression segmenta-tion. In Proceedings of the IEEE/CVF conference on com-puter vision and pattern recognition , pages 23592–23601, 2023. [Liu et al. , 2023b] Haotian Liu, Chunyuan Li, Qingyang Wu, and Yong Jae Lee. Visual instruction tuning, 2023. [Masoud et al. , 2020] K.M. Masoud, C. Persello, and V.A. Tolpekin. Delineation of agricultural field boundaries from sentinel-2 images using a novel super-resolution contour detector based on fully convolutional networks. Remote Sensing , 12(1):59, 2020. [Mei et al. , 2022] Weiye Mei, Haoyu Wang, David Fouhey, Weiqi Zhou, Isabella Hinks, Josh M Gray, Derek Van Berkel, and Meha Jain. Using deep learning and very-high-resolution imagery to map smallholder field bound-aries. Remote Sensing , 14(13):3046, 2022. [Ministry of Agriculture and Farmers Welfare, 2024] Ministry of Agriculture and Farmers Welfare. Categorisa-tion of farmers. https://www.pib.gov.in/PressReleasePage. aspx?PRID=2085181, 2024. [OECD, 2023] OECD. Agricultural Policy Monitoring and Evaluation 2023: Adapting Agriculture to Climate Change . OECD Publishing, Paris, 2023. https://doi.org/ 10.1787/b14de474-en. [Persello et al. , 2023] Claudio Persello, Jeroen Grift, Xinyan Fan, Claudia Paris, Ronny H¨ ansch, Mila Koeva, and An-drew Nelson. Ai4smallfarms: A dataset for crop field de-lineation in southeast asian smallholder farms. IEEE Geo-science and Remote Sensing Letters , 20:1–5, 2023. [Quenum et al. , 2025] Jerome Quenum, Wen-Han Hsieh, Tsung-Han Wu, Ritwik Gupta, Trevor Darrell, and David M. Chan. LISAt: Language-instructed segmenta-tion assistant for satellite imagery. In The Thirty-ninth An-nual Conference on Neural Information Processing Sys-tems Datasets and Benchmarks Track , 2025. [Rada and Fuglie, 2019] N.E. Rada and K.O. Fuglie. New perspectives on farm size and productivity. Food Policy ,84:147–152, 2019. [Radford et al. , 2021] Alec Radford, Jong Wook Kim, Chris Hallacy, Aditya Ramesh, Gabriel Goh, Sandhini Agar-wal, Girish Sastry, Amanda Askell, Pamela Mishkin, Jack Clark, et al. Learning transferable visual models from nat-ural language supervision. In International conference on machine learning , pages 8748–8763. PmLR, 2021. [Rasheed et al. , 2024] Hanoona Rasheed, Muhammad Maaz, Sahal Shaji, Abdelrahman Shaker, Salman Khan, Hisham Cholakkal, Rao M Anwer, Eric Xing, Ming-Hsuan Yang, and Fahad S Khan. Glamm: Pixel grounding large multimodal model. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition ,pages 13009–13018, 2024. [Rolf et al. , 2024] Esther Rolf, Konstantin Klemmer, Caleb Robinson, and Hannah Kerner. Mission critical–satellite data is a distinct modality in machine learning. In Interna-tional Conference on Learning Representations , 2024. [Rudel et al. , 2009] Thomas K Rudel, Laura Schneider, Maria Uriarte, Billie Lee Turner, Ruth DeFries, Deborah Lawrence, Jacqueline Geoghegan, Susanna Hecht, Amy Ickowitz, Eric F Lambin, et al. Agricultural intensifica-tion and changes in cultivated areas, 1970–2005. Proceed-ings of the national academy of sciences , 106(49):20675– 20680, 2009. [Samberg et al. , 2016] L.H. Samberg, J.S. Gerber, N. Ra-mankutty, M. Herrero, and P.C. West. Subnational distri-bution of average farm size and smallholder contributions to global food production. Environmental Research Let-ters , 11(12):124010, 2016. [Shao et al. , 2024] Zhihong Shao, Peiyi Wang, Qihao Zhu, Runxin Xu, Junxiao Song, Xiao Bi, Haowei Zhang, Mingchuan Zhang, YK Li, Yang Wu, et al. Deepseekmath: Pushing the limits of mathematical reasoning in open lan-guage models. arXiv preprint arXiv:2402.03300 , 2024. [Sylvester and others, 2015] Gerard Sylvester et al. Success stories on information and communication technologies for agriculture and rural development, 2015. [Team et al. , 2025] Gemma Team, Aishwarya Kamath, Jo-han Ferret, Shreya Pathak, Nino Vieillard, Ramona Mer-hej, Sarah Perrin, Tatiana Matejovicova, Alexandre Ram´ e, Morgane Rivi` ere, et al. Gemma 3 technical report. arXiv preprint arXiv:2503.19786 , 2025. [Vincent and Soille, 1991] Luc Vincent and Pierre Soille. Watersheds in digital spaces: an efficient algorithm based on immersion simulations. IEEE Transactions on Pattern Analysis & Machine Intelligence , 13(06):583–598, 1991. [Waldner and Diakogiannis, 2020] Franc ¸ois Waldner and Foivos I Diakogiannis. Deep learning on edge: Extracting field boundaries from satellite images with a convolu-tional neural network. Remote sensing of environment ,245:111741, 2020. [Waldner et al. , 2021] Franc ¸ois Waldner, Foivos I Diako-giannis, Kathryn Batchelor, Michael Ciccotosto-Camp, Elizabeth Cooper-Williams, Chris Herrmann, Gonzalo Mata, and Andrew Toovey. Detect, consolidate, delineate: Scalable mapping of field boundaries using satellite im-ages. Remote sensing , 13(11):2197, 2021. [Wang et al. , 2022] Sherrie Wang, Franc ¸ois Waldner, and David B. Lobell. Unlocking large-scale crop field delin-eation in smallholder farming systems with transfer learn-ing and weak supervision. Remote Sensing , 14(22), 2022. [Wang et al. , 2023] Wenhai Wang, Zhe Chen, Xiaokang Chen, Jiannan Wu, Xizhou Zhu, Gang Zeng, Ping Luo, Tong Lu, Jie Zhou, Yu Qiao, et al. Visionllm: Large language model is also an open-ended decoder for vision-centric tasks. Advances in Neural Information Processing Systems , 36:61501–61513, 2023. [Wu et al. , 2024] Jiannan Wu, Muyan Zhong, Sen Xing, Zeqiang Lai, Zhaoyang Liu, Zhe Chen, Wenhai Wang, Xizhou Zhu, Lewei Lu, Tong Lu, et al. Visionllm v2: An end-to-end generalist multimodal large language model for hundreds of vision-language tasks. Advances in Neural Information Processing Systems , 37:69925–69975, 2024. [Wu et al. , 2025] Haiyang Wu, Zhuofei Du, Dandan Zhong, Yuze Wang, and Chao Tao. Fsvlm: A vision-language model for remote sensing farmland segmentation. IEEE Transactions on Geoscience and Remote Sensing , 2025. [Xia et al. , 2024] Zhuofan Xia, Dongchen Han, Yizeng Han, Xuran Pan, Shiji Song, and Gao Huang. Gsva: Gener-alized segmentation via multimodal large language mod-els. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) , pages 3858–3869, June 2024. [Xie et al. , 2021] Enze Xie, Wenhai Wang, Zhiding Yu, An-ima Anandkumar, Jose M Alvarez, and Ping Luo. Seg-former: Simple and efficient design for semantic segmen-tation with transformers. Advances in neural information processing systems , 34:12077–12090, 2021. [Yang et al. , 2022] Zhao Yang, Jiaqi Wang, Yansong Tang, Kai Chen, Hengshuang Zhao, and Philip H.S. Torr. Lavt: Language-aware vision transformer for referring image segmentation. In Proceedings of the IEEE/CVF Con-ference on Computer Vision and Pattern Recognition (CVPR) , pages 18155–18165, June 2022. [Zheng et al. , 2025] Juepeng Zheng, Zi Ye, Yibin Wen, Jianxi Huang, Zhiwei Zhang, Qingmei Li, Qiong Hu, Baodong Xu, Lingyuan Zhao, and Haohuan Fu. A com-prehensive review of agricultural parcel and boundary de-lineation from remote sensing images: Recent progress and future perspectives. arXiv preprint arXiv:2508.14558 ,2025. [Zhou et al. , 2024] Tianfei Zhou, Wang Xia, Fei Zhang, Boyu Chang, Wenguan Wang, Ye Yuan, Ender Konukoglu, and Daniel Cremers. Image segmentation in foundation model era: A survey. arXiv preprint arXiv:2408.12957 ,2024. [Zhu et al. , 2017] Xiao Xiang Zhu, Devis Tuia, Lichao Mou, Gui-Song Xia, Liangpei Zhang, Feng Xu, and Friedrich Fraundorfer. Deep learning in remote sensing: A compre-hensive review and list of resources. IEEE geoscience and remote sensing magazine , 5(4):8–36, 2017. Algorithm 1 Row Run-Length Encoding (RRLE) 
+
+Require: Semantic Mask, r ∈ Rhp×wp
+
+Ensure: RRLE string, t 
+
+> 1:
+
+procedure R R L E (r) 
+
+> 2:
+
+trows ← ∅  
+
+> 3:
+
+▷ Iterate through rows  
+
+> 4:
+
+for i ← 0 to hp − 1 do  
+
+> 5:
+
+R ← r[i] 
+
+> 6:
+
+tparts ← ∅ , v ← R[0] , c ← 1 
+
+> 7:
+
+▷ Iterate through columns  
+
+> 8:
+
+for j ← 1 to wp − 1 do  
+
+> 9:
+
+if R[j] = v then  
+
+> 10:
+
+c ← c + 1  
+
+> 11:
+
+else  
+
+> 12:
+
+▷ Format: ‘value * count’  
+
+> 13:
+
+tparts ← tparts ∪ { v *c} 
+
+> 14:
+
+v ← R[j], c ← 1 
+
+> 15:
+
+end if  
+
+> 16:
+
+end for  
+
+> 17:
+
+▷ Handle the final run of the row  
+
+> 18:
+
+tparts ← tparts ∪ { v *c} 
+
+> 19:
+
+trow ← join (tparts , ‘|’) 
+
+> 20:
+
+trows ← trows ∪ { trow } 
+
+> 21:
+
+end for  
+
+> 22:
+
+return t = join (trows , ‘\n’ ) 
+
+> 23:
+
+end procedure 
+
+## A RRLE Encoding and Decoding 
+
+We present the pseudo-code for converting a semantic mask into its purely text-based RRLE representation in Algo-rithm 1. The encoder processes each row of the mask and expresses it in the format ‘value * count’, where value de-notes the class label and count denotes the length of the cor-responding contiguous run of pixels. This transformation is fully invertible: Algorithm 2 provides the corresponding de-coder that reconstructs the semantic mask from a given RRLE string. This bidirectional mapping is crucial in Stage 2 of our framework, where we convert the model’s generated response back into a semantic mask to compute the DICE score for the GRPO objective. 
+
+## B Implementation Details 
+
+MAgSeg. In the initial SFT stage, we finetune the model for 20 epochs with usual next-token prediction cross-entropy loss. The LoRA rank is set to 8, alpha is set to 16 . The learning rate is set to 2 × 10 −4 with a batch size of 8 with 
+
+4 gradient accumulation steps. We use hp = wp = 32 for patch dimension as mentioned in Section 3. Further, in the GRPO Post-training, we finetune the model using the GRPO loss as mentioned in Eq. 7 with ϵ = 10 −3 and β = 10 −4. We use learning rate of 10 −6 with cosine-schedule and weight decay of 0.1. Further, for each sample, we generate G =24 responses (rollouts) which are then assigned a reward as illustrated in Eq. 4 to calculate the final loss objective. 
+
+LAVT. LAVT uses a Swin transformer vision backbone and general BERT transformer backbone. It employs AdamW op-timizer with weight decay of 0.01 , learning rate of 5 × 10 −5
+
+Algorithm 2 Decode RRLE String to Mask 
+
+Require: RRLE String t, Class Map M, Dimensions hp, w p
+
+Ensure: Reconstructed Semantic Mask, r ∈ Rhp×wp 
+
+> 1:
+
+procedure D E C O D E R R L E (t, M, h p, w p) 
+
+> 2:
+
+rf lat ← 0hp·wp ▷ Initialize flat zero array  
+
+> 3:
+
+p ← 0 ▷ Current pixel pointer  
+
+> 4:
+
+trows ← split (t, ‘\n’ ) 
+
+> 5:
+
+▷ Process each row from the encoded string  
+
+> 6:
+
+for each srow ∈ trows do  
+
+> 7:
+
+if srow is empty then  
+
+> 8:
+
+p ← p + wp ▷ Skip empty row  
+
+> 9:
+
+continue  
+
+> 10:
+
+end if  
+
+> 11:
+
+ttokens ← split (srow , ‘|’) 
+
+> 12:
+
+▷ Decode runs within the row  
+
+> 13:
+
+for each t ∈ ttokens do  
+
+> 14:
+
+(l, c str ) ← Split (t, ‘*’ ) 
+
+> 15:
+
+c ← integer (cstr ) 
+
+> 16:
+
+v ← M .get (l, 0) ▷ Map label string to ID  
+
+> 17:
+
+▷ Safety bound check  
+
+> 18:
+
+if p + c > h p · wp then  
+
+> 19:
+
+c ← (hp · wp) − p 
+
+> 20:
+
+end if  
+
+> 21:
+
+rf lat [p : p + c] ← v ▷ Fill run interval  
+
+> 22:
+
+p ← p + c 
+
+> 23:
+
+end for  
+
+> 24:
+
+end for  
+
+> 25:
+
+return r = reshape (rf lat , (hp, w p))  
+
+> 26:
+
+end procedure 
+
+for the Swin transformer backbone and the BERT backbone. Further, a polynomial decay with power of 0.9 is used as LR scheduler, batch size is set to 8, the gradient clipping is also enabled with a threshold of 0.01 . The model is trained for a total of 20 epochs. 
+
+LISA. LISA uses a 13B parameter base LLM derived from LLaVA architecture (specifically LLaVA-Llama-2-13B), CLIP ViT-L/14 vision tower, and SAM decoder head with ViT-Huge backbone. The learning rate is set to 3 × 10 −4
+
+with AdamW optimizer with WarmupDecayLR scheduler with 100 warmup steps. The LoRA rank is set to 8, alpha is set to 16 , the dropout rate is set to 5% . The cross-entropy loss, BCE mask loss and DICE mask loss are assigned weights of 
+
+1.0, 2.0 and 0.5 respectively. The model is trained for total of 
+
+10 epochs with batch size of 2.
+
+LISAt. LISAt uses a 7B parameter base LLM derived from LLaVa architecture, CLIP ViT-L/14 vision tower, and SAM decoder head with ViT-Huge backbone. The learning rate is set to 3 × 10 −4 with AdamW optimizer with WarmupDe-cayLR scheduler with 100 warmup steps. The LoRA rank is set to 8, alpha is set to 16 , the dropout rate is set to 5% . The cross-entropy loss, BCE mask loss and DICE mask loss are assigned weights of 1.0, 2.0 and 0.5 respectively. The model is trained for total of 60 epochs with batch size of 12 .
+
+GSVA. GSVA uses a 13B parameter base LLM (by de-fault) derived from LLaVA architecture, CLIP ViT-L/14 vi-sion tower, and SAM decoder head with ViT-Huge backbone. A key addition is the [REJ] token to explicitly reject null tar-gets. The learning rate is set to 3 × 10 −4 with AdamW op-timizer with WarmupDecayLR scheduler with 100 warmup steps. The LoRA rank defaults to 8 in code, with alpha set to 
+
+16 and dropout rate set to 5% . The cross-entropy loss, BCE mask loss and DICE mask loss are assigned weights of 1.0,
+
+2.0 and 0.5 respectively. The model is trained for total of 10 
+
+epochs with batch size of 20 .
+
+GRES. GRES uses a Swin-Base transformer as the vi-sion backbone and a BERT-Base transformer as the linguis-tic backbone to explicitly model region-region and region-language dependencies. The model is trained using the AdamW optimizer with a weight decay of 0.05 and a learning rate of 1 × 10 −5. The model is trained for 600 epochs with a batch size of 8.
+
+Text4Seg. Text4Seg uses Vicuna-7B as the base LLM and CLIP ViT-L/14 vision tower. Since it is a decoder-free method, it doesn’t contain any decoder head. The learning rate is set to 10 −5 with cosine-schedule and weight decay of 
+
+0.01 . The model is trained for 50 epochs with batch size of 
+
+8. The refined predictions are obtained by refining the coarse predictions using SAM ViT-H backbone. 
+
+## C Evaluation Metrics 
+
+Following [Dua et al. , 2024], for instance-wise metrics, we merge and match multiple predictions that overlap with a ground truth instance. A particular predicted instance is con-sidered to match with a ground truth instance if they belong to the same class and overlap with the ground truth instance. Then the per-instance IoU is defined as: IoU I = P im ∩ P i
+
+P im ∪ P i (10) where, P im is the total number of pixels in all the predicted ith merged instance and P i is the the total number of pixels in the ground truth i th instance. We compute the mean/median IoU by averaging (or taking the median of) the per-instance IoU scores across all instances in a given image I. This instance-level IoU measures the degree of overlap between predicted and ground-truth masks, where higher mIoU in-dicates stronger segmentation performance.We compute the mean/median IoU by averaging (or taking the median of) the per-instance IoU scores across all instances in a given image 
+
+I. This instance-level IoU measures the degree of overlap be-tween predicted and ground-truth masks, where higher mIoU indicates stronger segmentation performance. Further, FNR is defined as the fraction of ground truth instances that do not have any matching predicted instance. Similarly, FPR is defined as the fraction of predicted in-stances that are not matches with a ground truth instance. 
+
+## D Additional Results 
+
+D.1 Ablation Studies 
+
+To isolate the contributions of specific components in our framework, we conduct an ablation study on the ALU dataset, evaluating the impact of the EPOC refinement process during inference and the GRPO post-training stage (Table 5). EPOC primarily targets refinements of boundaries of the agricultural fields; applying it to the SFT baseline yields a substantial im-provement in the Fields class (e.g., mean IoU increases from 
+
+0.35 to 0.47 for MAgSeg-4B). However, EPOC alone pro-vides negligible gains for other classes such as Trees , Ponds ,and Wells . This is because while boundaries of fields are prominent, boundaries of other classes are not so prominent and hence it does not help with the refinement. Further, the inclusion of GRPO introduces a significant performance up-lift across multiple categories, notably boosting Trees from 
+
+0.08 to 0.14 and enabling the detection of Ponds (0.05 ). This indicates that the RL objective, by optimizing for the pixel-level DICE score, successfully grounds the model in the vi-sual semantics of the satellite imagery, capturing finer details that supervised tuning misses. We provide qualitative results illustrating the effect of GRPO phase in Figure 6 The com-bination of both components yields the highest performance, demonstrating their complementary nature. For the MAgSeg-12B model, the full method achieves a mean IoU of 0.59 for 
+
+Fields and 0.21 for Trees . While GRPO enhances the model’s fundamental ability to localize and classify features, EPOC refines the boundaries of the generated masks, resulting in superior overall segmentation. Similar trends are observed across both the 4B and 12B model scales, confirming the ro-bustness of the proposed pipeline.                                                         
+
+> Components mean IoU Model EPOC GRPO Fields Trees Clouds Ponds Wells MAgSeg-4B  ✗✗0.35 0.08 0.20 0.00 0.00
+> ✓✗0.47 0.08 0.21 0.00 0.00
+> ✗✓0.46 0.14 0.23 0.05 0.00
+> ✓✓0.58 0.20 0.25 0.05 0.00
+> MAgSeg-12B  ✗✗0.39 0.11 0.20 0.00 0.00
+> ✓✗0.50 0.11 0.20 0.00 0.00
+> ✗✓0.54 0.14 0.22 0.05 0.00
+> ✓✓0.59 0.21 0.25 0.05 0.00
+> Table 5: Ablation study on the ALU dataset to analyze the impact of EPOC refinement and GRPO post-training on instance-wise mean IoU ( ↑) across all classes, for both 4B and 12B models.
+
+D.2 Stratified Results 
+
+To assess the model’s efficacy under various agricultural con-ditions, we present stratified results under three stratification criteria - (i) agricultural field size, (ii) climatic region, and (iii) ecological region. 
+
+(i) Field Size. We present stratified results across varying agricultural field sizes, we present a size-stratified perfor-mance analysis in Figure 3. We observe performance gain for our proposed method on smaller field segments ( < 2 acres), where baseline methods often struggle to resolve fine-grained boundaries. This margin is most significant in the critical 
+
+< 500 m2 and 500 m2 − 1 acre brackets, which constitute the majority of smallholder plots. As field size increases ( > 5
+
+acres), our method maintains robust performance, achieving parity with the strongest baselines. The stability of our results across the intermediate range ( 500 m2 to 5 acres) underscores the method’s robustness to field sizes, confirming its suitabil-ity for diverse smallholder environments where plot sizes are highly heterogeneous. 
+
+(ii) Climatic Region. Climatic conditions play a crucial role in influencing the geometry of agricultural fields. For instance, monsoonal floodplains like the Upper and Lower Gangetic regions receive heavy rainfall with gentle slopes, fostering regular rectilinear fields, whereas high-altitude zones like the Western Himalayas necessitate terrace-based, narrow, and elongated fields. To evaluate the robustness of different methods under these topological variations, we present a cli-matic region-stratified comparison in Figure 4. Our proposed method demonstrates consistent superiority across the major climatic zones (I–V). Notably, in the most data-abundant re-gions (IV and V), our model maintains a substantial lead, improving mean IoU by approximately 0.15 over the best performing baselines (GRES and LISAt). This advantage is even more pronounced in the challenging Region III, where our method ( 0.21 ) nearly triples the performance of the next best competitor ( 0.07 ), highlighting its capability to resolve complex field boundaries in Southern Plateau regions where baseline methods falter. While Region II yields the highest absolute scores across all methods, our approach effectively maximizes this advantage, achieving mean IoU of 0.623 . The stability of these results validates the methods’s generaliza-tion capability across diverse agro-climatic typologies. 
+
+(iii) Ecological Region. Agricultural landscapes vary signif-icantly across ecological zones, where factors such as vege-tation density, soil composition, and crop distinctiveness al-ter the visual characteristics of field boundaries. To evalu-ate generalization across these biomes, we present perfor-mance stratified by ecological region in Figure 5. Our method demonstrates remarkable stability, outperforming baselines across all seven identified zones. In the most distinct and data-rich category (Region IV), our model achieves a mean IoU of 0.522 , surpassing the nearest competitor (GRES) by a substantial margin of ∼ 0.14 . Furthermore, in Region III, where baseline methods suffer significant degradation (drop-ping to ∼ 0.20 − 0.24 ), our approach maintains a robust per-formance of 0.40 , nearly doubling the accuracy of LISAt. This consistent superiority across both dominant (Regions I, II, VI, VII) and minority ecological zones confirms that our feature representation remains discriminative regardless of the underlying biological landscape. 
+
+D.3 Qualitative Analysis: Effect of GRPO 
+
+We also provide qualitative evidence for the effect and im-portance of Stage 2 (GRPO post-training) in Figure 6, where regions of interest are highlighted with red boxes. Visually, we observe that while standard SFT is able to detect generic edges, it often fails to distinguish between true field bound-aries and other high-contrast structures (e.g., tree lines). This distinction is critical for downstream applications that rely on accurate field delineation. We attribute this limitation to the next-token prediction objective, which lacks explicit pixel-level semantic supervision and therefore does not directly en-courage boundary correctness. In contrast, the GRPO stage           
+
+> <100 m2
+> (166)
+> 100 -500 m2
+> (3 ,567)
+> 500 m2-1acre
+> (15 ,496)
+> 1-2acre
+> (3 ,570)
+> 2-5acre
+> (1 ,891)
+> >5acre
+> (275)
+> 0
+> 0.2
+> 0.4
+> 0.6
+> 0.8
+> mean IoU
+> Ours GRES LISAt GSVA Text4Seg (R)
+
+Figure 3: Size-stratified performance analysis on the ALU dataset. Total instance counts ( N ) for each region are provided in parenthe-ses on the x-axis.          
+
+> I(4,909) II (271) III (470) IV (10,582) V(7,399) VI (40)
+> 0
+> 0.2
+> 0.4
+> 0.6
+> 0.8
+> mean IoU
+> Ours GRES LISAt GSVA Text4Seg (R)
+
+Figure 4: Climatic Region stratified performance analysis on the ALU dataset. Labels I–VI correspond to: I: Central Plateau Re-gion; II : Lower Gangetic Region; III : Southern Plateau Region; IV :Trans Gangetic Region; V: Upper Gangetic Region; VI : Western Himalayan Region; Total instance counts ( N ) for each region are provided in parentheses on the x-axis.           
+
+> I(4,151) II (6,567) III (799) IV (7,074) V(271) VI (2,826) VII (1,983)
+> 0
+> 0.1
+> 0.2
+> 0.3
+> 0.4
+> 0.5
+> 0.6
+> 0.7
+> mean IoU
+> Ours GRES LISAt GSVA Text4Seg (R)
+
+Figure 5: Ecological Region stratified performance analysis on the ALU dataset. Labels I–VII correspond to: I: Assam and Bengal Plain Hot Subhumid to Humid Eco-Region; II : Central Highlands (Malwa), Gujarat Plain, and Kathiawar Peninsula Semi-Arid Eco-Region; III : Central Highlands (Malwa and Bundelkhand) Hot Sub-humid (Dry) Eco-Region; IV : Deccan Plateau Hot Semi-Arid Eco-Region; V: North Eastern Hills (Purvachal) Warm Perhumid Eco-Region; VI : Northern Plain (and Central Highlands) Including Ar-avallis Hot Semi-Arid Eco-Region; VII : Western Plain Kachchh and part of Kathiawar Peninsula Hot Arid Eco-Region. Total instance counts ( N ) for each region are provided in parentheses on the x-axis. 
+
+optimizes a reward based on the pixel-level DICE score, explicitly incentivizing semantically aligned masks. The GRPO-trained model consequently produces cleaner, more selective field contours, suppressing spurious boundaries that the model, after SFT alone, tends to hallucinate. 
+
+D.4 Qualitative Analysis: Additional Visualizations 
+
+We provide additional qualitative results for samples from ALU and AI4SmallFarms datasets in Figures 7, 8, 9. 
+
+D.5 Qualitative Analysis: Limitations of MAgSeg 
+
+We provide qualitative examples of failure cases of the pro-posed method in Figure 10. In particular, we observe that for certain patches the model produces spurious masks that do not align with true field boundaries. We attribute this be-haviour to the independent, patch-based inference strategy, where the model has no access to predictions from neigh-bouring patches. This lack of cross-patch context manifests as stitching artifacts and geometric discontinuities in the re-constructed segmentation maps. Image GT w/o GRPO w/ GRPO Image GT w/o GRPO w/ GRPO 
+
+Figure 6: Qualitative comparison of MAgSeg’s segmentation performance with and without GRPO post-training. Region of interests are emphasized in red colored boxes. Image GT LAVT LISA GSVA GRES LISAt Text4Seg (C) Text4Seg (R) MAgSeg 
+
+Figure 7: Qualitative results on India data. We compare our approach, MAgSeg against SOTA segmentation baselines. GT: Ground Truth. Image GT LAVT LISA GSVA GRES LISAt Text4Seg (C) Text4Seg (R) MAgSeg 
+
+Figure 8: Qualitative results on Cambodia data. We compare our approach, MAgSeg against SOTA segmentation baselines. GT: Ground Truth. Image GT LAVT LISA GSVA GRES LISAt Text4Seg (C) Text4Seg (R) MAgSeg 
+
+Figure 9: Qualitative results on Vietnam data. We compare our approach, MAgSeg, against SOTA segmentation baselines. GT: Ground Truth. Image GT Prediction Image GT Prediction 
+
+Figure 10: Visualization of erroneous segmentation by MAgSeg. GT: Ground Truth. Region of interests are emphasized in red colored boxes.
