@@ -6,95 +6,89 @@
 </div>
 
 ## 每次日报
-- 最新运行日期：2026-06-21
-- 运行时间：2026-06-21 21:45:30 UTC
+- 最新运行日期：2026-06-22
+- 运行时间：2026-06-22 22:55:08 UTC
 - 运行状态：成功
-- 本次总论文数：25
-- 精读区：11
+- 本次总论文数：23
+- 精读区：9
 - 速读区：14
 
 ### 今日简报（AI）
-今日共推荐25篇论文，精选11篇精读，重点聚焦自动驾驶多模态对齐与图论中的自私智能体间歇合作。 最值得关注的是《GraphBEV++》与《Intermittent Strategic Cooperation》两项9.0高分研究，分别突破多模态特征对齐和动态博弈协作难题。 建议优先精读这两篇论文，并结合《Multi-agent Framework in Minecraft》速读，能帮你快速掌握多智能体协作的最新进展。
-- 详情：[/202606/21/README](/202606/21/README)
+今日共收录23篇论文，精读2篇、速读3篇。最值得关注的是团队零和博弈的计算复杂性研究，以及社会规模人机交互的伪装威胁分析。建议优先精读这两篇高分论文，并留意状态空间模型与强化学习在长周期智能体中的应用。
+- 详情：[/202606/22/README](/202606/22/README)
 
 ### 精读区论文标签
-1. [GraphBEV++: Multi-Modal Feature Alignment for Autonomous Driving](/202606/21/2606.16354v1-graphbev-multi-modal-feature-alignment-for-autonomous-driving)  
-   标签：评分：9.0/10、query:mmseg
-   evidence：自动驾驶多模态融合感知
-2. [Intermittent Strategic Cooperation of Two Selfish Agents on Graphs](/202606/21/2606.17216v1-intermittent-strategic-cooperation-of-two-selfish-agents-on-graphs)  
+1. [The Computational Complexity of Team Zero-Sum Games](/202606/22/2606.16139v1-the-computational-complexity-of-team-zero-sum-games)  
    标签：评分：9.0/10、query:gt-mai
-   evidence：基于博弈论的自私智能体图上的合作模型
-3. [Ergodic Deviation-Robust Equilibrium under Mirror Descent Learning in Finite Games](/202606/21/2606.18194v1-ergodic-deviation-robust-equilibrium-under-mirror-descent-learning-in-finite-games)  
+   evidence：团队零和博弈复杂度
+2. [Parasitic Masquerade: Societal Scale Human-Machine Interaction](/202606/22/2606.17925v1-parasitic-masquerade-societal-scale-human-machine-interaction)  
    标签：评分：9.0/10、query:gt-mai
-   evidence：有限博弈中镜像下降学习的新均衡概念
-4. [TRIDENT: Breaking the Hybrid-Safety-Physics Coupling for Provably Safe Multi-Agent Reinforcement Learning](/202606/21/2606.18308v1-trident-breaking-the-hybrid-safety-physics-coupling-for-provably-safe-multi-agent-reinforcement-learning)  
+   evidence：图论平均场博弈用于社会尺度多智能体交互
+3. [Qwen-RobotNav Technical Report: A Scalable Navigation Model Designed for an Agentic Navigation System](/202606/22/2606.18112v2-qwen-robotnav-technical-report-a-scalable-navigation-model-designed-for-an-agentic-navigation-system)  
    标签：评分：9.0/10、query:vlm-rl
-   evidence：安全多智能体强化学习
-5. [EARS: Explanatory Abstention for Reliable Sub-Agent Modeling in Large-scale Multi-Agent Systems](/202606/21/2606.18668v1-ears-explanatory-abstention-for-reliable-sub-agent-modeling-in-large-scale-multi-agent-systems)  
-   标签：评分：9.0/10、query:gt-mai
-   evidence：大规模多智能体系统中用于可靠子智能体建模的解释性弃权
-6. [RTSGameBench: An RTS Benchmark for Strategic Reasoning by Vision-Language Models](/202606/21/2606.18950v2-rtsgamebench-an-rts-benchmark-for-strategic-reasoning-by-vision-language-models)  
+   evidence：使用VLM的可扩展导航模型
+4. [Mix-QVLA: Task-Evidence-Aware Mixed-Precision Quantization of Vision-Language-Action Models](/202606/22/2606.19565v1-mix-qvla-task-evidence-aware-mixed-precision-quantization-of-vision-language-action-models)  
    标签：评分：9.0/10、query:vlm-rl
-   evidence：视觉语言模型在多智能体实时策略游戏中的推理
-7. [Convergence of Replicator Dynamics in the Repeated Prisoner's Dilemma with Restarts](/202606/21/2606.18965v1-convergence-of-replicator-dynamics-in-the-repeated-prisoners-dilemma-with-restarts)  
-   标签：评分：9.0/10、query:gt-mai
-   evidence：重复囚徒困境中重启机制下的复制动态收敛
-8. [Mean-Field Control with a Common Hidden State under Decentralized Observations](/202606/21/2606.19639v1-mean-field-control-with-a-common-hidden-state-under-decentralized-observations)  
-   标签：评分：9.0/10、query:gt-mai
-   evidence：分散观测下多智能体平均场控制
-9. [SIGMA: Skill-Incidence Graphs for Compositional Multi-Agent Design](/202606/21/2606.19758v1-sigma-skill-incidence-graphs-for-compositional-multi-agent-design)  
-   标签：评分：9.0/10、query:gt-mai
-   evidence：多智能体系统设计与协调
-10. [Tri-Info: Generalizable, Interpretable Failure Prediction for VLA Models via Information Theory](/202606/21/2606.19998v1-tri-info-generalizable-interpretable-failure-prediction-for-vla-models-via-information-theory)  
+   evidence：VLA模型量化方法
+5. [Formal Verification of Learned Multi-Agent Communication Policies via Decision Tree Distillation](/202606/22/2606.19632v1-formal-verification-of-learned-multi-agent-communication-policies-via-decision-tree-distillation)  
    标签：评分：9.0/10、query:vlm-rl
-   evidence：基于信息论的视觉-语言-动作模型故障预测
-11. [Co-VLA: Coordination-Aware Structured Action Modeling for Dual-Arm Vision-Language-Action Systems](/202606/21/2606.20285v1-co-vla-coordination-aware-structured-action-modeling-for-dual-arm-vision-language-action-systems)  
+   evidence：多智能体通信策略的形式化验证
+6. [EventVLA: Event-Driven Visual Evidence Memory for Long-Horizon Vision-Language-Action Policies](/202606/22/2606.20092v1-eventvla-event-driven-visual-evidence-memory-for-long-horizon-vision-language-action-policies)  
    标签：评分：9.0/10、query:vlm-rl
-   evidence：双臂VLA操作与显式协调先验
+   evidence：用于长期机器人操作的视觉-语言-动作策略
+7. [Maximum Entropy Inverse Reinforcement Learning for Mean-Field Games with Average Reward](/202606/22/2606.16759v1-maximum-entropy-inverse-reinforcement-learning-for-mean-field-games-with-average-reward)  
+   标签：评分：8.0/10、query:gt-mai
+   evidence：平均场博弈的逆强化学习
+8. [Gen-VCoT: Generative Visual Chain-of-Thought Reasoning via Diffusion-Based RGB Intermediate Representations](/202606/22/2606.16783v1-gen-vcot-generative-visual-chain-of-thought-reasoning-via-diffusion-based-rgb-intermediate-representations)  
+   标签：评分：8.0/10、query:mmseg
+   evidence：SAM分割作为视觉思维链推理的一部分
+9. [Task Allocation and Motion Planning in Dynamic, Cluttered Environments via CBBA and Graphs of Convex Sets](/202606/22/2606.18516v1-task-allocation-and-motion-planning-in-dynamic-cluttered-environments-via-cbba-and-graphs-of-convex-sets)  
+   标签：评分：8.0/10、query:gt-mai
+   evidence：多智能体任务分配与运动规划用于协调
 
 ### 速读区论文标签
-1. [Multi-agent Framework for Time-Sensitive Complementary Collaboration in Minecraft](/202606/21/2606.15684v1-multi-agent-framework-for-time-sensitive-complementary-collaboration-in-minecraft)  
-   标签：评分：8.0/10、query:gt-mai
-   evidence：带时间约束的多智能体协作基准
-2. [Object Tokens as a Bridge Between Segmentation and Visual Question Answering in Robotic Surgery](/202606/21/2606.15861v1-object-tokens-as-a-bridge-between-segmentation-and-visual-question-answering-in-robotic-surgery)  
+1. [Reload-Mamba: Hierarchical Anti-Dilution State-Space Modeling for Multi-Class Semantic Segmentation](/202606/22/2606.17966v1-reload-mamba-hierarchical-anti-dilution-state-space-modeling-for-multi-class-semantic-segmentation)  
    标签：评分：8.0/10、query:mmseg
-   evidence：使用对象令牌统一多模态分割与视觉问答
-3. [GOOSE-M2F: Adapting Mask2Former for High-Fidelity, Long-Tailed Fine-Grained Semantic Segmentation in Unstructured Outdoor Terrain](/202606/21/2606.15937v1-goose-m2f-adapting-mask2former-for-high-fidelity-long-tailed-fine-grained-semantic-segmentation-in-unstructured-outdoor-terrain)  
+   evidence：状态空间模型用于多类别语义分割
+2. [Connect the Dots: Training LLMs for Long-Lifecycle Agents with Cross-Domain Generalization Via Reinforcement Learning](/202606/22/2606.20002v1-connect-the-dots-training-llms-for-long-lifecycle-agents-with-cross-domain-generalization-via-reinforcement-learning)  
+   标签：评分：8.0/10、query:vlm-rl
+   evidence：使用强化学习训练大模型智能体以支持长期任务
+3. [HilDA: Hierarchical Distillation with Diffusion for Advancing Self-Supervised LiDAR Pre-trainin](/202606/22/2606.20189v1-hilda-hierarchical-distillation-with-diffusion-for-advancing-self-supervised-lidar-pre-trainin)  
    标签：评分：8.0/10、query:mmseg
-   evidence：将Mask2Former适配到非结构化户外地形的细粒度语义分割
-4. [Game-Theoretic Multi-Agent Reinforcement Learning for Swarm Trajectory Planning in Low-Altitude Wireless Networks](/202606/21/2606.16386v1-game-theoretic-multi-agent-reinforcement-learning-for-swarm-trajectory-planning-in-low-altitude-wireless-networks)  
-   标签：评分：8.0/10、query:gt-mai
-   evidence：将博弈论与多智能体强化学习相结合解决群轨迹规划中的策略耦合问题
-5. [Tensor-Coord: Algebraic Decomposition of Joint Plan Tensors for Conflict-Free Multi-Agent LLM Planning](/202606/21/2606.16478v1-tensor-coord-algebraic-decomposition-of-joint-plan-tensors-for-conflict-free-multi-agent-llm-planning)  
-   标签：评分：8.0/10、query:gt-mai
-   evidence：基于张量分解的多智能体LLM规划，避免冲突
-6. [Open-World Video Segmentation](/202606/21/2606.15632v2-open-world-video-segmentation)  
+   evidence：利用视觉基础模型蒸馏实现自动驾驶多模态感知
+4. [A Multi-Agent system for Multi-Objective constrained optimization](/202606/22/2606.20236v1-a-multi-agent-system-for-multi-objective-constrained-optimization)  
+   标签：评分：8.0/10、query:vlm-rl
+   evidence：用于约束优化的多智能体强化学习
+5. [Finetuning Vision-Language-Action Models Requires Fewer Layers Than You Think](/202606/22/2606.20246v1-finetuning-vision-language-action-models-requires-fewer-layers-than-you-think)  
+   标签：评分：8.0/10、query:vlm-rl
+   evidence：VLA模型微调压缩
+6. [Mutual Distillation of Dual-Foundation Models for Semi-Supervised PET/CT Segmentation](/202606/22/2606.15611v1-mutual-distillation-of-dual-foundation-models-for-semi-supervised-petct-segmentation)  
    标签：评分：7.0/10、query:mmseg
-   evidence：使用视觉基础模型概念的开放世界视频分割
-7. [The Computational Complexity of Team Zero-Sum Games](/202606/21/2606.16139v1-the-computational-complexity-of-team-zero-sum-games)  
-   标签：评分：7.0/10、query:gt-mai
-   evidence：团队零和博弈的计算复杂性理论，属于博弈论基础研究
-8. [One-Step Generalization Ratio Guided Optimization for Domain Generalization](/202606/21/2606.16301v1-one-step-generalization-ratio-guided-optimization-for-domain-generalization)  
-   标签：评分：7.0/10、query:fault-dg
-   evidence：域泛化优化方法，可提升模型对未见过域的泛化能力
-9. [Distributed General-Purpose Agent Networks: Architecture, Key Mechanisms, and Prototypes](/202606/21/2606.17368v1-distributed-general-purpose-agent-networks-architecture-key-mechanisms-and-prototypes)  
+   evidence：使用双基础模型的多模态语义分割
+7. [Context-Aware RL for Agentic and Multimodal LLMs](/202606/22/2606.17053v1-context-aware-rl-for-agentic-and-multimodal-llms)  
    标签：评分：7.0/10、query:vlm-rl
-   evidence：分布式通用智能体网络实现异构LLM智能体协作
-10. [Qwen-RobotNav Technical Report: A Scalable Navigation Model Designed for an Agentic Navigation System](/202606/21/2606.18112v1-qwen-robotnav-technical-report-a-scalable-navigation-model-designed-for-an-agentic-navigation-system)  
+   evidence：面向智能体和多模态LLM的上下文感知强化学习
+8. [EnvRL: Learn from Environment Dynamics in Agentic Reinforcement Learning](/202606/22/2606.17680v1-envrl-learn-from-environment-dynamics-in-agentic-reinforcement-learning)  
    标签：评分：7.0/10、query:vlm-rl
-   evidence：基于Qwen的导航模型，通过参数化接口控制视觉历史，支持机器人导航的VLA范式
-11. [G2IA: Geometry-Guided Instance-Aware Retrieval and Refinement for Cross-Modal Place Recognition](/202606/21/2606.15287v1-g2ia-geometry-guided-instance-aware-retrieval-and-refinement-for-cross-modal-place-recognition)  
+   evidence：通过利用环境动力学改进LLM代理的RL训练，与多智能体RL和大模型相关
+9. [ReSiReg: Towards Spatially Consistent Semantics in Language-Conditioned Robotic Tasks](/202606/22/2606.19088v1-resireg-towards-spatially-consistent-semantics-in-language-conditioned-robotic-tasks)  
+   标签：评分：7.0/10、query:vlm-rl
+   evidence：用于语言条件机器人任务的视觉语言模型
+10. [Language-Instructed Vision Embeddings for Controllable and Generalizable Perception](/202606/22/2606.19584v1-language-instructed-vision-embeddings-for-controllable-and-generalizable-perception)  
+   标签：评分：7.0/10、query:vlm-rl
+   evidence：语言引导的视觉嵌入用于可控感知
+11. [Task-Instructed Causal Routing of Vision Foundation Models for Multi-Task Learning](/202606/22/2606.15765v1-task-instructed-causal-routing-of-vision-foundation-models-for-multi-task-learning)  
    标签：评分：6.0/10、query:mmseg
-   evidence：用于自动驾驶地点识别的几何引导实例感知跨模态融合
-12. [MVOFormer: Flow-Semantic Transformer for Robust Monocular Visual Odometry](/202606/21/2606.16474v1-mvoformer-flow-semantic-transformer-for-robust-monocular-visual-odometry)  
-   标签：评分：6.0/10、query:mmseg
-   evidence：自动驾驶感知中的多模态融合策略 - 提出流-语义双分支编码器融合用于鲁棒视觉里程计
-13. [Misinformation Propagation in Benign Multi-Agent Systems](/202606/21/2606.16710v1-misinformation-propagation-in-benign-multi-agent-systems)  
+   evidence：使用视觉基础模型和任务指令路由进行多任务密集预测，与多模态语义分割相关
+12. [Distributed General-Purpose Agent Networks: Architecture, Key Mechanisms, and Prototypes](/202606/22/2606.17368v1-distributed-general-purpose-agent-networks-architecture-key-mechanisms-and-prototypes)  
    标签：评分：6.0/10、query:gt-mai
-   evidence：多智能体LLM系统中的错误信息传播
-14. [Context-Aware RL for Agentic and Multimodal LLMs](/202606/21/2606.17053v1-context-aware-rl-for-agentic-and-multimodal-llms)  
+   evidence：分布式智能体网络
+13. [Environment-Grounded Automated Prompt Optimization for LLM Game Agents](/202606/22/2606.17838v1-environment-grounded-automated-prompt-optimization-for-llm-game-agents)  
    标签：评分：6.0/10、query:vlm-rl
-   evidence：上下文感知强化学习提升多模态LLM代理推理
+   evidence：LLM驱动的提示优化用于多智能体游戏环境，连接LLM代理和类RL回报
+14. [Knowledge Reutilization in Meta-Reinforcement Learning](/202606/22/2606.18132v1-knowledge-reutilization-in-meta-reinforcement-learning)  
+   标签：评分：6.0/10、query:vlm-rl
+   evidence：元强化学习中的多智能体知识重利用
 
 
 <div class="dpr-home-promo-card">
