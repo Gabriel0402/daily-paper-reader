@@ -1,0 +1,515 @@
+Title: Collaborative Tree Search for Enhancing Embodied Multi-Agent Collaboration
+
+URL Source: https://openaccess.thecvf.com/content/CVPR2025/papers/Zu_Collaborative_Tree_Search_for_Enhancing_Embodied_Multi-Agent_Collaboration_CVPR_2025_paper.pdf
+
+Published Time: Mon, 02 Jun 2025 14:12:44 GMT
+
+Number of Pages: 10
+
+Markdown Content:
+# Collaborative Tree Search for Enhancing Embodied Multi-Agent Collaboration 
+
+## Lizheng Zu 1, 2 , Lin Lin 1* , Song Fu 1* , Na Zhao 3, Pan Zhou 41Harbin Institute of Technology, 2Nanyang Technological University, 
+
+> 3
+
+## Singapore University of Technology and Design, 4Singapore Management University     
+
+> zuli edu@outlook.com, waiwaiyl@hit.edu.cn, fusong@hit.edu.cn na zhao@sutd.edu.sg, panzhou@smu.edu.sg
+
+## Abstract 
+
+Embodied agents based on large language models (LLMs) face significant challenges in collaborative tasks, requiring effective communication and reasonable division of labor to ensure efficient and correct task completion. Previous approaches with simple communication patterns carry erroneous or incoherent agent actions, which can lead to additional risks. To address these problems, we propose Cooperative Tree Search (CoTS), a framework de-signed to significantly improve collaborative planning and task execution efficiency among embodied agents. CoTS guides multi-agents to discuss long-term strategic plans within a modified Monte Carlo tree, searching along LLM-driven reward functions to provide a more thoughtful and promising approach to cooperation. Another key feature of our method is the introduction of a plan evaluation mod-ule, which not only prevents agent action confusion caused by frequent plan updates but also ensures plan updates when the current plan becomes unsuitable. Experimental results show that the proposed method performs excellently in planning, communication, and collaboration on embod-ied environments (CWAH and TDW-MAT), efficiently com-pleting long-term, complex tasks and significantly outper-forming existing methods. 
+
+## 1. Introduction 
+
+Embodied agents are increasingly capable of perceiving and interacting with their environments like humans, au-tonomously managing planning, decision-making, actions, and execution tasks [ 23 , 36 ]. Recent advances have gener-ated substantial interest in these agents, especially for appli-cations requiring complex task execution in dynamic envi-ronments, such as robotic operations in warehouses or do-mestic settings. In particular, collaborative task completion among multiple agents enhances both efficiency and adapt-
+
+> *Corresponding author.
+
+ability, especially in dynamic scenarios [ 5, 10 ]. However, collaboration among embodied agents introduces signifi-cant challenges: agents must not only perceive and under-stand their environment but also communicate, share infor-mation, divide tasks, and coordinate actions responsively. For example, consider autonomous robots in a home re-sponding to a request: “Bring me the iPad and apple, and put the milk in the refrigerator.” Achieving this requires multi-level coordination, including optimal search strate-gies, task prioritization, and efficient movement planning. Large language models (LLMs) have recently provided embodied agents with advanced natural language under-standing, dialogue, and reasoning abilities [ 1, 3, 38 , 40 ]. These capabilities allow LLMs to decompose complex and long-term tasks into a sequence of manageable sub-goals, making LLM-driven agents a promising alternative to tra-ditional reinforcement learning models [ 14 , 34 ] which are difficult to train and often generalize poorly [ 7, 21 , 39 ]. However, enabling embodied agents to work together in decentralized environments remains a significant and un-derexplored challenge, as it requires long-term planning and coherent decision-making to coordinate actions effi-ciently. Early attempts at multi-agent collaboration, such as CoELA [ 43 ] and RoCo [ 24 ], demonstrate progress but also reveal limitations. For instance, as shown in Fig. 1 (b), CoELA facilitates collaboration by sharing updates through natural language when sub-tasks are completed, yet each agent’s decision-making process remains independent, re-sulting in suboptimal coordination. In contrast, as illus-trated in Fig. 1 (c), RoCo develops multi-agent work plans through agent discussions and environmental interactions. However, RoCo relies on a single reasoning path, which is susceptible to the randomness and unpredictability of LLM outputs. This can lead to inefficient or incorrect planning, particularly in applications requiring precision, where such errors can have serious consequences. 
+
+Contributions. To address these limitations, we propose 
+
+Cooperative Tree Search (CoTS), a framework designed to significantly improve collaborative planning and task exe-This CVPR paper is the Open Access version, provided by the Computer Vision Foundation. Except for this watermark, it is identical to the accepted version; the final published version of the proceedings is available on IEEE Xplore. 29513 [Background] [Goal] [Dialogue history][Previous actions] [Available actions]. .. Please help me choose the best next action. Let's think step by step .       
+
+> Bob’s LLM
+> Alice’s LLM
+> Alice Prompt Bob Prompt
+> Bob
+> Alice
+> [Background] [Goal] [Dialogue history][Previous actions] [Available actions]. .. -Improve plans with [Env Feedback]
+> Bob’s LLM
+> Alice’s LLM
+> Alice Prompt Bob Prompt
+> Hi Bob, I’m in the living room and …
+> Hi Alice, It would be more efficient …
+> Hi Bob, I apologize for the confusion. I will…
+> Hi Alice, I still have some suggestions…
+> Plan Summary Execute Action
+> [Background] …
+> [Available actions] [Current plan]. Improve plans with [Bob’s Feedback]
+> Bob’s LLM
+> Alice’s LLM
+> Alice Prompt Bob Prompt Hi Bob, I ... This is collaboration plan …
+> Hi, Alice, I think ….
+> Plan reward: 0.3
+> Collaborative Tree Search Multi agent dialog
+> 0.8
+> Collaboration Plan Execute Action
+> No
+> Yes
+
+Task : transport 2 oranges, 3 apples, 1 banana, 3 breads, 1 burger to the bed. 
+
+Background : Agents randomly appear in a home environment with a total of six rooms and need to discover objects through exploration. Each agent can carry up to two objects. Finding and using containers can improve efficiency.    
+
+> (a) The Embodied Environment (b) CoELA (Communication but independent decision-making.) (c) RoCo (Discussion, Planning and Execution) (d) Ours (Plan Searching, Evaluation, and Plan-Guided Execution)
+> Plan Evaluation
+> Reward and suggestion to [Alice’s Plan].
+
+Figure 1. The task execution processes of CoELA, RoCo, and our CoTS. (1) In CoELA, agents update each other on sub-task completion and individually determine their next actions without long-term strategic planning. (2) RoCo uses multi-round dialogues and summarizes the plan at the end, but its single-dialogue chain can lead to suboptimal plans and even errors due to the randomness and unpredictability of LLMs. (3) Within a modified Monte Carlo Tree Search framework, CoTS allows agents to evaluate multiple planning paths, enabling them to collaboratively deliberate and identify the most effective course of action based on task progress and environmental context. 
+
+cution efficiency among embodied agents. Inspired by hu-man decision-making, CoTS allows agents to search multi-ple planning paths by combining exploration and backtrack-ing, enabling them to collaboratively deliberate and identify the most effective course of action based on task progress and environmental context. As illustrated in Fig. 1 (d), CoTS advances agent col-laboration in embodied environments through two core in-novations. First , we introduce a collaborative planning module based on a modified Monte Carlo Tree Search (MCTS) framework, which enables agents to explore mul-tiple planning paths and select the most coherent and effi-cient long-term plan. Unlike traditional MCTS which re-lies on simulation-based rewards, CoTS incorporates a non-simulated LLM-based reward function suited for high-cost physical movement interactions in embodied environments. In this way, CoTS transforms the traditional linear sequence of action steps into a search process, exploring potential paths within a shared reasoning and action space to develop robust collaborative strategies. Second , CoTS features a plan evaluation module, that actively monitors the relevance and feasibility of the selected plan during execution. This mechanism allows agents to adapt plans as needed, reducing unnecessary disruptions from frequent plan updates while still accommodating environmental changes. Our experiments on two long-term multi-objective plan-ning tasks — TDW-MAT [ 43 ] and C-WAH [ 8] — demon-strate that CoTS significantly outperforms current state-of-the-art methods, e.g ., CoELA [ 43 ] and RoCo [ 24 ], in terms of task completion rate and efficiency. These results high-light the effectiveness and superiority of CoTS, underscor-ing its potential for high-stakes applications that demand reliable multi-agent collaboration. 
+
+## 2. Related Work 
+
+LLM-based Agents. Recent advances in LLMs have unlocked near-human reasoning and planning capabilities [1, 27 , 37 ]. Researchers have leveraged LLMs as the “brain” or controller of agents, expanding their perceptual and action capacities through multimodal perception and tool use [ 6, 25 , 32 , 38 , 40 , 45 ]. Multi-agent systems [ 16 , 35 ]show particular promise, enabling agents to collaborate on planning, discussion, and decision-making—similar to how humans solve complex problems in teams [ 26 , 33 ]. Works such as MetaGPT [ 13 ], CAMEL [ 19 ], and ChatDev [ 31 ]decompose complex tasks into simpler, manageable sub-tasks to reduce hallucinations and improve task-solving ca-pabilities. However, embodied multi-agent systems [ 20 , 44 ]require advanced communication and face significant chal-lenges in navigating a vast action search space in complex, dynamic environments, especially for long-term tasks. 
+
+Embodied Multi-Agent Cooperation. Research on em-bodied multi-agent systems is still emerging. Habitat [ 30 ]explores agents’ social awareness, enabling adaptive assis-tance strategies in collaboration. Co-NavGPT [ 41 ] uses LLMs for multi-robot collaborative goal navigation, en-coding environmental data to improve scene understanding. Organized-LLM-Agents [ 11 ] reduces redundancy in multi-agent collaboration through structured prompts, enhancing coordination. CoELA [ 43 ] enables collaborative agents to communicate and plan through natural language and chain-of-thought processes, yet lacks strategic long-term plan-ning. RoCo [ 24 ] and CaPo [ 22 ] advance multi-agent col-laboration with high-level communication and path plan-ning, but their single reasoning path often leads to subop-timal plans and even errors. Although some existing work 29514 Embodied Environments 
+
+Perception Module Collaborative Planning Module Plan Parsing and Execution Module 
+
+Object 
+
+State 
+
+Distance 
+
+Other Agents 
+
+Obstacle 
+
+# …   
+
+> Collaborative Tree Search
+> Action Decomposition
+> Action Execution
+> Alice grasps xx, Bob go xxx.
+> Act. Obs.
+> Semantic Map Task Progress Current Plan Dialogue History Action History Agent State
+
+Memory Module     
+
+> Update Update Update Retrieve
+> Alice Output
+> But I think we …
+> Reward: 0.3 Bob Output
+> Message in node Plan Evaluation
+> Collaboration plan
+> Plan Analysis
+> Collaboration plan
+
+# … 
+
+> I generate a plan, now …
+> Plan: Step1 .. Step2 ..
+> Need update, …
+> Reward: 2
+> Current Plan Goal/Plan Understanding
+
+Figure 2. The framework of CoTS. Upon receiving a new task in the embodied environment, each embodied agent initially employs the Perception Module to gather raw observational data, which is then stored in its Memory Module. In the collaborative planning module, agents guide the exploration of collaborative plans toward more promising directions through the collaborative tree search. The explored plans are retained within the memory module as a special ’extended memory’ and are periodically updated based on assessments from the planning evaluation module. Finally, agents perform actions aligned with the collaborative plan and tasks. 
+
+on LLMs involves multi-branch reasoning [ 2, 17 , 40 , 42 ], they are inadequate for complex embodied environments and agent collaboration. Our goal is to develop embodied agents capable of searching long-term strategic planning. 
+
+## 3. Preliminaries 
+
+Task Assumption. As introduced by previous work [ 9, 24 ], multi-agent collaborative tasks can be viewed as a Markov game, which is defined by a tuple (N , S, A, P, r, γ ), in which N is the set of agents ( e.g . Alice and Bob), S is the state space, A = ∏ni=1 Ai is the combination of all action spaces, P : S × A × S → [0 , 1] is the transition proba-bility function, r : S × A → R is the reward score, and 
+
+γ ∈ [0 , 1) is the discount factor. In the task, each agent at time step t ∈ N obtains the information by perception module from the embodied environment st ∈ S , chooses and executes an action ait ∈ A i from its available policy 
+
+πi(·| st). This will along with the actions of other agents, constitutes a joint action at = ( a1 
+
+> t
+
+, a 2 
+
+> t
+
+, ..., a nt ) ∈ A derived from the joint policy π(·| st) = ∏ni=1 πi(·| st). Then agents perceive a new state st+1 with probability P (st+1 |st, at).We seek to determine a collaborative plan that maximizes the J(π) ≜ Es0,∞∼P,a 0,∞∼π [∑∞ 
+
+> i=0
+
+γiri]. For this paper, the goal is to coordinate the distribution of sub-tasks among agents so as to complete tasks more efficiently. 
+
+CoELA [43 ]. It contains five modules: 1) Perception, 2) Memory, 3) Communication, 4) Planning and 5) Execution. The Perception module leverages a trained Mask-RCNN [12 ] to segment RGB images and detect objects and ob-stacles, creating 3D point clouds from RGB-D data and extracting essential high-level information like key object states. The Memory module manages short-term and long-term memory, with short-term memory capturing imme-diate details such as semantic maps and agent states, and long-term memory storing persistent information like task descriptions. In the Communication module, CoELA re-trieves relevant information from memory, transforming it into template-based textual descriptions for agents to aid in action selection. However, each agent plans independently, with no unified action coordination. In the Planning and Ex-ecution modules, CoELA retrieves agent-related informa-tion from memory, generates potential actions for the LLM to consider, and applies chain-of-thought [ 38 ] reasoning for more in-depth decision-making. Each agent then executes its chosen action accordingly. 
+
+## 4. Collaborative Tree Search for Multi-Agents 
+
+4.1. Overview of CoTS 
+
+Now we introduce an overview of our Collaborative Tree Search (CoTS), which is designed for multi-agent coopera-tion in embodied environments. As shown in Fig. 2, CoTS contains four key modules: 1) Perception Module, 2) Mem-ory Module, 3) Collaborative Planning Module, and 4) Plan Parsing and Execution Module. This work primarily en-hances CoELA in its planning by designing the Collabora-tive Planning Module. The other three modules are largely borrowed from CoELA and introduced in Sec. 3. Here we briefly introduce our enhancements to CoEAL below. 
+
+Perception Module. Unlike CoELA, we introduce distance as a key perceptual factor, leveraging fixed spatial layouts in real-world settings to enhance agents’ room-based under-standing and improve planning efficiency by using LLM to access the moving distance of agents. 29515 Message to Bob: Hi Bob, I am in Livingroom where I found an apple. Do you have suggestions.                    
+
+> Message to Alice: Hi Alice, I am in Livingroom and found bread. As you said, I am just about to explore my current room. Reward: 0.3
+> Plan from Alice: Step 1: Alice grasps apple. Bob explore his current room. Step 2: Alice explore the Living room, if they find any items, transport them to the bed.
+> Message to Bob : Hi Bob, Please grasp bread and apple and I will now shift to the Bedroom because we should not explore the same room .
+> Message to Alice : Hi Alice, but I think you could head to kitchen, it is the nearest. Reward: 0.6
+> Plan from Alice: Step 1: Alice moves to Bedroom. Bob grasps bread and apple. Step 2: Alice explores Bedroom. Bob explores Living room. Step 3: If any target item are found, transport them to the bed.
+> Plan 0.3
+> Plan 0.6 Plan 0.5
+> Plan 0.5 Plan 0.7 Plan Plan
+> Plan 0.8 Plan 0.6
+> Plan 1
+> 0.4 0.5
+
+## …… 
+
+> Content in node
+
+Final Node      
+
+> Message to Alice: Hi, Alice, your plan looks good. Let's get moving. Reward: 1
+> Plan from Alice: Step 1: Alice grasps the apple. Bob grasps the bread. Step 2: Alice moves to Kitchen. Bob explores Living room. Step 3: Alice explore the Kitchen, if they find any items, transport them to the bed .
+> Message to Bob: Hi Bob, I agree with you. I will grasp the apple before I move to Kitchen while you continue in Livingroom. Please keep me updated on your progress
+> Task : transport 2 oranges, 3 apples, 1 banana, 3 breads, 1 burger to the bed.
+> The Process in Each Node: Alice makes plans, Bob provides suggestions and rewards.
+
+Figure 3. Overview of the tree search in CoTS. Each node in the tree contains content generated by Alice and Bob. Alice generates the collaborative plans and messages to Bob, while Bob generates messages to Alice and rewards for the plans. These rewards are used for backpropagation to guide the tree search toward more promising collaborative plans. The figure also shows examples of three nodes, illustrating the stepwise optimization of collaborative planning and the dialogue process between agents. 
+
+Memory Module. Compared with CoELA, CoTS intro-duces ”extended memory” (Fig. 2) to manage collaboration plans—information that needs to be retained for a moderate period and updated periodically. This is because collabo-ration plans must balance retention for a certain period and timely updates when they become unsuitable for the current embodied environment. This extended memory mimics the medium-term storage of the human memory system, bridg-ing short-term recall and long-term consolidation. 
+
+Collaborative Planning Module is the core of CoTS, where MCTS is modified and employed to develop long-term strategic collaboration plans. Inspired by human problem-solving through iterative discussion and cooper-ation, it avoids error accumulation caused by a single path approach. This module represents the first integra-tion of embodied agent collaboration with MCTS, enhanc-ing agents’ capability to tackle complex, long-term tasks through tree-based search and backtracking. Details of this module are provided in Sec. 4.2 .
+
+Plan Parsing and Execution Module translates collabora-tive plans into executable actions, enabling agents to com-plete tasks in a coordinated manner. See details in Sec. 4.3 .Below we will delve deeper into two core modules, Col-laborative Planning Module and Plan Parsing and Execution Module. Additionally, we will highlight CoTS’s integration of spatial awareness and extended memory to enhance over-all functionality and efficiency. 
+
+4.2. Collaborative Planning Module 
+
+Our Collaborative Planning Module, central to our CoTS framework, is designed to search for long-term, efficient and coherent collaborative plans for multi-agent tasks in dy-namic environments. It comprises two main sub-modules: a collaborative tree search module for generating collabo-rative plans (Sec. 4.2.1 ) and a plan evaluation module to analyze when to update the plan (Sec. 4.2.2 ). 
+
+4.2.1. Monte Carlo Tree Search for Collaborative Plan 
+
+We adapt MCTS to convert multi-agent collaborative plan-ning into a tree search, identifying an optimal pathway from multiple reasoning paths for cohesive strategies. As shown in Fig. 3, each node in this tree stores a proposed plan, agent feedback, and a performance reward. In this setup, one agent (like Alice) functions as the ”planner” to propose plans, while other agents (like Bob) act as ”critics”. Alice drafts several initial collaborative plans or extends existing plan based on task goals and current task progress. Then Bob evaluates them, considering factors like task allocation and movement efficiency, to generate a reward for the cur-rent plan. Once feedback is provided, each plan’s reward is propagated back through the collaboration tree, strength-ening successful strategies and adjusting future planning pathways. Accordingly, they will select the most efficient collaborative plan for further reflections and refinements. As shown in Fig. 3, this process, including plan extension (drafting), evaluation, backpropagation, and selection, will repeat until agents explore all potential collaborative plans and select the most promising one. In the following, for these four steps, we will elaborate on each of them. 
+
+Selection Similar to traditional MCTS [ 4, 15 ], CoTS starts from the root node and traverses down the tree by selecting nodes with the highest UCT values. This process is repeated 29516 until a leaf node is reached, and is illustrated in Fig. 3 where we mark the selected nodes with gold cups. For UCT of each node, it is computed as follows: UCT (si) = V (si) + w√ln N (pi)/N (si), (1) Where N (si) is visiting number of node si, V (si) is the reward of the subtree rooted at si, w is the exploration co-efficient, and pi is the parent node of si. After an episode, backpropagation updates each node’s V (si) along the path: 
+
+V (si) = V (si−1)·(N (si)−1)+ r  
+
+> N(si)
+
+, where V (si−1) is the previ-ous reward, and r is the reward used to update each V (si).
+
+Expansion. Once a node is selected, we expand it by sampling n new discussion paths, each building on the plan (from “planner”, Alice) and suggestions (from “critic”, Bob) in the parent node. This generates n new child nodes, representing potential planning routes. The tree, along with its nodes, is stored in an external long-term memory to re-tain valuable information and facilitate consistent planning across episodes. 
+
+Evaluation. Each newly created child node receives a re-ward r to quantify the quality of the collaboration plan and to guide the search algorithm towards the most promising areas of the tree. Here CoTS incorporates a non-simulated LLM-based reward function to estimate the reward r of a plan in a node. In traditional MCTS, reward estimation re-quires agents to execute their actions for receiving environ-ment feedback, like completing a subtask, and thus is high-cost. So CoTS introduces an LLM-based reward function based on two components: (1) an allocation reward assess-ing coherence and efficiency, and (2) a cost reward evalu-ating the spatial movement cost of agents. To ensure con-sistency, we standardize the evaluation criteria to provide clear guidelines to minimize ambiguity. Each criterion is scored on a scale of 1 to 5, with the final reward normalized between 0 and 1. See examples in Appendix B.1 .
+
+Backpropagation. Each evaluation reward is propagated back along the path to update node rewards, with formu-las ensuring that parent nodes integrate the feedback, guid-ing future selections. Specifically, the back-propagation up-dates node rewards N (si) = N (si−1) + 1 and V (si) =     
+
+> V(si−1)N(si−1)+ r
+> N(si)
+
+for each node s0, s 1, . . . , s p along the path from the root (initial state s0) to leaf (terminal state 
+
+sp). Accordingly these estimated rewards and visiting num-ber are used in “Expansion” step for node selection, direct-ing the search toward the most promising areas of the tree. 
+
+4.2.2. Collaborative Plan Evaluation and Adaptation 
+
+In this section, we will explain why we introduced the plan-ning evaluation module (a sub-module in the collaborative planning module, as shown in Fig. 2) and its function. The collaborative plan provides high-level embodied agent ac-tion guidance, but as the task is executed and agents act, the embodied environment gradually changes ( e.g . the agents’ positions, the agents’ progress, and the current status, etc.). Therefore, the collaborative plan needs to be updated based on the latest environmental information. At this point, two scenarios arise: If the plan is updated too slowly or not updated at all, the current plan becomes outdated and cannot effectively guide the embodied agents in executing tasks. However, in a multi-agent system, in-stantly updating the plan with every progress can be in-efficient and counterproductive. It may lead to excessive queries to the LLM and environments. Furthermore, fre-quent plan revisions may introduce conflicting strategies due to minor environmental shifts, potentially disrupting agent actions and lowering overall efficiency. This is il-lustrated in Fig. 4 (c): if the updated plan conflicts with the action that Bob is currently performing, it may interrupt Bob’s action which even almost finishes the subtask. To address this, we introduce a plan evaluation module within CoTS to continuously evaluate the viability of the current collaborative plan. When an agent makes progress, the module determines if the existing plan remains effective based on the status of task execution. If the evaluation met-ric meets a defined threshold, indicating that the plan is still viable, it is retained. Otherwise, CoTS will call the collab-orative planning module to re-search and update the plan. By focusing on the feasibility and long-term stability of the plan rather than continuous recalibration, this module sup-ports efficient, coherent collaboration, enabling agents to complete tasks reliably in a dynamic environment. 
+
+4.3. Plan Parsing and Execution Module 
+
+To transform the collaborative plan generated in Sec. 4.2 
+
+into executable actions, CoTS incorporates an action pars-ing module and a plan decomposition module. Action pars-ing module bridges high-level planning with real-world ac-tions, generating a set of feasible actions for each agent based on current memory. For example, if an agent’s hands are free, it will list objects that can be grabbed; if the agent is in an unknown room, it will list movement options. This module ensures that all sub-plans are formatted into natural language and returned for subsequent process. Plan decomposition module understands and breaks down high-level tasks from the collaboration plan into spe-cific and prioritized actions. The agent interprets the task ar-rangement, selects actions from the parsed options that best advance the collaborative plan’s goals, and finally translates each chosen action into real-world execution. 
+
+## 5. Experiments 
+
+Benchmarks. Following CoELA [ 43 ], we evaluate the per-formance of CoTS in two highly challenging embodied-world multi-agent environments: (1) TDW-MAT (ThreeD World Multi-Agent Transport) [ 8] extends the ThreeD World Transport Challenge by simulating collaborative 29517 Table 1. Quantitative results on TDW-MAT. Consistent with CoELA [ 43 ], TDW-MAT has two environment settings: with oracle perception and without oracle perception. The results marked with * are from CoELA [ 43 ]. MAT uses central observation and oracle perception. 
+
+91 +9.64 % means the relative improvement when comparing with CoELA is 9.64%.                                                                                 
+
+> Transport Rate (%) Base Agent RL Agent LLM Agent
+> RHP* CoRHP* MAT* GPT 3.5 GPT 4
+> CoELA RoCo CaPo CoTS (ours) CoELA* RoCo CaPo CoTS (ours)
+> TDW-MAT w/ Oracle Perception
+> Stuff( ↑)49 74 17 73 80 +9 .68% 84 +15 .07 %81 +10 .96% 83 85 +2 .41% 87 +4 .82% 91 +9.64 %
+> Food( ↑)52 76 13 72 74 +2 .78% 85 +18 .06 %83 +15 .28% 87 89 +2 .30% 90 +3 .45% 94 +8.05 %
+> Average( ↑)50 75 15 73 77 +5 .48% 84 +15 .07 %82 +12 .33% 85 87 +2 .35% 89 +4 .71% 93 +9.41 %
+> TDW-MAT w/o Oracle Perception
+> Stuff( ↑)36 54 -39 47 +20 .51% 45 +15 .38% 50 +28 .21 %61 64 +4 .92% 64 +4 .92% 77 +26 .22 %
+> Food( ↑)49 67 -67 64 −4.48% 70 +4.48 %67 +0 .00% 82 80 −2.44% 85 +3 .65% 88 +7.32 %
+> Average( ↑)43 61 -52 55 +5 .77% 57 +9 .62% 59 +13 .46 %71 72 +1 .41% 74 +4 .23% 83 +16 .90 %
+
+Table 2. Quantitative results on C-WAH. LLM-based agents are driven by GPT 4. Results marked with * are from CoELA [ 43 ]. 
+
+Average Step Visual Obs( ↓) Symbolic Obs( ↓)
+
+Base Agent MHP* 141 111 LLM Agent 
+
+CoMHP* 103 75 
+
+CoELA* 92 57 
+
+RoCo 89 +3 .26% 57 +0 .00% 
+
+CaPo 83 +9 .78% 51 +10 .53% 
+
+CoTS (ours) 81 +11 .96 % 49 +14 .04 %
+
+transportation tasks in a physics-based household environ-ment. We select 24 tasks, split evenly between food and stuff transportation. (2) C-WAH (Communicative Watch-And-Help) [ 29 ] extends the Watch-And-Help challenge within the VirtualHome-Social platform [ 28 ]. It features five common household scenarios. Our test set includes 10 tasks, with two tasks per scenario. The objective is to com-plete all sub-goals, prioritizing faster completion. 
+
+Evaluation Metrics. On TDW-MAT, transport rate is eval-uated by the percentage of target objects successfully de-livered to their designated locations within a 3,000-frame timeframe. For C-WAH, efficiency is measured by the num-ber of time steps needed to complete all assigned tasks, where fewer steps indicate higher efficiency. 
+
+Baseline Methods. The baselines include three types of embodied agents: (1) Base Agent: RHP [ 8] uses heuristic rules for navigation and A* for path planning. MHP [ 18 ]employs Monte Carlo Tree Search (MCTS) for high-level planning coupled with regression planning for task execu-tion (2) RL-Based Agent: MAT [ 39 ] is a multi-agent rein-forcement learning framework, featuring a centralized de-cision transformer that synthesizes actions from shared ob-servations. (3) LLM-Based Agent: CoELA [ 43 ] is a lead-ing collaboration framework for embodied agents that in-tegrates the reasoning capabilities of LLMs. It facilitates communication and interaction between agents through nat-ural language. RoCo [ 24 ] and CaPo [ 22 ] are multi-agent collaboration methods that enhance collaboration by gener-ating coordinated plans through structured agent dialogues. 
+
+Setup. We conduct all experiments on an Intel Core i9-10980XE CPU and an NVIDIA GeForce RTX 3090 GPU. We utilize both GPT-4 and GPT-3.5-Turbo [ 1], configuring them with a temperature setting of 0.7 and top-1 sampling to produce outputs up to 512 tokens. 
+
+5.1. Main Results 
+
+CoTS Outperforms the Strong Baselines. Following the experimental frameworks of CoELA [ 43 ] and RoCo [ 24 ], we configure two-agent cooperation, excluding RHP. As demonstrated in Table 1, CoTS achieves best performance on the TDW-MAT task. Specifically, when powered by GPT-4 within the Oracle Perception environment, CoTS surpasses CoELA, achieving a 9.41% average relative im-provement in task completion, and a 16.9% improvement in the absence of Oracle Perception. The primary strength of CoTS is its ability to generate superior long-term strategies through collaborative tree search. Conversely, CoELA focuses on short-term actions de-rived from immediate information, which limits its strategic depth and adaptability to future scenarios and environmen-tal shifts. RoCo and CaPo are similar. Although they are capable of developing plans, they rely on a single-branch discussion method, which may result in suboptimal or inac-curate strategies. Moreover, Their frequent plan revisions can interfere with agent coordination. Therefore, while RoCo and CaPo surpass CoELA, they are inferior to CoTS. When driven by GPT-3.5, CaPo slightly outperforms CoTS on some metrics. The main reason for this is that GPT-3.5 has weaker evaluation and scoring capabilities. However, when powered by GPT-4, CoTS significantly outperforms CaPo. Our findings underscore that multi-agent collabora-tion generally surpasses single-agent strategies, exemplified by RHP. The performance of reinforcement learning-based MAT is poor, mainly because TDW-MAT is too difficult for it with long time domain and sparse reward signals. The performance of LLM-based agents primarily de-29518 Background : Bob was transporting objects to the bed, Alice found a bread in the living room<6000> 
+
+RoCo’s Plan : Bob goes to the living room <6000> to help Alice grasp the bread. 
+
+Our plan : The current plan is still valid. Bob is close to the bedroom. He can first deliver the objects in his hand to the bed, and then help Alice. 
+
+> Bob
+> Alice
+
+Transport 
+
+Move 
+
+Background : Alice and Bob appear in the same living room and now need to explore some rooms to find objects. 
+
+RoCo’s plan : Alice explore the current room. Bob explore the current room. 
+
+Our plan : Alice goes to the nearest room, Bedroom <2000>, while Bob explores the current room. Exploring rooms separately would improve efficiency. 
+
+Explore 
+
+Move 
+
+> Bob
+> Alice Bob
+> Alice
+
+Background : Alice is in living room holding a container. Bob finds two target objects in living room<1000>. 
+
+CoELA’s plan : Alice goes to the living room to help Bob, because Alice can take these objects. 
+
+Our plan : Alice explores the current room, find objects, then transport them to the bedroom. Then go to the living room <1000>, no actions are wasted. 
+
+(a) CoELA leads to short-sighted action plans that ignore precious action steps (b) RoCo's single-chain dialogue leads to suboptimal collaboration plan (c) Frequent plan updates may hinder completion of current actions 
+
+Move Transport Figure 4. Some interesting example cases demonstrate that our CoTS achieves better collaboration than RoCo and CoELA. These scenes are taken from the experiments in TDW-MAT. Find an apple in fridge Put a cupcake onto the coffee table Go to check kitchencabine tGo to explore bedroom    
+
+> There seems to be no plan. Both Alice and Bob are not holding anything. Bob in bedroom and has found an container, while Alice is in the. A collaboration plan needs to be updated. Reward: 1
+> Plan Update Plan unchanged
+> Alice have found an apple in the fridge and Bob is holding a cupcake. Current progress is consistent with the collaborative plan and future actions are outlined in the plan. There is no need to update the plan. Reward: 4
+
+Figure 5. Plan Evaluation and Update. The plan evaluation module gives a lower reward when it determines that the current plan needs to be updated, and a higher reward when it believes the current plan is still valid. The reward range is from 1 to 5. 
+
+pends on their reasoning abilities and the depth of em-bedded world knowledge. Agents powered by GPT-4, as demonstrated by CoTS, significantly surpass those based on GPT-3.5, highlighting the advancements in LLM tech-nologies and their impact on agent proficiency. As shown in Table 2, CoTS achieves superior efficiency, improving by 11.96% and 14.04% over CoELA in Visual Obs and Sym-bolic Obs settings, respectively. These results underscore CoTS’s robust adaptability across various embodied envi-ronments and its potential for real-world applications. 
+
+5.2. Qualitative Analysis 
+
+CoTS Can Develop Long-term Strategic Plans. Unlike CoELA, which is adept at responding to immediate tasks 11 28    
+
+> 60
+> 85 732 71 93
+> 500 1000 2000 3000
+> 020
+> 40
+> 60 80
+> 100
+> Transprta Rate (%)
+> Time steps
+> CoELA
+> CoTS
+
+Figure 6. Comparison of transportation rates for GPT-4-based CoTS and CoELA at different time steps on TDW-MAT. 
+
+but falters in sustained coordination, CoTS excels in long-term strategic planning. As illustrated in Fig. 4 (a), when Bob discovers a new target that requires assistance, Alice, under CoTS’s direction, continues to thoroughly explore her current room before moving the item to the bed. This sys-tematic approach not only supports Bob but also adheres to an overarching collaborative strategy, optimizing both im-mediate and future task alignments. 
+
+CoTS Generates More Optimal Collaboration Plans. 
+
+Unlike RoCo to generate plans sequentially through a single-chain dialogue, CoTS makes more optimized collab-oration plans. Due to the randomness of LLMs and the em-bodied environment’s complexity, RoCo’s plans may some-times be suboptimal. For example, in Fig. 4 (b), RoCo instructs both Alice and Bob to explore their respective rooms. However, they are currently in the same room, mak-ing joint exploration redundant. CoTS effectively identifies this and assigns Alice to explore the nearest room instead. 29519 85 88       
+
+> 91
+> 92
+> 91 92
+> 94 93 88 90 93
+> 94
+> 1234
+> 84
+> 86
+> 88
+> 90 92 94 96
+> Branching Factor
+> Stuff
+> Food
+> Average
+> Transprta Rate (%)
+> 85 88
+> 91
+> 92
+> 91 92
+> 94 93 88 90 93
+> 94
+> 1234
+> 84
+> 86
+> 88
+> 90 92 94 96
+> Branching Factor
+> Stuff
+> Food
+> Average
+> Transprta Rate (%)
+
+Figure 7. Comparison of transportation rates with different branching factors. More branching factors means more new nodes are generated each time in the expansion phase. 
+
+CoTS Ensures Smooth Completion of Agent Actions. In RoCo, new progress often prompt discussions and lead to new plans that can override existing ones. As illustrated in Fig. 4 (c), Bob, tasked with transporting items to the bed, must halt his activity to help Alice following a revised plan. Conversely, CoTS incorporates a plan evaluation module that validates the feasibility of plans before any adjustments are made. In Fig. 4 (c), CoTS allows Bob to finish transport-ing before next action. This approach avoids chaotic agent actions and ensures timely plan updates when necessary. 
+
+CoTS Dynamically Manages Collaborative Plans. As shown in Fig. 5, the assessment module continuously evalu-ates the viability of existing plans. It assigns a lower reward (e.g . 1) if collaboration necessitates devising a new plan or modifying an existing one, prompting agents to adapt their strategies accordingly. Conversely, when the current progress aligns with planned tasks and their distribution among agents is deemed efficient, the module rewards this alignment with a higher value ( e.g . 4). This incentivizes agents to persist with the established collaborative plan, avoiding unnecessary replanning. 
+
+5.3. Ablation Study and Additional Analysis 
+
+The Core Modules of CoTS Have Important Impacts. 
+
+The Table 3 shows the ablation results of CoTS. To ex-amine the impact of tree search, we modify it to a single-branch structure, where agents can only communicate along one path. The experimental results indicate a 5.38% relative decrease in the average transportation rate, mainly because the limited communication does not consistently yield cor-rect conclusions and diverges from typical human discus-sion patterns. Furthermore, eliminating the reward function and plan update evaluation components from CoTS leads to variable performance declines, highlighting the critical roles these elements play in the system’s efficacy. 
+
+Analysis of Agent Collaboration Progress at Different Time Steps. We analyze the transportation rates of CoELA and CoTS on TDW-MAT at various time steps, as depicted in Fig. 6. An interesting observation emerges at 500 steps, where CoTS exhibits a lower performance compared to 
+
+Table 3. Effects of the reward function, collaboration tree search, and plan evaluation module in GPT-4-driven CoTS on TDW-MAT.                
+
+> Transport Rate Stuff( ↑)Food( ↑)Average( ↑)
+> CoTS w/o Reward 87 −4.40% 90 −4.26% 89 −4.30%
+> CoTS w/o MCTS Plan 85 −6.59% 91 −3.19% 88 −5.38%
+> CoTS w/o E&U 88 −3.30% 92 −2.13% 90 −3.23%
+> CoTS 91 94 93
+
+CoELA, attributed to CoTS’s strategy of prioritizing item collection early to enhance transport capacity. However, this initial disadvantage is counterbalanced by a signifi-cant improvement at 2000 steps, where CoTS markedly sur-passes CoELA. This shift underscores CoTS’s effectiveness in optimizing agent collaboration for task execution. 
+
+Impact of Different Branching Factors on Results. Dur-ing the expansion phase of MCTS, we define the number of new candidate nodes generated at each step as the ”branch-ing factors.” As shown in Fig. 7, increasing the number of branching factors expands the selection space, leading to a better plan. Adjusting the branching factor allows for a bal-ance between performance and efficiency. Besides, the human-agent collaboration and the cost of CoTS are discussed in Appendix A.1 and Appendix A.2 , re-spectively. CoTS also demonstrates significant advantages. 
+
+## 6. Conclusions 
+
+This paper introduces CoTS, a collaborative framework that leverages large language models with a modified Monte Carlo tree search to enhance multi-agent task planning in complex and dynamic environments. By enabling agents to evaluate multiple potential plans and refine strategies based on progress, CoTS significantly advances over prior meth-ods like CoELA and RoCo. The addition of a plan feasi-bility module ensures smooth task execution by adapting plans only when necessary. Experimental results on multi-objective tasks confirm CoTS’s superior performance. 
+
+Limitation. CoTS relies on LLMs’ reasoning abilities. We find that GPT-4 surpasses GPT-3.5-turbo in instruction-following and response quality, while GPT-3.5-turbo can be verbose and occasionally inaccurate. Despite this, even for GPT-3.5, CoTS improves agent collaboration through col-laborative planning search in the collaboration tree. 
+
+## 7. Acknowledgments 
+
+This work is supported by National Natural Science Foun-dation of China (U2133202, 52305570), China Postdoc-toral Science Foundation (2022M720955), and Outstand-ing Doctoral Dissertation Funding Project of Heilongjiang Province (LJYXL2022-011). Lizheng Zu also acknowl-edges the support of the China Scholarship Council pro-gram (202406120111). 29520 References 
+
+[1] Josh Achiam, Steven Adler, Sandhini Agarwal, Lama Ah-mad, Ilge Akkaya, Florencia Leoni Aleman, Diogo Almeida, Janko Altenschmidt, Sam Altman, Shyamal Anadkat, et al. Gpt-4 technical report. arXiv preprint arXiv:2303.08774 ,2023. 1, 2, 6
+
+[2] David Brandfonbrener, Simon Henniger, Sibi Raja, Tarun Prasad, Chloe R Loughridge, Federico Cassano, Sab-rina Ruixin Hu, Jianang Yang, William E Byrd, Robert Zinkov, et al. Vermcts: Synthesizing multi-step programs using a verifier, a large language model, and tree search. In The 4th Workshop on Mathematical Reasoning and AI at NeurIPS’24 , 2024. 3
+
+[3] Tom B Brown. Language models are few-shot learners. 
+
+arXiv preprint arXiv:2005.14165 , 2020. 1
+
+[4] Cameron B Browne, Edward Powley, Daniel Whitehouse, Simon M Lucas, Peter I Cowling, Philipp Rohlfshagen, Stephen Tavener, Diego Perez, Spyridon Samothrakis, and Simon Colton. A survey of monte carlo tree search methods. 
+
+IEEE Transactions on Computational Intelligence and AI in games , 4(1):1–43, 2012. 4, 3
+
+[5] Abhinav Dahiya, Alexander M Aroyo, Kerstin Dautenhahn, and Stephen L Smith. A survey of multi-agent human–robot interaction systems. Robotics and Autonomous Systems , 161: 104335, 2023. 1
+
+[6] Norman Di Palo, Arunkumar Byravan, Leonard Hasenclever, Markus Wulfmeier, Nicolas Heess, and Martin Riedmiller. Towards a unified agent with foundation models. arXiv preprint arXiv:2307.09668 , 2023. 2
+
+[7] Amal Feriani and Ekram Hossain. Single and multi-agent deep reinforcement learning for ai-enabled wireless net-works: A tutorial. IEEE Communications Surveys & Tutori-als , 23(2):1226–1252, 2021. 1
+
+[8] Chuang Gan, Siyuan Zhou, Jeremy Schwartz, Seth Alter, Abhishek Bhandwaldar, Dan Gutfreund, Daniel LK Yamins, James J DiCarlo, Josh McDermott, Antonio Torralba, et al. The threedworld transport challenge: A visually guided task-and-motion planning benchmark towards physically realistic embodied ai. In 2022 International conference on robotics and automation (ICRA) , pages 8847–8854. IEEE, 2022. 2,
+
+5, 6
+
+[9] Ran Gong, Qiuyuan Huang, Xiaojian Ma, Yusuke Noda, Zane Durante, Zilong Zheng, Demetri Terzopoulos, Li Fei-Fei, Jianfeng Gao, and Hoi Vo. Mindagent: Emergent gam-ing interaction. In Findings of the Association for Compu-tational Linguistics: NAACL 2024 , pages 3154–3183, 2024. 
+
+3
+
+[10] Taicheng Guo, Xiuying Chen, Yaqi Wang, Ruidi Chang, Shichao Pei, Nitesh V Chawla, Olaf Wiest, and Xian-gliang Zhang. Large language model based multi-agents: A survey of progress and challenges. arXiv preprint arXiv:2402.01680 , 2024. 1
+
+[11] Xudong Guo, Kaixuan Huang, Jiale Liu, Wenhui Fan, Na-talia V´ elez, Qingyun Wu, Huazheng Wang, Thomas L Grif-fiths, and Mengdi Wang. Embodied llm agents learn to coop-erate in organized teams. arXiv preprint arXiv:2403.12482 ,2024. 2
+
+[12] Kaiming He, Georgia Gkioxari, Piotr Doll´ ar, and Ross Gir-shick. Mask r-cnn. In Proceedings of the IEEE international conference on computer vision , pages 2961–2969, 2017. 3
+
+[13] Sirui Hong, Xiawu Zheng, Jonathan Chen, Yuheng Cheng, Jinlin Wang, Ceyao Zhang, Zili Wang, Steven Ka Shing Yau, Zijuan Lin, Liyang Zhou, et al. Metagpt: Meta pro-gramming for multi-agent collaborative framework. arXiv preprint arXiv:2308.00352 , 2023. 2
+
+[14] Wenlong Huang, Pieter Abbeel, Deepak Pathak, and Igor Mordatch. Language models as zero-shot planners: Extract-ing actionable knowledge for embodied agents. In Interna-tional conference on machine learning , pages 9118–9147. PMLR, 2022. 1
+
+[15] Steven James, George Konidaris, and Benjamin Rosman. An analysis of monte carlo tree search. In Proceedings of the AAAI Conference on Artificial Intelligence , 2017. 4
+
+[16] Feibo Jiang, Yubo Peng, Li Dong, Kezhi Wang, Kun Yang, Cunhua Pan, Dusit Niyato, and Octavia A Dobre. Large lan-guage model enhanced multi-agent systems for 6g commu-nications. IEEE Wireless Communications , 2024. 2
+
+[17] Bowen Jin, Chulin Xie, Jiawei Zhang, Kashob Kumar Roy, Yu Zhang, Zheng Li, Ruirui Li, Xianfeng Tang, Suhang Wang, Yu Meng, et al. Graph chain-of-thought: Augment-ing large language models by reasoning on graphs. arXiv preprint arXiv:2404.07103 , 2024. 3
+
+[18] Richard E Korf. Planning as search: A quantitative approach. 
+
+Artificial intelligence , 33(1):65–88, 1987. 6, 5
+
+[19] Guohao Li, Hasan Hammoud, Hani Itani, Dmitrii Khizbullin, and Bernard Ghanem. Camel: Communicative agents for” mind” exploration of large language model society. 
+
+Advances in Neural Information Processing Systems , 36: 51991–52008, 2023. 2
+
+[20] Xin Li. Positioning is all you need. arXiv preprint arXiv:2404.01183 , 2024. 2
+
+[21] Iou-Jen Liu, Unnat Jain, Raymond A Yeh, and Alexander Schwing. Cooperative exploration for multi-agent deep rein-forcement learning. In International conference on machine learning , pages 6826–6836. PMLR, 2021. 1
+
+[22] Jie Liu, Pan Zhou, Yingjun Du, Ah-Hwee Tan, Cees GM Snoek, Jan-Jakob Sonke, and Efstratios Gavves. Capo: Co-operative plan optimization for efficient embodied multi-agent cooperation. arXiv preprint arXiv:2411.04679 , 2024. 
+
+2, 6, 5
+
+[23] Yang Liu, Weixing Chen, Yongjie Bai, Jingzhou Luo, Xin-shuai Song, Kaixuan Jiang, Zhida Li, Ganlong Zhao, Junyi Lin, Guanbin Li, et al. Aligning cyber space with physi-cal world: A comprehensive survey on embodied ai. arXiv preprint arXiv:2407.06886 , 2024. 1
+
+[24] Zhao Mandi, Shreeya Jain, and Shuran Song. Roco: Dialec-tic multi-robot collaboration with large language models. In 
+
+2024 IEEE International Conference on Robotics and Au-tomation (ICRA) , pages 286–299. IEEE, 2024. 1, 2, 3, 6,
+
+5
+
+[25] Reiichiro Nakano, Jacob Hilton, Suchir Balaji, Jeff Wu, Long Ouyang, Christina Kim, Christopher Hesse, Shantanu Jain, Vineet Kosaraju, William Saunders, et al. Webgpt: Browser-assisted question-answering with human feedback. 
+
+arXiv preprint arXiv:2112.09332 , 2021. 229521 [26] Bo Ni and Markus J Buehler. Mechagents: Large language model multi-agent collaborations can solve mechanics prob-lems, generate new data, and integrate knowledge. Extreme Mechanics Letters , 67:102131, 2024. 2
+
+[27] Long Ouyang, Jeffrey Wu, Xu Jiang, Diogo Almeida, Car-roll Wainwright, Pamela Mishkin, Chong Zhang, Sandhini Agarwal, Katarina Slama, Alex Ray, et al. Training language models to follow instructions with human feedback. Ad-vances in neural information processing systems , 35:27730– 27744, 2022. 2
+
+[28] Xavier Puig, Kevin Ra, Marko Boben, Jiaman Li, Tingwu Wang, Sanja Fidler, and Antonio Torralba. Virtualhome: Simulating household activities via programs. In Proceed-ings of the IEEE conference on computer vision and pattern recognition , pages 8494–8502, 2018. 6
+
+[29] Xavier Puig, Tianmin Shu, Shuang Li, Zilin Wang, Yuan-Hong Liao, Joshua B Tenenbaum, Sanja Fidler, and An-tonio Torralba. Watch-and-help: A challenge for social perception and human-ai collaboration. arXiv preprint arXiv:2010.09890 , 2020. 6
+
+[30] Xavier Puig, Eric Undersander, Andrew Szot, Mikael Dal-laire Cote, Tsung-Yen Yang, Ruslan Partsey, Ruta Desai, Alexander William Clegg, Michal Hlavac, So Yeon Min, et al. Habitat 3.0: A co-habitat for humans, avatars and robots. arXiv preprint arXiv:2310.13724 , 2023. 2
+
+[31] Chen Qian, Wei Liu, Hongzhang Liu, Nuo Chen, Yufan Dang, Jiahao Li, Cheng Yang, Weize Chen, Yusheng Su, Xin Cong, et al. Chatdev: Communicative agents for software development. In Proceedings of the 62nd Annual Meeting of the Association for Computational Linguistics (Volume 1: Long Papers) , pages 15174–15186, 2024. 2
+
+[32] Timo Schick, Jane Dwivedi-Yu, Roberto Dess` ı, Roberta Raileanu, Maria Lomeli, Eric Hambro, Luke Zettlemoyer, Nicola Cancedda, and Thomas Scialom. Toolformer: Lan-guage models can teach themselves to use tools. Advances in Neural Information Processing Systems , 36, 2024. 2
+
+[33] Paul E Smaldino, Cody Moser, Alejandro Perez Velilla, and Mikkel Werling. Maintaining transient diversity is a general principle for improving collective problem solving. Perspec-tives on Psychological Science , 19(2):454–464, 2024. 2
+
+[34] Chan Hee Song, Jiaman Wu, Clayton Washington, Brian M Sadler, Wei-Lun Chao, and Yu Su. Llm-planner: Few-shot grounded planning for embodied agents with large language models. In Proceedings of the IEEE/CVF International Con-ference on Computer Vision , pages 2998–3009, 2023. 1
+
+[35] Wiebe Van der Hoek and Michael Wooldridge. Multi-agent systems. Foundations of Artificial Intelligence , 3:887–928, 2008. 2
+
+[36] Tai Wang, Xiaohan Mao, Chenming Zhu, Runsen Xu, Ruiyuan Lyu, Peisen Li, Xiao Chen, Wenwei Zhang, Kai Chen, Tianfan Xue, et al. Embodiedscan: A holistic multi-modal 3d perception suite towards embodied ai. In Proceed-ings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , pages 19757–19767, 2024. 1
+
+[37] Jason Wei, Yi Tay, Rishi Bommasani, Colin Raffel, Barret Zoph, Sebastian Borgeaud, Dani Yogatama, Maarten Bosma, Denny Zhou, Donald Metzler, et al. Emergent abilities of large language models. arXiv preprint arXiv:2206.07682 ,2022. 2
+
+[38] Jason Wei, Xuezhi Wang, Dale Schuurmans, Maarten Bosma, Fei Xia, Ed Chi, Quoc V Le, Denny Zhou, et al. Chain-of-thought prompting elicits reasoning in large lan-guage models. Advances in neural information processing systems , 35:24824–24837, 2022. 1, 2, 3
+
+[39] Muning Wen, Jakub Kuba, Runji Lin, Weinan Zhang, Ying Wen, Jun Wang, and Yaodong Yang. Multi-agent reinforce-ment learning is a sequence modeling problem. Advances in Neural Information Processing Systems , 35:16509–16521, 2022. 1, 6, 5
+
+[40] Shunyu Yao, Dian Yu, Jeffrey Zhao, Izhak Shafran, Tom Griffiths, Yuan Cao, and Karthik Narasimhan. Tree of thoughts: Deliberate problem solving with large language models. Advances in Neural Information Processing Sys-tems , 36, 2024. 1, 2, 3
+
+[41] Bangguo Yu, Hamidreza Kasaei, and Ming Cao. Co-navgpt: Multi-robot cooperative visual semantic navigation using large language models. arXiv preprint arXiv:2310.07937 ,2023. 2
+
+[42] Di Zhang, Xiaoshui Huang, Dongzhan Zhou, Yuqiang Li, and Wanli Ouyang. Accessing gpt-4 level mathemat-ical olympiad solutions via monte carlo tree self-refine with llama-3 8b: A technical report. arXiv preprint arXiv:2406.07394 , 2024. 3
+
+[43] Hongxin Zhang, Weihua Du, Jiaming Shan, Qinhong Zhou, Yilun Du, Joshua B Tenenbaum, Tianmin Shu, and Chuang Gan. Building cooperative embodied agents modularly with large language models. arXiv preprint arXiv:2307.02485 ,2023. 1, 2, 3, 5, 6
+
+[44] Zhonghan Zhao, Ke Ma, Wenhao Chai, Xuan Wang, Kewei Chen, Dongxu Guo, Yanting Zhang, Hongwei Wang, and Gaoang Wang. Do we really need a complex agent system? distill embodied agent into a single model. arXiv preprint arXiv:2404.04619 , 2024. 2
+
+[45] Andy Zhou, Kai Yan, Michal Shlapentokh-Rothman, Hao-han Wang, and Yu-Xiong Wang. Language agent tree search unifies reasoning acting and planning in language models. 
+
+arXiv preprint arXiv:2310.04406 , 2023. 229522

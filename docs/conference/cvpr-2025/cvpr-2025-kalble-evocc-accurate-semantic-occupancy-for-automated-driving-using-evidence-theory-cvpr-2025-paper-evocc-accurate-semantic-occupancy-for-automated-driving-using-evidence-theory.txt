@@ -1,0 +1,663 @@
+Title: EvOcc: Accurate Semantic Occupancy for Automated Driving Using Evidence Theory
+
+URL Source: https://openaccess.thecvf.com/content/CVPR2025/papers/Kalble_EvOcc_Accurate_Semantic_Occupancy_for_Automated_Driving_Using_Evidence_Theory_CVPR_2025_paper.pdf
+
+Published Time: Mon, 02 Jun 2025 13:40:03 GMT
+
+Number of Pages: 10
+
+Markdown Content:
+# EvOcc: Accurate Semantic Occupancy for Automated Driving Using Evidence Theory 
+
+## Jonas Kälble 1,2 Sascha Wirges 1 Maxim Tatarchenko 1 Eddy Ilg 21Bosch Center for Artificial Intelligence 2University of Technology Nuremberg 
+
+firstname.lastname@de.bosch.com eddy.ilg@utn.de 
+
+## Abstract 
+
+We present EvOcc, a novel framework for evidential seman-tic occupancy mapping. It consists of two parts: (1) an evidential approach for calculating the ground-truth 3D se-mantic occupancy maps from noisy  LiDAR  measurements, and (2) a method for training image-based occupancy esti-mation models through a new loss formulation. In contrast to state-of-the-art semantic occupancy maps, our approach explicitly models the uncertainty introduced by unobserved spaces or contradicting measurements, and we show that using it results in significantly stronger models. Evaluated as ray-based  mIoU , our evidential semantic occupancy map-ping approach improves over the baselines by at least  15 .8% 
+
+for the ground truth and  5.5%  for the trained model. Overall, we make a significant contribution towards more detailed and uncertainty-aware 3D environment understanding and safe operation in autonomous driving. 
+
+## 1. Introduction 
+
+A critical component for safe automated driving is accu-rate and reliable environment perception, which includes understanding the scene geometry as well as interpreting its semantic content. While various 3D representations have been explored in the past, semantic voxel grids have be-come a recent de facto standard for  ML -based environment perception [15, 31, 32, 34, 35]. For a long time,  automated driving  relied on  LiDAR  sen-sors due to their low and distance-independent measure-ment errors. However, recent methods attempt to recon-struct the 3D environment from camera images alone [ 10 –12 , 15 , 17 , 19 – 21 , 24 ], since  LiDAR  is sparse, expensive, and redundant. This makes predicting accurate environment maps from images an important task, and further brings up the problem of obtaining ground-truth training data. The lat-ter is usually produced by recording  LiDAR  measurements, and employing heuristics to convert them into semantic occu-pancy maps. However, such reconstructed occupancy maps   
+
+> Front-facing Camera Images Rear-facing Camera Images GT Occupancy Pred. Occupancy GT Uncertainty Pred. Uncertainty
+
+Figure 1. Semantic occupancy and birds-eye-view uncertainty. 
+
+Our model uses multi-view camera images as input and predicts semantic occupancy. We visualize the ground-truth semantic oc-cupancy obtained from  LiDAR  scans on left and the predicted semantic occupancy on the right. Below we show the GT uncer-tainty obtained from our semantic  basic belief assignment  (BBA )using the  LiDAR  scans as well as the predicted uncertainties. High uncertainties (e.g., due to occlusions) are colored in red, whereas areas of low uncertainty are colored in blue. 
+
+are often inaccurate. A recent work by Kälble et al. [15] has shown that the accuracy can in fact be improved by a margin of  30 − 50%  when simple heuristics are replaced with the framework of evidential mapping. Different from a classical probabilistic interpretation, this approach explicitly models conflicting hypotheses and unknown states, which is crucial for representing noisy real-world measurements. This CVPR paper is the Open Access version, provided by the Computer Vision Foundation. Except for this watermark, it is identical to the accepted version; the final published version of the proceedings is available on IEEE Xplore. 27467 Nevertheless, the authors only model the voxel occupancy state from  LiDAR  scans, without any notion of semantic classes. In this work, we present EvOcc , an  evidence theory 
+
+(ET ) [ 3 , 28 ] based framework for (1) accurately reconstruct-ing semantic occupancy maps from  LiDAR  scans (see Fig. 2) and (2) using these as ground-truth to train multi-camera vision models to predict evidential occupancy maps (see Fig. 1). To this end, we extend the evidential mapping frame-work from Kälble et al. [15] to include semantic class labels. We derive a novel  basic belief assignment  (BBA ) formula-tion that can handle noisy and partially annotated  LiDAR 
+
+measurements. We also employ a new loss for training se-mantic occupancy prediction models with our ground-truth data. Semantic occupancy maps produced by our approach are far superior to those from  state-of-the-art  semantic occu-pancy methods [ 31 , 32 , 34 , 35 ], which we demonstrate both qualitatively and quantitatively. Using our reconstructed evi-dential occupancy maps as training data, we are able to train evidential occupancy models that significantly outperform those trained on previously available ground truth. Note that this large improvement is achieved by only changing the model supervision, while keeping the model architecture the same. In summary, we make the following contributions: • We present a complete 3D evidential mapping framework for semantic occupancy consisting of two parts: occupancy GT generation and image-based occupancy estimation. • We apply a novel  BBA  formulation based on noisy, par-tially annotated  LiDAR  measurements, and employ a novel loss that directly uses the obtained evidential semantic oc-cupancy maps as supervision. • We demonstrate both qualitatively and quantitatively, that the semantic occupancy maps produced by our trained model and mapping approach are significantly more accu-rate than those from  state-of-the-art  methods in terms of agreement with  LiDAR  measurements (see Sec. 5.3). Our code is available on GitHub 1.
+
+## 2. Related Work 
+
+3D Occupancy Datasets. Training perception models for automated driving requires large-scale multimodal datasets, such as KITTI [ 8], nuScenes [ 2], Waymo [ 30 ] and Agro-verse2 [ 36 ]. These datasets record the surrounding environ-ment of the vehicle with multiple onboard sensors, such as  LiDAR  and cameras. Additionally, they provide an-notations for the raw sensor data for tasks like 3D object detection [ 17 , 19 , 23 , 24 ] and semantic  LiDAR  segmenta-tion [ 12 , 37 ]. The task of camera-only semantic occupancy prediction [ 18 , 31 , 32 , 34 , 35 ] is to predict the occupancy state and class of each voxel in the environment of the vehi-
+
+> 1https://github.com/boschresearch/evocc
+
+cle, given the onboard camera images. A common process for obtaining  ground-truth  (GT ) 3D occupancy grids is aggregating  LiDAR  measurements over multiple time steps under the consideration of moving ob-jects [ 31 , 32 , 34 , 35 ]. The resulting aggregated point clouds are then partitioned into dense voxel grids, where each voxel containing a point is labeled according to the point’s annota-tion. Finally, ray casting is used to determine the free space labels between the  LiDAR  origin and the first occupied voxel. The quality of the occupancy grids can be improved through additional processing steps. For instance, Occ3D [ 31 ] and SurroundOcc [ 35 ] propose to make the point cloud more dense using mesh and surface reconstruction [ 13 , 33 ]. Fur-thermore, Occ3D enforces consistency between the camera images and the occupancy grid through image-guided voxel refinement. OpenOccupancy [ 34 ] improves the label quality with additional human supervision and their Augment and Purifying process. Kälble et al. [15] leverage  evidence the-ory  (ET ) and achieve the current state of the art by proposing to model the occupancy state of each voxel based on the number of transmissions and reflections through it. Our work builds up on [ 15 ] and proposes a framework using  ET 
+
+that can model beliefs for semantic classes. 
+
+3D Semantic Occupancy Prediction. The task of 3D se-mantic occupancy prediction is to estimate the state of each voxel in the environment of the vehicle using only cam-era images. A voxel can either be free or occupied by a specific class. The CVPR 2023 Occupancy Prediction Challenge [ 31 , 32 ] is a popular benchmark for this task. The winner of this challenge, FB-OCC [ 20 , 21 ], extends BEVDet [ 11 ] by a forward-backward view transformation module. TPVFormer [ 12 ] addresses the high memory and compute requirements for a dense 3D grid and projects the 3D space onto 3D planes. Additional depth supervision for the process of splatting 2D image features into the 3D space has been introduced by BEVDepth [ 17 ]. BEVDet4D [ 10 ] ag-gregates additional information over time for the task of 3D object detection. In this work, we use BEVDet4D-Occ-R50 as a baseline model, which is an adaptation of BEVDet4D specifically tailored for the task of semantic occupancy pre-diction and commonly used as reference model. We show that training this model on the new ground truth obtained with our approach gives superior results. 
+
+Occupancy Grid Mapping. Static occupancy grid map-ping using a Bayesian interpretation of probabilities is a well-explored area in robotics [ 7, 25 ]. The state of a voxel cell is modeled as a Bernoulli-distributed random variable and can either be occupied or free. Since the state of the cell is defined by a single probability, the model does not consider the uncertainty in the measurements to estimate the cell state, nor does it handle conflicts between different mea-27468 LiDAR   
+
+> point clouds
+> Spherical sensor mapping (Sec. 3.2)
+> Multi-frame aggregation (Sec. 3.2)
+> Semantic Basic Belief Assignment (Sec. 4.1)
+> Decision making
+> GT semantic occupancy grid
+> Multi-view camera images
+> 2D image backbone
+> 3D voxel backbone
+> BBA prediction (Sec. 4.2)
+> Decision making
+> Predicted semantic occupancy grid
+> Spherical
+> reflections / transmissions
+> Normalized
+> reflections / transmissions
+> Belief
+> masses
+> Image
+> features
+> Voxel
+> features
+> Belief
+> masses
+> BBA supervision
+> Figure 2. Overview. A scheme of our evidential framework for semantic occupancy mapping.
+
+surements. To circumvent these limitations, Yang and Aitken [39] propose to model the state of a cell using  ET  [ 3, 28 ], which can explicitly represent the uncertainty. Richter et al. [27] and Li et al. [16] model the 2D  birds-eye-view  (BEV )occupancy maps using  ET . More recent works extend the mapping task to 3D and consider dynamic environments as well as semantics. There are some specialized models for au-tomated driving scenarios. Richter et al. [26] split dynamic traffic scenes into two evidential  BEV  grid maps contain-ing the ground plane and everything on top of the ground. Kim et al. [14] present a 3D semantic occupancy mapping approach, which fuses unreliable semantic predictions using 
+
+ET . Furthermore, improvements in the mapping process for dynamic scenes can be achieved by considering the motion of objects using scene flow from  LiDAR  measurements [ 1 ]. A framework for 3D occupancy grid mapping based on  ET 
+
+within a dynamic environment is presented in [ 15 ]. However, the presented method is limited to occupancy maps without semantic information. 
+
+## 3. Preliminaries 
+
+3.1. Evidence Theory 
+
+Here, we briefly revisit the fundamentals of  evidence theory 
+
+(ET ), or Dempster-Shafer theory [ 3, 28 ], used to model the semantic occupancy state of individual voxels (see Sec. 4.1). 
+
+ET  provides a flexible framework for reasoning about the uncertainty, be it total uncertainty or partial knowledge about a system [ 29 ]. A single hypothesis is described by a subset of the  frame of discernment  Ω, and the  BBA 
+
+m : 2 Ω → [0 , 1] with X
+
+> ω⊆Ω
+
+m( ω) = 1  (1) assigns a normalized belief mass  m( ω) to each hypothesis 
+
+ω ⊆ Ω.Intuitively, the belief mass represents the proportion of relevant and available evidence supporting the hypothesis  ω
+
+but not any particular subset of it. The classical probability of a hypothesis  ω lies between two values known as belief 
+
+and plausibility . The belief 
+
+bel( ω) = X
+
+> X⊆ω
+
+m( X) ≤ prob( ω) (2) of a hypothesis  ω is the sum of all belief masses supporting the hypothesis  ω. It serves as a lower bound of the probability that a certain hypothesis is true. The plausibility 
+
+pl( ω) = 1 − X
+
+> X∩ω=∅
+
+m( X) ≥ prob( ω) (3) is an upper bound for this probability. It can be defined as the complement of all belief masses not supporting the hypothesis  ω. The uncertainty 
+
+u( ω) = pl( ω) − bel( ω) ∈ [0 , 1]  (4) of a hypothesis  ω can then be defined as the discrepancy between plausibility and belief [6]. 
+
+3.2. Spherical Sensor Mapping 
+
+Kälble et al. [15] describe an approach to determine the state of a voxel based on the transmissions, and reflections through it. These are measured by a  LiDAR  sensor and provide evidence for a voxel being free or occupied by a certain class. Different from their work, we address the multi-class case here. 
+
+Reflections Grid Map. Instead of mapping all reflections into a single spherical grid map, we create a separate spher-ical reflections grid map  rsph ci (ρ, ϕ, θ ) for each class  ci. On top of that, we have one additional reflections grid map 
+
+rsph unlabeled (ρ, ϕ, θ ) for all unlabeled reflections 2. This results in a total of  C + 1  spherical reflection grid maps, where  C
+
+is the number of classes. 
+
+Transmissions Grid Map. Since transmissions represent free space and are independent of the reflections’ semantic   
+
+> 2In nuScenes [2] only one of every 10 LiDAR scans is labeled. 27469
+
+classes, we only produce a single spherical transmission map 
+
+tsph (ρ, ϕ, θ ). For a given voxel cell located at  (ρ, θ, ϕ ), the number of transmissions: 
+
+tsph (ρ, ϕ, θ ) = X
+
+> ρ′>ρ
+
+rsph unlabeled (ρ′, ϕ, θ ) + 
+
+> C
+
+X
+
+> i=1
+
+rsph ci (ρ′, ϕ, θ )
+
+!| {z }
+
+> Sum over labeled and unlabeled reflections
+
+(5) is given by the sum over all reflections with the radius  ρ′
+
+greater than  ρ of the voxel under consideration. This can be efficiently implemented as a cumulative sum from the maximal to the minimal radial distance. 
+
+Grid Map Normalization. We normalize the number of reflections and transmissions per voxel by their respective volume. We obtain the normalized reflections  ˆrsph ci (ρ, ϕ, θ )
+
+and  ˆrsph unlabled (ρ, ϕ, θ ) as well as the normalized transmissions 
+
+ˆtsph (ρ, ϕ, θ ) for each time step separately. Details can be found in the Supplemental in Sec. A. 
+
+Multi-Frame Aggregation. We aggregate the reflections and transmissions from multiple time steps into a single Cartesian voxel grid. Using known per-object transforma-tions between the reference frame at time step  n and frames at all other time steps  k, we can accumulate the final per-voxel values as: 
+
+ˆrci,n (x, y, z ) = 1
+
+K
+
+> K
+
+X
+
+> k=1
+
+g(ˆ rsph ci,k (ρ, ϕ, θ )) , (6) where  g applies the motion compensation and transforms spherical coordinates into Cartesian ones. The same applies to the unlabeled reflections  ˆrunlabled (x, y, z ) and transmis-sions  ˆt(x, y, z ).
+
+## 4. Method 
+
+Here we present our EvOcc framework split into two stages. The first stage (Sec. 4.1) reconstructs accurate semantic oc-cupancy maps from sparse  LiDAR  scans with partially anno-tated semantic labels. The second stage (Sec. 4.2) provides models trained to predict semantic occupancy with signifi-cantly improved accuracy compared to the state of the art. 
+
+4.1. Evidential Semantic Occupancy Mapping 
+
+In contrast to the commonly used Bayesian approach [ 10 –12 , 19 –22 , 31 ] for modeling semantic occupancy grids,  ET 
+
+has an advantage of directly representing uncertainties. Initially, we need to define the frame of discernment, that models possible states, which we here define per voxel as being free or occupied by a certain class: 
+
+Ω def 
+
+= {free , c1, c2, . . . , cC
+
+| {z } 
+
+> Clabeled classes
+
+} = {f, c1, c2, . . . , cC }. (7) Voxel state Hypothesis  ω Direct Measurement  z(ω)                            
+
+> Free F={f}z(F)=αtˆt
+> Occupied by ith class Ci={ci}z(Ci)=αrˆrci
+> Occupied O=S
+> iCiz(O)=αrˆrunlabeled
+> Uncertain Ω=O ∪ F z(Ω) = 0
+
+Table 1. Overview of modeled hypotheses and direct measure-ments. The table shows our selected hypotheses from the power set  2Ω. We define the hypothesis  F to model free voxels. Each labeled class has its own hypothesis  Ci. The hypothesis  O models voxels, which are known to be occupied with unknown semantics. The hypothesis  Ω describes total uncertainty about the voxel state. We directly associate every  LiDAR  measurement processed by  z(·)
+
+to the corresponding hypotheses. There are no measurements for 
+
+Ω. αt and  αr act as sensor dependent-hyperparameters. 
+
+The set of hypotheses is then the power set of these states. Obviously, simply modeling the belief mass for each pos-sible hypothesis  ω ∈ 2Ω quickly becomes infeasible since the number of hypotheses  N = |2Ω| = 2 |Ω| grows expo-nentially. For instance, the nuScenes dataset [ 2 ] contains 17 different classes resulting in a cardinality of  |ΩnuScenes | = 18 
+
+and  NnuScenes = 2 18 = 262 , 144  possible hypotheses. There-fore, we propose an approximation through the most im-portant subset that contains the “free” hypothesis  F, the “occupied by class  i” hypotheses  Ci, the “generally occupied” 
+
+O = ∪Ci=1 {ci} hypothesis, and the  Ω hypothesis, which corresponds to general uncertainty. The partly annotated  LiDAR  measurements are repre-sented as several Cartesian voxel grids (see Sec. 3.2): trans-missions  ˆt, reflections from a certain class  ˆrci and unlabeled reflections  ˆrunlabled . As the next step, we need to define how to map these measurements to the hypotheses established above. To that end, we introduce a simple measurement function  z : 2 Ω → [0 , inf) , which defines sensor measure-ments, directly providing evidence for a hypothesis but not any particular subset of it. The measurement function  z re-turns a value greater than or equal to zero corresponding to the number of transmissions or reflections supporting the hypothesis in question, scaled with factors  αt ∈ R≥0 and 
+
+αr ∈ R≥0. These factors act as sensor-dependent hyper-parameters, similar to  pFN  and  pFP  in [ 15 ]. We provide an overview of the hypotheses and the associated direct mea-surements in Table 1. We propose to model the belief of a hypothesis  ω ⊂ Ω
+
+by considering its supporting and conflicting measurements defined as follows: • Supporting measurements  z(X) provide evidence for hy-pothesis  ω being true if  X ⊆ ω. Example: a measurement of a certain class  z(Ci) supports the hypothesis of being (generally) occupied , since the  Ci is a subset of the occu-pied hypothesis  O.• Conflicting measurements  z(X) disprove the hypothesis  ω
+
+if  X ∩ ω = ∅, i.e., when  X and  ω are mutually exclusive 27470 and cannot be true at the same time. Example: a free 
+
+measurement  z(F) conflicts with the occupied hypothesis, since  F is disjoint to the occupied hypothesis  O.By summing over all supporting and conflicting measure-ments individually, we obtain the belief of a hypothesis  ω
+
+as: 
+
+bel( ω) = 
+
+
+
+1 − exp 
+
+
+
+− X
+
+> X⊆ω
+
+z(X)
+
+| {z }
+
+> Supporting measurements
+
+
+
+exp 
+
+
+
+− X
+
+> X∩ω=∅
+
+z(X)
+
+| {z }
+
+> Conflicting measurements
+
+
+
+(8) 
+
+=
+
+1 − Y
+
+> X⊆ω
+
+e−z(X)
+
+ Y
+
+> X∩ω=∅
+
+e−z(X) for ω ⊂ Ω.
+
+(9) Measurements that are neither supporting nor conflicting do not provide any concrete evidence about the specific hypothesis in question and therefore do not contribute to the belief. Additionally, the belief for  ω = Ω  is equal to one by definition. Intuitively, this formulation ensures that the belief (acting as lower bound that a hypothesis is true) can only be greater than zero if there is any measurement supporting the hypothesis. Furthermore, the belief of a hypothesis can only reach the maximum of one if there are no conflicting measurements. To calculate the belief masses  m( ω) from the beliefs 
+
+bel( ω), we make use of Eq. (2) by evaluating it for each hypothesis  ωi. This can be formulated as a linear system: 
+
+b =
+
+
+
+bel( ω1)bel( ω2)
+
+...
+
+bel( ωn)
+
+ = S
+
+
+
+m( ω1)m( ω2)
+
+...
+
+m( ωn)
+
+ = Sm , (10) 
+
+S ∈ Rn×n : Sij =
+
+(1 if  ωj ⊆ ωi
+
+0 otherwise , 
+
+b ∈ Rn : belief vector ,
+
+m ∈ Rn : belief mass vector .
+
+The belief mass vector  m contains the belief masses  m( ωj )
+
+for all hypotheses. The matrix  S has ones as elements if the belief mass  m( ωj ) contributes to the belief  bel( ωi) (i.e., 
+
+ωj ⊆ ωi), and zeros otherwise. For a full definition of the entries, please see the supplemental in Sec. B.  S is al-ways invertible (see supplemental in Sec. C), and we can calculate the belief mass vector as  m = S−1b. In fact, our derived  BBA  is a generalization of the  BBA  proposed in [ 15 ]where there are only two conflicting measurements, namely transmissions and reflections (without any class informa-tion), and the scale values are set to  αr = − log( pFP ) and 
+
+αt = − log( pFN ).
+
+4.2. Evidential Semantic Occupancy Prediction 
+
+Towards the goal of predicting semantic occupancy grids from multi-view camera images, we present a novel loss formulation which allows to train models directly with the basic belief assignments obtained from our evidential grid mapping approach. Therefore, we use an off-the-shelf occupancy prediction model [ 10 ] and only adapt the model outputs. Without chang-ing the network architecture, we interpret its softmax output as a belief mass vector, and supervise it with the ground truth belief masses calculated according to Sec. 4.1. Train-ing such a model requires a custom BBA-appropriate loss function. Several works attempted to define a cross-entropy analogue for  BBA s [ 4 – 6, 38 ]. We adopt a differentiable formulation by Dezert and Dambreville [6] , and directly use it as a loss between the predicted belief masses  mpred  and the ground-truth belief masses  mgt .For a single voxel  i, the BBA cross-entropy is defined as 
+
+CE BBA 
+
+
+
+mgt  
+
+> i
+
+, mpred 
+
+> i
+
+
+
+(11) 
+
+= X
+
+> X⊆Ω
+
+h
+
+− mgt  
+
+> i
+
+(X)  1 − ugt  
+
+> i
+
+(X) log 
+
+
+
+mpred  
+
+> i
+
+(X)
+
+
+
++ u gt  
+
+> i
+
+(X)
+
+
+
+1 − mpred  
+
+> i
+
+(X)
+
+ i 
+
+.
+
+In addition to the belief mass vector  mgt  
+
+> i
+
+and  mpred  
+
+> i
+
+the uncer-tainty vector  ugt  
+
+> i
+
+is needed, which is defined as the difference between the plausibility and belief (see Eq. (4)). This can be easily calculated from  mgt  
+
+> i
+
+using Eq. (2) and Eq. (3). Similar to its classical counterpart, the definition of the BBA cross-entropy is not symmetric, but it always satisfies the inequality: 
+
+CE BBA (mgt  
+
+> i
+
+, mpred  
+
+> i
+
+) ≥ CE BBA (mgt  
+
+> i
+
+, mgt  
+
+> i
+
+) ≥ 0. (12) Importantly, the left equality is achieved, if and only if the two  BBA s are equal, i.e.,  mgt  
+
+> i
+
+= mpred  
+
+> i
+
+. Additionally, if the  BBA s mgt  
+
+> i
+
+and  mpred  
+
+> i
+
+are Bayesian (i.e.,  prob( ω) = bel( ω) = pl( ω) and therefore u( ω) = 0 , ∀ω ⊆ Ω), the 
+
+CE BBA (mgt  
+
+> i
+
+, mpred  
+
+> i
+
+) becomes the classical cross-entropy. We have observed that the distribution of belief masses in the ground-truth is highly imbalanced (see supplemental in Fig. I). To compensate for that, we introduce the per-voxel weight  wi and balance the contribution of individual voxels based on their frequency. The final loss is a weighted sum of the  BBA s cross-entropy values of all voxels: 
+
+L = X
+
+> i
+
+wiCE BBA (mgt  
+
+> i
+
+, mpred  
+
+> i
+
+) . (13) 27471 Camera Images Occ3D GT Our GT Baseline Our Model                
+
+> Camera Images Occ3D GT Our GT Baseline Our Model
+> Camera Images Occ3D GT Our GT Baseline Our Model
+> Camera Images Occ3D GT Our GT Baseline Our Model
+> Car Truck Pedestrian Driv. surf. Sidewalk Other flat Vegetation Terrain Manmade Generally occ.
+
+Figure 3. Semantic occupancy grid maps. We visualize the ground-truth semantic occupancy grid maps from Occ3D [ 31 ] and our method on samples from the nuScenes [ 2 ] dataset. Semantic labels are assigned to each voxel based on the  BBA  (see Sec. 4.2). Additionally, we visualize predictions of BEVDet4D-Occ [ 10 ] trained with the semantic occupancy data of Occ3D [ 31 ] (baseline) and trained with our framework. Both models use the camera images as input. In the first and second example, the baseline model predicts arbitrary flying voxels, whereas our predictions are much cleaner. In the third example, our model predicts the shape of the trees much better. The last example shows how our GT occupancy is better capable of separating the pedestrians.    
+
+> Camera Images Pred. Semantics Pred. Uncertainty
+> Camera Images Pred. Semantics Pred. Uncertainty
+> Camera Images Pred. Semantics Pred. Uncertainty
+
+Figure 4. Birds-eye-view uncertainty. For each of the three scenes, we visualize the input camera images on the top. For each scene, we show the predicted semantics of our model on the left. On the right we depict the predicted uncertainties  m(Ω)  averaged along the height dimension. The model predicts high uncertainties (colored in red) mainly in occluded areas, e.g., behind walls. Clearly visible areas obtain much lower uncertainties colored in blue. 
+
+The weight  wi is calculated from the inverse square root of the mean  BBA  over all voxels  mgt mean :
+
+wi = X
+
+> X⊆Ω
+
+mgt  
+
+> i
+
+(X)
+
+q
+
+mgt mean (X)
+
+with mgt mean = 1
+
+N
+
+> N
+
+X
+
+> i=1
+
+mgt  
+
+> i
+
+.
+
+(14) This per-voxel weighting increases the contribution of rare voxels and decreases the contribution of very common vox-els, e.g., those with total uncertainty ( mgt  
+
+> i
+
+(Ω) = 1 ). 
+
+Decision-making based on  BBA s. In order to finally pre-dict each voxel’s state, we need to make an informed decision based on the  BBA  of this voxel. To this end, we calculate the relative entropy  DBBA (mi|| m) = CE BBA (mi, m) −
+
+CE BBA (mi, mi) between our predicted  BBA  m and  BBA s
+
+mi, where  mi is focused on a specific hypothesis such that 
+
+mi(ω) = 1  if  ω = ωi and 0 otherwise. The  BBA  mi and the respective hypothesis  ωi, which minimizes the relative entropy, is selected as the decision [6]: 
+
+ω∗ = ωi∗ with i∗ = arg min 
+
+> i
+
+DBBA (mi|| m). (15) In our particular case, there are two decisions to be made. First, we need to decide if a voxel is free or occupied by anything (class-agnostic). Second, we need to determine the semantic classes of all occupied voxels. This leads to the following decision rules: • Occupancy state : We define  mocc (ω) = 1  if  ω = O
+
+and 0 otherwise. Similarly, we define  mfree (ω) = 1  if 
+
+ω = F and 0 otherwise. A voxel is considered occupied if 
+
+DBBA (mocc || m) < DBBA (mfree || m) and free otherwise. • Semantic class : For each class  i, we define  mi(ω) = 1  if 
+
+ω = ci, and 0 otherwise. An occupied voxel is assigned the semantic class  ci if  DBBA (mi|| m) < DBBA (mj || m)27472 for all  j̸ = i, i.e., the relative entropy between the  BBA 
+
+mi and the  BBA  m is minimal. Note that this decision step is only applied before the final evaluation, which requires a discrete class for each voxel. During model training we directly use the belief masses to supervise our model. 
+
+## 5. Experiments 
+
+We evaluate our method on the nuScenes dataset [ 2], which is most common in the field of occupancy prediction [ 15 , 31 ,32 , 34 , 35 ]. Additional results for the Waymo dataset [ 30 ]are provided in the supplementary material in Sec. F. 
+
+5.1. Evaluation Protocol 
+
+The evaluation of occupancy grids is a challenging task, since a perfect ground-truth occupancy grid is not available. However, we can evaluate the quality of different occupancy grid maps by comparing them to the  LiDAR  measurements, which provide the best common reference and source of ground-truth. We follow the evaluation protocol of [ 15 ] and report additional error metrics for the semantic labels. 
+
+Depth Evaluation. To evaluate the geometry of the oc-cupancy grid maps, we compare the measured depth of the 
+
+LiDAR  dlidar  
+
+> i
+
+scans with the rendered depth from the occu-pancy grid  dpred  
+
+> i
+
+. To do so, we cast a ray from the  LiDAR 
+
+sensor origin in the direction of the  ith  LiDAR  measurement. We terminate the ray at the first intersection with the sur-face of a voxel predicted to be occupied. We then extract the length of this rendered ray until the intersection point and call it the rendered depth  dpred  
+
+> i
+
+. Finally, we compare the rendered depth  dpred  
+
+> i
+
+to the measured depth  dlidar  
+
+> i
+
+of the 
+
+LiDAR  using established depth metrics. In Tab. 2 we report the  mean absolute error  (MAE ) and  root mean squared error 
+
+(RMSE ), as well as the percentage of points with a relative error  δ below a certain threshold. 
+
+Semantic Evaluation. Similar to the depth evaluation, we cast a ray from the  LiDAR  sensor origin in the direction of each  LiDAR  measurement. Instead of comparing the depths, we compare the semantic labels of the first occupied voxels along each ray  lpred  
+
+> i
+
+with the semantic labels of the labeled 
+
+LiDAR  scans  llidar  
+
+> i
+
+given in the nuScenes dataset [ 2]. We report the  intersection-over-union  (IoU ) per class, as well as the mean  IoU  (mIoU) averaged across all classes in Tab. 3. Note that this metric does not take the depth errors into account: if the  LiDAR  ray happens to have the same label as the first voxel they intersect, this prediction will be counted as correct even though the depth might be wrong. To quantify both, the depth and the class accuracy at the same time, we calculate the fraction of points which have a relative depth error below a certain threshold  δcls  and have the correct semantic label as given by the labeled  LiDAR 
+
+scans. This metric is stricter than the relative depth accuracy, as it requires the correct semantic label in addition to the correct depth. 
+
+5.2. Model Training 
+
+To demonstrate the impact of the more accurate  GT  data provided by our method, we compare BEVDet4D-Occ [ 10 ,11 ] trained on our semantic occupancy data and our proposed supervision to the same model trained on the commonly used Occ3D [ 31 ] dataset. We use ResNet-50 [ 9] as the backbone for BEVDet4D-Occ [ 10 , 11 ]. The model predicts semantic occupancy grid maps, using the surround-view camera images as model inputs. Importantly, we do not 
+
+change the model architecture, but only the loss and the number of outputs in the last layer to match the number of hypotheses. Additionally, we use our generated semantic occupancy data instead of Occ3D’s data for supervision. BEVDet4D-Occ uses additional depth supervision dur-ing training, which is not required for our occupancy 
+
+GT . We start training from a model checkpoint trained on Occ3D [ 31 ]. We continue training for 24 epochs using the same hyperparameters, but only changing the model super-vision to our evidential formulation. Finally, we reduce the learning rate by a factor of 10 and continue training for 24 more epochs. The baseline model follows the same training schedule, but is supervised with Occ3D’s data. 
+
+5.3. Evaluation of Semantic Occupancy Grids 
+
+Semantic Occupancy Ground Truth. We compare our semantic occupancy grids with those of SurroundOcc [ 35 ], Scene as Occupancy [ 32 ], Occ3D [ 31 ], and Kälble et al. [15] on the nuScenes dataset [ 2]. The former methods provide se-mantic occupancy grids, while the last method provides the state of the art only for binary occupancy grids. Therefore, we can only report the depth evaluation results for [ 15 ] and the additional semantic evaluation as described in Sec. 5.1 for all other methods. We show qualitative results in Fig. 3, visualizing the generated occupancy  GT  from Occ3D [ 31 ]and our method. Additionally, we show the correspond-ing model predictions as well as the front camera images. The depth evaluation results are summarized in Tab. 2. Our method consistently outperforms all baselines across dif-ferent metrics and voxel grid resolutions. Through our ex-tended hyperparameter search space for  αr and  αt and novel decision-making scheme, we even outperform [ 15 ] in terms of geometric accuracy. Tab. 3 provides quantitative results for the ray-based  IoU  for the semantic classes. Also in this case our method consistently outperforms all the baselines, which validates that our approach for semantic occupancy using  evidence theory  is superior to simpler heuristic-based methods. 27473 Voxel size 
+
+> MAE
+> RMSE
+> δ <  1.25
+> δ <  1.25 2
+> δ <  1.25 3
+> δcls  < 1.25
+> δcls  < 1.25 2
+> δcls  < 1.25 3
+
+in m in m in m in % in % in % in % in % in % Occupancy  GT  SurroundOcc [35] 0.5 2.80 5.34 56.2 81.1 88.6 49.8 69.0 72.6 Scn. as Occ. [32] 0.5 2.92 5.17 46.7 73.4 86.6 41.4 62.3 70.4 Occ3D [31] 0.4 1.89 4.33 81.5 89.4 93.0 74.2 78.7 80.1 Kälble et al. [15] 0.4 1.25 3.42 87.9 94.6 96.8 – – –EvOcc (ours) 0.4 1.21 2.98 90.1 95.8 97.6 83.4 86.6 87.2 
+
+OpenOccupancy [34] 0.2 2.08 4.35 70.6 83.6 89.5 65.1 74.2 77.3 Kälble et al. [15] 0.2 0.91 2.99 92.6 96.2 97.7 – – –EvOcc (ours) 0.2 0.84 2.62 93.8 96.9 98.3 87.1 88.5 88.9 
+
+> Pred.
+
+Occ3D [31] 0.4 2.33 4.31 58.8 89.6 94.3 50.4 74.3 76.4 EvOcc (ours) 0.4 1.66 4.18 88.6 94.3 96.7 76.6 79.5 80.4 
+
+Table 2. Depth evaluation. We compare different methods to generate occupancy  GT  data as well as trained models on the nuScenes [ 2]dataset, following the evaluation procedure described Sec. 5.1. The voxel size and depth errors are in meters, while the remaining numbers are in percent. Our method provides occupancy maps that match the  LiDAR  scans much better compared to other methods using a comparable voxel size. We see the same for BEVDet4D-Occ [10] trained with our evidential framework as compared to training on Occ3D [31].                                                                                                                                                 
+
+> Voxel size
+> Barrier
+> Bicycle
+> Bus
+> Car
+> Construction vehicle
+> Motorcycle
+> Pedestrian
+> Traffic cone
+> Trailer
+> Truck
+> Driveable surface
+> Other flat
+> Sidewalk
+> Terrain
+> Manmade
+> Vegetation
+> Mean
+> Occupancy  GT  SurroundOcc [35] 0.5 49.6 12.9 67.0 48.1 34.7 28.1 19.3 9.1 42.5 58.1 79.9 31.8 44.4 45.3 48.6 47.4 41.7 Scn. as Occ. [32] 0.5 50.0 13.9 70.7 52.1 43.8 30.3 20.6 8.8 52.7 63.8 77.5 28.7 38.6 39.4 49.7 48.0 43.0 Occ3D [31] 0.4 65.5 19.0 74.2 58.0 48.5 32.7 24.6 14.6 53.7 66.4 84.8 50.6 58.9 56.5 55.9 54.5 51.2 EvOcc (ours) 0.4 72.9 34.7 85.1 77.1 71.8 57.5 45.2 24.8 80.0 83.2 89.0 59.6 66.6 68.9 77.7 77.2 67.0
+> OpenOcc. [34] 0.2 66.2 26.6 77.9 67.8 56.4 47.1 36.9 16.9 57.5 74.4 81.8 44.3 51.0 50.8 56.4 53.4 54.1 EvOcc (ours) 0.2 82.1 45.2 89.7 83.3 78.2 69.3 56.8 37.1 84.9 87.9 89.0 70.9 76.1 76.5 82.7 81.3 74.4
+> Pred.  Occ3D [31] 0.4 53.6 15.3 68.7 55.2 33.1 26.3 23.5 10.3 39.5 52.8 82.0 31.3 43.1 43.2 56.2 55.5 43.1 EvOcc (ours) 0.4 61.3 5.0 76.6 69.2 38.8 32.1 25.6 13.3 46.9 63.2 86.9 44.0 53.7 56.8 58.6 46.2 48.6
+
+Table 3. Semantic evaluation. We compare the semantic occupancy grid maps of different semantic occupancy  GT  reconstructions, as well as those from trained models, to the  LiDAR  scans of the nuScenes [ 2] dataset following the evaluation procedure from Sec. 5.1. The voxel size is in meters, while the remaining numbers are in percent. Our method consistently yields more accurate  GT  semantic occupancy grid maps and leads to better trained models. All numbers are in percent. 
+
+Semantic Occupancy Prediction. We compare the model predictions of the models trained on our semantic occupancy data with the models trained on the Occ3D [ 31 ] data. We evaluate the same metrics for the model predictions as for the occupancy  GT  (see Sec. 5.1). We report the quantitative results in Tab. 2 and Tab. 3. BEVDet4D-Occ trained on our data yields more accurate predictions in terms of geometry and semantics. Qualitative results of the model semantic pre-dictions and corresponding  GT  occupancy grids are shown in Fig. 3. Additionally, we visualize the predicted semantics together with the aggregated uncertainty  m(Ω)  along the height dimension in Fig. 4. Furthermore, we compare our ground-truth uncertainty and the predicted uncertainty in Fig. 1. 
+
+## 6. Conclusion 
+
+In this work, we presented a novel approach to obtain high-quality 3D semantic occupancy maps using  ET . Our ap-proach introduces a new  BBA  formulation for modeling 
+
+LiDAR  measurements with partial semantic annotations. We compared our generated ground truth to that of other  state-of-the-art  semantic occupancy datasets and showed that our data matches the  LiDAR  measurements better by a large margin in terms of geometry and semantics. We also demon-strated that using our ground truth for training the semantic occupancy prediction model BEVDet4D-Occ significantly improves the model’s performance. In conclusion, our work sets a new state of the art for semantic occupancy ground truth generation and model training, and therewith makes an important contribution towards autonomous driving. 27474 References 
+
+[1] Stefan Andreas Baur, David Josef Emmerichs, Frank Moos-mann, Peter Pinggera, Björn Ommer, and Andreas Geiger. SLIM: Self-supervised LiDAR scene flow and motion seg-mentation. In ICCV , 2021. 3 [2] Holger Caesar, Varun Bankiti, Alex H Lang, Sourabh Vora, Venice Erin Liong, Qiang Xu, Anush Krishnan, Yu Pan, Gi-ancarlo Baldan, and Oscar Beijbom. nuscenes: A multimodal dataset for autonomous driving. In CVPR , 2020. 2, 3, 4, 6, 7, 8, 1 [3] Arthur P Dempster. A generalization of bayesian inference. 
+
+Journal of the Royal Statistical Society: Series B (Method-ological) , 1968. 2, 3 [4] Yong Deng. Uncertainty measure in evidence theory. Science China Information Sciences , 63, 2020. 5 [5] Jean Dezert. An effective measure of uncertainty of basic belief assignments. 2022 25th International Conference on Information Fusion (FUSION) , pages 1–8, 2022. [6] Jean Dezert and Frédéric Dambreville. Cross-entropy and relative entropy of basic belief assignments. 2023 26th Inter-national Conference on Information Fusion (FUSION) , pages 1–8, 2023. 3, 5, 6 [7] Alberto Elfes. Using occupancy grids for mobile robot per-ception and navigation. Computer , 22(6):46–57, 1989. 2 [8] Andreas Geiger, Philip Lenz, and Raquel Urtasun. Are we ready for autonomous driving? The KITTI vision benchmark suite. In CVPR , 2012. 2 [9] Kaiming He, Xiangyu Zhang, Shaoqing Ren, and Jian Sun. Deep residual learning for image recognition. In CVPR , 2016. 7[10] Junjie Huang and Guan Huang. BEVDet4D: Exploit temporal cues in multi-camera 3d object detection. arXiv preprint arXiv:2203.17054 , 2022. 1, 2, 4, 5, 6, 7, 8 [11] Junjie Huang, Guan Huang, Zheng Zhu, Ye Yun, and Dalong Du. BEVDet: High-performance multi-camera 3d object detection in bird-eye-view. arXiv preprint arXiv:2112.11790 ,2021. 2, 7 [12] Yuanhui Huang, Wenzhao Zheng, Yunpeng Zhang, Jie Zhou, and Jiwen Lu. Tri-perspective view for vision-based 3D semantic occupancy prediction. In CVPR , 2023. 1, 2, 4 [13] Michael Kazhdan, Matthew Bolitho, and Hugues Hoppe. Pois-son surface reconstruction. In Proceedings of the fourth Euro-graphics symposium on Geometry processing , page 0, 2006. 2[14] J. Kim et al. Evidential semantic mapping in off-road envi-ronments with uncertainty-aware bayesian kernel inference. 
+
+IROS , 2024. 3 [15] Jonas Kälble, Sascha Wirges, Maxim Tatarchenko, and Eddy Ilg. Accurate training data for occupancy map prediction in automated driving using evidence theory. In CVPR , 2024. 1, 2, 3, 4, 5, 7, 8 [16] J. Li et al. Segm: A novel semantic evidential grid map by fusing multiple sensors. In PRCV , 2020. 3 [17] Yinhao Li, Zheng Ge, Guanyi Yu, Jinrong Yang, Zengran Wang, Yukang Shi, Jianjian Sun, and Zeming Li. BEVDepth: Acquisition of reliable depth for multi-view 3D object detec-tion. In AAAI , pages 1477–1485, 2023. 1, 2 [18] Yiming Li, Sihang Li, Xinhao Liu, Moonjun Gong, Kenan Li, Nuo Chen, Zijun Wang, Zhiheng Li, Tao Jiang, Fisher Yu, Yue Wang, Hang Zhao, Zhiding Yu, and Chen Feng. SSCBench: Monocular 3D semantic scene completion bench-mark in street views. arXiv preprint arXiv:2306.09001 , 2023. 2[19] Zhiqi Li, Wenhai Wang, Hongyang Li, Enze Xie, Chonghao Sima, Tong Lu, Yu Qiao, and Jifeng Dai. BEVFormer: Learn-ing bird’s-eye-view representation from multi-camera images via spatiotemporal transformers. In ECCV , Cham, 2022. 1, 2, 4[20] Zhiqi Li, Zhiding Yu, David Austin, Mingsheng Fang, Shiyi Lan, Jan Kautz, and Jose M. Alvarez. FB-OCC: 3D occupancy prediction based on forward-backward view transformation, 2023. 2 [21] Zhiqi Li, Zhiding Yu, Wenhai Wang, Anima Anandkumar, Tong Lu, and Jose M. Alvarez. FB-BEV: BEV representation from forward-backward view transformations. In ICCV , pages 6919–6928, 2023. 1, 2 [22] Haisong Liu, Yang Chen, Haiguang Wang, Zetong Yang, Tianyu Li, Jia Zeng, Li Chen, Hongyang Li, and Limin Wang. Fully sparse 3d occupancy prediction. In ECCV , 2023. 4 [23] Yingfei Liu, Tiancai Wang, Xiangyu Zhang, and Jian Sun. PETR: Position embedding transformation for multi-view 3D object detection. In ECCV , pages 531–548. Springer, 2022. 2 [24] Zhijian Liu, Haotian Tang, Alexander Amini, Xinyu Yang, Huizi Mao, Daniela L Rus, and Song Han. BEVFusion: Multi-task multi-sensor fusion with unified bird’s-eye view representation. In 2023 IEEE International Conference on Robotics and Automation (ICRA) , pages 2774–2781. IEEE, 2023. 1, 2 [25] H. P. Moravec. Sensor fusion in certainty grids for mobile robots. Sensor Devices and Systems for Robotics , 9(2):253– 276, 1989. 2 [26] Sven Richter, Frank Bieder, Sascha Wirges, and Christoph Stiller. A dual evidential top-view representation to model the semantic environment of automated vehicles. IEEE Trans-actions on Intelligent Vehicles , pages 1–13, 2023. 3 [27] S. Richter et al. Semantic evidential grid mapping using monocular and stereo cameras. Sensors , 2021. 3 [28] Glenn Shafer. A mathematical theory of evidence . 1976. 2, 3 [29] Philippe Smets. Data fusion in the transferable belief model. 
+
+Proceedings of the Third International Conference on Infor-mation Fusion , 1:PS21–PS33 vol.1, 2000. 3 [30] Pei Sun, Henrik Kretzschmar, Xerxes Dotiwalla, Aurelien Chouard, Vijaysai Patnaik, Paul Tsui, James Guo, Yin Zhou, Yuning Chai, Benjamin Caine, Vijay Vasudevan, Wei Han, Jiquan Ngiam, Hang Zhao, Aleksei Timofeev, Scott M. Et-tinger, Maxim Krivokon, Amy Gao, Aditya Joshi, Yu Zhang, Jonathon Shlens, Zhifeng Chen, and Dragomir Anguelov. Scalability in perception for autonomous driving: Waymo open dataset. CVPR , 2019. 2, 7 [31] Xiaoyu Tian, Tao Jiang, Longfei Yun, Yucheng Mao, Huitong Yang, Yue Wang, Yilun Wang, and Hang Zhao. Occ3D: A large-scale 3d occupancy prediction benchmark for au-tonomous driving. In NeurIPS , 2023. 1, 2, 4, 6, 7, 8 [32] Wenwen Tong, Chonghao Sima, Tai Wang, Li Chen, Silei Wu, Hanming Deng, Yi Gu, Lewei Lu, Ping Luo, Dahua Lin, 27475 and Hongyang Li. Scene as occupancy. In ICCV , 2023. 1, 2, 7, 8 [33] Ignacio Vizzo, Tiziano Guadagnino, Jens Behley, and Cyrill Stachniss. VDBFusion: Flexible and efficient TSDF integra-tion of range sensor data. Sensors , 22(3):1296, 2022. 2 [34] Xiaofeng Wang, Zheng Zhu, Wenbo Xu, Yunpeng Zhang, Yi Wei, Xu Chi, Yun Ye, Dalong Du, Jiwen Lu, and Xingang Wang. OpenOccupancy: A large scale benchmark for sur-rounding semantic occupancy perception. In ICCV , 2023. 1, 2, 7, 8 [35] Yi Wei, Linqing Zhao, Wenzhao Zheng, Zheng Zhu, Jie Zhou, and Jiwen Lu. SurroundOcc: Multi-camera 3d occupancy prediction for autonomous driving. In CVPR , 2023. 1, 2, 7, 8 [36] Benjamin Wilson, William Qi, Tanmay Agarwal, John Lam-bert, Jagjeet Singh, Siddhesh Khandelwal, Bowen Pan, Rat-nesh Kumar, Andrew Hartnett, Jhony Kaesemodel Pontes, Deva Ramanan, Peter Carr, and James Hays. Argoverse 2: Next generation datasets for self-driving perception and fore-casting. In Proceedings of the Neural Information Processing Systems Track on Datasets and Benchmarks . Curran, 2021. 2 [37] Xiaoyang Wu, Li Jiang, Peng-Shuai Wang, Zhijian Liu, Xihui Liu, Yu Qiao, Wanli Ouyang, Tong He, and Hengshuang Zhao. Point transformer v3: Simpler, faster, stronger. In 
+
+CVPR , 2024. 2 [38] Hangyu Yan and Yong Deng. An improved belief entropy in evidence theory. IEEE Access , 8:57505–57516, 2020. 5 [39] T. Yang and V. Aitken. Evidential mapping for mobile robots with range sensors. IEEE Transactions on Instrumentation and Measurement , 55:1422–1429, 2006. 3 27476
