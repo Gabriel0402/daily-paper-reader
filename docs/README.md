@@ -6,89 +6,106 @@
 </div>
 
 ## 每次日报
-- 最新运行日期：2026-06-22
-- 运行时间：2026-06-22 22:55:08 UTC
+- 最新运行日期：2026-06-21 ~ 2026-06-30
+- 运行时间：2026-06-30 05:09:40 UTC
 - 运行状态：成功
-- 本次总论文数：23
-- 精读区：9
-- 速读区：14
+- 本次总论文数：28
+- 精读区：17
+- 速读区：11
 
 ### 今日简报（AI）
-今日共收录23篇论文，精读2篇、速读3篇。最值得关注的是团队零和博弈的计算复杂性研究，以及社会规模人机交互的伪装威胁分析。建议优先精读这两篇高分论文，并留意状态空间模型与强化学习在长周期智能体中的应用。
-- 详情：[/202606/22/README](/202606/22/README)
+1) 本周推荐系统领域聚焦模型适配、认知框架和分层强化学习三大热点，28篇论文中高分成果集中在神经世界模型与因果推理。  
+2) 最值得关注：自适应重规划方法AdaReP（10分）解决模型失配问题，以及自我进化认知框架（9分）推动具身科学智能，两者均展示了世界模型在动态环境中的巨大潜力。  
+3) 建议优先精读这两篇高分论文，并速读RLVR对比SFT优势、可解释RLHF框架Themis等8分的应用型工作，快速把握前沿方向。
+- 详情：[/20260621-20260630/README](/20260621-20260630/README)
 
 ### 精读区论文标签
-1. [The Computational Complexity of Team Zero-Sum Games](/202606/22/2606.16139v1-the-computational-complexity-of-team-zero-sum-games)  
+1. [AdaReP:Adaptive Re-Planning under Model Mismatch for Neural World-Model Predictive Control](/20260621-20260630/2606.23079v1-adarepadaptive-re-planning-under-model-mismatch-for-neural-world-model-predictive-control)  
+   标签：评分：10.0/10、query:world-models
+   evidence：神经世界模型与模型预测控制
+2. [Self-Evolving Cognitive Framework via Causal World Modeling for Embodied Scientific Intelligence](/20260621-20260630/2606.22449v1-self-evolving-cognitive-framework-via-causal-world-modeling-for-embodied-scientific-intelligence)  
+   标签：评分：9.0/10、query:world-models
+   evidence：因果世界建模用于具身智能，直接匹配基于世界模型的强化学习
+3. [Stationary Robust Mean-Field Games under Model Mismatches](/20260621-20260630/2606.22579v1-stationary-robust-mean-field-games-under-model-mismatches)  
    标签：评分：9.0/10、query:gt-mai
-   evidence：团队零和博弈复杂度
-2. [Parasitic Masquerade: Societal Scale Human-Machine Interaction](/202606/22/2606.17925v1-parasitic-masquerade-societal-scale-human-machine-interaction)  
-   标签：评分：9.0/10、query:gt-mai
-   evidence：图论平均场博弈用于社会尺度多智能体交互
-3. [Qwen-RobotNav Technical Report: A Scalable Navigation Model Designed for an Agentic Navigation System](/202606/22/2606.18112v2-qwen-robotnav-technical-report-a-scalable-navigation-model-designed-for-an-agentic-navigation-system)  
+   evidence：鲁棒平均场博弈在多智能体强化学习中的应用
+4. [Temporal Logic Guidance for Action-Only Diffusion Policies with World Models](/20260621-20260630/2606.22729v1-temporal-logic-guidance-for-action-only-diffusion-policies-with-world-models)  
    标签：评分：9.0/10、query:vlm-rl
-   evidence：使用VLM的可扩展导航模型
-4. [Mix-QVLA: Task-Evidence-Aware Mixed-Precision Quantization of Vision-Language-Action Models](/202606/22/2606.19565v1-mix-qvla-task-evidence-aware-mixed-precision-quantization-of-vision-language-action-models)  
+   evidence：利用世界模型对动作扩散策略进行时态逻辑引导
+5. [Active Inference as the Test-Time Scaling Law for Physical AI Agents](/20260621-20260630/2606.22813v1-active-inference-as-the-test-time-scaling-law-for-physical-ai-agents)  
+   标签：评分：9.0/10、query:world-models
+   evidence：使用主动推理实现物理AI智能体的世界模型推理
+6. [Causal Reward World Models: Zero-shot Reward Design for Automated Skill Generation](/20260621-20260630/2606.23280v1-causal-reward-world-models-zero-shot-reward-design-for-automated-skill-generation)  
+   标签：评分：9.0/10、query:world-models
+   evidence：提出因果奖励世界模型用于强化学习中的零样本奖励设计
+7. [dVLA-RL: Reinforcement Learning over Denoising Trajectories for Discrete Diffusion Vision-Language-Action Models](/20260621-20260630/2606.23623v1-dvla-rl-reinforcement-learning-over-denoising-trajectories-for-discrete-diffusion-vision-language-action-models)  
    标签：评分：9.0/10、query:vlm-rl
-   evidence：VLA模型量化方法
-5. [Formal Verification of Learned Multi-Agent Communication Policies via Decision Tree Distillation](/202606/22/2606.19632v1-formal-verification-of-learned-multi-agent-communication-policies-via-decision-tree-distillation)  
-   标签：评分：9.0/10、query:vlm-rl
-   evidence：多智能体通信策略的形式化验证
-6. [EventVLA: Event-Driven Visual Evidence Memory for Long-Horizon Vision-Language-Action Policies](/202606/22/2606.20092v1-eventvla-event-driven-visual-evidence-memory-for-long-horizon-vision-language-action-policies)  
-   标签：评分：9.0/10、query:vlm-rl
-   evidence：用于长期机器人操作的视觉-语言-动作策略
-7. [Maximum Entropy Inverse Reinforcement Learning for Mean-Field Games with Average Reward](/202606/22/2606.16759v1-maximum-entropy-inverse-reinforcement-learning-for-mean-field-games-with-average-reward)  
-   标签：评分：8.0/10、query:gt-mai
-   evidence：平均场博弈的逆强化学习
-8. [Gen-VCoT: Generative Visual Chain-of-Thought Reasoning via Diffusion-Based RGB Intermediate Representations](/202606/22/2606.16783v1-gen-vcot-generative-visual-chain-of-thought-reasoning-via-diffusion-based-rgb-intermediate-representations)  
-   标签：评分：8.0/10、query:mmseg
-   evidence：SAM分割作为视觉思维链推理的一部分
-9. [Task Allocation and Motion Planning in Dynamic, Cluttered Environments via CBBA and Graphs of Convex Sets](/202606/22/2606.18516v1-task-allocation-and-motion-planning-in-dynamic-cluttered-environments-via-cbba-and-graphs-of-convex-sets)  
-   标签：评分：8.0/10、query:gt-mai
-   evidence：多智能体任务分配与运动规划用于协调
+   evidence：VLA模型结合强化学习用于机器人操作
+8. [DynaWM: Dynamics-Aware Distillation with World Model and Momentum Targets for Smooth Locomotion over Continuous Stairs](/20260621-20260630/2606.24089v1-dynawm-dynamics-aware-distillation-with-world-model-and-momentum-targets-for-smooth-locomotion-over-continuous-stairs)  
+   标签：评分：9.0/10、query:world-models
+   evidence：世界模型作为正则化器用于机器人运动
+9. [World Value Models for Robotic Manipulation](/20260621-20260630/2606.24742v1-world-value-models-for-robotic-manipulation)  
+   标签：评分：9.0/10、query:world-models
+   evidence：将世界模型与价值估计结合用于机器人操作，直接应用于基于模型的强化学习
+10. [Conformal Orbit-Valid Trust Horizons for Equivariant World Models](/20260621-20260630/2606.24946v1-conformal-orbit-valid-trust-horizons-for-equivariant-world-models)  
+   标签：评分：9.0/10、query:world-models
+   evidence：等变世界模型的信任视界认证
+11. [Beyond Next-Observation Prediction: Agent-Authored World Modeling for Sequential Decision Making](/20260621-20260630/2606.25421v1-beyond-next-observation-prediction-agent-authored-world-modeling-for-sequential-decision-making)  
+   标签：评分：9.0/10、query:world-models
+   evidence：提出面向RL智能体的自主世界建模方法
+12. [A Generalization Theory for JEPA-Based World Models](/20260621-20260630/2606.27014v1-a-generalization-theory-for-jepa-based-world-models)  
+   标签：评分：9.0/10、query:world-models
+   evidence：JEPA世界模型的泛化理论
+13. [Not All Actions Are Equal: Rethinking Conditioning for Dexterous World Model](/20260621-20260630/2606.27325v1-not-all-actions-are-equal-rethinking-conditioning-for-dexterous-world-model)  
+   标签：评分：9.0/10、query:world-models
+   evidence：面向灵巧操作的行动条件化世界模型
+14. [World Action Models Enable Continual Imitation Learning with Recurrent Generative Replays](/20260621-20260630/2606.27374v1-world-action-models-enable-continual-imitation-learning-with-recurrent-generative-replays)  
+   标签：评分：9.0/10、query:world-models
+   evidence：世界动作模型生成未来观测，用于基于生成重放的持续模仿学习
+15. [Internalizing the Future: A Unified Agentic Training Paradigm for World Model Planning](/20260621-20260630/2606.27483v1-internalizing-the-future-a-unified-agentic-training-paradigm-for-world-model-planning)  
+   标签：评分：9.0/10、query:world-models
+   evidence：提出LLM智能体的内部世界模型规划方法
+16. [ReWorld: Learning Better Representations for World Action Models](/20260621-20260630/2606.27504v1-reworld-learning-better-representations-for-world-action-models)  
+   标签：评分：9.0/10、query:world-models
+   evidence：提出ReWorld用于自动驾驶世界模型中的更好世界表征学习
+17. [Textual Belief States for World Models: Identifiable Representation Learning Under Strict Mediation](/20260621-20260630/2606.27681v1-textual-belief-states-for-world-models-identifiable-representation-learning-under-strict-mediation)  
+   标签：评分：9.0/10、query:world-models
+   evidence：直接针对部分可观测环境中的世界模型，强调严格中介
 
 ### 速读区论文标签
-1. [Reload-Mamba: Hierarchical Anti-Dilution State-Space Modeling for Multi-Class Semantic Segmentation](/202606/22/2606.17966v1-reload-mamba-hierarchical-anti-dilution-state-space-modeling-for-multi-class-semantic-segmentation)  
-   标签：评分：8.0/10、query:mmseg
-   evidence：状态空间模型用于多类别语义分割
-2. [Connect the Dots: Training LLMs for Long-Lifecycle Agents with Cross-Domain Generalization Via Reinforcement Learning](/202606/22/2606.20002v1-connect-the-dots-training-llms-for-long-lifecycle-agents-with-cross-domain-generalization-via-reinforcement-learning)  
-   标签：评分：8.0/10、query:vlm-rl
-   evidence：使用强化学习训练大模型智能体以支持长期任务
-3. [HilDA: Hierarchical Distillation with Diffusion for Advancing Self-Supervised LiDAR Pre-trainin](/202606/22/2606.20189v1-hilda-hierarchical-distillation-with-diffusion-for-advancing-self-supervised-lidar-pre-trainin)  
-   标签：评分：8.0/10、query:mmseg
-   evidence：利用视觉基础模型蒸馏实现自动驾驶多模态感知
-4. [A Multi-Agent system for Multi-Objective constrained optimization](/202606/22/2606.20236v1-a-multi-agent-system-for-multi-objective-constrained-optimization)  
-   标签：评分：8.0/10、query:vlm-rl
-   evidence：用于约束优化的多智能体强化学习
-5. [Finetuning Vision-Language-Action Models Requires Fewer Layers Than You Think](/202606/22/2606.20246v1-finetuning-vision-language-action-models-requires-fewer-layers-than-you-think)  
-   标签：评分：8.0/10、query:vlm-rl
-   evidence：VLA模型微调压缩
-6. [Mutual Distillation of Dual-Foundation Models for Semi-Supervised PET/CT Segmentation](/202606/22/2606.15611v1-mutual-distillation-of-dual-foundation-models-for-semi-supervised-petct-segmentation)  
-   标签：评分：7.0/10、query:mmseg
-   evidence：使用双基础模型的多模态语义分割
-7. [Context-Aware RL for Agentic and Multimodal LLMs](/202606/22/2606.17053v1-context-aware-rl-for-agentic-and-multimodal-llms)  
-   标签：评分：7.0/10、query:vlm-rl
-   evidence：面向智能体和多模态LLM的上下文感知强化学习
-8. [EnvRL: Learn from Environment Dynamics in Agentic Reinforcement Learning](/202606/22/2606.17680v1-envrl-learn-from-environment-dynamics-in-agentic-reinforcement-learning)  
-   标签：评分：7.0/10、query:vlm-rl
-   evidence：通过利用环境动力学改进LLM代理的RL训练，与多智能体RL和大模型相关
-9. [ReSiReg: Towards Spatially Consistent Semantics in Language-Conditioned Robotic Tasks](/202606/22/2606.19088v1-resireg-towards-spatially-consistent-semantics-in-language-conditioned-robotic-tasks)  
-   标签：评分：7.0/10、query:vlm-rl
-   evidence：用于语言条件机器人任务的视觉语言模型
-10. [Language-Instructed Vision Embeddings for Controllable and Generalizable Perception](/202606/22/2606.19584v1-language-instructed-vision-embeddings-for-controllable-and-generalizable-perception)  
-   标签：评分：7.0/10、query:vlm-rl
-   evidence：语言引导的视觉嵌入用于可控感知
-11. [Task-Instructed Causal Routing of Vision Foundation Models for Multi-Task Learning](/202606/22/2606.15765v1-task-instructed-causal-routing-of-vision-foundation-models-for-multi-task-learning)  
-   标签：评分：6.0/10、query:mmseg
-   evidence：使用视觉基础模型和任务指令路由进行多任务密集预测，与多模态语义分割相关
-12. [Distributed General-Purpose Agent Networks: Architecture, Key Mechanisms, and Prototypes](/202606/22/2606.17368v1-distributed-general-purpose-agent-networks-architecture-key-mechanisms-and-prototypes)  
-   标签：评分：6.0/10、query:gt-mai
-   evidence：分布式智能体网络
-13. [Environment-Grounded Automated Prompt Optimization for LLM Game Agents](/202606/22/2606.17838v1-environment-grounded-automated-prompt-optimization-for-llm-game-agents)  
-   标签：评分：6.0/10、query:vlm-rl
-   evidence：LLM驱动的提示优化用于多智能体游戏环境，连接LLM代理和类RL回报
-14. [Knowledge Reutilization in Meta-Reinforcement Learning](/202606/22/2606.18132v1-knowledge-reutilization-in-meta-reinforcement-learning)  
-   标签：评分：6.0/10、query:vlm-rl
-   evidence：元强化学习中的多智能体知识重利用
+1. [Imagine to Ensure Safety in Hierarchical Reinforcement Learning](/20260621-20260630/2606.22509v1-imagine-to-ensure-safety-in-hierarchical-reinforcement-learning)  
+   标签：评分：8.0/10、query:world-models
+   evidence：使用可学习世界模型与层次化强化学习进行安全探索
+2. [Provable Benefits of RLVR over SFT for Reasoning Models: Learning to Backtrack Efficiently](/20260621-20260630/2606.22938v1-provable-benefits-of-rlvr-over-sft-for-reasoning-models-learning-to-backtrack-efficiently)  
+   标签：评分：8.0/10、query:world-models
+   evidence：基于可验证奖励的强化学习用于大模型推理
+3. [Themis: An explainable AI-enabled framework for Reinforcement Learning with Human Feedback](/20260621-20260630/2606.24622v1-themis-an-explainable-ai-enabled-framework-for-reinforcement-learning-with-human-feedback)  
+   标签：评分：8.0/10、query:world-models
+   evidence：基于人类反馈的强化学习框架
+4. [World Models in Pieces: Structural Certification for General Agents](/20260621-20260630/2606.24842v1-world-models-in-pieces-structural-certification-for-general-agents)  
+   标签：评分：8.0/10、query:world-models
+   evidence：面向通用代理的世界模型结构化认证
+5. [Scalable Maximum Entropy Reinforcement Learning for Diffusion Policies via Adjoint Matching](/20260621-20260630/2606.22630v1-scalable-maximum-entropy-reinforcement-learning-for-diffusion-policies-via-adjoint-matching)  
+   标签：评分：7.0/10、query:world-models
+   evidence：面向扩散策略的最大熵强化学习
+6. [IOI: Decoupling Kinematics and Physics for Interactive World Models](/20260621-20260630/2606.23296v1-ioi-decoupling-kinematics-and-physics-for-interactive-world-models)  
+   标签：评分：7.0/10、query:world-models
+   evidence：解耦运动学和物理学的交互式世界模型
+7. [Learning Process Rewards via Success Visitation Matching for Efficient RL](/20260621-20260630/2606.23640v1-learning-process-rewards-via-success-visitation-matching-for-efficient-rl)  
+   标签：评分：7.0/10、query:world-models
+   evidence：通过成功访问匹配的稀疏奖励强化学习
+8. [Reinforcement Learning Towards Broadly and Persistently Beneficial Models](/20260621-20260630/2606.24014v1-reinforcement-learning-towards-broadly-and-persistently-beneficial-models)  
+   标签：评分：7.0/10、query:world-models
+   evidence：强化学习用于模型对齐
+9. [Group-Graph Policy Optimization for Long-Horizon Agentic Reinforcement Learning](/20260621-20260630/2606.22995v1-group-graph-policy-optimization-for-long-horizon-agentic-reinforcement-learning)  
+   标签：评分：6.0/10、query:world-models
+   evidence：提出面向长视界强化学习的组图策略优化
+10. [Autonomous Video Generation with Counterfactual Controllability for Self-Evolving World Models](/20260621-20260630/2606.24152v1-autonomous-video-generation-with-counterfactual-controllability-for-self-evolving-world-models)  
+   标签：评分：6.0/10、query:world-models
+   evidence：用于自我进化世界模型的视频生成
+11. [Reinforcement Learning for Computer-Use Agents with Autonomous Evaluation](/20260621-20260630/2606.24515v1-reinforcement-learning-for-computer-use-agents-with-autonomous-evaluation)  
+   标签：评分：6.0/10、query:world-models
+   evidence：面向计算机使用智能体的强化学习与VLM评估
 
 
 <div class="dpr-home-promo-card">
