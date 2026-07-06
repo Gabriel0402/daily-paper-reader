@@ -1,0 +1,700 @@
+Title: Exploration and Online Transfer with Behavioral Foundation Models
+
+URL Source: https://arxiv.org/pdf/2606.29980v1
+
+Published Time: Tue, 30 Jun 2026 06:17:14 GMT
+
+Number of Pages: 16
+
+Markdown Content:
+# Exploration and Online Transfer with Behavioral Foundation Models 
+
+Louis Bagot 
+
+Université Lyon 1, CNRS, INSA Lyon LIRIS - UMR5205, 69622 Villeurbanne, France 
+
+louis.bagot@univ-lyon1.fr 
+
+Mathieu Lefort 
+
+Université Rennes, Inria, CNRS IRISA - UMR 6074 F-35000 Rennes, France 
+
+Laetitia Matignon 
+
+Université Lyon 1, CNRS, INSA Lyon LIRIS - UMR5205 69622 Villeurbanne, France 
+
+## Abstract 
+
+Zero-shot Transfer in Reinforcement Learning (RL) aims to train an agent that can generate optimal policies for any reward function, without additional learning at transfer time, while training only on reward-free trajectories. For their generality over tasks, such models are sometimes called “Behavioral Foundation Models” (BFMs). While they have shown strong performances and improvements in recent years, the current framework and algorithms still assume that, during the transfer phase, the agent is informed offline about the reward (the task to solve) through a dataset of state-reward pairs, which it uses to pick the best policy to deploy. However, in practice if the reward is a black-box (e.g. direct user feedback), it is not possible to generate such a dataset: it is necessary to observe the reward through interactions with the environment. In other words, the current framework of offline transfer is not aligned with the traditional RL setting of online learning through trial-and-error, which requires exploration in order to find rewards. This paper proposes to tackle this new online transfer in zero-shot RL, with the key insight that the BFM itself can be used to generate exploration policies. We show that it is possible to frame this online learning problem in terms of a bandit-like exploration-exploitation problem. More precisely, at each step the bandit algorithm recommends a policy, the BFM executes it in the environment, which yields a reward and a new state; we repeat the process until we converge to the optimal policy. In the popular context of linear reward approximation, we derive a formulation inspired by Upper Confidence Bound and show that exploration can be achieved through the minimization of the eigenvalues of an uncertainty matrix. We evaluate qualitatively and quantitatively our framework on a simple environment to validate the concept of our method. 
+
+## 1 Introduction 
+
+In Reinforcement Learning (RL, Sutton and Barto (2018)), the agent learns to interact with its 
+
+environment and gather rewards through trial-and-error. Zero-shot Transfer in RL (Touati et al., 2023) is an extension of RL focused around task transfer : quickly finding the optimal policy for any new reward function (any new task ). Zero-shot RL is formalized as follows: in a pre-training 
+
+phase, the agent is trained on interactions with the environment but without rewards . Then, during the transfer phase, the agent must maximize a reward function without additional training. Zero-shot RL therefore requires the learning of general knowledge about the reward-free environment, which 
+
+19th European Workshop on Reinforcement Learning (EWRL 2026).     
+
+> arXiv:2606.29980v1 [cs.AI] 29 Jun 2026 optimal
+> task vector BFM Environment
+> OFFLINE TRANSFER
+> recommended
+> task vector BFM Environment
+> ONLINE TRANSFER
+> Bandit
+> Algorithm
+> dataset
+
+Figure 1: Difference between offline transfer, as standard in zero-shot RL literature, and the online 
+
+transfer we propose and study. In offline transfer, a dataset of state-reward pairs enables the direct computation of the optimal task vector which the Behavior Foundation Model (BFM) uses as conditioning to execute the optimal policy. However, in practice, we often cannot generate such a dataset, so interactions with the environment are necessary: this is online transfer. We propose to view it as a Bandit-like framework where an Algorithm must recommend a task vector to the BFM, and use the reward feedback from the environment to converge to the optimal task vector. may be useful to as many downstream tasks as possible. This field has seen a lot of attention in the past few years (Park et al., 2024; Frans et al., 2024; Bagot et al., 2025; Agarwal et al., 2025), coining the term Behavioral Foundation Models (BFM, e.g. Tirinzoni et al. (2025); Li et al. (2025)) due to the large diversity of behaviors they can generate. In this paper we focus on the transfer phase, so we assume access to a pre-trained BFM. In current zero-shot RL practice, during the transfer phase, the agent is informed about the task to solve through a transfer dataset of state-reward pairs. We call this type of transfer offline , because the agent did not need to interact with the environment to understand the task. However, if the reward is expensive to compute, black-box or can only be obtained through interactions with environment (e.g., direct human feedback or electricity prices), it is not possible to generate the transfer dataset ahead of time. In this case, the agent needs to explore and understand the task during the transfer phase. Such online transfer is closer to the standard RL framework, where the agent needs to learn by trial-and-error through its interactions with the environment, and needs to explore to find rewards. How does zero-shot RL deal with such situations then? From Touati and Ollivier (2021): “ Thus, if the reward is black-box as in standard RL algorithms, then the exploration policy has to be run again for some time ”. The idea is to use a generic exploration policy to gather the transfer dataset before running the BFM as in offline transfer. However, in general we only have access to the random policy, which will not explore efficiently: it may take a very long time to observe the relevant parts of the environment. This would also require picking a satisfactory size for the transfer dataset, which may depend on the quality of exploration and how informative it is about the task to solve. Importantly, a generic exploration policy would explore the space irrespective of what the BFM can actually do: for example if our BFM focuses on position but not speed, we do not need to explore different speeds. We aim to tackle online learning more efficiently. Specifically, we ask: can we leverage the flexibility of the Behavioral Foundation Model itself to make it generate efficient exploration policies? In practice, BFMs generally use a task vector as conditioning to perform the task. Offline transfer is efficient because we can directly compute the optimal task vector from the transfer dataset. To perform online transfer, we propose to judiciously query the BFM on different task vectors to generate policies which efficiently explore the state space. This disposes of the need for a generic exploration policy and, as we will show, through our method the BFM is able to explore to rapidly gain information 
+
+about the optimal task vector , so exploration is guided around what the BFM can do. To achieve this, we propose to re-frame this problem as a Bandit (or recommendation) problem (Lattimore and Szepesvári, 2020) where, at each time-step, an algorithm recommends a task vector, which is executed by the BFM in the environment to obtain a reward (Figure 1). This sequence of recommendations should converge quickly to the optimal task vector. In the context of BFMs based on linear reward approximation, one of the most popular approaches for BFMs, we propose an exploration-exploitation algorithm inspired by Upper Confidence Bound (UCB) to balance exploration and exploitation. In Section 2 we set the theoretical grounds for our work. Our contributions are the following: (i) we introduce a new problem (online transfer from zero-shot policies, aka BFMs) and propose to tackle it as a bandit problem (Sections 3.1 and 3.2). (ii) We introduce a novel and practical optimization 2algorithm (USF-UCB) for picking a sequence of conditioning vectors in the context of online transfer under linear reward approximation (Sections 3.3 and 3.4), for which we derive theoretical results. 
+
+(iii) We test our algorithm on a simple environment to provide a proof-of-concept and show that it does produce behaviors that balance exploration and exploitation (Section 4). To round up the paper, we talk about related work in section 5, and conclude in Section 6. 
+
+## 2 Background 
+
+Our paper studies online transfer in zero-shot transfer in Reinforcement Learning. We start by introducing Reinforcement Learning and its zero-shot version, which gives the theoretical basis for the Behavioral Foundation Models with which we want to perform transfer. We then introduce Universal Successor Features, a popular approach for zero-shot RL which we use to derive our algorithm. Since our work is inspired by Linear Bandits, we give an introduction in Appendix A.3. 
+
+Reinforcement Learning (RL) (Sutton and Barto, 2018) is formalized with a Markov Decision Process (MDP) M = ( S, A, r, p, γ, μ 0), where S is the set of states, A is the set of actions, r is the reward function, p is the dynamics or transition function p (s′ | s, a ) as a probability distribution over next states, γ ∈ [0 , 1[ is a discount factor and μ0 is the distribution over initial states. The agent is modeled as a policy , a distribution from states to actions π (a | s). This completes the setup: a trajectory is the sequence of random variables generated from the interactions of μ0, π and p:
+
+τ = S0, A 0, R 1, S 1, A 1, R 2, S 2, . . . We can then define the value function , the expected sum of discounted rewards when following a policy π: vπ (s) .
+
+= Eπ
+
+P ∞ 
+
+> k=0
+
+γkr(St+k+1 ) | St = s. The objective of RL is to find the policy with the highest value function. 
+
+Zero-shot RL is a RL framework with additional constraints. We follow the most popular framework as formalized by Touati et al. (2023): “ the goal of zero-shot RL is to compute a compact representation 
+
+E of the environment by observing samples of reward-free transitions (st, a t, s t+1 ) in this environment. Once a reward function is specified later, the agent must use E to immediately produce a good policy, via only elementary computations without any further planning or learning. ” In order to tackle this challenge, most zero-shot approaches rely on a encoding-decoding procedure of the reward function, 
+
+r ←→ zr ∈ Rd, where the task vector zr encodes the task (either the reward r itself or an optimal policy). This encoding is used to train a task-conditioned policy π (a | s, zr ) which must provide an optimal policy for reward function r (see Appendix A.1 for a more precise formalization). Such π
+
+are sometimes called Behavioral Foundation Models (Tirinzoni et al., 2025; Li et al., 2025). 
+
+Universal Successor Features (USFs, Barreto et al. (2017, 2018)) are one of the most popular frame-works for zero-shot RL. SFs propose to linearly approximate the reward function: assume access to a linear basis over rewards, a set of d features ϕ : S → Rd. We can treat them as pseudo-rewards and consider their value functions, the Successor Features : ψπ (s) .
+
+= Eπ
+
+P ∞ 
+
+> k=0
+
+γkϕ (St+k+1 ) | St = s.Critically, if we consider a reward function r(s) = ϕ(s) · zr for some vector zr ∈ Z ⊂ Rd, then the linear property carries over to the action-value function: vπ (s) = ψπ (s) · zr , granting easy policy evaluation. Note that now, given ϕ, zr fully encodes the reward function: we can consider the policy optimal for any z, π (a | s, z) and its Universal Successor Features , ψ(·; z) .
+
+= ψπ(·;z). Now ψ(·; z)
+
+encodes the future features that will be visited under the optimal policy for any choice of z (Borsa et al., 2019). Several zero-shot RL methods use this framework and are distinguishable by their choice of features ϕ. In this paper we pick two to experiment with, which we detail in Appendix C.1 and Figure 2. 
+
+## 3 Framework and Method 
+
+3.1 Problem Statement 
+
+Assuming access to a pre-trained Behavior Foundation Model (BFM), our objective is to perform online transfer. This means we want to find the optimal policy associated with transfer reward 
+
+r through online interactions with the environment, i.e., under a black-box reward and without preemptive access to a transfer dataset of state-reward pairs (Figure 1). We write the BFM as 
+
+π(a | s, z), the optimal policy for some task vector z ∈ Z ⊂ Rd. We call zr the optimal task vector, in other words, π(·, zr ) is optimal for the transfer reward r. We are looking for an algorithm to quickly find zr from online interactions. Critically, in zero-shot fashion, we are not interested in 3fine-tuning or re-training the BFM π: we want to exploit the knowledge and behaviors it contains without re-training it. For our algorithm we specifically assume access to all components of the USF framework as detailed in the previous Section, 2. To re-iterate: the features ϕ; the policy (BFM) π(a | s, z) optimal for the reward functions expressed as the linear combination r(s) = ϕ(s) · z, for any z ∈ Z ; the USFs, 
+
+ψ(·; z), with property ψ(·; z) · z = vπ(·,z). Following standard practice, we assume that Z is the sphere of radius √d: the task vectors are normalized before being passed to the BFM. 
+
+3.2 Bandit formalization and objective Bandit-MDP Interactions. Starting from S0 ∼ μ0(·), at each time-step t, from state St, the algorithm must choose a conditioning vector Zt, which is passed to the BFM to generate At ∼
+
+π (· | St, Z t). The environment then responds with the next state St+1 ∼ p (· | St, A t) and noisy reward Rt+1 = ϕ(St+1 ) · zr + ηt+1 with ηt ∼ N (0, σ 2I). We therefore have the trajectory 
+
+τt = S0, Z 0, A 0, S 1, R 1, Z 1, A 1, . . . S t (assuming no termination). 
+
+Objectives for online transfer with arbitrary BFMs. We are looking for an algorithm Λ( Zt | τt)
+
+to generate the next conditioning vector given the trajectory so far. As a reminder, we are interested in finding zr , with which π is optimal. Instead of focusing on instantaneous rewards, we propose an objective which asks, at each time-step, “how good would it be to execute policy π(·; Zt)?”, formalized as: 
+
+min  
+
+> Λ
+
+Reg T
+
+.
+
+= 
+
+> T−1
+
+X
+
+> t=1
+
+vπ(·,zr ) (St) − vπ(·,Z t) (St) (1) We borrow from bandit theory the notion of regret Reg T as a distance from theoretical perfection: 
+
+vπ(·,zr ) is the value function for the optimal policy, and each time-step spent playing anything but zr
+
+is sub-optimal. From this objective, a direct approach would be to entirely unroll the policy π(·, Z t)
+
+to evaluate its value function, and use this feedback to pick the next recommendation. However, this would require waiting until the end of the episode or some large time T between each decision. Instead, we would like to learn from each time-step in the environment. The linear decomposition of Successor Features allows us to achieve this, by updating our estimate of zr with each instantaneous reward observed. We therefore turn to this framework: 
+
+Objectives for online transfer with USFs. Through the linear decomposition of the value function, we get the following final objective: 
+
+min  
+
+> Λ
+
+Reg T = 
+
+> T−1
+
+X
+
+> t=1
+
+ψ (St, zr ) · zr − ψ (St, Z t) · zr . (2) Equation (2) is reminiscent of Linear Bandits (see Appendix A.3 for a formal introduction), and the corresponding Chapters in Lattimore and Szepesvári (2020) have inspired the rest of the method. In Appendix A.4 we take a step back to compare our framing and objective to that of Linear Bandits. 
+
+3.3 Linear Estimation and Uncertainty Matrix Linear Estimator. We are looking for the sequence of Zt ∈ Z which converges quickly to zr . Since we use the USF framework where Rt = ϕ(St) · zr + ηt, we have a clear estimate for zr as the regularized linear least squares estimator: ˆZt = arg min z
+
+Ptk=1 (Rk − ϕ (Sk) · z)2 + λ ∥z∥22, with penalty factor λ ⩾ 0 for regularization. ˆZt has a well-known analytical solution: 
+
+ˆZt = V −1
+
+> tt
+
+X
+
+> k=1
+
+ϕ (Sk) Rk with Vt = λI +
+
+> t
+
+X
+
+> k=1
+
+ϕ (Sk) ϕ (Sk)⊤ . (3) From our estimate ˆZt we can build a confidence bound, which contains zr with high probability: from bandit theory, it will generally have the shape 
+
+εt =
+
+
+
+z ∈ Z | z − ˆZt
+
+> 2
+> Vt
+
+⩽ βt
+
+
+
+. (4) 4In other words, εt is an ellipsis centered around ˆZt and whose directions are controlled by the eigenvectors and eigenvalues of V −1 
+
+> t
+
+. The diameter is controlled by βt, for which naive forms exist (Lattimore and Szepesvári, 2020); we leave finding tighter forms to future work. 
+
+General Approach to Exploration. For now we take a moment to interpret these definitions in our context. In order to find the best zr , we need to explore the different directions of the feature space encoded by ϕ(S). As we gather more information about the domain and reward, the directions we visit are stored in Vt, which we can interpret as a sort of certainty matrix (sometimes called the 
+
+information , Gram or design matrix). In the case of cluster occupancy features (see Appendix C.1), this has a direct interpretation: since ϕi(St) = 1St∈Ci , the matrix Vt is a diagonal matrix where each diagonal component is the number of times that cluster Ci was visited in the trajectory so far. By construction, ellipsis εt is controlled in each direction by the eigenvalues and eigenvectors of 
+
+V −1 
+
+> t
+
+, the uncertainty matrix . For cluster features, this leads to an inverse count, which also directly correspond to its eigenvalues: the more we visit a cluster, the more we reduce our uncertainty about it. Our general approach to exploration will therefore consist in reducing the uncertainty , or more formally, minimizing the eigenvalues of V −1 
+
+> t
+
+. This will shrink the ellipsis εt and converge to zr .
+
+3.4 Approach to Exploration with USF-UCB Proposed Algorithm. At any time-step t the greedy option is to choose Zt = ˆZt, our best estimate of zr . However, our estimator is not perfect and improving it requires exploration, in particular in the directions of the space we have least explored, as encoded by the eigenvalues and eigenvectors of 
+
+V −1 
+
+> t
+
+. Finding a z which is beneficial for exploration comes down to asking “if we were to roll out policy π(·, z), which z would lead to the most uncertainty reduction?”. For this we use a common object in bandits, the elliptical norm ∥x∥2 
+
+> V−1
+> t
+
+.
+
+= x⊤V −1 
+
+> t
+
+x (sometimes called energy or Mahalanobis 
+
+norm). For two vectors x1, x2 of same L2 norm, the one with higher elliptical norm under V −1 
+
+> t
+
+is the one which aligns most with the eigenvectors with highest eigenvalues of V −1 
+
+> t
+
+. In other words, this norm allows us to measure how uncertain a direction is. We employ an approach similar to Upper Confidence Bound (UCB), where we pick the most uncertain option; this leads to the following algorithm, which we call USF-UCB: 
+
+Zt = arg max 
+
+> z∈Z
+
+ψ (St; z) · ˆZt + pβt ∥ψ (St, z)∥V −1
+
+> t
+
+. (5) We want to find the vector which both yields a high return under our linear estimator ˆZt (first term), and explores the uncertain parts of the space (second term). Importantly, the norm ∥ψ (St, z)∥V −1
+
+> t
+
+measures how informative it would be to unroll the policy π(·, z), as expressed by the uncertainty of the features it visits. We find the following bound on regret for this algorithm: 
+
+Lemma 3.1. The regret of USF-UCB as Equation (5) is bounded as follows: Reg T ⩽ 2 
+
+> T−1
+
+X
+
+> t=1
+
+pβt ∥ψ (St, Z t)∥V −1
+
+> t
+
+. (6) See Appendix B.1 for the derivation. In linear bandits regrets involving the elliptical norm are bounded above through the elliptical potential lemma (Abbasi-Yadkori et al., 2011; Carpentier et al., 2020) by relating the sum of norms to the determinants of VT and V0. We explore this direction in Appendix B.2 but leave finding a proper bound to future work. It may seem counter-intuitive to maximize in Equation (5) the quantity we want to minimize in Equation (6) , but this is a common approach in bandits: we maximize the instantaneous uncertainty so that the sum of future uncertainties is smaller. In Appendix B.3 we discuss other angles through which the maximization of the elliptical norm comes about. 
+
+Optimization. Equation 5 requires optimization to find the argmax. Since in practice ψ is a trained neural network, this is possible through gradient descent (freezing the network weights), though our experiments find that it leads to unstable results. We suspect this is mainly due to over-approximation errors, and for our simple experiments we find instead that sampling several random z ∼ Z and picking the ones with highest elliptical norms yields satisfactory results. We will study more advanced optimization methods with future work and sturdier evaluation metrics and environments. 5(a) Cluster occupancy features and associated USFA policies. 
+
+> (b) Laplacian eigenfunction as features and associated USFA policies.
+
+Figure 2: Visualization of the pre-training setup on top of which we want to perform online transfer. The environment is a simple 9 × 9 gridworld with actions up , down , left , right . In the Universal Successor Features framework the agent (the USF Approximator, USFA) learns to produce optimal policies for all rewards expressed as r(s) = ϕ(s) · zr , with ϕ a fixed basis over reward functions (“features”) and zr ∈ Z ⊂ Rd any weight vector. We visualize our two choices of features ϕ at the top of each Figure (Figure (a): cluster occupancy, Figure (b): Laplacian eigenfunctions). In the middle row we visualize some associated trajectories generated by the USFA for the one-hot vectors z = ei = [0 , . . . , 0, 1, 0, . . . , 0] , while the bottom row showcases randomly sampled z ∼ Z . The reward functions as ϕ · z are shown as background colors over the 2D state space ranging from red (minimum) to green (maximum), and the agent is expected to reach green regions while avoiding red ones. The trajectories generated by the USFA are shown as lines in black, starting from a random state and ending at a point marked as a solid circle. 
+
+Figure 3: Samples of pure exploration patterns for our USF-UCB algorithm on our two feature choices (top: clusters, bottom: Laplacian). At each time-step, USF-UCB (Equation (5) with ˆZt = 0)recommends the next Zt to try, for which we show the associated reward function ( ϕ · Zt) in the background. Zt is passed to the BFM to produce the next action, repeatedly until T = 99 steps (rightmost square). In both trajectories, the Zt incentivizes exploration by rewarding regions that have not been visited. 64 Experiments 
+
+4.1 Domain and pre-training setup 
+
+We test our method in a simple 9 × 9 gridworld with actions up , down , left , right and blocking edges. While this environment is generally trivial to solve for a given reward function, generalizing over all possible task vectors z is not simple for a neural network. We implement two features choices for the Successor Feature basis ϕ : S → Rd: cluster occupancy features ϕi(s) = 1s∈Ci
+
+and Laplacian eigenfunctions ϕi(s) = fi(s) which we detail in Appendix C.1. We pick d = 9 as a compromise of expressivity and ease of visualization. We detail the training of the USF Approximator 
+
+(USFA) ψθ (St, z) in Appendix C.2. We visualize the features and some of the trajectories produced by the trained USFA in Figure 2. We can clearly see that the task-conditioned policy is not perfect, but achieves satisfactory performance on most tasks. 
+
+4.2 Pure Exploration 
+
+The crux of the algorithm is in finding a sequence of Zt to explore the domain, so we start by focusing on this and set zr = 0 = ˆZt for this sub-section – in other words, the agent is only motivated to explore. We optimize Equation (5) by argmaxing over 10000 random samples in a single batch. 
+
+Visualization of trajectories. We start by visualizing exploration trajectories for both feature choices in Figure 3 to qualitatively evaluate the method. We find that the exploration is efficient but not perfect: it does not span every single state. This is expected: for cluster occupancy features, it is sufficient to walk anywhere in the cluster for the feature to be active, so the agent has no incentive to reach the far-away corners. In other words, the exploration is efficient from the perspective of visiting clusters , and in general our algorithm explores efficiently with respect to its own features . While this is a limitation, this can also be desirable by restricting our exploration to only the parts that our features cover (and therefore our BFM can differentiate for control). 
+
+Eigenvalue analysis. We study the algorithm from the perspective of the objective it tries to optimize: the minimization of the uncertainty, which we measure with the determinant of V −1 
+
+> t
+
+. In order to achieve this, we compare the method to an “exhaustive” explorer, which visits all states (details and visualization in Appendix C.3), as well as a random explorer. We visualize the results for both feature choices in Figure 4, measuring the determinant first with the own method’s features and next with state visits (uncertainty matrix of d = |S| ). We find again that each method performs well for its own class of features: the USFAs with our proposed method explore their features as fast or faster than the exhaustive agent, but do not manage to reach all states. This aligns with our qualitative intuition from the previous paragraph. 
+
+4.3 Online transfer 
+
+In this section the agent must maximize a reward function by discovering its values in the state space. The instantaneous reward comes as Rt = ϕ(St) · z + ηt with Gaussian ηt at σ = 0 .3. We test our algorithm as Equation (5) . In Linear Bandits, the ellipsis radius βt is a well-studied object with analytical values. Due to the reliance on the non-linear USF, this analysis is more complicated in our case and we leave this direction for future work. After some fine-tuning, we choose βt< 50 = 1 to encourage early exploration, and βt> 150 = 0 to allow convergence, with linear annealing in-between. 
+
+Qualitative evaluation. We hand-pick zr and visualize online transfer trajectories in Figure 5. Note that we now only display ˆZt in the background, visualizing the agent’s best linear estimate converge over time. Qualitatively, the estimate seems to improve and the trajectory ends in the highest-rewarding states. We now test this more systematically. 
+
+Quantitative analysis. We evaluate the method through the estimate quality and reward obtained. We sample 10 random z and run online transfer with USF-UCB to compute the L2 distance between 
+
+zr and ˆZt, as well as the instantaneous rewards. We plot the results in Figure 6. We can see that the estimate reaches very close to the true value despite the added noise, and the trajectory ends up maximizing reward. Note that the agent is able to execute the optimal policy after observing around 
+
+100 − 150 samples. In comparison, a natural approach for offline transfer in this case would be to fix a dataset containing all 81 states; from that perspective the online approach (at least in this simple environment) is not prohibitively sample-expensive. 7Log determinant: cluster occupancy features                 
+
+> Cluster Explorer
+> Exhaustive Explorer
+> Random Explorer
+> 025 50 75 100 125 150 175 200
+> time-step in trajectory
+> Log determinant: state counts Log determinant: Laplacian features
+> Laplacian Explorer
+> Exhaustive Explorer
+> Random Explorer
+> 025 50 75 100 125 150 175 200
+> time-step in trajectory
+> Log determinant: state counts
+
+Figure 4: Efficiency of exploration during a trajectory as measured by the log determinant of the uncertainty matrix, computed either with respect to the features (top row) or the state counts (bottom row). We pit our method against an “exhaustive” explorer (visits all states) and a random explorer for both feature choices (left: clusters, right: Laplacian). Our explorers are comparable or better than the exhaustive explorer with respect to their own feature space, but not at reaching all states. t=1 t=6 t=11 t=16 t=21 t=26      
+
+> . . .
+> t=199 t=1 t=6 t=11 t=16 t=21 t=26
+> . . .
+> t=199
+
+Figure 5: Visualization of online transfer trajectories. On the left, we display the reward function associated with the task vector zr to find. The agent needs to interact with the domain to maximize this reward. We then display the trajectory, every 5 steps, as the agent explores and eventually exploits. In the background we now show only the linear least squares estimate ˆZt. We can see the agent’s estimation improve despite the added noise; the next Figure quantifies this. 0                      
+
+> 3
+> Error in zrestimation (clusters)
+> 025 50 75 100 125 150 175 200
+> time-step in trajectory
+> 0.02
+> 1.67 max r
+> random
+> Instantaneous transfer reward (clusters) 0
+> 3
+> Error in zrestimation (Laplacian)
+> 025 50 75 100 125 150 175 200
+> time-step in trajectory
+> -0.03
+> 0.74 max r
+> random
+> Instantaneous transfer reward (Laplacian)
+
+Figure 6: Evaluation of online transfer: (top) error in the estimation of zr through ˆZt (L2 distance), (bottom) instantaneous reward throughout the trajectory, for both feature choices (left: clusters, right: Laplacian). The estimator converges and the method finds the highest-rewarding states ( max r ). 85 Related work 
+
+Our framework is tightly related to Hierarchical RL (Hutsebaut-Buysse et al., 2022) which proposes to break the RL problem down into sub-problem using sub-policies; specifically the options framework (Sutton et al., 1999) where an option is a temporally extended action: a “meta”-agent has access to an option set O, where each option o calls another policy (with initiation and termination conditions). In our case we treated Z as the option set on which our agent acts, abstracting out the BFM policy underneath, similarly as Barreto et al. (2019). Instead of training a meta-policy m(z | s) with different options depending on the current state, we assume that there is a single optimal zr , which avoids complicated value function estimation. Agent57 (Badia et al., 2020) proposed to optimize the weight β between intrinsic and extrinsic reward with a bandit algorithm, which has similarities with our setup with d = 1 , though this was used during training instead of at transfer-time. 
+
+Continual RL (Khetarpal et al., 2022) is a framework of RL where all elements of the MDP may change over time and the agent needs to continuously adapt. Zero-shot RL is therefore a specific case of Continual RL where only the reward function changes with time in a specific way ( 0 during pre-training, constant in time during transfer). This viewpoint opens questions on the ability for zero-shot RL to (i) develop skills continuously instead of through a fixed dataset, and (ii) continuously adapt to new reward functions. Our paper contributes to the second question. 
+
+Intrinsic motivation. Generating bonuses for exploration is a common approach in RL, sometimes called intrinsic motivation. While bonuses involving the uncertainty matrix have been proposed in RL (Jin et al., 2020; Bai et al., 2021), these methods assume linearity in both the reward and dynamics of the environment, a strong assumption which permeates the analysis. The USF framework allows us to work with general unknown dynamics and maximize exploration over a family of candidate policies 
+
+instead of focusing on instantaneous uncertainty. When using successor measures for features, our approach generalizes inverse state or region counts, which is a very popular approach to intrinsic motivation in RL (Strehl and Littman, 2008; Bellemare et al., 2016) 
+
+## 6 Conclusion 
+
+6.1 Summary 
+
+We have presented a novel framework and approach for addressing online transfer with Behavioral Foundation Models. In particular, we have proposed to frame the scenario similarly to a linear bandit problem, where an algorithm must recommend policies at each timestep in order to explore the state space, discover rewards and converge to the optimal policy. We have provided the essential theoretical building blocks and a well-justified algorithm to minimize regret through uncertainty minimization, inspired by Upper Confidence Bound. We have evaluated our method in a simple domain and showed that we can efficiently explore and exploit by manipulating a Behavioral Foundation Model, enabling online transfer and taking a step towards the continual learning of such models. 
+
+6.2 Limitations and future work 
+
+The clearest step forward is to show similar results on much more complicated environments, with stronger baselines, over a wider range of feature choices (e.g. Touati et al. (2023); Park et al. (2024)), to demonstrate that the method scales, and this will be our next direction. As a second direction, our work is currently extremely dependent on the feature quality and performance of the Behavioral Foundation Model. If the reward we’re trying to solve is not encoded by the features, or the BFM did not properly learn an optimal policy, we cannot proceed. Our USF-UCB algorithm also heavily relies on the USFA to provide a good approximation of future feature visits, while in practice these approximations may be unreliable. It could be necessary to adapt the algorithm to make it more resilient against poor estimations, for example through averaging over regions or using ensemble methods. Finally, more theoretical work can be done on the framework we propose, mainly on the form of the regret and confidence bounds, and potentially on alternative algorithms. Following linear bandit theory, future work could tighten the regret bound through the elliptical potential lemma (Carpentier et al., 2020). 9References 
+
+Abbasi-Yadkori, Y., Pál, D., and Szepesvári, C. (2011). Improved algorithms for linear stochastic bandits. Advances in neural information processing systems , 24. Agarwal, S., Sikchi, H., Stone, P., and Zhang, A. (2025). Proto successor measure: Representing the behavior space of an rl agent. Badia, A. P., Piot, B., Kapturowski, S., Sprechmann, P., Vitvitskyi, A., Guo, Z. D., and Blundell, C. (2020). Agent57: Outperforming the atari human benchmark. In International conference on machine learning , pages 507–517. PMLR. Bagot, L., Alegre, L. N., Latre, S., Mets, K., and da Silva, B. C. (2025). Successor clusters: A behavior basis for unsupervised zero-shot reinforcement learning. Transactions on Machine Learning Research .Bai, C., Wang, L., Han, L., Hao, J., Garg, A., Liu, P., and Wang, Z. (2021). Principled exploration via optimistic bootstrapping and backward induction. In International Conference on Machine Learning , pages 577–587. PMLR. Barreto, A., Borsa, D., Hou, S., Comanici, G., Aygün, E., Hamel, P., Toyama, D., Mourad, S., Silver, D., Precup, D., et al. (2019). The option keyboard: Combining skills in reinforcement learning. 
+
+Advances in Neural Information Processing Systems , 32. Barreto, A., Borsa, D., Quan, J., Schaul, T., Silver, D., Hessel, M., Mankowitz, D., Zidek, A., and Munos, R. (2018). Transfer in deep reinforcement learning using successor features and generalised policy improvement. In International Conference on Machine Learning , pages 501–510. PMLR. Barreto, A., Dabney, W., Munos, R., Hunt, J. J., Schaul, T., van Hasselt, H. P., and Silver, D. (2017). Successor features for transfer in reinforcement learning. In Advances in Neural Information Processing Systems , volume 30. Bellemare, M., Srinivasan, S., Ostrovski, G., Schaul, T., Saxton, D., and Munos, R. (2016). Unifying count-based exploration and intrinsic motivation. Advances in neural information processing systems , 29. Blier, L., Tallec, C., and Ollivier, Y. (2021). Learning successor states and goal-dependent values: A mathematical viewpoint. arXiv preprint arXiv:2101.07123 .Borsa, D., Barreto, A., Quan, J., Mankowitz, D. J., van Hasselt, H., Munos, R., Silver, D., and Schaul, T. (2019). Universal successor features approximators. In International Conference on Learning Representations .Carpentier, A., Vernade, C., and Abbasi-Yadkori, Y. (2020). The elliptical potential lemma revisited. 
+
+arXiv preprint arXiv:2010.10182 .Frans, K., Park, S., Abbeel, P., and Levine, S. (2024). Unsupervised zero-shot reinforcement learning via functional reward encodings. In Salakhutdinov, R., Kolter, Z., Heller, K., Weller, A., Oliver, N., Scarlett, J., and Berkenkamp, F., editors, Proceedings of the 41st International Conference on Machine Learning , volume 235 of Proceedings of Machine Learning Research ,pages 13927–13942. PMLR. Gomez, D., Bowling, M., and Machado, M. C. (2024). Proper laplacian representation learning. In 
+
+The Twelfth International Conference on Learning Representations .Hutsebaut-Buysse, M., Mets, K., and Latré, S. (2022). Hierarchical reinforcement learning: A survey and open research challenges. Machine Learning and Knowledge Extraction , 4(1):172–221. Jin, C., Yang, Z., Wang, Z., and Jordan, M. I. (2020). Provably efficient reinforcement learning with linear function approximation. In Conference on learning theory , pages 2137–2143. PMLR. Khetarpal, K., Riemer, M., Rish, I., and Precup, D. (2022). Towards continual reinforcement learning: A review and perspectives. Journal of Artificial Intelligence Research , 75:1401–1476. Lattimore, T. and Szepesvári, C. (2020). Bandit algorithms . Cambridge University Press. 10 Li, Y., Luo, Z., Zhang, T., Dai, C., Kanervisto, A., Tirinzoni, A., Weng, H., Kitani, K., Guzek, M., Touati, A., et al. (2025). Bfm-zero: A promptable behavioral foundation model for humanoid control using unsupervised reinforcement learning. arXiv e-prints , pages arXiv–2511. Machado, M. C., Barreto, A., and Precup, D. (2021). Temporal abstraction in reinforcement learning with the successor representation. arXiv preprint arXiv:2110.05740 .Machado, M. C., Bellemare, M. G., and Bowling, M. (2017). A laplacian framework for option discovery in reinforcement learning. In International Conference on Machine Learning , pages 2295–2304. PMLR. Mahadevan, S. and Maggioni, M. (2007). Proto-value functions: A laplacian framework for learning representation and control in markov decision processes. Journal of Machine Learning Research ,8(10). Park, S., Kreiman, T., and Levine, S. (2024). Foundation policies with hilbert representations. In 
+
+Forty-first International Conference on Machine Learning .Strehl, A. L. and Littman, M. L. (2008). An analysis of model-based Interval Estimation for Markov Decision Processes. Journal of Computer and System Sciences , 74(8):1309–1331. Sutton, R. S. and Barto, A. G. (2018). Reinforcement Learning: An Introduction . Second edition. Sutton, R. S., Precup, D., and Singh, S. (1999). Between mdps and semi-mdps: A framework for temporal abstraction in reinforcement learning. Artificial intelligence , 112(1-2):181–211. Tirinzoni, A., Touati, A., Farebrother, J., Guzek, M., Kanervisto, A., Xu, Y., Lazaric, A., and Pirotta, M. (2025). Zero-shot whole-body humanoid control via behavioral foundation models. arXiv preprint arXiv:2504.11054 .Touati, A. and Ollivier, Y. (2021). Learning one representation to optimize all rewards. In Ranzato, M., Beygelzimer, A., Dauphin, Y., Liang, P., and Vaughan, J. W., editors, Advances in Neural Information Processing Systems , volume 34, pages 13–23. Curran Associates, Inc. Touati, A., Rapin, J., and Ollivier, Y. (2023). Does zero-shot reinforcement learning exist? In The Eleventh International Conference on Learning Representations .Wang, K., Zhou, K., Zhang, Q., Shao, J., Hooi, B., and Feng, J. (2021). Towards better laplacian rep-resentation in reinforcement learning with generalized graph drawing. In International Conference on Machine Learning , pages 11003–11012. PMLR. Wu, Y., Tucker, G., and Nachum, O. (2018). The laplacian in rl: Learning representations with efficient approximations. arXiv preprint arXiv:1810.04586 .
+
+## A Theoretical framework 
+
+A.1 Encoding-decoding procedure for zero-shot RL 
+
+In Section 2 we defined the zero-shot RL problem where an agent must accumulate knowledge about the reward-free environment in a pre-training phase, and use this knowledge to instantly provide an optimal policy during the transfer phase, without additional training. We now clarify the “encoding-decoding procedure” used by most zero-shot methods. • In RL, the objective is specified in the reward function r, for which the agent must find an optimal policy. The objective for zero-shot RL can be seen as training a task-conditioned policy πθ (a | s, r ) to be optimal for r.• Of course, in general r cannot be handled directly, so the idea is to encode the function into a vector r −→ zr ∈ Z ⊂ Rd and train policy πθ (a | s, zr ).• In practice, since we still cannot handle r directly the encoding happens through labeled state-reward pairs in the transfer dataset Dtransfer 
+
+.
+
+= {si, r (si)}Di=1 . In other words, the encoding function is ϵ(Dtransfer ) = zr . For transfer, we simply need to execute πθ (·, zr ).11 • Training of πθ generally involves randomly sampling z ∈ Z and a transition st, a t, s t+1 ∼Dtrain . To perform an RL update with a conventional algorithm, we need to “simulate” the reward that would arise for state st+1 and for the reward function that the sampled z encodes. For this we need a decoding function: if ϵ({si, r (si)}Di=1 ) = zr then ϵ−1(zr , s ) ≈ r(s).Since the space of reward functions contains more information than Rd, this is necessarily an approximation. Training unfolds by sampling a large amount of transitions and task vectors and executing RL updates of θ with any RL algorithm. 
+
+A.2 Bandit interactions: general objective 
+
+The most generic RL objective would be the following: 
+
+arg max  
+
+> Λ
+
+Einteractions 
+
+"T −1X
+
+> t=0
+
+γtRt+1 
+
+#
+
+with “interactions” the interplay of probability distributions detailed in Section 3.2. However, this formulation would allow to pick state-dependent Zt to surpass the performance of π, for example by oscillating between vectors z1, z2 to stay at a state that the policy would not be able to stay at with a fixed z. This would require the training of a task-specific agent, which would be much heavier than our bandit formulation. 
+
+A.3 Linear Bandits 
+
+Linear Bandits (Lattimore and Szepesvári, 2020) is an extension of a multi-armed bandit problem where an agent must quickly find the action yielding the highest reward. Critically, compared to RL, the optimal behavior is to choose a single action – there is no temporal connection between steps, the environment only provides rewards. The crux of the problem lies in the exploration-exploitation dilemma of picking the action we think is best versus an action we have little knowledge about. Instead of a discrete amount of actions, in Linear Bandits the “actions” come as vectors Zt ∈ Z t ⊂ Rd and the reward is assumed to come as Rt = Zt · zr + ηt, with unknown zr and generally ηt ∼ N  0, σ 2.In this paper we study a specific version of the problem where Zt = Z is the sphere of radius √d
+
+(actions are normalized) and zr ∈ Z . Under these assumptions, the optimal action is Zt = zr .The objective of Linear Bandits is to find an algorithm Λ ( Zt | S0, Z 0, R 1, . . . Z t−1, S t) that quickly maximizes reward, which is generally formalized as minimizing regret : Reg T
+
+.
+
+= PTt=1 zr ·zr −Zt·zr ,evaluating for each time-step how sub-optimal the choice of Zt was. 
+
+A.4 Parallels with Linear Bandits 
+
+The regret definition for our setup is: Reg T = 
+
+> T−1
+
+X
+
+> t=0
+
+ψ (St, zr ) · zr − ψ (St, Z t) · zr . (7) This Equation is reminiscent of Linear Bandits (LB, see Section A.3), in this Section we take a step back to compare our framing and objective to that of LB. • In LB, the agent makes a decision and gets reward 1 Xt = Dt · zr , which it needs to maximize despite unknown zr . Dt is both the action and the element we compare to zr
+
+through a dot product to evaluate the action. • In our setup and Equation (2) however, our decisions, observations and rewards are decou-pled: 
+
+– The “action” Zt induces ψ(St, Z t) but is not equal or linearly linked to it, unlike Dt.It is ψ(St, Z t) which is pitched against zr to evaluate the quality of action Zt, not Zt
+
+directly. 
+
+– Xt is decoupled into the instantaneous reward Rt+1 = ϕ(St+1 ) · zr + ηt and the value function in the regret, ψ(St, Z t) · zr . After action Zt we observe the state-reward pair (St+1 , R t+1 ), but we are not trying to maximize instantaneous rewards. Note that observing St+1 allows us to observe ϕ(St+1 ) and ψ(St+1 , z) for any z.
+
+> 1We use different notations for concepts that are not directly comparable between LB and our setup
+
+12 – The least squares estimates ˆZt are obtained from ϕ(St) but we aim to maximize the value function ψ(Zt) · zr
+
+## B Theoretical Results 
+
+B.1 Regret bound on USF-UCB 
+
+We aim to bind the total regret of USF-UCB as Algorithm (5): Reg T ⩽ 2 
+
+> T−1
+
+X
+
+> t=1
+
+pβt ∥ψ (St, Z t)∥V −1
+
+> t
+
+.
+
+Consider the instantaneous regret reg t
+
+.
+
+= ψ (St; zr ) · zr − ψ (St; Zt) · zr . Assuming, with high probability, that zr ∈ εt:reg t = ψ (St; zr ) · zr − ψ (St; Zt) · zr
+
++ ψ (St; zr ) · ˆZt − ψ (St; zr ) · ˆZt
+
+= ψ (St; zr ) ·
+
+
+
+zr − ˆZt
+
+
+
++ ψ (St; zr ) · ˆZt − ψ (St; Zt) · zr
+
+(CS) ⩽ ∥ψ (St; zr )∥V −1
+
+> t
+
+zr − ˆZt Vt
+
++ ψ (St; zr ) · ˆZt − ψ (St; Zt) · zr
+
+(zr ∈ εt) ⩽ pβt ∥ψ (St; zr )∥V −1
+
+> t
+
++ ψ (St; zr ) · ˆZt − ψ (St; Zt) · zr
+
+(Equation (5)) ⩽ pβt ∥ψ (St; Zt)∥V −1
+
+> t
+
++ ψ (St; Zt) · ˆZt − ψ (St; Zt) · zr
+
+(same arguments) ⩽ 2pβt ∥ψ (St; Zt)∥V −1
+
+> t
+
+.
+
+B.2 Preliminary work for the Elliptical Potential Lemma for USF 
+
+In Linear Bandits the regret is bounded by a sum of actions, P 
+
+> t
+
+∥At∥V −1
+
+> t
+
+, which the Elliptical Potential Lemma bounds by the increase in determinant log det VT  
+
+> det V0
+
+, using the fact that Vt
+
+.
+
+= Vt−1 +
+
+AtA⊤ 
+
+> t
+
+. In our case because of the decoupling of actions Zt, instantaneous observations ϕ(St) and the quantity we maximize, ψ(St, z) · zr , finding an equivalent to the lemma is not trivial. We can upper-bound the instantaneous regret naively, reg t = ψ (St; zr ) · zr − ψ (St; Zt) · zr
+
+(CS) ⩽ ∥ψ (St; zr ) − ψ (St; Zt)∥2 ∥zr ∥2 .
+
+We chose Z as the sphere of radius √d so ∥zr ∥2 = √d. We can similarly assume a maximum value on ϕ, ∀s ∥ϕ(s)∥2 ⩽ √d ϕ max . From the definition of Successor Features as a discounted sum of features, this leads to reg t ⩽ 2dϕ max 
+
+1 − γ .
+
+However this is not a very tight bound compared to exploiting the properties of V . Still, this can be combined with the previous bound to obtain reg t ⩽ 2 min 
+
+pβt ∥ψ (St; Zt)∥V −1
+
+> t
+
+, dϕ max 
+
+1 − γ
+
+
+
+.
+
+Such a minimum is often included in bandits to introduce a log operator. In our case the crux of the matter comes from the fact that we have a sum of norms of ψ instead of ϕ, which prevents us from using the definition of V .
+
+B.3 Maximization of the elliptical norm 
+
+Our USF-UCB algorithm (Equation (5) ) proposes an exploration component through the maximiza-tion of the elliptical norm ∥ψ (St; Zt)∥V −1
+
+> t
+
+. We show now that several other approaches could make this quantity arise, highlighting its key importance. 13 Maximization on the Confidence Bound. From the confidence interval εt in Equation (4) , a more direct algorithm would be to apply optimism in the face of uncertainty on the expected return: 
+
+Zt = arg max z∈εt ψ (St; z) · z. (8) The regret bound is the same as our method: assume, with high probability, that zr ∈ εt, then, 
+
+ρt
+
+.
+
+= ψ (St; zr ) · zr − ψ (St; Zt) · zr (9) 
+
+⩽ ψ (St; Zt) · Zt − ψ (St; Zt) · zr (10) 
+
+= ψ (St; Zt) · (Zt − zr ) (11) 
+
+⩽ ∥ψ (St; Zt)∥V −1
+
+> t
+
+∥Zt − zr ∥Vt (12) 
+
+⩽ 2 ∥ψ (St; Zt)∥V −1
+
+> t
+
+βt. (13) Unlike our algorithm, in this case we need Zt ∈ εt because it is used to evaluate the return, not only as an action to input in ψ. It is sometimes clearer to rewrite Zt = ˆZt + βtot, with ˆZt the “greedy” part and ot the “optimistic” part of the vector, constrained to ∥ot∥Vt ⩽ 1:
+
+Zt = arg max  
+
+> z= ˆZt+√βtot
+> ∥ot∥Vt⩽1
+
+ψ (St; z) · ˆZt + pβtψ (St; z) · ot.
+
+While this approach has similarities with ours, it is more cumbersome and less clear. 
+
+Variance Minimization Through our USF framework we have that Rt = ϕ(St) · zr + ηt, with 
+
+ηt ∼ N (0 , σ 2). Writing Φ the matrix of columns ϕ(St) and r the vector of rewards Rt, the least squares estimator ˆZt = V −1 
+
+> t
+
+Φ⊤r therefore has covariance Cov ( ˆZt) = E
+
+h
+
+( ˆZt − zr )( ˆZt − zr )⊤i
+
+= V −1 
+
+> t
+
+Φ⊤σ2ΦV −1
+
+> t
+
+= σ2V −1
+
+> t
+
+and the value function estimator ψ(St, z) · ˆZt has variance Var (ψ(St, z) · ˆZt) = ψ(St, z)⊤Cov ( ˆZt)ψ(St, z)= σ2ψ(St, z)⊤V −1 
+
+> t
+
+ψ(St, z)
+
+We find again the (squared) elliptical norm, which geometrically indicates the length of the Successor Features weighted by the strength of uncertainty in each feature direction. Maximizing this norm over 
+
+z means picking the policy that will spend the most time in unexplored regions of the feature space. 
+
+Optimal Experiment Design We shift the focus away from regret minimization and directly focus on finding the zr which will reduce uncertainty most; from an RL/bandit perspective, this is tanta-mount to focusing on pure exploration. There are several metrics for uncertainty, virtually always involving the eigenvalues of Vt or its inverse. One of particular interest for us is D-optimal design, where we look to maximize the determinant (product of eigenvalues) of Vt: max Λ log det Vt. Con-sidering that Vt+1 = Vt + ϕ(St+1 )ϕ(St+1 )⊤, a common approach is to use the matrix determinant lemma: 
+
+det( Vt+1 ) = det( Vt)(1 + ϕ(St+1 )⊤V −1 
+
+> t
+
+ϕ(St+1 )) ,
+
+so maximizing the step-wise increase in determinant is equivalent to maximizing 
+
+ϕ(St+1 )⊤V −1 
+
+> t
+
+ϕ(St+1 ). We find again the elliptical norm, this time for a single time-step, measuring how informative a single state is. Using this term directly as an intrinsic reward is a common approach in linear bandits and has been applied to RL for exploration before. The critical insight from using USF is that instead of giving an intrinsic bonus to St+1 , we want to give an intrinsic bonus to an entire policy encoded by z. So we are looking for the policy which generates the most of this one-step intrinsic bonus. At step St with Vt, we can think about the future 
+
+14 certainty matrix , the features that will be visited by policy π(· | St; z) during its trajectory: Mt(z) = 
+
+Eπ(·;z)
+
+P ∞ 
+
+> k=1
+
+γt+kϕ(St+k+1 )ϕ(St+k+1 )⊤. We are interested in the matrix Vt + Mt(z), which encapsulates the whole trajectory (before and after t respectively), and in particular in maximizing its determinant. Though we do not have access to Mt directly, ψ encodes related information – as a re-minder, ψ(St, A t; z) = Eπ(·;z)
+
+P ∞ 
+
+> k=1
+
+γt+kϕ(St+k+1 ). Therefore the proposal is to use 
+
+ψ(St; Zt)ψ(St; Zt)⊤ as a rank-1 approximation of Mt, with the intuition that ψ summarizes future feature visits. Using the matrix determinant lemma again gives 
+
+det( Vt + ψ(St; Zt)ψ(St; Zt)⊤) = det( Vt)  1 + ψ(St, Z t)⊤V −1 
+
+> t
+
+ψ(St, Z t)
+
+so under this approximation we need to maximize ψ(St, Z t)⊤V −1 
+
+> t
+
+ψ(St, Z t) to maximally gain information into Vt.The issue with this link is in the approximation - it is not exactly aligned with truly predicting future features, as the summation averages out directions in feature space (mismatch between Mt and ψψ ⊤). This perspective potentially motivates learning Mt in addition to ψ in the USF framework, which would allow access to such covariance-based estimators at transfer time. 
+
+## C Experimental details 
+
+C.1 Example choices for SF: Successor Clusters and Laplacian Eigenfunctions 
+
+We now detail the two types of features which we experiment with in this paper, but our results in Section 3 apply to any choice of ϕ. We visualize the features proposed below, and some of the corresponding policies from a trained USF Approximator, in Figure 3. 
+
+Successor Clusters (Bagot et al., 2025) propose an intuitive choice of ϕ: since we need to linearly approximate the reward function, one possibility is to discretize it over a partition of the state space. This is achieved by breaking the state space down into clusters {Ci}di=1 with a temporal notion of distance, and pick cluster occupancy features: ϕi(s) = 1s∈Ci . The resulting encoding procedure leads to zi containing the average reward in cluster Ci. This choice of features also implies that the associated Successor Features define a specific Successor Measure (Blier et al., 2021): 
+
+ψπ (s, a )i indicate the expected time spent in cluster Ci when following policy π. This property is very convenient for interpretability, and in general Successor Clusters allow us to understand and visualize several key elements of the SF/USFA framework. For example, as a critical intuition, for generating exploration policies we can simply count the number of visits to each cluster, N (Ci),and set zi = 1 /N (Ci). This borrows from MBIE-EB (Strehl and Littman, 2008) with the idea that clusters visited more often get less of a bonus. 
+
+The Laplacian Eigenfunctions have long been argued to play a key role in Reinforcement Learning (Mahadevan and Maggioni, 2007; Machado et al., 2017), in particular in recent years for generating intrinsic rewards, options and zero-shot policies with Successor Features (Barreto et al., 2019; Machado et al., 2021; Touati et al., 2023). The graph Laplacian is defined as the matrix L = D − A,with D the degree matrix and A the adjacency matrix of the MDP under some policy π, usually random uniform. The “Laplacian Representation” in RL refers to the first d eigenvalues of the (often normalized) Laplacian, ϕ(s) = [ f1(s), . . . , f d(s)] , with fi(s) the ith eigenfunction evaluated at state 
+
+s. The notation with ϕ is intentional: we can plug this directly into the SF/USFA framework. The appeal for the Laplacian Representation comes from the fact that it behaves like a Fourier-like basis over reward functions, with functions of increasing frequency along the smooth temporal directions of the state space. Several methods exist to compute approximate eigenfunctions in the context of complex state and action spaces (Wu et al., 2018; Wang et al., 2021; Gomez et al., 2024). 
+
+C.2 Hyper-parameters and experimental choices 
+
+ϕ features. We discussed the clusters and Laplacian features above, in practice we simply cut the 
+
+9 × 9 state space into 9 clusters of size 3 × 3 for the cluster features, for the Laplacian eigenvectors we directly create the matrix and compute its eigenvectors using standard libraries. 15 Figure 7: Example trajectory of the exhaustive explorer, covering the domain by visiting all states. 
+
+USFA architecture and training. The USFA ψθ (s, a ; z) is a fully connected neural network with 4 hidden layers of size 256 . We find a dropout rate of 0.15 to help with generalization across z. We train the USFA to predict the optimal sum of future ϕ(Sk⩾t) to maximize expected sum of rewards 
+
+Rk = ϕ(Sk) · z, by repeatedly sampling z from the √d-diameter ball and minimizing the Bellman gap with a MSE loss. We use soft target updates with τ = 0 .01 and the Adam optimizer with a learning rate of 0.00025 . We choose γ = 0 .99 for accurate future feature predictions. The USFA weights are frozen before the start of the online transfer. 
+
+C.3 “Exhaustive” Explorer 
+
+To compare our methods we implement an exploring agent that reaches all states. In a simple gridworld this is easy to do: we simply count state visits and use a greedy one-step look-ahead to find which action visits the least-visited state next. In Figure 7 we show an exploration trajectory generated by this method. 16
